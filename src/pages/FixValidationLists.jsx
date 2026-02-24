@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { ValidationList, Question } from "@/entities/all";
 import { AlertTriangle, CheckCircle, Loader2, Database } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 

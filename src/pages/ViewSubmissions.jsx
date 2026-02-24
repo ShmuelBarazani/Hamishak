@@ -5,9 +5,9 @@ import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { Prediction, Question, Team, ValidationList, User, SystemSettings } from "@/entities/all";
+import * as db from '@/api/entities';
 import { supabase } from '@/api/supabaseClient';
-import * as db from '@/api/entities'; // 🔧 Fixed import path
+
 import { Users, Loader2, ChevronDown, ChevronUp, FileText, Trash2, AlertTriangle, Trophy, Pencil, Save, Download, Award, CheckCircle } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 import RoundTableReadOnly from "../components/predictions/RoundTableReadOnly";

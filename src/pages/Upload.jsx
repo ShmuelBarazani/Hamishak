@@ -15,7 +15,7 @@ import {
   Loader2,
   FileWarning
 } from "lucide-react";
-import { Question, Prediction, ValidationList } from "@/entities/all"; // Added ValidationList
+
 import { supabase } from '@/api/supabaseClient';
 import * as db from '@/api/entities'; // Corrected Core import to base44
 import { useToast } from "@/components/ui/use-toast";

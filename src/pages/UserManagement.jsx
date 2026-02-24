@@ -9,7 +9,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Users, Trash2, Shield, Loader2, Mail, User as UserIcon, AlertTriangle, Crown, Info, UserPlus, Copy, CheckCircle } from "lucide-react";
 import { supabase } from '@/api/supabaseClient';
 import * as db from '@/api/entities';
-import { Prediction } from "@/entities/all";
 import { useToast } from "@/components/ui/use-toast";
 import { useGame } from "@/components/contexts/GameContext"; // Fixed import path
 

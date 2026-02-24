@@ -5,8 +5,6 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Progress } from "@/components/ui/progress";
-import { ScoreTable } from "@/entities/ScoreTable";
-import { Question } from "@/entities/Question";
 import { Trash2, Loader2, AlertTriangle, Database } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 

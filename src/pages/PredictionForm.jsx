@@ -6,7 +6,6 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Trophy, FileText, Save, Loader2, ChevronDown, ChevronUp, Lock, Unlock } from "lucide-react";
-import { Question, Prediction, User, Team, ValidationList, SystemSettings } from "@/entities/all";
 import { supabase } from '@/api/supabaseClient';
 import * as db from '@/api/entities'; // Changed import for base44
 import { useToast } from "@/components/ui/use-toast";

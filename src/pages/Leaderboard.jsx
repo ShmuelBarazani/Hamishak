@@ -5,7 +5,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Trophy, TrendingUp, TrendingDown, Minus, RefreshCw, Loader2, Crown } from "lucide-react";
-import { Ranking, Prediction, Question } from "@/entities/all";
 import { useToast } from "@/components/ui/use-toast";
 import { calculateQuestionScore } from "@/components/scoring/ScoreCalculator";
 
