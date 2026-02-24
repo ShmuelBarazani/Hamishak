@@ -13,7 +13,7 @@ import {
   Loader2,
   FileWarning
 } from "lucide-react";
-import { Question, Prediction, ValidationList } from "@/entities/all";
+
 import { supabase } from "@/api/supabaseClient";
 import * as db from "@/api/entities";
 import { useToast } from "@/components/ui/use-toast";
