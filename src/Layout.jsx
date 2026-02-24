@@ -181,7 +181,7 @@ function LayoutContent({ children, currentPageName }) {
           // If no current user, prompt for login first then update role
           // This path should ideally not be taken if the "connect as admin" button
           // is only shown to logged-in non-admin users.
-          await window.location.href = '/login';
+          window.location.href = '/login';
           return;
         }
 
