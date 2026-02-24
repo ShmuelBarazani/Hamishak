@@ -3,8 +3,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, Brain, Users, TrendingUp, Target, Network, Zap } from "lucide-react";
-import { supabase } from "@/api/supabaseClient";
-import * as db from "@/api/entities";
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   ScatterChart, Scatter, Cell, ZAxis
@@ -116,13 +114,8 @@ export default function InsightsAnalyzer({ allQuestions, allPredictions }) {
     allPredictions.forEach(pred => {
       if (!participants[pred.participant_name]) {
         participants[pred.participant_name] = {
-          draws: 0,
-          highScores: 0,
-          lowScores: 0,
-          yesAnswers: 0,
-          noAnswers: 0,
-          totalGames: 0,
-          totalAnswers: 0
+          draws: 0, highScores: 0, lowScores: 0,
+          yesAnswers: 0, noAnswers: 0, totalGames: 0, totalAnswers: 0
         };
       }
       
@@ -131,7 +124,6 @@ export default function InsightsAnalyzer({ allQuestions, allPredictions }) {
         if (!isNaN(home) && !isNaN(away)) {
           participants[pred.participant_name].totalGames++;
           const totalGoals = home + away;
-          
           if (home === away) participants[pred.participant_name].draws++;
           if (totalGoals >= 5) participants[pred.participant_name].highScores++;
           if (totalGoals <= 1) participants[pred.participant_name].lowScores++;
@@ -159,15 +151,11 @@ export default function InsightsAnalyzer({ allQuestions, allPredictions }) {
         const optimismScore = (highScoreRatio * 50) + (yesRatio * 50);
         const conservatismScore = (drawRatio * 40) + (lowScoreRatio * 60);
         
-        let style = 'realistic';
         if (conservatismScore > 30) {
-          style = 'conservative';
           styles.conservative.push({ name, score: conservatismScore });
         } else if (optimismScore > 40) {
-          style = 'optimist';
           styles.optimist.push({ name, score: optimismScore });
         } else if (highScoreRatio > 0.35) {
-          style = 'gambler';
           styles.gambler.push({ name, score: highScoreRatio * 100 });
         } else {
           styles.realistic.push({ name, score: 50 });
@@ -187,8 +175,6 @@ export default function InsightsAnalyzer({ allQuestions, allPredictions }) {
 
   const analyzeQuestionCorrelations = () => {
     const questionPairs = [];
-    
-    // 🔥 הגבלת מספר השאלות לבדיקה למניעת תקיעה
     const questionsToCheck = allQuestions.slice(0, 50);
     
     questionsToCheck.forEach((q1, i) => {
@@ -226,11 +212,7 @@ export default function InsightsAnalyzer({ allQuestions, allPredictions }) {
     
     allPredictions.forEach(pred => {
       if (!participants[pred.participant_name]) {
-        participants[pred.participant_name] = {
-          highScores: 0,
-          draws: 0,
-          totalGames: 0
-        };
+        participants[pred.participant_name] = { highScores: 0, draws: 0, totalGames: 0 };
       }
       
       if (pred.text_prediction && pred.text_prediction.includes('-')) {
@@ -255,96 +237,19 @@ export default function InsightsAnalyzer({ allQuestions, allPredictions }) {
     return scatterData;
   };
 
-  const generateDeepNarrative = async (analysisData) => {
-    try {
-      const { leagueCamps, participantStyles, correlations, optimismVsConservatism } = analysisData;
-      
-      const prompt = `
-אתה אנליסט ספורט מומחה. נתח את הנתונים הבאים על ${leagueCamps.totalParticipants} משתתפים בטוטו ליגת האלופות וצור תובנות מעמיקות:
-
-**מחנות לפי ליגות:**
-- מחנה אנגלי: ${leagueCamps.camps.english} משתתפים (${((leagueCamps.camps.english / leagueCamps.totalParticipants) * 100).toFixed(1)}%)
-- מחנה ספרדי: ${leagueCamps.camps.spanish} משתתפים (${((leagueCamps.camps.spanish / leagueCamps.totalParticipants) * 100).toFixed(1)}%)
-- מחנה איטלקי: ${leagueCamps.camps.italian} משתתפים (${((leagueCamps.camps.italian / leagueCamps.totalParticipants) * 100).toFixed(1)}%)
-- מחנה גרמני: ${leagueCamps.camps.german} משתתפים (${((leagueCamps.camps.german / leagueCamps.totalParticipants) * 100).toFixed(1)}%)
-- מחנה ישראלי: ${leagueCamps.camps.israeli} משתתפים (${((leagueCamps.camps.israeli / leagueCamps.totalParticipants) * 100).toFixed(1)}%)
-- מאוזנים: ${leagueCamps.camps.balanced} משתתפים
-
-**סגנונות ניחוש:**
-- שמרנים: ${participantStyles.styles.conservative.length}
-- הימוריים: ${participantStyles.styles.gambler.length}
-- אופטימיים: ${participantStyles.styles.optimist.length}
-- ריאליסטים: ${participantStyles.styles.realistic.length}
-
-**קורלציות מעניינות:**
-${correlations.map(c => `- "${c.q1}" ↔ "${c.q2}" (קשר: ${c.strength}%)`).join('\n')}
-
-צור 5-7 תובנות מעמיקות ומפתיעות בעברית:
-1. תובנה על המחנות הדומיננטיים
-2. תובנה על קשר בין סגנון לבחירת קבוצות
-3. תובנה על הקורלציות המעניינות ביותר
-4. תובנה על משתתפים ייחודיים
-5. תובנה כללית על דפוסי החשיבה הקולקטיבית
-
-כתוב בצורה אנליטית אך מעניינת, עם מספרים ואחוזים.
-`;
-
-      // InvokeLLM removed - needs backend
-      const response = { content: "תכונה זו דורשת הגדרת backend" }; /*
-        prompt: prompt,
-        add_context_from_internet: false
-      });
-      
-      return response || 'מתבצע ניתוח...';
-      
-    } catch (error) {
-      console.error('Error generating narrative:', error);
-      return 'לא ניתן ליצור תובנות כרגע';
-    }
-  };
-
   const analyzeData = async () => {
     setAnalyzing(true);
     try {
-      console.log('🧠 מתחיל ניתוח תובנות מתקדם...');
-      
-      // 1️⃣ זיהוי מחנות לפי מדינות
-      console.log('📊 מנתח מחנות...');
       const leagueCamps = analyzeLeagueCamps();
-      
-      // 2️⃣ סיווג משתתפים לפי סגנון ניחוש
-      console.log('🎯 מנתח סגנונות...');
       const participantStyles = analyzeParticipantStyles();
-      
-      // 3️⃣ ניתוח קורלציות בין שאלות
-      console.log('🔗 מנתח קורלציות...');
       const correlations = analyzeQuestionCorrelations();
-      
-      // 4️⃣ דפוסי אופטימיות מול שמרנות
-      console.log('📈 מנתח דפוסים...');
       const optimismVsConservatism = analyzeOptimismVsConservatism();
+      const narrative = "ניתוח מעמיק: " + leagueCamps.totalParticipants + " משתתפים נותחו. המחנה הדומיננטי הוא " + 
+        (leagueCamps.camps.english >= leagueCamps.camps.spanish ? "האנגלי" : "הספרדי") + ".";
       
-      // 5️⃣ הפקת תובנות נרטיביות
-      console.log('🧠 יוצר תובנות...');
-      const narrative = await generateDeepNarrative({
-        leagueCamps,
-        participantStyles,
-        correlations,
-        optimismVsConservatism
-      });
-      
-      setInsights({
-        leagueCamps,
-        participantStyles,
-        correlations,
-        optimismVsConservatism,
-        narrative
-      });
-      
-      console.log('✅ הניתוח הושלם!');
-      
+      setInsights({ leagueCamps, participantStyles, correlations, optimismVsConservatism, narrative });
     } catch (error) {
-      console.error('❌ Error analyzing insights:', error);
+      console.error('Error analyzing insights:', error);
       alert('שגיאה בניתוח: ' + error.message);
     }
     setAnalyzing(false);
@@ -360,7 +265,7 @@ ${correlations.map(c => `- "${c.q1}" ↔ "${c.q2}" (קשר: ${c.strength}%)`).jo
         <CardHeader>
           <CardTitle className="flex items-center gap-2" style={{ color: '#06b6d4' }}>
             <Brain className="w-6 h-6" />
-            ניתוח תובנות AI מתקדם
+            ניתוח תובנות מתקדם
           </CardTitle>
         </CardHeader>
         <CardContent className="text-center py-12">
@@ -375,18 +280,12 @@ ${correlations.map(c => `- "${c.q1}" ↔ "${c.q2}" (קשר: ${c.strength}%)`).jo
               background: 'linear-gradient(135deg, #06b6d4 0%, #0ea5e9 100%)',
               boxShadow: '0 0 20px rgba(6, 182, 212, 0.4)'
             }}
-            className="text-white hover:shadow-[0_0_30px_rgba(6,182,212,0.6)]"
+            className="text-white"
           >
             {analyzing ? (
-              <>
-                <Loader2 className="w-5 h-5 animate-spin ml-2" />
-                מנתח...
-              </>
+              <><Loader2 className="w-5 h-5 animate-spin ml-2" />מנתח...</>
             ) : (
-              <>
-                <Brain className="w-5 h-5 ml-2" />
-                התחל ניתוח מתקדם
-              </>
+              <><Brain className="w-5 h-5 ml-2" />התחל ניתוח מתקדם</>
             )}
           </Button>
         </CardContent>
@@ -396,15 +295,13 @@ ${correlations.map(c => `- "${c.q1}" ↔ "${c.q2}" (קשר: ${c.strength}%)`).jo
 
   return (
     <div className="space-y-6">
-      {/* תובנות נרטיביות */}
       <Card style={{
         background: 'linear-gradient(135deg, rgba(6, 182, 212, 0.1) 0%, rgba(14, 165, 233, 0.1) 100%)',
         border: '1px solid rgba(6, 182, 212, 0.3)'
       }}>
         <CardHeader>
           <CardTitle className="flex items-center gap-2" style={{ color: '#06b6d4' }}>
-            <Brain className="w-6 h-6" />
-            תובנות מרכזיות
+            <Brain className="w-6 h-6" />תובנות מרכזיות
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -414,15 +311,10 @@ ${correlations.map(c => `- "${c.q1}" ↔ "${c.q2}" (קשר: ${c.strength}%)`).jo
         </CardContent>
       </Card>
 
-      {/* גרף מחנות ליגות */}
-      <Card style={{
-        background: 'rgba(30, 41, 59, 0.6)',
-        border: '1px solid rgba(6, 182, 212, 0.2)'
-      }}>
+      <Card style={{ background: 'rgba(30, 41, 59, 0.6)', border: '1px solid rgba(6, 182, 212, 0.2)' }}>
         <CardHeader>
           <CardTitle className="flex items-center gap-2" style={{ color: '#06b6d4' }}>
-            <Network className="w-5 h-5" />
-            חלוקת מחנות לפי ליגות
+            <Network className="w-5 h-5" />חלוקת מחנות לפי ליגות
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -431,13 +323,7 @@ ${correlations.map(c => `- "${c.q1}" ↔ "${c.q2}" (קשר: ${c.strength}%)`).jo
               <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
               <XAxis dataKey="name" stroke="#94a3b8" />
               <YAxis stroke="#94a3b8" />
-              <Tooltip
-                contentStyle={{
-                  background: '#1e293b',
-                  border: '1px solid rgba(6, 182, 212, 0.3)',
-                  borderRadius: '8px'
-                }}
-              />
+              <Tooltip contentStyle={{ background: '#1e293b', border: '1px solid rgba(6, 182, 212, 0.3)', borderRadius: '8px' }} />
               <Bar dataKey="value" radius={[8, 8, 0, 0]}>
                 {insights.leagueCamps.chartData.map((entry, index) => (
                   <Cell key={`cell-${index}`} fill={entry.color} />
@@ -448,15 +334,10 @@ ${correlations.map(c => `- "${c.q1}" ↔ "${c.q2}" (קשר: ${c.strength}%)`).jo
         </CardContent>
       </Card>
 
-      {/* גרף סגנונות */}
-      <Card style={{
-        background: 'rgba(30, 41, 59, 0.6)',
-        border: '1px solid rgba(6, 182, 212, 0.2)'
-      }}>
+      <Card style={{ background: 'rgba(30, 41, 59, 0.6)', border: '1px solid rgba(6, 182, 212, 0.2)' }}>
         <CardHeader>
           <CardTitle className="flex items-center gap-2" style={{ color: '#06b6d4' }}>
-            <Target className="w-5 h-5" />
-            סגנונות ניחוש
+            <Target className="w-5 h-5" />סגנונות ניחוש
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -465,13 +346,7 @@ ${correlations.map(c => `- "${c.q1}" ↔ "${c.q2}" (קשר: ${c.strength}%)`).jo
               <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
               <XAxis dataKey="name" stroke="#94a3b8" />
               <YAxis stroke="#94a3b8" />
-              <Tooltip
-                contentStyle={{
-                  background: '#1e293b',
-                  border: '1px solid rgba(6, 182, 212, 0.3)',
-                  borderRadius: '8px'
-                }}
-              />
+              <Tooltip contentStyle={{ background: '#1e293b', border: '1px solid rgba(6, 182, 212, 0.3)', borderRadius: '8px' }} />
               <Bar dataKey="value" radius={[8, 8, 0, 0]}>
                 {insights.participantStyles.chartData.map((entry, index) => (
                   <Cell key={`cell-${index}`} fill={entry.color} />
@@ -482,77 +357,37 @@ ${correlations.map(c => `- "${c.q1}" ↔ "${c.q2}" (קשר: ${c.strength}%)`).jo
         </CardContent>
       </Card>
 
-      {/* אופטימיות מול שמרנות */}
-      <Card style={{
-        background: 'rgba(30, 41, 59, 0.6)',
-        border: '1px solid rgba(6, 182, 212, 0.2)'
-      }}>
+      <Card style={{ background: 'rgba(30, 41, 59, 0.6)', border: '1px solid rgba(6, 182, 212, 0.2)' }}>
         <CardHeader>
           <CardTitle className="flex items-center gap-2" style={{ color: '#06b6d4' }}>
-            <TrendingUp className="w-5 h-5" />
-            אופטימיות מול שמרנות
+            <TrendingUp className="w-5 h-5" />אופטימיות מול שמרנות
           </CardTitle>
         </CardHeader>
         <CardContent>
           <ResponsiveContainer width="100%" height={400}>
             <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
               <CartesianGrid stroke="#334155" />
-              <XAxis 
-                type="number" 
-                dataKey="optimism" 
-                name="אופטימיות" 
-                unit="%"
-                stroke="#94a3b8"
-                label={{ value: 'אופטימיות (%)', position: 'insideBottom', offset: -10, fill: '#94a3b8' }}
-              />
-              <YAxis 
-                type="number" 
-                dataKey="conservatism" 
-                name="שמרנות" 
-                unit="%"
-                stroke="#94a3b8"
-                label={{ value: 'שמרנות (%)', angle: -90, position: 'insideLeft', fill: '#94a3b8' }}
-              />
+              <XAxis type="number" dataKey="optimism" name="אופטימיות" unit="%" stroke="#94a3b8" />
+              <YAxis type="number" dataKey="conservatism" name="שמרנות" unit="%" stroke="#94a3b8" />
               <ZAxis type="number" dataKey="z" range={[100, 400]} />
-              <Tooltip 
-                cursor={{ strokeDasharray: '3 3' }}
-                contentStyle={{
-                  background: '#1e293b',
-                  border: '1px solid rgba(6, 182, 212, 0.3)',
-                  borderRadius: '8px'
-                }}
-                formatter={(value, name) => {
-                  if (name === 'אופטימיות' || name === 'שמרנות') {
-                    return `${value.toFixed(1)}%`;
-                  }
-                  return value;
-                }}
-              />
+              <Tooltip contentStyle={{ background: '#1e293b', border: '1px solid rgba(6, 182, 212, 0.3)', borderRadius: '8px' }} />
               <Scatter name="משתתפים" data={insights.optimismVsConservatism} fill="#06b6d4" />
             </ScatterChart>
           </ResponsiveContainer>
         </CardContent>
       </Card>
 
-      {/* קורלציות */}
       {insights.correlations.length > 0 && (
-        <Card style={{
-          background: 'rgba(30, 41, 59, 0.6)',
-          border: '1px solid rgba(6, 182, 212, 0.2)'
-        }}>
+        <Card style={{ background: 'rgba(30, 41, 59, 0.6)', border: '1px solid rgba(6, 182, 212, 0.2)' }}>
           <CardHeader>
             <CardTitle className="flex items-center gap-2" style={{ color: '#06b6d4' }}>
-              <Zap className="w-5 h-5" />
-              קורלציות מעניינות בין שאלות
+              <Zap className="w-5 h-5" />קורלציות מעניינות בין שאלות
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
               {insights.correlations.map((corr, idx) => (
-                <div key={idx} className="p-3 rounded-lg" style={{
-                  background: 'rgba(6, 182, 212, 0.1)',
-                  border: '1px solid rgba(6, 182, 212, 0.2)'
-                }}>
+                <div key={idx} className="p-3 rounded-lg" style={{ background: 'rgba(6, 182, 212, 0.1)', border: '1px solid rgba(6, 182, 212, 0.2)' }}>
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-sm text-slate-300">{corr.q1}</span>
                     <Badge style={{ background: '#06b6d4' }}>{corr.strength}%</Badge>
@@ -565,47 +400,29 @@ ${correlations.map(c => `- "${c.q1}" ↔ "${c.q2}" (קשר: ${c.strength}%)`).jo
         </Card>
       )}
 
-      {/* סטטיסטיקות מפורטות */}
       <div className="grid md:grid-cols-3 gap-4">
-        <Card style={{
-          background: 'linear-gradient(135deg, rgba(30, 100, 175, 0.2) 0%, rgba(30, 100, 175, 0.1) 100%)',
-          border: '1px solid rgba(30, 100, 175, 0.3)'
-        }}>
+        <Card style={{ background: 'linear-gradient(135deg, rgba(30, 100, 175, 0.2) 0%, rgba(30, 100, 175, 0.1) 100%)', border: '1px solid rgba(30, 100, 175, 0.3)' }}>
           <CardContent className="p-4">
             <Users className="w-8 h-8 mb-2" style={{ color: COLORS.english }} />
             <p className="text-sm text-slate-400">מחנה אנגלי</p>
             <p className="text-3xl font-bold text-white">{insights.leagueCamps.camps.english}</p>
-            <p className="text-xs text-slate-500">
-              {((insights.leagueCamps.camps.english / insights.leagueCamps.totalParticipants) * 100).toFixed(1)}% מהמשתתפים
-            </p>
+            <p className="text-xs text-slate-500">{((insights.leagueCamps.camps.english / insights.leagueCamps.totalParticipants) * 100).toFixed(1)}% מהמשתתפים</p>
           </CardContent>
         </Card>
-
-        <Card style={{
-          background: 'linear-gradient(135deg, rgba(220, 38, 38, 0.2) 0%, rgba(220, 38, 38, 0.1) 100%)',
-          border: '1px solid rgba(220, 38, 38, 0.3)'
-        }}>
+        <Card style={{ background: 'linear-gradient(135deg, rgba(220, 38, 38, 0.2) 0%, rgba(220, 38, 38, 0.1) 100%)', border: '1px solid rgba(220, 38, 38, 0.3)' }}>
           <CardContent className="p-4">
             <Users className="w-8 h-8 mb-2" style={{ color: COLORS.spanish }} />
             <p className="text-sm text-slate-400">מחנה ספרדי</p>
             <p className="text-3xl font-bold text-white">{insights.leagueCamps.camps.spanish}</p>
-            <p className="text-xs text-slate-500">
-              {((insights.leagueCamps.camps.spanish / insights.leagueCamps.totalParticipants) * 100).toFixed(1)}% מהמשתתפים
-            </p>
+            <p className="text-xs text-slate-500">{((insights.leagueCamps.camps.spanish / insights.leagueCamps.totalParticipants) * 100).toFixed(1)}% מהמשתתפים</p>
           </CardContent>
         </Card>
-
-        <Card style={{
-          background: 'linear-gradient(135deg, rgba(14, 165, 233, 0.2) 0%, rgba(14, 165, 233, 0.1) 100%)',
-          border: '1px solid rgba(14, 165, 233, 0.3)'
-        }}>
+        <Card style={{ background: 'linear-gradient(135deg, rgba(14, 165, 233, 0.2) 0%, rgba(14, 165, 233, 0.1) 100%)', border: '1px solid rgba(14, 165, 233, 0.3)' }}>
           <CardContent className="p-4">
             <Users className="w-8 h-8 mb-2" style={{ color: COLORS.israeli }} />
             <p className="text-sm text-slate-400">מחנה ישראלי</p>
             <p className="text-3xl font-bold text-white">{insights.leagueCamps.camps.israeli}</p>
-            <p className="text-xs text-slate-500">
-              {((insights.leagueCamps.camps.israeli / insights.leagueCamps.totalParticipants) * 100).toFixed(1)}% מהמשתתפים
-            </p>
+            <p className="text-xs text-slate-500">{((insights.leagueCamps.camps.israeli / insights.leagueCamps.totalParticipants) * 100).toFixed(1)}% מהמשתתפים</p>
           </CardContent>
         </Card>
       </div>
