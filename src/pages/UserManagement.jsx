@@ -10,7 +10,9 @@ import { Users, Trash2, Shield, Loader2, Mail, User as UserIcon, AlertTriangle, 
 import { supabase } from '@/api/supabaseClient';
 import * as db from '@/api/entities';
 import { useToast } from "@/components/ui/use-toast";
-import { useGame } from "@/components/contexts/GameContext"; // Fixed import path
+import { useGame } from "@/components/contexts/GameContext";
+
+const ADMIN_EMAILS = ["tropikan1@gmail.com"];
 
 export default function UserManagement() {
   const [users, setUsers] = useState([]);
@@ -23,9 +25,8 @@ export default function UserManagement() {
   const [deletingUser, setDeletingUser] = useState(false);
   const [credentialsCopied, setCredentialsCopied] = useState(false); 
   
-  // 🆕 נתוני משחקים
   const [allGames, setAllGames] = useState([]);
-  const [userGames, setUserGames] = useState({}); // { user_email: [games] }
+  const [userGames, setUserGames] = useState({});
   
   const [newUser, setNewUser] = useState({
     full_name: "",
@@ -41,6 +42,11 @@ export default function UserManagement() {
     loadData();
   }, [currentGame]);
 
+  const isAdmin = (user) => {
+    if (!user) return false;
+    return user.role === 'admin' || ADMIN_EMAILS.includes(user.email);
+  };
+
   const loadData = async () => {
     setLoading(true);
     try {
@@ -51,19 +57,18 @@ export default function UserManagement() {
       
       setCurrentUser(currentUserData);
       
-      if (currentUserData.role !== 'admin') {
+      if (!isAdmin(currentUserData)) {
         toast({
           title: "אין הרשאות",
           description: "רק מנהלים יכולים לגשת לדף זה",
           variant: "destructive"
         });
-        setLoading(false); // Make sure loading is set to false even on early exit
+        setLoading(false);
         return;
       }
 
       setUsers(allUsers.sort((a, b) => a.full_name?.localeCompare(b.full_name, 'he') || 0));
       
-      // 🆕 טען את כל המשחקים והמשתתפים
       const [games, participants] = await Promise.all([
         db.Game.list('-created_date', 100),
         db.GameParticipant.list(null, 1000)
@@ -71,7 +76,6 @@ export default function UserManagement() {
       
       setAllGames(games);
       
-      // מיפוי משחקים לפי משתמש
       const gamesMap = {};
       participants.forEach(p => {
         if (!gamesMap[p.user_email]) {
@@ -98,38 +102,22 @@ export default function UserManagement() {
   };
 
   const handleAddUser = async () => {
-    // בדיקות תקינות
     if (!newUser.full_name.trim()) {
-      toast({
-        title: "שגיאה",
-        description: "נא למלא שם מלא",
-        variant: "destructive"
-      });
+      toast({ title: "שגיאה", description: "נא למלא שם מלא", variant: "destructive" });
       return;
     }
-
     if (!newUser.email.trim() || !newUser.email.includes('@')) {
-      toast({
-        title: "שגיאה",
-        description: "נא למלא אימייל תקין",
-        variant: "destructive"
-      });
+      toast({ title: "שגיאה", description: "נא למלא אימייל תקין", variant: "destructive" });
       return;
     }
-
     if (!newUser.password.trim() || newUser.password.length < 6) {
-      toast({
-        title: "שגיאה",
-        description: "הסיסמה חייבת להכיל לפחות 6 תווים",
-        variant: "destructive"
-      });
+      toast({ title: "שגיאה", description: "הסיסמה חייבת להכיל לפחות 6 תווים", variant: "destructive" });
       return;
     }
 
-    // הצג חלון עם הפרטים במקום לשלוח מייל
     setShowAddUserDialog(false);
     setShowCredentialsDialog(true);
-    setCredentialsCopied(false); // Reset copy status when opening
+    setCredentialsCopied(false);
   };
 
   const copyCredentialsToClipboard = () => {
@@ -168,12 +156,7 @@ ${appUrl}
 
   const closeCredentialsDialog = () => {
     setShowCredentialsDialog(false);
-    setNewUser({
-      full_name: "",
-      email: "",
-      password: "",
-      role: "predictor"
-    });
+    setNewUser({ full_name: "", email: "", password: "", role: "predictor" });
   };
 
   const handleDeleteUser = async (user) => {
@@ -206,11 +189,7 @@ ${appUrl}
       
     } catch (error) {
       console.error("Error deleting user:", error);
-      toast({
-        title: "שגיאה",
-        description: "מחיקת המשתמש נכשלה",
-        variant: "destructive"
-      });
+      toast({ title: "שגיאה", description: "מחיקת המשתמש נכשלה", variant: "destructive" });
     }
     
     setDeletingUser(false);
@@ -220,11 +199,7 @@ ${appUrl}
 
   const handleToggleAdmin = async (user) => {
     if (user.id === currentUser.id) {
-      toast({
-        title: "לא ניתן",
-        description: "אינך יכול לשנות את ההרשאות של עצמך",
-        variant: "destructive"
-      });
+      toast({ title: "לא ניתן", description: "אינך יכול לשנות את ההרשאות של עצמך", variant: "destructive" });
       return;
     }
 
@@ -241,15 +216,9 @@ ${appUrl}
       await loadData();
     } catch (error) {
       console.error("Error updating user role:", error);
-      toast({
-        title: "שגיאה",
-        description: "עדכון ההרשאות נכשל",
-        variant: "destructive"
-      });
+      toast({ title: "שגיאה", description: "עדכון ההרשאות נכשל", variant: "destructive" });
     }
   };
-
-
 
   if (loading) {
     return (
@@ -262,7 +231,7 @@ ${appUrl}
     );
   }
 
-  if (currentUser?.role !== 'admin') {
+  if (!isAdmin(currentUser)) {
     return (
       <div className="p-6 max-w-4xl mx-auto">
         <Alert variant="destructive">
@@ -408,7 +377,6 @@ ${appUrl}
                           ) : (
                             <div className="flex flex-wrap gap-1">
                               {games.map(g => {
-                                // חישוב סטטוס דינמי לפי תאריכים
                                 const now = new Date();
                                 const isActive = g.status === 'active' || 
                                   (g.start_date && g.end_date && 
@@ -515,14 +483,9 @@ ${appUrl}
                   value={newUser.full_name}
                   onChange={(e) => setNewUser({...newUser, full_name: e.target.value})}
                   placeholder="הזן שם מלא..."
-                  style={{
-                    background: '#0f172a',
-                    borderColor: 'rgba(6, 182, 212, 0.3)',
-                    color: '#f8fafc'
-                  }}
+                  style={{ background: '#0f172a', borderColor: 'rgba(6, 182, 212, 0.3)', color: '#f8fafc' }}
                 />
               </div>
-
               <div>
                 <label className="text-sm font-medium mb-2 block" style={{ color: '#94a3b8' }}>אימייל</label>
                 <Input
@@ -530,14 +493,9 @@ ${appUrl}
                   value={newUser.email}
                   onChange={(e) => setNewUser({...newUser, email: e.target.value})}
                   placeholder="example@email.com"
-                  style={{
-                    background: '#0f172a',
-                    borderColor: 'rgba(6, 182, 212, 0.3)',
-                    color: '#f8fafc'
-                  }}
+                  style={{ background: '#0f172a', borderColor: 'rgba(6, 182, 212, 0.3)', color: '#f8fafc' }}
                 />
               </div>
-
               <div>
                 <label className="text-sm font-medium mb-2 block" style={{ color: '#94a3b8' }}>סיסמה</label>
                 <Input
@@ -545,35 +503,22 @@ ${appUrl}
                   value={newUser.password}
                   onChange={(e) => setNewUser({...newUser, password: e.target.value})}
                   placeholder="לפחות 6 תווים..."
-                  style={{
-                    background: '#0f172a',
-                    borderColor: 'rgba(6, 182, 212, 0.3)',
-                    color: '#f8fafc'
-                  }}
+                  style={{ background: '#0f172a', borderColor: 'rgba(6, 182, 212, 0.3)', color: '#f8fafc' }}
                 />
               </div>
-
               <div>
                 <label className="text-sm font-medium mb-2 block" style={{ color: '#94a3b8' }}>תפקיד</label>
                 <Select value={newUser.role} onValueChange={(value) => setNewUser({...newUser, role: value})}>
-                  <SelectTrigger style={{
-                    background: '#0f172a',
-                    borderColor: 'rgba(6, 182, 212, 0.3)',
-                    color: '#f8fafc'
-                  }}>
+                  <SelectTrigger style={{ background: '#0f172a', borderColor: 'rgba(6, 182, 212, 0.3)', color: '#f8fafc' }}>
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent style={{
-                    background: '#1e293b',
-                    border: '1px solid rgba(6, 182, 212, 0.3)'
-                  }}>
+                  <SelectContent style={{ background: '#1e293b', border: '1px solid rgba(6, 182, 212, 0.3)' }}>
                     <SelectItem value="predictor" style={{ color: '#f8fafc' }}>מנחש</SelectItem>
                     <SelectItem value="viewer" style={{ color: '#f8fafc' }}>צופה</SelectItem>
                     <SelectItem value="admin" style={{ color: '#f8fafc' }}>מנהל</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
-
               <div className="flex gap-3 justify-end">
                 <Button
                   variant="outline"
@@ -581,21 +526,13 @@ ${appUrl}
                     setShowAddUserDialog(false);
                     setNewUser({ full_name: "", email: "", password: "", role: "predictor" });
                   }}
-                  style={{ 
-                    borderColor: 'rgba(148, 163, 184, 0.3)', 
-                    color: '#94a3b8',
-                    background: 'transparent'
-                  }}
+                  style={{ borderColor: 'rgba(148, 163, 184, 0.3)', color: '#94a3b8', background: 'transparent' }}
                 >
                   ביטול
                 </Button>
                 <Button
                   onClick={handleAddUser}
-                  style={{
-                    background: 'linear-gradient(135deg, #06b6d4 0%, #0ea5e9 100%)',
-                    color: 'white',
-                    boxShadow: '0 0 20px rgba(6, 182, 212, 0.4)'
-                  }}
+                  style={{ background: 'linear-gradient(135deg, #06b6d4 0%, #0ea5e9 100%)', color: 'white', boxShadow: '0 0 20px rgba(6, 182, 212, 0.4)' }}
                 >
                   <CheckCircle className="w-4 h-4 ml-2" />
                   הצג פרטים
@@ -628,33 +565,15 @@ ${appUrl}
                 border: '1px solid rgba(6, 182, 212, 0.3)'
               }}>
                 <div className="space-y-3 font-mono text-sm" style={{ color: '#f8fafc' }}>
-                  <div>
-                    <span style={{ color: '#94a3b8' }}>👤 שם:</span>
-                    <span className="mr-2 font-bold">{newUser.full_name}</span>
-                  </div>
-                  <div>
-                    <span style={{ color: '#94a3b8' }}>📧 אימייל:</span>
-                    <span className="mr-2 font-bold">{newUser.email}</span>
-                  </div>
-                  <div>
-                    <span style={{ color: '#94a3b8' }}>🔒 סיסמה:</span>
-                    <span className="mr-2 font-bold">{newUser.password}</span>
-                  </div>
-                  <div>
-                    <span style={{ color: '#94a3b8' }}>👔 תפקיד:</span>
-                    <span className="mr-2 font-bold">{roleText}</span>
-                  </div>
-                  <div>
-                    <span style={{ color: '#94a3b8' }}>🌐 קישור:</span>
-                    <span className="mr-2 text-xs break-all" style={{ color: '#06b6d4' }}>{appUrl}</span>
-                  </div>
+                  <div><span style={{ color: '#94a3b8' }}>👤 שם:</span><span className="mr-2 font-bold">{newUser.full_name}</span></div>
+                  <div><span style={{ color: '#94a3b8' }}>📧 אימייל:</span><span className="mr-2 font-bold">{newUser.email}</span></div>
+                  <div><span style={{ color: '#94a3b8' }}>🔒 סיסמה:</span><span className="mr-2 font-bold">{newUser.password}</span></div>
+                  <div><span style={{ color: '#94a3b8' }}>👔 תפקיד:</span><span className="mr-2 font-bold">{roleText}</span></div>
+                  <div><span style={{ color: '#94a3b8' }}>🌐 קישור:</span><span className="mr-2 text-xs break-all" style={{ color: '#06b6d4' }}>{appUrl}</span></div>
                 </div>
               </div>
 
-              <Alert style={{
-                background: 'rgba(251, 191, 36, 0.1)',
-                border: '1px solid rgba(251, 191, 36, 0.3)'
-              }}>
+              <Alert style={{ background: 'rgba(251, 191, 36, 0.1)', border: '1px solid rgba(251, 191, 36, 0.3)' }}>
                 <AlertDescription style={{ color: '#fdba74' }}>
                   <strong>חשוב:</strong> לחץ על "העתק פרטים" ושלח למשתמש. המשתמש צריך להירשם בעצמו דרך מסך ההתחברות עם הפרטים האלה.
                 </AlertDescription>
@@ -664,11 +583,7 @@ ${appUrl}
                 <Button
                   variant="outline"
                   onClick={closeCredentialsDialog}
-                  style={{ 
-                    borderColor: 'rgba(148, 163, 184, 0.3)', 
-                    color: '#94a3b8',
-                    background: 'transparent'
-                  }}
+                  style={{ borderColor: 'rgba(148, 163, 184, 0.3)', color: '#94a3b8', background: 'transparent' }}
                 >
                   סגור
                 </Button>
@@ -683,15 +598,9 @@ ${appUrl}
                   }}
                 >
                   {credentialsCopied ? (
-                    <>
-                      <CheckCircle className="w-4 h-4 ml-2" />
-                      הועתק! ✓
-                    </>
+                    <><CheckCircle className="w-4 h-4 ml-2" />הועתק! ✓</>
                   ) : (
-                    <>
-                      <Copy className="w-4 h-4 ml-2" />
-                      העתק פרטים
-                    </>
+                    <><Copy className="w-4 h-4 ml-2" />העתק פרטים</>
                   )}
                 </Button>
               </div>
@@ -718,51 +627,31 @@ ${appUrl}
             
             {userToDelete && (
               <div className="space-y-4">
-                <Alert style={{
-                  background: 'rgba(239, 68, 68, 0.1)',
-                  border: '1px solid rgba(239, 68, 68, 0.3)'
-                }}>
+                <Alert style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)' }}>
                   <AlertDescription style={{ color: '#fca5a5' }}>
                     <p className="font-bold mb-2">המשתמש שיימחק:</p>
                     <p>שם: {userToDelete.full_name}</p>
                     <p>אימייל: {userToDelete.email}</p>
                   </AlertDescription>
                 </Alert>
-
                 <div className="flex gap-3 justify-end">
                   <Button
                     variant="outline"
-                    onClick={() => {
-                      setShowDeleteDialog(false);
-                      setUserToDelete(null);
-                    }}
+                    onClick={() => { setShowDeleteDialog(false); setUserToDelete(null); }}
                     disabled={deletingUser}
-                    style={{ 
-                      borderColor: 'rgba(148, 163, 184, 0.3)', 
-                      color: '#94a3b8',
-                      background: 'transparent'
-                    }}
+                    style={{ borderColor: 'rgba(148, 163, 184, 0.3)', color: '#94a3b8', background: 'transparent' }}
                   >
                     ביטול
                   </Button>
                   <Button
                     onClick={confirmDelete}
                     disabled={deletingUser}
-                    style={{
-                      background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
-                      color: 'white'
-                    }}
+                    style={{ background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)', color: 'white' }}
                   >
                     {deletingUser ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin ml-2" />
-                        מוחק...
-                      </>
+                      <><Loader2 className="w-4 h-4 animate-spin ml-2" />מוחק...</>
                     ) : (
-                      <>
-                        <Trash2 className="w-4 h-4 ml-2" />
-                        אשר מחיקה
-                      </>
+                      <><Trash2 className="w-4 h-4 ml-2" />אשר מחיקה</>
                     )}
                   </Button>
                 </div>
