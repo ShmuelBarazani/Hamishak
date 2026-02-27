@@ -32,6 +32,8 @@ import { GameProvider, useGame } from '@/components/contexts/GameContext';
 import UploadStatusIndicator from '@/components/layout/UploadStatusIndicator';
 import { useToast } from "@/components/ui/use-toast";
 
+const ADMIN_EMAILS = ["tropikan1@gmail.com"];
+
 // קומפוננטת הניווט הפנימית שמשתמשת ב-GameContext
 function LayoutContent({ children, currentPageName }) {
   const location = useLocation();
@@ -79,7 +81,7 @@ function LayoutContent({ children, currentPageName }) {
       icon: FileText,
       roles: ["guest"],
       disabled: !currentGame,
-      requireAuth: true // סימון שזה דורש התחברות
+      requireAuth: true
     }
   ];
 
@@ -90,8 +92,6 @@ function LayoutContent({ children, currentPageName }) {
       icon: Database,
       roles: ["admin"],
     },
-    // The "יצירת / עריכת משחק" item is now a dedicated button in the header,
-    // so it's removed from the main navigation items array to prevent duplication.
     {
       title: "בניית שאלון",
       url: createPageUrl("FormBuilder") + (currentGame ? `?gameId=${currentGame.id}` : ''),
@@ -167,7 +167,6 @@ function LayoutContent({ children, currentPageName }) {
     try {
       await supabase.auth.signOut();
       setCurrentUser(null);
-      // Redirect to a default page after logout, possibly the leaderboard without a specific game
       window.location.href = createPageUrl("LeaderboardNew"); 
     } catch (error) {
       console.error("Logout error:", error);
@@ -178,9 +177,6 @@ function LayoutContent({ children, currentPageName }) {
     if (adminPassword === "champ11") {
       try {
         if (!currentUser) {
-          // If no current user, prompt for login first then update role
-          // This path should ideally not be taken if the "connect as admin" button
-          // is only shown to logged-in non-admin users.
           window.location.href = '/login';
           return;
         }
@@ -217,31 +213,18 @@ function LayoutContent({ children, currentPageName }) {
     }
   };
 
-  // בחירת פריטי ניווט לפי סטטוס משתמש
-  let userRole = currentUser?.role || "guest";
-  
-  // 🔍 לוג לבדיקה
-  console.log('🔍 Layout Navigation Check:', {
-    currentUser: currentUser?.email,
-    currentUserRole: currentUser?.role,
-    currentParticipant: currentParticipant,
-    participantRole: currentParticipant?.role_in_game
-  });
-  
-  // אם זה לא מנהל כללי ויש participant - השתמש בתפקיד מהמשחק
-  if (currentUser && currentUser.role !== "admin" && currentParticipant) {
+  // בחירת תפקיד לפי אימייל או role
+  const isAdmin = currentUser?.role === "admin" || ADMIN_EMAILS.includes(currentUser?.email);
+  let userRole = isAdmin ? "admin" : (currentUser?.role || "guest");
+
+  // אם זה לא מנהל ויש participant - השתמש בתפקיד מהמשחק
+  if (currentUser && !isAdmin && currentParticipant) {
     userRole = currentParticipant.role_in_game;
-    console.log('✅ מעדכן userRole מ-participant:', userRole);
   }
   
-  console.log('📋 Final userRole:', userRole);
-  
-  const isAdmin = currentUser?.role === "admin";
   const navigationItems = currentUser 
     ? allNavigationItems.filter(item => item.roles.includes(userRole))
     : guestNavigationItems;
-    
-  console.log('📋 Navigation items count:', navigationItems.length);
 
   if (loading || gamesLoading) {
     return <div className="flex items-center justify-center h-screen">טוען...</div>;
@@ -272,7 +255,6 @@ function LayoutContent({ children, currentPageName }) {
                 />
               </div>
               <div className="flex flex-col items-start">
-                {/* רק שורה אחת - dropdown לבחירת משחק */}
                 <div className="flex items-center gap-2">
                   <Select 
                     value={currentGame?.id || ''} 
@@ -332,7 +314,6 @@ function LayoutContent({ children, currentPageName }) {
                   )}
                 </div>
                 
-                {/* שורה שנייה - subtitle בלבד */}
                 {currentGame?.game_subtitle && (
                   <span className="text-xs sm:text-sm" style={{ color: '#06b6d4' }}>
                     {currentGame.game_subtitle}
@@ -389,8 +370,8 @@ function LayoutContent({ children, currentPageName }) {
                   <>
                     <div className="flex items-center gap-1.5" style={{ color: '#94a3b8' }}>
                       <UserIcon className="w-3 h-3" />
-                      <span className="text-xs">{currentUser.full_name}</span>
-                      {currentUser.role === 'admin' && (
+                      <span className="text-xs">{currentUser.email}</span>
+                      {isAdmin && (
                         <span className="text-[10px] px-1.5 py-0.5 rounded-full" style={{ 
                           background: 'linear-gradient(135deg, rgba(6, 182, 212, 0.2) 0%, rgba(14, 165, 233, 0.2) 100%)',
                           color: '#06b6d4',
@@ -487,8 +468,8 @@ function LayoutContent({ children, currentPageName }) {
             <div className="mt-1.5 flex justify-center">
               {currentUser ? (
                 <div className="flex items-center gap-1.5 text-[10px]" style={{ color: '#94a3b8' }}>
-                  <span>{currentUser.full_name}</span>
-                  {currentUser.role === 'admin' && (
+                  <span>{currentUser.email}</span>
+                  {isAdmin && (
                     <span className="text-[9px] px-1 py-0.5 rounded-full" style={{ 
                       background: 'rgba(6, 182, 212, 0.2)',
                       color: '#06b6d4',
