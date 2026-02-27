@@ -23,4 +23,4 @@ npm run dev
 1. דחוף ל-GitHub
 2. חבר ב-Vercel
 3. הוסף Environment Variables
-4. לחץ Deploy
+4. לחץ Deploy 
