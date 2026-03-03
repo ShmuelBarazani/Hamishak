@@ -168,7 +168,7 @@ export default function UserManagement() {
   const appUrl = window.location.origin;
   const roleText = newUser.role === 'admin' ? 'מנהל' : newUser.role === 'predictor' ? 'מנחש' : 'צופה';
   const platformAdmins = users.filter(u => ADMIN_EMAILS.includes(u.user_email));
-  const gameParticipants = users.filter(u => !ADMIN_EMAILS.includes(u.user_email));
+  const gameParticipants = users; // כולם מופיעים ברשימה, כולל מנהלי פלטפורמה
 
   return (
     <div className="min-h-screen p-6" dir="rtl" style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%)' }}>
