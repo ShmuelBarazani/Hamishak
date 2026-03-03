@@ -144,7 +144,15 @@ export default function CreateGame() {
       return;
     }
     try {
-      const gameData = { ...gameForm, status: editingGame ? editingGame.status : "draft" };
+      // שולחים רק שדות שקיימים ב-DB, תאריכים רק אם מולאו
+      const { start_date, end_date, game_type, ...baseForm } = gameForm;
+      const gameData = {
+        ...baseForm,
+        status: editingGame ? editingGame.status : "draft",
+        ...(start_date && { start_date }),
+        ...(end_date   && { end_date }),
+        ...(game_type  && { game_type }),
+      };
       if (editingGame) {
         await db.Game.update(editingGame.id, gameData);
         toast({ title: "עודכן!", description: "המשחק עודכן בהצלחה", className: "bg-green-100 text-green-800", duration: TOAST_DURATION });
