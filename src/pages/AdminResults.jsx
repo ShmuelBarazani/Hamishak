@@ -259,11 +259,10 @@ export default function AdminResults() {
     setResults(prev => ({ ...prev, [questionId]: value === '' ? '__CLEAR__' : value }));
   };
 
-  // 🚀 שמירת תוצאות בלבד (ללא חישוב ניקוד!)
+  // 🚀 שמירת תוצאות — parallel בקבוצות של 10
   const handleSaveResults = async () => {
     setSaving(true);
     try {
-      // מצא שאלות שהשתנו
       const changedQuestions = allQuestions.filter(q => {
         const newResult = results[q.id];
         const newValue = (newResult === '__CLEAR__' || !newResult) ? null : newResult;
@@ -277,20 +276,17 @@ export default function AdminResults() {
         return;
       }
 
-      console.log(`💾 שומר ${changedQuestions.length} שאלות...`);
+      console.log(`💾 שומר ${changedQuestions.length} שאלות parallel...`);
 
-      // עדכון שאלות אחת אחת (עם השהייה למניעת rate limit)
-      for (let i = 0; i < changedQuestions.length; i++) {
-        const q = changedQuestions[i];
-        const newResult = results[q.id];
-        const valueToSave = (newResult === '__CLEAR__' || !newResult) ? null : newResult;
-        
-        await db.Question.update(q.id, { actual_result: valueToSave });
-        
-        // השהייה כל 3 שאלות
-        if ((i + 1) % 3 === 0) {
-          await new Promise(r => setTimeout(r, 500));
-        }
+      // שמירה parallel בקבוצות של 10 — ללא השהיות!
+      const BATCH = 10;
+      for (let i = 0; i < changedQuestions.length; i += BATCH) {
+        const chunk = changedQuestions.slice(i, i + BATCH);
+        await Promise.all(chunk.map(q => {
+          const newResult = results[q.id];
+          const valueToSave = (newResult === '__CLEAR__' || !newResult) ? null : newResult;
+          return db.Question.update(q.id, { actual_result: valueToSave });
+        }));
       }
 
       toast({
@@ -299,7 +295,7 @@ export default function AdminResults() {
         className: "bg-cyan-900/30 border-cyan-500 text-cyan-200",
         duration: 2000
       });
-      
+
       loadData();
 
     } catch (error) {
