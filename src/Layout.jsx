@@ -34,7 +34,15 @@ import { useToast } from "@/components/ui/use-toast";
 
 const ADMIN_EMAILS = ["tropikan1@gmail.com"];
 
-// קומפוננטת הניווט הפנימית שמשתמשת ב-GameContext
+const isAdmin = (user) => {
+  if (!user) return false;
+  return (
+    user.role === 'admin' ||
+    user.app_metadata?.role === 'admin' ||
+    ADMIN_EMAILS.includes(user.email)
+  );
+};
+
 function LayoutContent({ children, currentPageName }) {
   const location = useLocation();
   const [currentUser, setCurrentUser] = useState(null);
@@ -45,7 +53,6 @@ function LayoutContent({ children, currentPageName }) {
   
   const { currentGame, games, selectGame, loading: gamesLoading, currentParticipant } = useGame();
 
-  // פריטי ניווט למשתמשים לא מחוברים (אורחים)
   const guestNavigationItems = [
     {
       title: "צפייה בניחושים",
@@ -180,11 +187,9 @@ function LayoutContent({ children, currentPageName }) {
           window.location.href = '/login';
           return;
         }
-
         await supabase.auth.updateUser({ role: "admin" });
         const updatedUser = await supabase.auth.getUser().then(r => r.data.user);
         setCurrentUser(updatedUser);
-
         setShowAdminDialog(false);
         setAdminPassword("");
         toast({
@@ -194,7 +199,6 @@ function LayoutContent({ children, currentPageName }) {
           duration: 2000
         });
       } catch (error) {
-        console.error("Admin login error:", error);
         toast({
           title: "שגיאה",
           description: "לא ניתן לעדכן הרשאות",
@@ -213,15 +217,13 @@ function LayoutContent({ children, currentPageName }) {
     }
   };
 
-  // בחירת תפקיד לפי אימייל או role
-  const isAdmin = currentUser?.role === "admin" || ADMIN_EMAILS.includes(currentUser?.email);
-  let userRole = isAdmin ? "admin" : (currentUser?.role || "guest");
+  const userIsAdmin = isAdmin(currentUser);
+  let userRole = userIsAdmin ? "admin" : (currentUser?.role || "guest");
 
-  // אם זה לא מנהל ויש participant - השתמש בתפקיד מהמשחק
-  if (currentUser && !isAdmin && currentParticipant) {
+  if (currentUser && !userIsAdmin && currentParticipant) {
     userRole = currentParticipant.role_in_game;
   }
-  
+
   const navigationItems = currentUser 
     ? allNavigationItems.filter(item => item.roles.includes(userRole))
     : guestNavigationItems;
@@ -245,7 +247,6 @@ function LayoutContent({ children, currentPageName }) {
       }}>
         <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center py-2 sm:py-3">
-            {/* שם המערכת + בחירת משחק + כפתור עריכה */}
             <div className="flex items-center gap-2 sm:gap-3 mr-0">
               <div className="w-12 h-12 sm:w-16 sm:h-16 flex items-center justify-center flex-shrink-0">
                 <img 
@@ -299,8 +300,7 @@ function LayoutContent({ children, currentPageName }) {
                     </SelectContent>
                   </Select>
                   
-                  {/* כפתור עריכת משחק */}
-                  {isAdmin && currentGame && (
+                  {userIsAdmin && currentGame && (
                     <Link to={createPageUrl("CreateGame")}>
                       <Button
                         size="sm"
@@ -371,7 +371,7 @@ function LayoutContent({ children, currentPageName }) {
                     <div className="flex items-center gap-1.5" style={{ color: '#94a3b8' }}>
                       <UserIcon className="w-3 h-3" />
                       <span className="text-xs">{currentUser.email}</span>
-                      {isAdmin && (
+                      {userIsAdmin && (
                         <span className="text-[10px] px-1.5 py-0.5 rounded-full" style={{ 
                           background: 'linear-gradient(135deg, rgba(6, 182, 212, 0.2) 0%, rgba(14, 165, 233, 0.2) 100%)',
                           color: '#06b6d4',
@@ -469,7 +469,7 @@ function LayoutContent({ children, currentPageName }) {
               {currentUser ? (
                 <div className="flex items-center gap-1.5 text-[10px]" style={{ color: '#94a3b8' }}>
                   <span>{currentUser.email}</span>
-                  {isAdmin && (
+                  {userIsAdmin && (
                     <span className="text-[9px] px-1 py-0.5 rounded-full" style={{ 
                       background: 'rgba(6, 182, 212, 0.2)',
                       color: '#06b6d4',
@@ -552,15 +552,8 @@ function LayoutContent({ children, currentPageName }) {
             <div className="flex gap-3 justify-end">
               <Button
                 variant="outline"
-                onClick={() => {
-                  setShowAdminDialog(false);
-                  setAdminPassword("");
-                }}
-                style={{ 
-                  borderColor: 'rgba(6, 182, 212, 0.3)', 
-                  color: '#94a3b8',
-                  background: 'transparent'
-                }}
+                onClick={() => { setShowAdminDialog(false); setAdminPassword(""); }}
+                style={{ borderColor: 'rgba(6, 182, 212, 0.3)', color: '#94a3b8', background: 'transparent' }}
                 className="hover:bg-cyan-500/10"
               >
                 ביטול
@@ -585,7 +578,6 @@ function LayoutContent({ children, currentPageName }) {
   );
 }
 
-// הקומפוננטה הראשית עם כל ה-Providers
 export default function Layout({ children, currentPageName }) {
   return (
     <UploadStatusProvider>
@@ -603,98 +595,28 @@ export default function Layout({ children, currentPageName }) {
             --border-color: rgba(6, 182, 212, 0.2);
             --glow-cyan: rgba(6, 182, 212, 0.4);
           }
-          
-          html, body {
-            margin: 0;
-            padding: 0;
-            width: 100%;
-            min-height: 100vh;
-            background: #0f172a;
-            color: var(--text-primary);
-          }
-          
-          #root {
-            width: 100%;
-            min-height: 100vh;
-          }
-          
+          html, body { margin: 0; padding: 0; width: 100%; min-height: 100vh; background: #0f172a; color: var(--text-primary); }
+          #root { width: 100%; min-height: 100vh; }
           @supports (padding: env(safe-area-inset-top)) {
-            .app-header {
-              padding-top: env(safe-area-inset-top);
-            }
-            .app-main {
-              padding-bottom: env(safe-area-inset-bottom);
-            }
+            .app-header { padding-top: env(safe-area-inset-top); }
+            .app-main { padding-bottom: env(safe-area-inset-bottom); }
           }
-          
-          .neon-border {
-            border: 1px solid rgba(6, 182, 212, 0.3);
-            box-shadow: 0 0 10px rgba(6, 182, 212, 0.2);
-          }
-          
-          .neon-glow {
-            box-shadow: 0 0 20px rgba(6, 182, 212, 0.3);
-          }
-          
-          .crypto-card {
-            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
-            border: 1px solid rgba(6, 182, 212, 0.2);
-            border-radius: 8px;
-          }
-          
-          ::-webkit-scrollbar {
-            width: 10px;
-            height: 10px;
-          }
-          
-          ::-webkit-scrollbar-track {
-            background: #1e293b;
-          }
-          
-          ::-webkit-scrollbar-thumb {
-            background: linear-gradient(180deg, #06b6d4 0%, #0ea5e9 100%);
-            border-radius: 5px;
-          }
-          
-          ::-webkit-scrollbar-thumb:hover {
-            background: linear-gradient(180deg, #0ea5e9 0%, #06b6d4 100%);
-          }
-
+          .neon-border { border: 1px solid rgba(6, 182, 212, 0.3); box-shadow: 0 0 10px rgba(6, 182, 212, 0.2); }
+          .neon-glow { box-shadow: 0 0 20px rgba(6, 182, 212, 0.3); }
+          .crypto-card { background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); border: 1px solid rgba(6, 182, 212, 0.2); border-radius: 8px; }
+          ::-webkit-scrollbar { width: 10px; height: 10px; }
+          ::-webkit-scrollbar-track { background: #1e293b; }
+          ::-webkit-scrollbar-thumb { background: linear-gradient(180deg, #06b6d4 0%, #0ea5e9 100%); border-radius: 5px; }
+          ::-webkit-scrollbar-thumb:hover { background: linear-gradient(180deg, #0ea5e9 0%, #06b6d4 100%); }
           @media (max-width: 768px) {
-            body {
-              overflow-y: auto;
-              overflow-x: hidden;
-            }
-            
-            .app-container {
-              min-height: 100vh;
-              display: flex;
-              flex-direction: column;
-            }
-            
-            .app-header {
-              position: sticky;
-              top: 0;
-              z-index: 50;
-            }
-            
-            .app-main {
-              flex: 1;
-              overflow-y: auto;
-              -webkit-overflow-scrolling: touch;
-            }
+            body { overflow-y: auto; overflow-x: hidden; }
+            .app-container { min-height: 100vh; display: flex; flex-direction: column; }
+            .app-header { position: sticky; top: 0; z-index: 50; }
+            .app-main { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
           }
-          
           @media (max-width: 768px) and (orientation: landscape) {
-            .app-header {
-              position: sticky;
-              top: 0;
-            }
-            
-            .app-header .py-2 {
-              padding-top: 0.25rem;
-              padding-bottom: 0.25rem;
-            }
+            .app-header { position: sticky; top: 0; }
+            .app-header .py-2 { padding-top: 0.25rem; padding-bottom: 0.25rem; }
           }
         `}</style>
         <LayoutContent currentPageName={currentPageName}>
