@@ -2,6 +2,17 @@ import React, { createContext, useState, useContext, useEffect } from 'react';
 import { supabase } from '@/api/supabaseClient';
 import { Game, GameParticipant } from '@/api/entities';
 
+const ADMIN_EMAILS = ["tropikan1@gmail.com"];
+
+const isAdminUser = (user) => {
+  if (!user) return false;
+  return (
+    user.app_metadata?.role === 'admin' ||
+    user.user_metadata?.role === 'admin' ||
+    ADMIN_EMAILS.includes(user.email)
+  );
+};
+
 const GameContext = createContext();
 
 export const useGame = () => {
@@ -18,7 +29,6 @@ export const GameProvider = ({ children }) => {
   const [currentParticipant, setCurrentParticipant] = useState(null);
 
   useEffect(() => {
-    // קבל משתמש נוכחי מ-Supabase
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session?.user) {
         const u = session.user;
@@ -26,7 +36,8 @@ export const GameProvider = ({ children }) => {
           id: u.id,
           email: u.email,
           full_name: u.user_metadata?.full_name || u.email?.split('@')[0],
-          role: u.user_metadata?.role || 'predictor',
+          role: isAdminUser(u) ? 'admin' : (u.user_metadata?.role || 'predictor'),
+          app_metadata: u.app_metadata,
         });
       }
       loadGames(session?.user || null);
@@ -38,7 +49,8 @@ export const GameProvider = ({ children }) => {
         id: u.id,
         email: u.email,
         full_name: u.user_metadata?.full_name || u.email?.split('@')[0],
-        role: u.user_metadata?.role || 'predictor',
+        role: isAdminUser(u) ? 'admin' : (u.user_metadata?.role || 'predictor'),
+        app_metadata: u.app_metadata,
       } : null;
       setCurrentUser(formatted);
       loadGames(u);
@@ -51,21 +63,23 @@ export const GameProvider = ({ children }) => {
     setLoading(true);
     try {
       const allGames = await Game.filter({}, '-created_at', 100);
-
       let visibleGames;
-      if (user?.user_metadata?.role === 'admin') {
+
+      if (isAdminUser(user)) {
+        // מנהל פלטפורמה רואה את כל המשחקים
         visibleGames = allGames;
       } else if (user) {
+        // משתמש רגיל רואה רק משחקים שהוא רשום אליהם
         const participations = await GameParticipant.filter({ user_email: user.email, is_active: true }, null, 100);
         const gameIds = participations.map(p => p.game_id);
         visibleGames = allGames.filter(g => gameIds.includes(g.id) && ['active', 'locked'].includes(g.status));
       } else {
+        // אורח רואה משחקים פעילים
         visibleGames = allGames.filter(g => ['active', 'locked'].includes(g.status));
       }
 
       setGames(visibleGames);
 
-      // בחר משחק נוכחי
       const savedGameId = localStorage.getItem('currentGameId');
       const selected = visibleGames.find(g => g.id === savedGameId) || visibleGames[0] || null;
       setCurrentGame(selected);
