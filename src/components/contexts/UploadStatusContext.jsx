@@ -5,20 +5,6 @@ import { useToast } from "@/components/ui/use-toast";
 const UploadStatusContext = createContext();
 export const useUploadStatus = () => useContext(UploadStatusContext);
 
-const parseCSV = (csvContent) => {
-  const lines = csvContent.split(/\r\n|\r|\n/).filter(line => line.trim());
-  if (lines.length < 2) return [];
-  const firstLine = lines[0];
-  const separator = firstLine.includes('\t') ? '\t' : ',';
-  const header = firstLine.split(separator).map(h => h.trim().replace(/"/g, ''));
-  return lines.slice(1).map(line => {
-    const values = line.split(separator);
-    const obj = {};
-    header.forEach((col, index) => { obj[col] = values[index]?.trim().replace(/"/g, '') || ''; });
-    return obj;
-  });
-};
-
 export const UploadStatusProvider = ({ children }) => {
   const [status, setStatus] = useState({
     inProgress: false, message: '', progress: 0, error: null, warnings: [], results: {},
@@ -42,11 +28,10 @@ export const UploadStatusProvider = ({ children }) => {
     try {
       let finalResults = {};
 
-      // Handle pasted data
       if (files.pasteData) {
         setStatus(prev => ({ ...prev, message: 'מפענח נתונים...', progress: 10 }));
         const lines = files.pasteData.split(/\r\n|\r|\n/).filter(line => line.trim());
-        if (lines.length < 2) throw new Error("לא מספיק נתונים. נדרשת לפחות שורת כותרת ושורת נתונים אחת.");
+        if (lines.length < 2) throw new Error("לא מספיק נתונים.");
 
         const headerLine = lines[0].split('\t');
         const participantNames = headerLine.slice(2).map(name => name.trim()).filter(name => name);
@@ -66,7 +51,6 @@ export const UploadStatusProvider = ({ children }) => {
         }
 
         const normalizeParticipantName = (name) => name?.trim().replace(/\s+/g, ' ').toLowerCase() || '';
-
         const existingQuestionsMap = new Map(existingQuestions.map(q => [`${q.table_id}|${q.question_id}`, q]));
         const existingPredMap = new Map(existingPredictions.map(p => [`${p.question_id}|${normalizeParticipantName(p.participant_name)}`, true]));
 
@@ -75,7 +59,6 @@ export const UploadStatusProvider = ({ children }) => {
         dataRows.forEach((line) => {
           const cells = line.split('\t').map(cell => cell?.trim() || '');
           if (cells.length < 3 || !cells[0] || !cells[1]) return;
-
           const tableId = cells[0];
           const questionId = cells[1];
           const existingQ = existingQuestionsMap.get(`${tableId}|${questionId}`);
@@ -132,64 +115,6 @@ export const UploadStatusProvider = ({ children }) => {
         }
 
         finalResults.paste = `נשמרו ${finalPredictions.length} ניחושים חדשים${skippedCount > 0 ? ` (${skippedCount} כבר היו קיימים)` : ''}.`;
-      }
-
-      // Handle validation lists
-      if (files.validation) {
-        setStatus(prev => ({ ...prev, message: 'מעבד רשימות אימות...', progress: 70 }));
-        const fileContent = await files.validation.text();
-        const parsedData = parseCSV(fileContent);
-
-        if (parsedData.length > 0) {
-          const groupedLists = {};
-          parsedData.forEach(row => {
-            const listName = row.list_name || row['שם רשימה'];
-            const option = row.option || row['אפשרות'];
-            if (listName && option) {
-              if (!groupedLists[listName]) groupedLists[listName] = [];
-              groupedLists[listName].push(option);
-            }
-          });
-
-          const listsToCreate = Object.entries(groupedLists).map(([list_name, options]) => ({ list_name, options }));
-          if (listsToCreate.length > 0) {
-            await db.ValidationList.bulkCreate(listsToCreate);
-            finalResults.validation = `נשמרו ${listsToCreate.length} רשימות אימות.`;
-          } else {
-            addWarning('לא נמצאו רשימות אימות תקינות בקובץ.');
-          }
-        }
-      }
-
-      // Handle logos
-      if (files.logos) {
-        setStatus(prev => ({ ...prev, message: 'מעבד לוגואים...', progress: 85 }));
-        const fileContent = await files.logos.text();
-        const parsedData = parseCSV(fileContent);
-
-        if (parsedData.length > 0) {
-          const existingTeams = await db.Team.list(null, 5000);
-          const teamsMap = new Map(existingTeams.map(t => [t.name, t]));
-          const teamsToCreate = [];
-          const updatePromises = [];
-
-          for (const row of parsedData) {
-            const teamName = row.name || row["שם הקבוצה"];
-            const logoUrl = row.logo_url || row["URL"];
-            if (teamName && logoUrl) {
-              if (teamsMap.has(teamName)) {
-                const team = teamsMap.get(teamName);
-                if (team.logo_url !== logoUrl) updatePromises.push(db.Team.update(team.id, { logo_url: logoUrl }));
-              } else {
-                teamsToCreate.push({ name: teamName, logo_url: logoUrl });
-              }
-            }
-          }
-
-          if (teamsToCreate.length > 0) await db.Team.bulkCreate(teamsToCreate);
-          if (updatePromises.length > 0) await Promise.all(updatePromises);
-          finalResults.logos = `נוצרו ${teamsToCreate.length} קבוצות ועודכנו ${updatePromises.length} לוגואים.`;
-        }
       }
 
       setStatus(prev => ({ ...prev, inProgress: false, message: 'העיבוד הסתיים!', progress: 100, error: null, results: finalResults }));
