@@ -14,6 +14,15 @@ import { useGame } from "@/components/contexts/GameContext";
 
 const ADMIN_EMAILS = ["tropikan1@gmail.com"];
 
+const isAdmin = (user) => {
+  if (!user) return false;
+  return (
+    user.role === 'admin' ||
+    user.app_metadata?.role === 'admin' ||
+    ADMIN_EMAILS.includes(user.email)
+  );
+};
+
 export default function UserManagement() {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -41,11 +50,6 @@ export default function UserManagement() {
   useEffect(() => {
     loadData();
   }, [currentGame]);
-
-  const isAdmin = (user) => {
-    if (!user) return false;
-    return user.role === 'admin' || ADMIN_EMAILS.includes(user.email);
-  };
 
   const loadData = async () => {
     setLoading(true);
@@ -169,12 +173,12 @@ ${appUrl}
 
     setDeletingUser(true);
     try {
-      const predictions = await Prediction.filter({ 
+      const predictions = await db.Prediction.filter({ 
         participant_name: userToDelete.full_name 
       }, null, 10000);
       
       for (const pred of predictions) {
-        await Prediction.delete(pred.id);
+        await db.Prediction.delete(pred.id);
       }
 
       await db.GameParticipant.delete(userToDelete.id);
