@@ -127,7 +127,7 @@ export default function LeaderboardNew() {
       );
       const validParticipants = new Set(
         gameParticipants
-          .filter(p => p.role_in_game === 'predictor' && p.is_active !== false)
+          .filter(p => p.is_active !== false)
           .map(p => p.participant_name)
       );
 
