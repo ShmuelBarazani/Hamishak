@@ -1,7 +1,21 @@
 import { supabase } from './supabaseClient';
 
-// ─── עזר גנרי ────────────────────────────────────────────────────────────────
+// ─── סדר ברירת מחדל לכל טבלה ─────────────────────────────────────────────────
+// טבלאות שאין להן created_at צריכות סדר ברירת מחדל אחר
+const DEFAULT_ORDER = {
+  rankings:          'current_position',   // אין created_at
+  questions:         'question_id',        // מיון לפי מספר שאלה
+  game_participants: 'participant_name',   // אין created_at
+  games:             'id',                 // אין created_at
+  validation_lists:  'id',
+  teams:             'name',
+  score_tables:      'id',
+  system_settings:   'id',
+  // טבלאות עם created_at — ברירת מחדל תקינה
+  predictions:       'created_at',
+};
 
+// ─── עזר גנרי ────────────────────────────────────────────────────────────────
 function buildQuery(table, filters = {}, orderBy = null, limit = null, offset = 0) {
   let query = supabase.from(table).select('*');
 
@@ -12,11 +26,16 @@ function buildQuery(table, filters = {}, orderBy = null, limit = null, offset = 
   });
 
   if (orderBy) {
+    // סדר מפורש שהועבר מהקריאה
     const desc = orderBy.startsWith('-');
     const col = desc ? orderBy.slice(1) : orderBy;
     query = query.order(col, { ascending: !desc });
   } else {
-    query = query.order('created_at', { ascending: false });
+    // סדר ברירת מחדל לפי הטבלה
+    const defaultCol = DEFAULT_ORDER[table] || 'id';
+    const desc = defaultCol.startsWith('-');
+    const col = desc ? defaultCol.slice(1) : defaultCol;
+    query = query.order(col, { ascending: !desc });
   }
 
   if (limit) query = query.limit(limit);
@@ -25,6 +44,7 @@ function buildQuery(table, filters = {}, orderBy = null, limit = null, offset = 
   return query;
 }
 
+// ─── ישות גנרית ──────────────────────────────────────────────────────────────
 function createEntity(table) {
   return {
     async filter(filters = {}, orderBy = null, limit = 1000, offset = 0) {
@@ -34,19 +54,22 @@ function createEntity(table) {
     },
 
     async get(id) {
-      const { data, error } = await supabase.from(table).select('*').eq('id', id).single();
+      const { data, error } = await supabase
+        .from(table).select('*').eq('id', id).single();
       if (error) throw error;
       return data;
     },
 
     async create(payload) {
-      const { data, error } = await supabase.from(table).insert(payload).select().single();
+      const { data, error } = await supabase
+        .from(table).insert(payload).select().single();
       if (error) throw error;
       return data;
     },
 
     async update(id, payload) {
-      const { data, error } = await supabase.from(table).update(payload).eq('id', id).select().single();
+      const { data, error } = await supabase
+        .from(table).update(payload).eq('id', id).select().single();
       if (error) throw error;
       return data;
     },
@@ -58,7 +81,8 @@ function createEntity(table) {
     },
 
     async upsert(payload, conflictColumn = 'id') {
-      const { data, error } = await supabase.from(table).upsert(payload, { onConflict: conflictColumn }).select().single();
+      const { data, error } = await supabase
+        .from(table).upsert(payload, { onConflict: conflictColumn }).select().single();
       if (error) throw error;
       return data;
     }
