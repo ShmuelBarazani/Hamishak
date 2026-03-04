@@ -1,262 +1,153 @@
 /**
- * 🎯 מערכת ניקוד פשוטה וברורה
- * 
+ * 🎯 מערכת ניקוד - מסונכרן עם ScoreCalculator BASE44
+ *
  * כללי הניקוד:
  * - משחקים רגילים: 10 = תוצאה מדויקת | 7 = תוצאה + הפרש | 5 = תוצאה בלבד | 0 = טעות
  * - משחקים T20 (ישראלי): 6 = תוצאה מדויקת | 4 = תוצאה + הפרש | 2 = תוצאה בלבד | 0 = טעות
  * - שאלות טקסט: possible_points = נכון | 0 = טעות
- * - בונוסים למיקומים: T14-T16 (20+40) | T17 (30+50) | T19 (20+0)
+ * - בונוסים למיקומים: T14/T15/T16 (20 לקבוצה + 20 אם כולם + 40 אם סדר מושלם)
+ *                     T17          (20 לקבוצה + 30 אם כולם + 50 אם סדר מושלם)
+ *                     T19          (30 לקבוצה + 20 אם כולם | סדר לא משנה)
  */
 
 // ======= פונקציות עזר =======
 
 /**
- * ניקוי טקסט מרווחים ותווים מיותרים
+ * ניקוי טקסט מרווחים ותווים מיותרים + הסרת סוגריים (שם מדינה)
  */
 function cleanText(text) {
   if (!text) return '';
   return String(text)
-    .replace(/[\s\u00A0\u200B\t\n\r‎‏]+/g, '')
+    .replace(/\s*\([^)]*\)/g, '') // הסר (שם מדינה)
+    .replace(/[\s\u00A0\u200B\t\n\r\u200E\u200F]+/g, '') // הסר רווחים מיוחדים
     .trim();
 }
 
 /**
  * בדיקה האם תוצאה היא בפורמט משחק (X-Y)
- * תומך גם ברווחים סביב המקף
  */
 function isScoreFormat(text) {
   if (!text) return false;
   const str = String(text).trim();
-  
-  // בדוק אם יש מקף (עם או בלי רווחים)
   if (!str.includes('-')) return false;
-  
-  // פצל לפי מקף
   const parts = str.split('-');
   if (parts.length !== 2) return false;
-  
-  // נקה רווחים ובדוק שזה מספרים
   const num1 = parseInt(parts[0].trim(), 10);
   const num2 = parseInt(parts[1].trim(), 10);
-  
   return !isNaN(num1) && !isNaN(num2) && num1 >= 0 && num2 >= 0;
 }
 
 /**
  * פירוק תוצאת משחק ל-[home, away]
- * תומך גם ברווחים סביב המקף
  */
 function parseScore(text) {
   if (!text) return [NaN, NaN];
   const str = String(text).trim();
   const parts = str.split('-');
   if (parts.length !== 2) return [NaN, NaN];
-  
   return [parseInt(parts[0].trim(), 10), parseInt(parts[1].trim(), 10)];
 }
 
 /**
- * קביעת סוג תוצאה: 'home' / 'away' / 'draw'
+ * בדיקה שתוצאה תקינה (לא ריקה, לא null, לא placeholder)
  */
-function getResultType(home, away) {
-  if (home > away) return 'home';
-  if (home < away) return 'away';
-  return 'draw';
+function isValidResult(result) {
+  if (!result) return false;
+  const r = String(result).trim();
+  return r !== '' &&
+    r !== '__CLEAR__' &&
+    r !== '-' &&
+    r !== 'null' &&
+    r !== 'null-null' &&
+    r !== 'null - null' &&
+    !r.toLowerCase().includes('null');
 }
 
 // ======= חישוב ניקוד למשחק =======
 
 /**
  * חישוב ניקוד למשחק (תוצאת X-Y)
- * 
- * @param {string} actualResult - התוצאה האמיתית (למשל "2-1")
- * @param {string} prediction - הניחוש (למשל "2-1")
- * @param {boolean} isIsraeliTable - האם זה T20 (ניקוד 6/4/2)
- * @returns {number|null} הניקוד שהושג (או null אם אין תוצאה)
  */
 export function calculateMatchScore(actualResult, prediction, isIsraeliTable = false) {
-  // אין תוצאה אמיתית
   if (!actualResult || actualResult === '__CLEAR__') return null;
-  
-  // אין ניחוש
   if (!prediction) return 0;
-  
-  // בדוק פורמט תקין
   if (!isScoreFormat(actualResult)) return null;
   if (!isScoreFormat(prediction)) return 0;
-  
-  // פרק את התוצאות
+
   const [actualHome, actualAway] = parseScore(actualResult);
   const [predHome, predAway] = parseScore(prediction);
-  
-  // קבע ניקוד מקסימלי
+
   const PERFECT = isIsraeliTable ? 6 : 10;
   const RESULT_AND_DIFF = isIsraeliTable ? 4 : 7;
   const RESULT_ONLY = isIsraeliTable ? 2 : 5;
-  
-  // ✅ תוצאה מדויקת
-  if (actualHome === predHome && actualAway === predAway) {
-    return PERFECT;
-  }
-  
-  // בדוק סוג תוצאה
-  const actualType = getResultType(actualHome, actualAway);
-  const predType = getResultType(predHome, predAway);
-  
-  // ❌ תוצאה שגויה
-  if (actualType !== predType) {
-    return 0;
-  }
-  
-  // ✅ תוצאה נכונה - בדוק הפרש שערים
+
+  if (actualHome === predHome && actualAway === predAway) return PERFECT;
+
+  const actualType = actualHome > actualAway ? 'home' : actualHome < actualAway ? 'away' : 'draw';
+  const predType = predHome > predAway ? 'home' : predHome < predAway ? 'away' : 'draw';
+
+  if (actualType !== predType) return 0;
+
   const actualDiff = actualHome - actualAway;
   const predDiff = predHome - predAway;
-  
-  if (actualDiff === predDiff) {
-    return RESULT_AND_DIFF; // תוצאה + הפרש
-  }
-  
-  return RESULT_ONLY; // תוצאה בלבד
-}
 
-// ======= חישוב ניקוד לשאלת טקסט =======
-
-/**
- * חישוב ניקוד לשאלה טקסטואלית
- * 
- * @param {string} actualResult - התשובה הנכונה
- * @param {string} prediction - הניחוש
- * @param {number} possiblePoints - הניקוד המקסימלי
- * @returns {number|null} הניקוד שהושג (או null אם אין תוצאה)
- */
-export function calculateTextScore(actualResult, prediction, possiblePoints) {
-  // אין ניקוד לשאלה
-  if (!possiblePoints || possiblePoints === 0) return null;
-  
-  // אין תוצאה אמיתית
-  if (!actualResult || actualResult === '__CLEAR__' || actualResult === '0') return null;
-  
-  // אין ניחוש
-  if (!prediction) return 0;
-  
-  // השווה (ללא רגישות לרווחים ואותיות גדולות/קטנות)
-  const actualClean = cleanText(actualResult).toLowerCase();
-  const predClean = cleanText(prediction).toLowerCase();
-  
-  if (actualClean === predClean) {
-    return possiblePoints; // ✅ תשובה נכונה
-  }
-  
-  return 0; // ❌ תשובה שגויה
+  return actualDiff === predDiff ? RESULT_AND_DIFF : RESULT_ONLY;
 }
 
 // ======= חישוב ניקוד לשאלה בודדת =======
 
 /**
  * חישוב ניקוד לשאלה (אוטומטי - משחק או טקסט)
- * 
+ *
  * @param {Object} question - אובייקט השאלה
  * @param {string} prediction - הניחוש
- * @param {Array} allQuestionsInTable - כל השאלות באותו שלב (לצורך בדיקת presence)
- * @param {Object} allPredictions - כל הניחושים של המשתתף (לצורך בדיקת presence)
- * @returns {number|null} הניקוד (או null אם אין תוצאה)
+ * @returns {number|null} הניקוד (null = אין תוצאה עדיין)
  */
-export function calculateQuestionScore(question, prediction, allQuestionsInTable = [], allPredictions = {}) {
-  // דלג על שאלות T1 (פרטי משתתף)
-  if (question.table_id === 'T1') return null;
-  
+export function calculateQuestionScore(question, prediction) {
+  // ⚠️ שאלות טבלאות מיקומים — ניקוד מחושב ברמת הטבלה, לא ברמת השאלה
+  if (['T14', 'T15', 'T16', 'T17', 'T19'].includes(question.table_id)) return null;
+
   // אין ניחוש
-  if (!prediction || String(prediction).trim() === '') {
-    return null;
-  }
+  if (!prediction || String(prediction).trim() === '') return null;
 
-  let actualResult = question.actual_result;
-  if (actualResult === null || actualResult === undefined) {
-    actualResult = '';
-  }
-  if (typeof actualResult !== 'string') {
-    actualResult = String(actualResult);
-  }
-  actualResult = actualResult.trim();
-  
-  // אין תוצאה
-  if (actualResult === '' || actualResult === '__CLEAR__' || actualResult === '-' || 
-      actualResult === 'null' || actualResult === 'null-null' || actualResult === 'null - null') {
-    return null;
-  }
+  // קבל תוצאה
+  const actualResult = question.actual_result != null ? String(question.actual_result).trim() : '';
 
-  // בדוק אם זה פורמט משחק (X-Y)
-  const isActualScore = isScoreFormat(actualResult);
-  const isPredScore = isScoreFormat(prediction);
+  // אין תוצאה תקינה
+  if (!isValidResult(actualResult)) return null;
 
-  // 🎯 משחק עם תוצאה
-  if (isActualScore && isPredScore) {
+  // 🎯 משחק עם תוצאת סקור (X-Y)
+  if (isScoreFormat(actualResult) && isScoreFormat(prediction)) {
     const [actualHome, actualAway] = parseScore(actualResult);
     const [predHome, predAway] = parseScore(prediction);
-    
-    // ודא שהפירוק הצליח
+
     if (!isNaN(actualHome) && !isNaN(actualAway) && !isNaN(predHome) && !isNaN(predAway)) {
       const isIsraeliTable = question.table_id === 'T20';
-      const maxScore = isIsraeliTable ? 6 : 10;
-      
-      // פגיעה מדויקת
-      if (actualHome === predHome && actualAway === predAway) {
-        return maxScore;
-      }
-      
-      const actualResultType = actualHome > actualAway ? 'home' : actualHome < actualAway ? 'away' : 'draw';
-      const predResult = predHome > predAway ? 'home' : predHome < predAway ? 'away' : 'draw';
+      return calculateMatchScore(actualResult, prediction, isIsraeliTable);
+    }
+  }
 
-      // לא ניחש את התוצאה
-      if (actualResultType !== predResult) {
-        return 0;
-      }
-      
-      // תוצאה + הפרש נכון
-      const actualDiff = actualHome - actualAway;
-      const predDiff = predHome - predAway;
-      
-      if (actualDiff === predDiff) {
-        const diffScore = isIsraeliTable ? 4 : 7;
-        return diffScore;
-      }
-      
-      // תוצאה נכונה בלבד
-      const resultOnlyScore = isIsraeliTable ? 2 : 5;
-      return resultOnlyScore;
-    }
-  }
-  
-  // 🎯 שלבי טורניר - ניקוד לפי נוכחות (לא סדר)
-  const isPresenceStage = ['T_TOP_FINISHERS', 'T11', 'T12', 'T13'].includes(question.table_id);
-  const isThirdPlaceMain = question.table_id === 'T_THIRD_PLACE' && !question.question_id.includes('.');
-  
-  if (isPresenceStage || isThirdPlaceMain) {
-    // אסוף את כל התוצאות האמיתיות מהשלב
-    const actualTeams = allQuestionsInTable
-      .filter(q => q.actual_result && q.actual_result.trim() !== '' && q.actual_result !== '__CLEAR__')
-      .map(q => cleanText(q.actual_result).toLowerCase());
-    
-    // נקה את הניחוש
-    const cleanPred = cleanText(prediction).toLowerCase();
-    
-    // בדוק אם הניחוש מופיע ברשימה
-    if (actualTeams.includes(cleanPred)) {
-      return question.possible_points || 0;
-    }
-    
-    return 0;
-  }
-  
-  // 📝 שאלות טקסט רגילות - השוואה case-insensitive מדויקת
+  // 📝 שאלות טקסט — השוואה case-insensitive אחרי ניקוי
   const cleanActual = cleanText(actualResult).toLowerCase();
   const cleanPred = cleanText(prediction).toLowerCase();
-  
-  if (cleanActual === cleanPred) {
-    const points = question.possible_points || 0;
-    return points;
+
+  // תשובות נכונות מרובות (מופרדות ב-|||)
+  if (actualResult.includes('|||')) {
+    const correctAnswers = actualResult.split('|||').map(a => cleanText(a).trim().toLowerCase()).filter(Boolean);
+    // בדוק גם תשובה הפוכה (לשאלות ללא בית/חוץ)
+    const reversedPred = cleanPred.includes('-')
+      ? cleanPred.split('-').reverse().join('-')
+      : null;
+    if (correctAnswers.includes(cleanPred) || (reversedPred && correctAnswers.includes(reversedPred))) {
+      return question.possible_points || 0;
+    }
+    return 0;
   }
-  
+
+  if (cleanActual === cleanPred) {
+    return question.possible_points || 0;
+  }
+
   return 0;
 }
 
@@ -264,82 +155,117 @@ export function calculateQuestionScore(question, prediction, allQuestionsInTable
  * קבלת ניקוד מקסימלי לשאלה
  */
 export function getMaxScore(question) {
-  if (question.table_id === 'T1') return 0;
-  
-  if (isScoreFormat(question.actual_result)) {
+  if (['T14', 'T15', 'T16', 'T17', 'T19'].includes(question.table_id)) return 0;
+
+  if (question.home_team && question.away_team) {
     return question.table_id === 'T20' ? 6 : 10;
   }
-  
+
+  if (question.actual_result && isScoreFormat(String(question.actual_result))) {
+    return question.table_id === 'T20' ? 6 : 10;
+  }
+
   return question.possible_points || 0;
 }
 
 // ======= בונוסים לטבלאות מיקומים =======
 
 /**
- * חישוב בונוס עבור טבלת מיקומים (T14-T19)
- * 
- * @param {string} tableId - מזהה הטבלה
- * @param {Array} questions - רשימת השאלות בטבלה
- * @param {Object} predictions - מפת ניחושים (question_id -> prediction)
- * @returns {Object|null} { teamsBonus, orderBonus, total } או null
+ * 🔥 חישוב בונוס עבור טבלת מיקומים (T14-T19)
+ * מסונכרן עם calculateLocationTableBonus ב-ScoreCalculator BASE44
+ *
+ * ניקוד:
+ * - 20 נקודות לכל קבוצה נכונה (T14/T15/T16/T17)
+ * - 30 נקודות לכל קבוצה נכונה (T19, סדר לא משנה)
+ * - בונוס 20/30 אם כל הקבוצות נכונות
+ * - בונוס 40/50 אם גם הסדר מדויק (לא T19)
+ *
+ * @param {string} tableId
+ * @param {Array} questions - רשימת כל השאלות בטבלה
+ * @param {Object} predictions - { question.id -> text_prediction }
+ * @returns {Object|null}
  */
 export function calculateLocationBonus(tableId, questions, predictions) {
-  // רק טבלאות מיקומים
-  if (!['T14', 'T15', 'T16', 'T17', 'T19'].includes(tableId)) {
-    return null;
-  }
-  
-  // מספר קבוצות צפוי
-  const expectedCount = tableId === 'T17' ? 12 : 8;
-  
-  // בדוק שיש מספר נכון של שאלות
-  if (questions.length !== expectedCount) return null;
-  
-  // בדוק שיש תוצאה לכל השאלות
-  const allHaveResults = questions.every(q => 
-    q.actual_result && 
-    q.actual_result.trim() !== '' && 
-    q.actual_result !== '__CLEAR__'
+  if (!['T14', 'T15', 'T16', 'T17', 'T19'].includes(tableId)) return null;
+
+  const isT17 = tableId === 'T17';
+  const isT19 = tableId === 'T19';
+  const pointsPerTeam = isT19 ? 30 : 20;
+
+  // ✅ עבוד רק עם שאלות שיש להן תוצאה אמיתית (כמו BASE44)
+  const completedQuestions = questions.filter(q => isValidResult(q.actual_result));
+
+  // אם אין אף תוצאה — אין ניקוד
+  if (completedQuestions.length === 0) return null;
+
+  // רשימת תוצאות אמיתיות מנורמלות
+  const normalizedActuals = completedQuestions.map(q =>
+    cleanText(q.actual_result).toLowerCase()
   );
-  
-  if (!allHaveResults) return null;
-  
-  // ספור קבוצות נכונות וסדר מושלם
-  let correctTeams = 0;
+
+  // ======= T19: סדר לא משנה — בדוק presence בלבד =======
+  if (isT19) {
+    // אסוף את כל הניחושים של המשתתף לטבלה זו (כולל שאלות ללא תוצאה)
+    const allPredValues = questions
+      .map(q => predictions[q.id])
+      .filter(Boolean)
+      .map(p => cleanText(p).toLowerCase())
+      .filter(Boolean);
+
+    // כמה קבוצות נכונות (ייחודיות) מתוך הרשימה
+    const uniqueCorrect = new Set(allPredValues.filter(p => normalizedActuals.includes(p)));
+    const correctTeamsCount = uniqueCorrect.size;
+    const allCorrect = correctTeamsCount === questions.length;
+
+    const basicScore = correctTeamsCount * pointsPerTeam;
+    const teamsBonus = allCorrect ? 20 : 0;
+
+    return {
+      basicScore,
+      teamsBonus,
+      orderBonus: 0,
+      allCorrect,
+      perfectOrder: false,
+      correctTeamsCount,
+      total: basicScore + teamsBonus
+    };
+  }
+
+  // ======= T14/T15/T16/T17: סדר משנה =======
+  let correctTeamsCount = 0;
   let perfectOrder = true;
-  
-  for (const q of questions) {
+
+  for (let i = 0; i < completedQuestions.length; i++) {
+    const q = completedQuestions[i];
     const pred = predictions[q.id];
-    const actualClean = cleanText(q.actual_result);
-    const predClean = cleanText(pred || '');
-    
-    if (actualClean === predClean) {
-      correctTeams++;
-    } else {
+    const normalizedPred = pred ? cleanText(pred).toLowerCase() : '';
+
+    // קבוצה נכונה = מופיעה בכלל ברשימת התוצאות
+    if (normalizedPred && normalizedActuals.includes(normalizedPred)) {
+      correctTeamsCount++;
+    }
+
+    // בדיקת מיקום מדויק
+    if (normalizedPred !== normalizedActuals[i]) {
       perfectOrder = false;
     }
   }
-  
-  // חשב בונוסים
-  let teamsBonus = 0;
-  let orderBonus = 0;
-  
-  const allCorrect = (correctTeams === expectedCount);
-  
-  if (allCorrect) {
-    // כל הקבוצות נכונות
-    teamsBonus = tableId === 'T17' ? 30 : 20;
-    
-    // סדר מושלם (לא ל-T19)
-    if (perfectOrder && tableId !== 'T19') {
-      orderBonus = tableId === 'T17' ? 50 : 40;
-    }
-  }
-  
+
+  const allCorrect = correctTeamsCount === completedQuestions.length;
+  perfectOrder = perfectOrder && allCorrect;
+
+  const basicScore = correctTeamsCount * pointsPerTeam;
+  const teamsBonus = allCorrect ? (isT17 ? 30 : 20) : 0;
+  const orderBonus = (allCorrect && perfectOrder) ? (isT17 ? 50 : 40) : 0;
+
   return {
+    basicScore,
     teamsBonus,
     orderBonus,
-    total: teamsBonus + orderBonus
+    allCorrect,
+    perfectOrder,
+    correctTeamsCount,
+    total: basicScore + teamsBonus + orderBonus
   };
 }
 
@@ -347,39 +273,30 @@ export function calculateLocationBonus(tableId, questions, predictions) {
 
 /**
  * חישוב ניקוד כולל למשתתף
- * 
+ *
  * @param {Array} questions - כל השאלות במשחק
  * @param {Object} predictions - מפת ניחושים: question.id -> prediction_text
- * @returns {Object} { total, breakdown }
+ * @returns {{ total: number, breakdown: Array }}
  */
 export function calculateTotalScore(questions, predictions) {
   let total = 0;
   const breakdown = [];
+
+  // קבץ שאלות לפי טבלה (לצורך חישוב בונוסים)
   const tableQuestions = {};
-  
-  // קבץ שאלות לפי טבלה
   for (const q of questions) {
-    if (!tableQuestions[q.table_id]) {
-      tableQuestions[q.table_id] = [];
-    }
+    if (!tableQuestions[q.table_id]) tableQuestions[q.table_id] = [];
     tableQuestions[q.table_id].push(q);
   }
-  
-  // 1️⃣ עבור על כל השאלות וחשב ניקוד
+
+  // 1️⃣ חשב ניקוד לכל שאלה רגילה
   for (const q of questions) {
-    // דלג על פרטי משתתף
-    if (q.table_id === 'T1') continue;
-    
-    // קבל את הניחוש
+    // דלג על טבלאות מיקומים — מחושבות בנפרד
+    if (['T14', 'T15', 'T16', 'T17', 'T19'].includes(q.table_id)) continue;
+
     const pred = predictions[q.id];
-    
-    // העבר את כל השאלות באותו שלב לצורך presence scoring
-    const questionsInTable = tableQuestions[q.table_id] || [];
-    
-    // חשב ניקוד
-    const score = calculateQuestionScore(q, pred, questionsInTable, predictions);
-    
-    // אם יש ניקוד - הוסף
+    const score = calculateQuestionScore(q, pred);
+
     if (score !== null) {
       total += score;
       breakdown.push({
@@ -387,71 +304,96 @@ export function calculateTotalScore(questions, predictions) {
         question_id_text: q.question_id,
         table_id: q.table_id,
         score,
-        max_score: getMaxScore(q)
+        max_score: getMaxScore(q),
+        isBonus: false
       });
     }
   }
-  
+
   // 2️⃣ חשב בונוסים לטבלאות מיקומים
   for (const tableId of ['T14', 'T15', 'T16', 'T17', 'T19']) {
     const tQuestions = tableQuestions[tableId];
-    if (!tQuestions) continue;
-    
+    if (!tQuestions || tQuestions.length === 0) continue;
+
     const bonus = calculateLocationBonus(tableId, tQuestions, predictions);
-    
-    if (bonus && bonus.total > 0) {
-      total += bonus.total;
-      
-      if (bonus.teamsBonus > 0) {
-        breakdown.push({
-          question_id: `${tableId}_TEAMS`,
-          question_id_text: 'בונוס קבוצות',
-          table_id: tableId,
-          score: bonus.teamsBonus,
-          max_score: bonus.teamsBonus,
-          isBonus: true
-        });
-      }
-      
-      if (bonus.orderBonus > 0) {
-        breakdown.push({
-          question_id: `${tableId}_ORDER`,
-          question_id_text: 'בונוס סדר',
-          table_id: tableId,
-          score: bonus.orderBonus,
-          max_score: bonus.orderBonus,
-          isBonus: true
-        });
-      }
+    if (!bonus || bonus.total <= 0) continue;
+
+    total += bonus.total;
+
+    // ניקוד בסיסי (לכל קבוצה נכונה)
+    if (bonus.basicScore > 0) {
+      breakdown.push({
+        question_id: `${tableId}_BASIC`,
+        question_id_text: `ניקוד קבוצות (${bonus.correctTeamsCount})`,
+        table_id: tableId,
+        score: bonus.basicScore,
+        max_score: bonus.basicScore,
+        isBonus: true
+      });
+    }
+
+    // בונוס כל הקבוצות
+    if (bonus.teamsBonus > 0) {
+      breakdown.push({
+        question_id: `${tableId}_TEAMS`,
+        question_id_text: 'בונוס עולות',
+        table_id: tableId,
+        score: bonus.teamsBonus,
+        max_score: bonus.teamsBonus,
+        isBonus: true
+      });
+    }
+
+    // בונוס סדר מושלם
+    if (bonus.orderBonus > 0) {
+      breakdown.push({
+        question_id: `${tableId}_ORDER`,
+        question_id_text: 'בונוס סדר מדויק',
+        table_id: tableId,
+        score: bonus.orderBonus,
+        max_score: bonus.orderBonus,
+        isBonus: true
+      });
     }
   }
-  
+
   return { total, breakdown };
 }
 
 /**
- * חישוב ניקוד לכל המשתתפים
- * 
+ * חישוב ניקוד לכל המשתתפים בו-זמנית
+ *
  * @param {Array} questions - כל השאלות
- * @param {Array} predictions - כל הניחושים
+ * @param {Array} predictions - כל הניחושים (מערך אובייקטים)
  * @returns {Object} { participantName: { total, breakdown } }
  */
 export function calculateAllParticipantsScores(questions, predictions) {
-  const predictionsByParticipant = {};
-  
-  // קבץ לפי משתתף
+  // קבץ לפי משתתף — קח ניחוש אחרון לכל שאלה
+  const participantPreds = {};
+
   for (const p of predictions) {
-    if (!predictionsByParticipant[p.participant_name]) {
-      predictionsByParticipant[p.participant_name] = {};
+    if (!p.participant_name?.trim()) continue;
+    if (!participantPreds[p.participant_name]) participantPreds[p.participant_name] = {};
+
+    const existing = participantPreds[p.participant_name][p.question_id];
+    const existingDate = existing ? new Date(existing.created_at || existing.created_date || 0) : new Date(0);
+    const newDate = new Date(p.created_at || p.created_date || 0);
+
+    if (!existing || newDate > existingDate) {
+      participantPreds[p.participant_name][p.question_id] = p;
     }
-    predictionsByParticipant[p.participant_name][p.question_id] = p.text_prediction;
   }
-  
+
   // חשב לכל משתתף
   const results = {};
-  for (const [name, preds] of Object.entries(predictionsByParticipant)) {
-    results[name] = calculateTotalScore(questions, preds);
+  for (const [name, predsMap] of Object.entries(participantPreds)) {
+    // בנה מפת question_id -> text_prediction
+    const predTextMap = {};
+    for (const [qid, pred] of Object.entries(predsMap)) {
+      predTextMap[qid] = pred.text_prediction;
+    }
+    results[name] = calculateTotalScore(questions, predTextMap);
   }
-  
+
   return results;
 }
