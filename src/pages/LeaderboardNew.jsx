@@ -56,17 +56,16 @@ export default function LeaderboardNew() {
     setLoading(true);
     try {
       const stored = await db.Ranking.filter({ game_id: currentGame.id }, '-current_score', 500);
-      
+
       if (stored.length > 0) {
-        // יש נתונים שמורים — הצג מיד!
         let position = 1;
         const ranked = stored.map((r, i) => {
-          if (i > 0 && stored[i].current_score !== stored[i-1].current_score) position = i + 1;
+          if (i > 0 && stored[i].current_score !== stored[i - 1].current_score) position = i + 1;
           return { ...r, current_position: position };
         });
         setRankings(ranked);
         const scores = ranked.map(r => r.current_score || 0);
-        setAvgScore(scores.reduce((a,b) => a+b, 0) / scores.length);
+        setAvgScore(scores.reduce((a, b) => a + b, 0) / scores.length);
         setMaxScore(Math.max(...scores));
         setMinScore(Math.min(...scores));
       } else {
@@ -81,67 +80,102 @@ export default function LeaderboardNew() {
 
   useEffect(() => { loadRankings(); }, [loadRankings, currentGame]);
 
-  // ✅ חישוב ניקוד מהיר — parallel בקבוצות של 10
+  /**
+   * ✅ פונקציה עזר — טעינת כל השאלות במשחק (pagination)
+   * ⚠️ לא מסנן T1 — ScoreService מטפל בזה פנימית
+   */
+  const loadAllQuestions = async (gameId) => {
+    let allQuestions = [];
+    let skip = 0;
+    const BATCH = 1000;
+    while (true) {
+      const batch = await db.Question.filter({ game_id: gameId }, null, BATCH, skip);
+      allQuestions = [...allQuestions, ...batch];
+      if (batch.length < BATCH) break;
+      skip += BATCH;
+    }
+
+    // חלץ קבוצות משאלות שחסרות home_team/away_team
+    allQuestions.forEach(q => {
+      if (!q.home_team && !q.away_team && q.question_text) {
+        let teams = null;
+        if (q.question_text.includes(' נגד ')) teams = q.question_text.split(' נגד ').map(t => t.trim());
+        else if (q.question_text.includes(' - ')) teams = q.question_text.split(' - ').map(t => t.trim());
+        if (teams?.length === 2) { q.home_team = teams[0]; q.away_team = teams[1]; }
+      }
+    });
+
+    return allQuestions;
+  };
+
+  /**
+   * ✅ פונקציה עזר — טעינת ניחושים (pagination)
+   */
+  const loadAllPredictions = async (gameId, participantName = null) => {
+    let allPredictions = [];
+    let skip = 0;
+    const BATCH = 1000;
+    const filter = participantName
+      ? { game_id: gameId, participant_name: participantName }
+      : { game_id: gameId };
+    while (true) {
+      const batch = await db.Prediction.filter(filter, null, BATCH, skip);
+      allPredictions = [...allPredictions, ...batch];
+      if (batch.length < BATCH) break;
+      skip += BATCH;
+    }
+    return allPredictions;
+  };
+
+  /**
+   * ✅ פונקציה עזר — קח ניחוש אחרון לכל שאלה (לפי created_at)
+   * מחזיר: { question_id -> text_prediction }
+   */
+  const buildLatestPredMap = (predictions) => {
+    const tempPreds = {};
+    for (const pred of predictions) {
+      const existing = tempPreds[pred.question_id];
+      const existingDate = existing ? new Date(existing.created_at || existing.created_date || 0) : new Date(0);
+      const newDate = new Date(pred.created_at || pred.created_date || 0);
+      if (!existing || newDate > existingDate) {
+        tempPreds[pred.question_id] = pred;
+      }
+    }
+    const predMap = {};
+    for (const [qid, pred] of Object.entries(tempPreds)) {
+      predMap[qid] = pred.text_prediction;
+    }
+    return predMap;
+  };
+
+  // ✅ חישוב ניקוד מחדש — parallel בקבוצות של 10
   const handleRecalculateScores = async () => {
     if (!currentGame) return;
     setRecalculating(true);
-    setRecalcProgress('טוען שאלות וניחושים...');
+    setRecalcProgress('טוען שאלות...');
     try {
-      // 1️⃣ טען שאלות
-      let allQuestions = [];
-      let skip = 0;
-      while (true) {
-        const batch = await db.Question.filter({ game_id: currentGame.id }, null, 1000, skip);
-        allQuestions = [...allQuestions, ...batch];
-        if (batch.length < 1000) break;
-        skip += 1000;
-      }
-      allQuestions = allQuestions.filter(q => q.table_id && q.table_id !== 'T1');
-
-      // חלץ קבוצות לשאלות
-      allQuestions.forEach(q => {
-        if (!q.home_team && !q.away_team && q.question_text) {
-          let teams = null;
-          if (q.question_text.includes(' נגד ')) teams = q.question_text.split(' נגד ').map(t => t.trim());
-          else if (q.question_text.includes(' - ')) teams = q.question_text.split(' - ').map(t => t.trim());
-          if (teams?.length === 2) { q.home_team = teams[0]; q.away_team = teams[1]; }
-        }
-      });
-
+      // 1️⃣ טען שאלות (ללא סינון T1 — ScoreService מטפל בזה)
+      const allQuestions = await loadAllQuestions(currentGame.id);
       setRecalcProgress('טוען ניחושים...');
 
-      // 2️⃣ טען ניחושים
-      let allPredictions = [];
-      skip = 0;
-      while (true) {
-        const batch = await db.Prediction.filter({ game_id: currentGame.id }, null, 1000, skip);
-        allPredictions = [...allPredictions, ...batch];
-        if (batch.length < 1000) break;
-        skip += 1000;
-      }
-
-      setRecalcProgress(`מחשב ניקוד ל-${Object.keys(allPredictions.reduce((acc, p) => { if(p.participant_name) acc[p.participant_name]=1; return acc; }, {})).length} משתתפים...`);
+      // 2️⃣ טען את כל הניחושים
+      const allPredictions = await loadAllPredictions(currentGame.id);
 
       // 3️⃣ קבץ ניחושים לפי משתתף
-      const participantPredictions = {};
-      allPredictions.forEach(pred => {
-        if (!pred.participant_name?.trim()) return;
-        if (!participantPredictions[pred.participant_name]) participantPredictions[pred.participant_name] = [];
-        participantPredictions[pred.participant_name].push(pred);
-      });
+      const participantRawPreds = {};
+      for (const pred of allPredictions) {
+        if (!pred.participant_name?.trim()) continue;
+        if (!participantRawPreds[pred.participant_name]) participantRawPreds[pred.participant_name] = [];
+        participantRawPreds[pred.participant_name].push(pred);
+      }
+
+      const participantNames = Object.keys(participantRawPreds);
+      setRecalcProgress(`מחשב ניקוד ל-${participantNames.length} משתתפים...`);
 
       // 4️⃣ חשב ניקוד לכל משתתף
       const participantScores = [];
-      for (const [name, preds] of Object.entries(participantPredictions)) {
-        const tempPreds = {};
-        preds.forEach(pred => {
-          const existing = tempPreds[pred.question_id];
-          if (!existing || new Date(pred.created_at || pred.created_date || 0) > new Date(existing.created_at || existing.created_date || 0)) {
-            tempPreds[pred.question_id] = pred;
-          }
-        });
-        const predMap = {};
-        for (const [qid, pred] of Object.entries(tempPreds)) predMap[qid] = pred.text_prediction;
+      for (const name of participantNames) {
+        const predMap = buildLatestPredMap(participantRawPreds[name]);
         const { total } = calculateTotalScore(allQuestions, predMap);
         participantScores.push({ participant_name: name, current_score: total });
       }
@@ -150,7 +184,7 @@ export default function LeaderboardNew() {
       participantScores.sort((a, b) => b.current_score - a.current_score);
       let position = 1;
       for (let i = 0; i < participantScores.length; i++) {
-        if (i > 0 && participantScores[i].current_score !== participantScores[i-1].current_score) position = i + 1;
+        if (i > 0 && participantScores[i].current_score !== participantScores[i - 1].current_score) position = i + 1;
         participantScores[i].current_position = position;
       }
 
@@ -161,7 +195,7 @@ export default function LeaderboardNew() {
 
       setRecalcProgress(`שומר ${participantScores.length} רשומות...`);
 
-      // 7️⃣ שמור parallel בקבוצות של 10 (הרבה יותר מהיר!)
+      // 7️⃣ שמור parallel בקבוצות של 10
       const BATCH = 10;
       for (let i = 0; i < participantScores.length; i += BATCH) {
         const chunk = participantScores.slice(i, i + BATCH);
@@ -205,7 +239,7 @@ export default function LeaderboardNew() {
     setRecalcProgress('');
   };
 
-  // ✅ קביעת baseline מהירה — parallel
+  // ✅ קביעת baseline — parallel
   const handleSetBaseline = async () => {
     if (!currentGame) return;
     if (!window.confirm('האם לקבוע את הדירוג הנוכחי כנקודת ייחוס?')) return;
@@ -236,56 +270,52 @@ export default function LeaderboardNew() {
     setSettingBaseline(false);
   };
 
+  // ✅ פרטי משתתף — ניקוד בזמן אמת
   const loadParticipantDetails = async (participantName) => {
     if (!currentGame) return;
     try {
-      const BATCH = 1000;
-      let allQuestions = [];
-      let skip = 0;
-      while (true) {
-        const batch = await db.Question.filter({ game_id: currentGame.id }, null, BATCH, skip);
-        allQuestions = [...allQuestions, ...batch];
-        if (batch.length < BATCH) break;
-        skip += BATCH;
-      }
-      allQuestions = allQuestions.filter(q => q.table_id && q.table_id !== 'T1');
+      // טען שאלות וניחושים (ללא סינון T1)
+      const [allQuestions, allPredictions] = await Promise.all([
+        loadAllQuestions(currentGame.id),
+        loadAllPredictions(currentGame.id, participantName)
+      ]);
 
-      let allPredictions = [];
-      skip = 0;
-      while (true) {
-        const batch = await db.Prediction.filter({ participant_name: participantName, game_id: currentGame.id }, null, BATCH, skip);
-        allPredictions = [...allPredictions, ...batch];
-        if (batch.length < BATCH) break;
-        skip += BATCH;
-      }
+      // קח ניחוש אחרון לכל שאלה
+      const predMap = buildLatestPredMap(allPredictions);
 
-      allQuestions.forEach(q => {
-        if (!q.home_team && !q.away_team && q.question_text) {
-          let teams = null;
-          if (q.question_text.includes(' נגד ')) teams = q.question_text.split(' נגד ').map(t => t.trim());
-          else if (q.question_text.includes(' - ')) teams = q.question_text.split(' - ').map(t => t.trim());
-          if (teams?.length === 2) { q.home_team = teams[0]; q.away_team = teams[1]; }
-        }
-      });
-
-      const tempPreds = {};
-      allPredictions.forEach(pred => {
-        const existing = tempPreds[pred.question_id];
-        if (!existing || new Date(pred.created_at || pred.created_date || 0) > new Date(existing.created_at || existing.created_date || 0)) {
-          tempPreds[pred.question_id] = pred;
-        }
-      });
-      const predMap = {};
-      for (const [qid, pred] of Object.entries(tempPreds)) predMap[qid] = pred.text_prediction;
-
+      // חשב ניקוד
       const { total: totalScore, breakdown } = calculateTotalScore(allQuestions, predMap);
 
-      const teamsMap = (currentGame.teams_data || []).reduce((acc, t) => { acc[t.name] = t; return acc; }, {});
+      // בנה מפת לוגו קבוצות
+      const teamsMap = (currentGame.teams_data || []).reduce((acc, t) => {
+        acc[t.name] = t;
+        return acc;
+      }, {});
 
+      // עיבוד breakdown לתצוגה
       const filteredScores = breakdown
         .map(item => {
           const question = allQuestions.find(q => q.id === item.question_id);
-          if (!question) return null;
+
+          // שורות בונוס (T14_BASIC, T14_TEAMS, וכו')
+          if (!question) {
+            return {
+              question_id: item.question_id,
+              score: item.score,
+              max_score: item.max_score,
+              table_id: item.table_id || '?',
+              question_id_display: item.question_id_text || '🎁',
+              question_text: item.question_id_text || '',
+              home_team: null,
+              away_team: null,
+              actual_result: '✓',
+              prediction: '✓',
+              home_team_logo: null,
+              away_team_logo: null,
+              isBonus: true
+            };
+          }
+
           const pred = allPredictions.find(p => p.question_id === item.question_id);
           return {
             question_id: question.id,
@@ -305,8 +335,8 @@ export default function LeaderboardNew() {
         })
         .filter(s => s !== null && s.score > 0)
         .sort((a, b) => {
-          const tA = parseInt(a.table_id.replace('T', '')) || 999;
-          const tB = parseInt(b.table_id.replace('T', '')) || 999;
+          const tA = parseInt(String(a.table_id).replace('T', '')) || 999;
+          const tB = parseInt(String(b.table_id).replace('T', '')) || 999;
           if (tA !== tB) return tA - tB;
           return (parseFloat(a.question_id_display) || 999) - (parseFloat(b.question_id_display) || 999);
         });
@@ -314,6 +344,7 @@ export default function LeaderboardNew() {
       setParticipantDetails({ name: participantName, scores: filteredScores, totalScore });
       setSelectedParticipant(participantName);
     } catch (error) {
+      console.error("Error:", error);
       toast({ title: "שגיאה", description: "טעינת הפרטים נכשלה", variant: "destructive" });
     }
   };
@@ -359,7 +390,10 @@ export default function LeaderboardNew() {
     return <Minus className="w-3 h-3 md:w-4 md:h-4 text-gray-400" />;
   };
 
-  const isAdmin = currentUser?.role === 'admin' || currentUser?.app_metadata?.role === 'admin' || currentUser?.email === 'tropikan1@gmail.com';
+  const isAdmin = currentUser?.role === 'admin' ||
+    currentUser?.app_metadata?.role === 'admin' ||
+    currentUser?.email === 'tropikan1@gmail.com';
+
   const sortedRankings = getSortedRankings();
 
   if (loading) {
@@ -376,7 +410,8 @@ export default function LeaderboardNew() {
       <div className="max-w-7xl mx-auto">
         <div className="flex flex-col md:flex-row justify-between items-start gap-3 mb-4 md:mb-8">
           <div>
-            <h1 className="text-xl md:text-4xl font-bold mb-1 md:mb-2 flex items-center gap-2 md:gap-3" style={{ color: '#f8fafc', textShadow: '0 0 10px rgba(6, 182, 212, 0.3)' }}>
+            <h1 className="text-xl md:text-4xl font-bold mb-1 md:mb-2 flex items-center gap-2 md:gap-3"
+              style={{ color: '#f8fafc', textShadow: '0 0 10px rgba(6, 182, 212, 0.3)' }}>
               <Trophy className="w-6 h-6 md:w-10 md:h-10" style={{ color: '#06b6d4' }} />
               טבלת דירוג
             </h1>
@@ -402,6 +437,7 @@ export default function LeaderboardNew() {
           )}
         </div>
 
+        {/* סטטיסטיקות */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-4 mb-4 md:mb-8">
           {[
             { label: 'סה"כ משתתפים', value: rankings.length, icon: Users, color: '#06b6d4' },
@@ -423,6 +459,7 @@ export default function LeaderboardNew() {
           ))}
         </div>
 
+        {/* טבלת דירוג */}
         <Card style={{ background: 'rgba(30, 41, 59, 0.6)', border: '1px solid rgba(6, 182, 212, 0.2)' }}>
           <CardHeader className="py-2 md:py-4">
             <CardTitle className="text-sm md:text-lg" style={{ color: '#06b6d4' }}>הדירוג הנוכחי</CardTitle>
@@ -462,11 +499,14 @@ export default function LeaderboardNew() {
                   </thead>
                   <tbody>
                     {sortedRankings.map((rank) => (
-                      <tr key={rank.id} className="hover:bg-cyan-500/10" style={{ borderBottom: '1px solid rgba(6, 182, 212, 0.1)' }}>
+                      <tr key={rank.id} className="hover:bg-cyan-500/10"
+                        style={{ borderBottom: '1px solid rgba(6, 182, 212, 0.1)' }}>
                         <td className="text-center p-1 md:p-2">
                           <div className="flex items-center justify-center gap-0.5 md:gap-1.5">
                             <span className="hidden md:inline">{getPositionIcon(rank.current_position)}</span>
-                            <span className="font-bold text-xs md:text-base" style={{ color: '#f8fafc' }}>{rank.current_position}</span>
+                            <span className="font-bold text-xs md:text-base" style={{ color: '#f8fafc' }}>
+                              {rank.current_position}
+                            </span>
                           </div>
                         </td>
                         <td className="font-medium text-[10px] md:text-base cursor-pointer hover:underline text-right p-1 md:p-2"
@@ -480,13 +520,29 @@ export default function LeaderboardNew() {
                             {rank.current_score}
                           </Badge>
                         </td>
-                        <td className="hidden md:table-cell text-center p-2 text-sm" style={{ color: '#94a3b8' }}>{rank.previous_position || '-'}</td>
-                        <td className="hidden md:table-cell text-center p-2 text-sm" style={{ color: '#94a3b8' }}>{rank.previous_score || '0'}</td>
+                        <td className="hidden md:table-cell text-center p-2 text-sm" style={{ color: '#94a3b8' }}>
+                          {rank.previous_position || '-'}
+                        </td>
+                        <td className="hidden md:table-cell text-center p-2 text-sm" style={{ color: '#94a3b8' }}>
+                          {rank.previous_score || '0'}
+                        </td>
                         <td className="text-center p-1 md:p-2">
                           <div className="flex items-center justify-center gap-0.5 md:gap-1">
-                            {rank.score_change > 0 && <Badge className="text-white text-[8px] md:text-xs px-1 md:px-2" style={{ background: '#10b981' }}>+{rank.score_change}</Badge>}
-                            {rank.score_change < 0 && <Badge className="text-white text-[8px] md:text-xs px-1 md:px-2" style={{ background: '#ef4444' }}>{rank.score_change}</Badge>}
-                            {(!rank.score_change || rank.score_change === 0) && <Badge className="text-white text-[8px] md:text-xs px-1 md:px-2" style={{ background: '#475569' }}>0</Badge>}
+                            {rank.score_change > 0 && (
+                              <Badge className="text-white text-[8px] md:text-xs px-1 md:px-2" style={{ background: '#10b981' }}>
+                                +{rank.score_change}
+                              </Badge>
+                            )}
+                            {rank.score_change < 0 && (
+                              <Badge className="text-white text-[8px] md:text-xs px-1 md:px-2" style={{ background: '#ef4444' }}>
+                                {rank.score_change}
+                              </Badge>
+                            )}
+                            {(!rank.score_change || rank.score_change === 0) && (
+                              <Badge className="text-white text-[8px] md:text-xs px-1 md:px-2" style={{ background: '#475569' }}>
+                                0
+                              </Badge>
+                            )}
                           </div>
                         </td>
                         <td className="text-center p-1 md:p-2">
@@ -523,7 +579,7 @@ export default function LeaderboardNew() {
                 סה"כ: {participantDetails?.totalScore} נקודות
               </Badge>
               <span className="text-[10px] md:text-base" style={{ color: '#94a3b8' }}>
-                {participantDetails?.scores.filter(s => s.score > 0).length} שאלות עם ניקוד
+                {participantDetails?.scores.filter(s => s.score > 0).length} פריטים עם ניקוד
               </span>
             </div>
           </DialogHeader>
@@ -540,7 +596,7 @@ export default function LeaderboardNew() {
                 </tr>
               </thead>
               <tbody>
-                {participantDetails?.scores.map((s, index) => {
+                {(participantDetails?.scores || []).map((s, index) => {
                   let badgeColor = 'bg-slate-600 text-white';
                   if (s.score === s.max_score && s.max_score > 0) badgeColor = 'bg-green-600 text-white';
                   else if (s.score === 0) badgeColor = 'bg-red-600 text-white';
@@ -548,14 +604,20 @@ export default function LeaderboardNew() {
                   else if (s.score > 0) badgeColor = 'bg-yellow-500 text-white';
 
                   return (
-                    <tr key={index} className="transition-colors hover:bg-cyan-500/10" style={{ backgroundColor: '#1e293b' }}>
+                    <tr key={index} className="transition-colors hover:bg-cyan-500/10"
+                      style={{
+                        backgroundColor: s.isBonus ? 'rgba(6, 182, 212, 0.08)' : '#1e293b',
+                        borderTop: s.isBonus ? '1px solid rgba(6, 182, 212, 0.2)' : 'none'
+                      }}>
                       <td className="text-center p-1.5">
-                        <Badge variant="outline" className="rounded-full px-1.5 py-0.5 text-[10px]" style={{ borderColor: '#06b6d4', color: '#06b6d4', background: 'rgba(6, 182, 212, 0.1)' }}>
+                        <Badge variant="outline" className="rounded-full px-1.5 py-0.5 text-[10px]"
+                          style={{ borderColor: '#06b6d4', color: '#06b6d4', background: 'rgba(6, 182, 212, 0.1)' }}>
                           {s.table_id}
                         </Badge>
                       </td>
                       <td className="text-center p-1.5">
-                        <Badge variant="outline" className="rounded-full px-1.5 py-0.5 text-[10px]" style={{ borderColor: '#0ea5e9', color: '#0ea5e9', background: 'rgba(14, 165, 233, 0.1)' }}>
+                        <Badge variant="outline" className="rounded-full px-1.5 py-0.5 text-[10px]"
+                          style={{ borderColor: '#0ea5e9', color: '#0ea5e9', background: 'rgba(14, 165, 233, 0.1)' }}>
                           {s.question_id_display}
                         </Badge>
                       </td>
@@ -563,13 +625,21 @@ export default function LeaderboardNew() {
                         {s.home_team && s.away_team ? (
                           <div className="flex items-center justify-start gap-1 text-xs" style={{ color: '#f8fafc' }}>
                             <span>{s.home_team}</span>
-                            {s.home_team_logo && <img src={s.home_team_logo} alt={s.home_team} className="w-4 h-4 rounded-full" onError={e => e.target.style.display = 'none'} />}
+                            {s.home_team_logo && (
+                              <img src={s.home_team_logo} alt={s.home_team} className="w-4 h-4 rounded-full"
+                                onError={e => e.target.style.display = 'none'} />
+                            )}
                             <span>-</span>
-                            {s.away_team_logo && <img src={s.away_team_logo} alt={s.away_team} className="w-4 h-4 rounded-full" onError={e => e.target.style.display = 'none'} />}
+                            {s.away_team_logo && (
+                              <img src={s.away_team_logo} alt={s.away_team} className="w-4 h-4 rounded-full"
+                                onError={e => e.target.style.display = 'none'} />
+                            )}
                             <span>{s.away_team}</span>
                           </div>
                         ) : (
-                          <span className="text-xs" style={{ color: '#f8fafc' }}>{s.question_text}</span>
+                          <span className="text-xs" style={{ color: s.isBonus ? '#06b6d4' : '#f8fafc', fontWeight: s.isBonus ? 'bold' : 'normal' }}>
+                            {s.question_text}
+                          </span>
                         )}
                       </td>
                       <td className="text-center p-1.5">
