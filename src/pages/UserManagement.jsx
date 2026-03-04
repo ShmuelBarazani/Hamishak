@@ -68,7 +68,10 @@ export default function UserManagement() {
         const key = p.user_email || p.participant_name;
         if (!gamesMap[key]) gamesMap[key] = [];
         const game = games.find(g => g.id === p.game_id);
-        if (game) gamesMap[key].push({ ...game, participant: p });
+        // ✅ מנע כפילויות — אל תוסיף אם המשחק כבר קיים
+        if (game && !gamesMap[key].find(g => g.id === p.game_id)) {
+          gamesMap[key].push({ ...game, participant: p });
+        }
       });
       setUserGames(gamesMap);
     } catch (error) {
