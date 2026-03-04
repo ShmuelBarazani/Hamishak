@@ -35,28 +35,22 @@ export default function LeaderboardNew() {
           const user = await supabase.auth.getUser().then(r => r.data.user);
           setCurrentUser(user);
         }
-      } catch (error) {
-        setCurrentUser(null);
-      }
+      } catch (error) { setCurrentUser(null); }
     };
     loadUser();
   }, []);
 
   const formatScore = (score) => {
     if (!score || score === '__CLEAR__') return '';
-    if (score.includes('-')) {
-      return score.split('-').map(x => x.trim()).join(' - ');
-    }
+    if (score.includes('-')) return score.split('-').map(x => x.trim()).join(' - ');
     return score;
   };
 
-  // ✅ טעינה מהירה מ-rankings table ישירות
   const loadRankings = useCallback(async () => {
     if (!currentGame) { setLoading(false); return; }
     setLoading(true);
     try {
       const stored = await db.Ranking.filter({ game_id: currentGame.id }, '-current_score', 500);
-
       if (stored.length > 0) {
         let position = 1;
         const ranked = stored.map((r, i) => {
@@ -68,11 +62,8 @@ export default function LeaderboardNew() {
         setAvgScore(scores.reduce((a, b) => a + b, 0) / scores.length);
         setMaxScore(Math.max(...scores));
         setMinScore(Math.min(...scores));
-      } else {
-        setRankings([]);
-      }
+      } else { setRankings([]); }
     } catch (error) {
-      console.error("Error:", error);
       toast({ title: "שגיאה", description: "טעינת הדירוג נכשלה", variant: "destructive" });
     }
     setLoading(false);
@@ -80,23 +71,15 @@ export default function LeaderboardNew() {
 
   useEffect(() => { loadRankings(); }, [loadRankings, currentGame]);
 
-  /**
-   * ✅ פונקציה עזר — טעינת כל השאלות במשחק (pagination)
-   * ⚠️ לא מסנן T1 — ScoreService מטפל בזה פנימית
-   */
   const loadAllQuestions = async (gameId) => {
-    let allQuestions = [];
-    let skip = 0;
-    const BATCH = 1000;
+    let all = []; let skip = 0; const BATCH = 1000;
     while (true) {
       const batch = await db.Question.filter({ game_id: gameId }, null, BATCH, skip);
-      allQuestions = [...allQuestions, ...batch];
+      all = [...all, ...batch];
       if (batch.length < BATCH) break;
       skip += BATCH;
     }
-
-    // חלץ קבוצות משאלות שחסרות home_team/away_team
-    allQuestions.forEach(q => {
+    all.forEach(q => {
       if (!q.home_team && !q.away_team && q.question_text) {
         let teams = null;
         if (q.question_text.includes(' נגד ')) teams = q.question_text.split(' נגד ').map(t => t.trim());
@@ -104,83 +87,80 @@ export default function LeaderboardNew() {
         if (teams?.length === 2) { q.home_team = teams[0]; q.away_team = teams[1]; }
       }
     });
-
-    return allQuestions;
+    return all;
   };
 
-  /**
-   * ✅ פונקציה עזר — טעינת ניחושים (pagination)
-   */
   const loadAllPredictions = async (gameId, participantName = null) => {
-    let allPredictions = [];
-    let skip = 0;
-    const BATCH = 1000;
-    const filter = participantName
-      ? { game_id: gameId, participant_name: participantName }
-      : { game_id: gameId };
+    let all = []; let skip = 0; const BATCH = 1000;
+    const filter = participantName ? { game_id: gameId, participant_name: participantName } : { game_id: gameId };
     while (true) {
       const batch = await db.Prediction.filter(filter, null, BATCH, skip);
-      allPredictions = [...allPredictions, ...batch];
+      all = [...all, ...batch];
       if (batch.length < BATCH) break;
       skip += BATCH;
     }
-    return allPredictions;
+    return all;
   };
 
-  /**
-   * ✅ פונקציה עזר — קח ניחוש אחרון לכל שאלה (לפי created_at)
-   * מחזיר: { question_id -> text_prediction }
-   */
   const buildLatestPredMap = (predictions) => {
     const tempPreds = {};
     for (const pred of predictions) {
       const existing = tempPreds[pred.question_id];
       const existingDate = existing ? new Date(existing.created_at || existing.created_date || 0) : new Date(0);
       const newDate = new Date(pred.created_at || pred.created_date || 0);
-      if (!existing || newDate > existingDate) {
-        tempPreds[pred.question_id] = pred;
-      }
+      if (!existing || newDate > existingDate) tempPreds[pred.question_id] = pred;
     }
     const predMap = {};
-    for (const [qid, pred] of Object.entries(tempPreds)) {
-      predMap[qid] = pred.text_prediction;
-    }
+    for (const [qid, pred] of Object.entries(tempPreds)) predMap[qid] = pred.text_prediction;
     return predMap;
   };
 
-  // ✅ חישוב ניקוד מחדש — parallel בקבוצות של 10
+  // ✅ תיקון קריטי: רק משתתפים רשמיים מ-game_participants
   const handleRecalculateScores = async () => {
     if (!currentGame) return;
     setRecalculating(true);
-    setRecalcProgress('טוען שאלות...');
+    setRecalcProgress('טוען משתתפים...');
     try {
-      // 1️⃣ טען שאלות (ללא סינון T1 — ScoreService מטפל בזה)
-      const allQuestions = await loadAllQuestions(currentGame.id);
-      setRecalcProgress('טוען ניחושים...');
+      // 1️⃣ רשימת משתתפים רשמית בלבד
+      const gameParticipants = await db.GameParticipant.filter(
+        { game_id: currentGame.id }, 'participant_name', 500
+      );
+      const validParticipants = new Set(
+        gameParticipants
+          .filter(p => p.role_in_game === 'predictor' && p.is_active !== false)
+          .map(p => p.participant_name)
+      );
 
-      // 2️⃣ טען את כל הניחושים
-      const allPredictions = await loadAllPredictions(currentGame.id);
-
-      // 3️⃣ קבץ ניחושים לפי משתתף
-      const participantRawPreds = {};
-      for (const pred of allPredictions) {
-        if (!pred.participant_name?.trim()) continue;
-        if (!participantRawPreds[pred.participant_name]) participantRawPreds[pred.participant_name] = [];
-        participantRawPreds[pred.participant_name].push(pred);
+      if (validParticipants.size === 0) {
+        toast({ title: "שגיאה", description: "לא נמצאו משתתפים ב-game_participants", variant: "destructive" });
+        setRecalculating(false); return;
       }
 
-      const participantNames = Object.keys(participantRawPreds);
-      setRecalcProgress(`מחשב ניקוד ל-${participantNames.length} משתתפים...`);
+      setRecalcProgress(`טוען שאלות... (${validParticipants.size} משתתפים)`);
+      const allQuestions = await loadAllQuestions(currentGame.id);
+      setRecalcProgress('טוען ניחושים...');
+      const allPredictions = await loadAllPredictions(currentGame.id);
 
-      // 4️⃣ חשב ניקוד לכל משתתף
+      // 2️⃣ קבץ ניחושים — רק משתתפים רשמיים!
+      const participantRawPreds = {};
+      for (const pred of allPredictions) {
+        const name = pred.participant_name?.trim();
+        if (!name || !validParticipants.has(name)) continue;
+        if (!participantRawPreds[name]) participantRawPreds[name] = [];
+        participantRawPreds[name].push(pred);
+      }
+
+      setRecalcProgress(`מחשב ניקוד ל-${validParticipants.size} משתתפים...`);
+
+      // 3️⃣ חשב ניקוד
       const participantScores = [];
-      for (const name of participantNames) {
-        const predMap = buildLatestPredMap(participantRawPreds[name]);
+      for (const name of validParticipants) {
+        const predMap = buildLatestPredMap(participantRawPreds[name] || []);
         const { total } = calculateTotalScore(allQuestions, predMap);
         participantScores.push({ participant_name: name, current_score: total });
       }
 
-      // 5️⃣ מיין והוסף מיקומים
+      // 4️⃣ מיין + מיקומים
       participantScores.sort((a, b) => b.current_score - a.current_score);
       let position = 1;
       for (let i = 0; i < participantScores.length; i++) {
@@ -188,24 +168,22 @@ export default function LeaderboardNew() {
         participantScores[i].current_position = position;
       }
 
-      // 6️⃣ טען baseline קיים
+      // 5️⃣ baseline קיים
       const baselines = await db.Ranking.filter({ game_id: currentGame.id }, null, 500);
       const baselineMap = {};
       baselines.forEach(b => { baselineMap[b.participant_name] = b; });
 
       setRecalcProgress(`שומר ${participantScores.length} רשומות...`);
 
-      // 7️⃣ שמור parallel בקבוצות של 10
+      // 6️⃣ שמור parallel
       const BATCH = 10;
       for (let i = 0; i < participantScores.length; i += BATCH) {
         const chunk = participantScores.slice(i, i + BATCH);
         await Promise.all(chunk.map(async p => {
           const baseline = baselineMap[p.participant_name];
           const data = {
-            participant_name: p.participant_name,
-            game_id: currentGame.id,
-            current_score: p.current_score,
-            current_position: p.current_position,
+            participant_name: p.participant_name, game_id: currentGame.id,
+            current_score: p.current_score, current_position: p.current_position,
             previous_score: baseline?.current_score || 0,
             previous_position: baseline?.current_position || 0,
             baseline_score: baseline?.baseline_score || 0,
@@ -218,120 +196,62 @@ export default function LeaderboardNew() {
           try {
             if (baseline) await db.Ranking.update(baseline.id, data);
             else await db.Ranking.create(data);
-          } catch (err) {
-            console.error(`שגיאה ב-${p.participant_name}:`, err);
-          }
+          } catch (err) { console.error(`שגיאה ב-${p.participant_name}:`, err); }
         }));
         setRecalcProgress(`שמירה: ${Math.min(i + BATCH, participantScores.length)}/${participantScores.length}`);
       }
 
-      toast({
-        title: "הצלחה!",
-        description: `עודכן דירוג ל-${participantScores.length} משתתפים`,
-        className: "bg-cyan-900/30 border-cyan-500 text-cyan-200"
-      });
+      // 7️⃣ מחק רשומות ישנות (81→78)
+      const orphaned = baselines.filter(b => !validParticipants.has(b.participant_name));
+      if (orphaned.length > 0) {
+        console.log(`מוחק ${orphaned.length} רשומות ישנות:`, orphaned.map(r => r.participant_name));
+        await Promise.all(orphaned.map(r => db.Ranking.delete(r.id)));
+      }
+
+      toast({ title: "הצלחה!", description: `עודכן דירוג ל-${participantScores.length} משתתפים`, className: "bg-cyan-900/30 border-cyan-500 text-cyan-200" });
       await loadRankings();
     } catch (error) {
       console.error("Error:", error);
       toast({ title: "שגיאה", description: error.message, variant: "destructive" });
     }
-    setRecalculating(false);
-    setRecalcProgress('');
+    setRecalculating(false); setRecalcProgress('');
   };
 
-  // ✅ קביעת baseline — parallel
   const handleSetBaseline = async () => {
-    if (!currentGame) return;
-    if (!window.confirm('האם לקבוע את הדירוג הנוכחי כנקודת ייחוס?')) return;
+    if (!currentGame || !window.confirm('האם לקבוע את הדירוג הנוכחי כנקודת ייחוס?')) return;
     setSettingBaseline(true);
     try {
       const allRankings = await db.Ranking.filter({ game_id: currentGame.id }, null, 500);
       const now = new Date().toISOString();
       const BATCH = 10;
       for (let i = 0; i < allRankings.length; i += BATCH) {
-        const chunk = allRankings.slice(i, i + BATCH);
-        await Promise.all(chunk.map(ranking =>
-          db.Ranking.update(ranking.id, {
-            baseline_score: ranking.current_score,
-            baseline_position: ranking.current_position,
-            last_baseline_set: now
-          })
+        await Promise.all(allRankings.slice(i, i + BATCH).map(r =>
+          db.Ranking.update(r.id, { baseline_score: r.current_score, baseline_position: r.current_position, last_baseline_set: now })
         ));
       }
-      toast({
-        title: "נקודת ייחוס נקבעה!",
-        description: `${allRankings.length} משתתפים עודכנו`,
-        className: "bg-green-900/30 border-green-500 text-green-200"
-      });
+      toast({ title: "נקודת ייחוס נקבעה!", description: `${allRankings.length} משתתפים עודכנו`, className: "bg-green-900/30 border-green-500 text-green-200" });
       await loadRankings();
-    } catch (error) {
-      toast({ title: "שגיאה", description: error.message, variant: "destructive" });
-    }
+    } catch (error) { toast({ title: "שגיאה", description: error.message, variant: "destructive" }); }
     setSettingBaseline(false);
   };
 
-  // ✅ פרטי משתתף — ניקוד בזמן אמת
   const loadParticipantDetails = async (participantName) => {
     if (!currentGame) return;
     try {
-      // טען שאלות וניחושים (ללא סינון T1)
       const [allQuestions, allPredictions] = await Promise.all([
         loadAllQuestions(currentGame.id),
         loadAllPredictions(currentGame.id, participantName)
       ]);
-
-      // קח ניחוש אחרון לכל שאלה
       const predMap = buildLatestPredMap(allPredictions);
-
-      // חשב ניקוד
       const { total: totalScore, breakdown } = calculateTotalScore(allQuestions, predMap);
+      const teamsMap = (currentGame.teams_data || []).reduce((acc, t) => { acc[t.name] = t; return acc; }, {});
 
-      // בנה מפת לוגו קבוצות
-      const teamsMap = (currentGame.teams_data || []).reduce((acc, t) => {
-        acc[t.name] = t;
-        return acc;
-      }, {});
-
-      // עיבוד breakdown לתצוגה
       const filteredScores = breakdown
         .map(item => {
           const question = allQuestions.find(q => q.id === item.question_id);
-
-          // שורות בונוס (T14_BASIC, T14_TEAMS, וכו')
-          if (!question) {
-            return {
-              question_id: item.question_id,
-              score: item.score,
-              max_score: item.max_score,
-              table_id: item.table_id || '?',
-              question_id_display: item.question_id_text || '🎁',
-              question_text: item.question_id_text || '',
-              home_team: null,
-              away_team: null,
-              actual_result: '✓',
-              prediction: '✓',
-              home_team_logo: null,
-              away_team_logo: null,
-              isBonus: true
-            };
-          }
-
+          if (!question) return { question_id: item.question_id, score: item.score, max_score: item.max_score, table_id: item.table_id || '?', question_id_display: item.question_id_text || '🎁', question_text: item.question_id_text || '', home_team: null, away_team: null, actual_result: '✓', prediction: '✓', home_team_logo: null, away_team_logo: null, isBonus: true };
           const pred = allPredictions.find(p => p.question_id === item.question_id);
-          return {
-            question_id: question.id,
-            score: item.score,
-            max_score: item.max_score,
-            table_id: item.table_id || '?',
-            question_id_display: item.question_id_text || question.question_id || '?',
-            question_text: question.question_text || '',
-            home_team: question.home_team,
-            away_team: question.away_team,
-            actual_result: formatScore(question.actual_result || ''),
-            prediction: formatScore(pred?.text_prediction || ''),
-            home_team_logo: question.home_team ? teamsMap[question.home_team]?.logo_url : null,
-            away_team_logo: question.away_team ? teamsMap[question.away_team]?.logo_url : null,
-            isBonus: item.isBonus || false
-          };
+          return { question_id: question.id, score: item.score, max_score: item.max_score, table_id: item.table_id || '?', question_id_display: item.question_id_text || question.question_id || '?', question_text: question.question_text || '', home_team: question.home_team, away_team: question.away_team, actual_result: formatScore(question.actual_result || ''), prediction: formatScore(pred?.text_prediction || ''), home_team_logo: question.home_team ? teamsMap[question.home_team]?.logo_url : null, away_team_logo: question.away_team ? teamsMap[question.away_team]?.logo_url : null, isBonus: item.isBonus || false };
         })
         .filter(s => s !== null && s.score > 0)
         .sort((a, b) => {
@@ -344,213 +264,118 @@ export default function LeaderboardNew() {
       setParticipantDetails({ name: participantName, scores: filteredScores, totalScore });
       setSelectedParticipant(participantName);
     } catch (error) {
-      console.error("Error:", error);
       toast({ title: "שגיאה", description: "טעינת הפרטים נכשלה", variant: "destructive" });
     }
   };
 
   const handleSort = (column) => {
-    if (sortColumn === column) {
-      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
-    } else {
-      setSortColumn(column);
-      setSortDirection(['current_score', 'previous_score', 'score_change', 'position_change'].includes(column) ? 'desc' : 'asc');
-    }
+    if (sortColumn === column) setSortDirection(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortColumn(column); setSortDirection(['current_score','previous_score','score_change','position_change'].includes(column) ? 'desc' : 'asc'); }
   };
 
-  const getSortedRankings = () => {
-    return [...rankings].sort((a, b) => {
-      let aVal = a[sortColumn], bVal = b[sortColumn];
-      if (sortColumn === 'participant_name') {
-        aVal = String(aVal || ''); bVal = String(bVal || '');
-        return sortDirection === 'asc' ? aVal.localeCompare(bVal, 'he') : bVal.localeCompare(aVal, 'he');
-      }
-      aVal = Number(aVal) || 0; bVal = Number(bVal) || 0;
-      return sortDirection === 'asc' ? aVal - bVal : bVal - aVal;
-    });
-  };
+  const getSortedRankings = () => [...rankings].sort((a, b) => {
+    let aVal = a[sortColumn], bVal = b[sortColumn];
+    if (sortColumn === 'participant_name') { aVal = String(aVal||''); bVal = String(bVal||''); return sortDirection==='asc' ? aVal.localeCompare(bVal,'he') : bVal.localeCompare(aVal,'he'); }
+    aVal = Number(aVal)||0; bVal = Number(bVal)||0;
+    return sortDirection==='asc' ? aVal-bVal : bVal-aVal;
+  });
 
-  const SortIcon = ({ column }) => {
-    if (sortColumn !== column) return <ArrowUpDown className="w-2.5 h-2.5 md:w-4 md:h-4 opacity-30" />;
-    return sortDirection === 'asc'
-      ? <ArrowUp className="w-2.5 h-2.5 md:w-4 md:h-4" style={{ color: '#06b6d4' }} />
-      : <ArrowDown className="w-2.5 h-2.5 md:w-4 md:h-4" style={{ color: '#06b6d4' }} />;
-  };
+  const SortIcon = ({ column }) => sortColumn!==column ? <ArrowUpDown className="w-2.5 h-2.5 md:w-4 md:h-4 opacity-30"/> : sortDirection==='asc' ? <ArrowUp className="w-2.5 h-2.5 md:w-4 md:h-4" style={{color:'#06b6d4'}}/> : <ArrowDown className="w-2.5 h-2.5 md:w-4 md:h-4" style={{color:'#06b6d4'}}/>;
+  const getPositionIcon = (pos) => pos===1?<Crown className="w-5 h-5 text-yellow-400"/>:pos===2?<Trophy className="w-5 h-5 text-gray-400"/>:pos===3?<Trophy className="w-5 h-5 text-orange-400"/>:null;
+  const getChangeIcon = (change) => change>0?<TrendingUp className="w-3 h-3 md:w-4 md:h-4 text-green-400"/>:change<0?<TrendingDown className="w-3 h-3 md:w-4 md:h-4 text-red-400"/>:<Minus className="w-3 h-3 md:w-4 md:h-4 text-gray-400"/>;
 
-  const getPositionIcon = (pos) => {
-    if (pos === 1) return <Crown className="w-5 h-5 text-yellow-400" />;
-    if (pos === 2) return <Trophy className="w-5 h-5 text-gray-400" />;
-    if (pos === 3) return <Trophy className="w-5 h-5 text-orange-400" />;
-    return null;
-  };
-
-  const getPositionChangeIcon = (change) => {
-    if (change > 0) return <TrendingUp className="w-3 h-3 md:w-4 md:h-4 text-green-400" />;
-    if (change < 0) return <TrendingDown className="w-3 h-3 md:w-4 md:h-4 text-red-400" />;
-    return <Minus className="w-3 h-3 md:w-4 md:h-4 text-gray-400" />;
-  };
-
-  const isAdmin = currentUser?.role === 'admin' ||
-    currentUser?.app_metadata?.role === 'admin' ||
-    currentUser?.email === 'tropikan1@gmail.com';
-
+  const isAdmin = currentUser?.role==='admin'||currentUser?.app_metadata?.role==='admin'||currentUser?.email==='tropikan1@gmail.com';
   const sortedRankings = getSortedRankings();
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-screen" style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%)' }}>
-        <Loader2 className="w-8 h-8 animate-spin" style={{ color: '#06b6d4' }} />
-        <span className="mr-3" style={{ color: '#06b6d4' }}>טוען דירוג...</span>
-      </div>
-    );
-  }
+  if (loading) return (
+    <div className="flex items-center justify-center h-screen" style={{background:'linear-gradient(135deg,#0f172a 0%,#1e293b 50%,#0f172a 100%)'}}>
+      <Loader2 className="w-8 h-8 animate-spin" style={{color:'#06b6d4'}}/>
+      <span className="mr-3" style={{color:'#06b6d4'}}>טוען דירוג...</span>
+    </div>
+  );
 
   return (
-    <div className="min-h-screen p-3 md:p-6" dir="rtl" style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%)' }}>
+    <div className="min-h-screen p-3 md:p-6" dir="rtl" style={{background:'linear-gradient(135deg,#0f172a 0%,#1e293b 50%,#0f172a 100%)'}}>
       <div className="max-w-7xl mx-auto">
         <div className="flex flex-col md:flex-row justify-between items-start gap-3 mb-4 md:mb-8">
           <div>
-            <h1 className="text-xl md:text-4xl font-bold mb-1 md:mb-2 flex items-center gap-2 md:gap-3"
-              style={{ color: '#f8fafc', textShadow: '0 0 10px rgba(6, 182, 212, 0.3)' }}>
-              <Trophy className="w-6 h-6 md:w-10 md:h-10" style={{ color: '#06b6d4' }} />
-              טבלת דירוג
+            <h1 className="text-xl md:text-4xl font-bold mb-1 md:mb-2 flex items-center gap-2 md:gap-3" style={{color:'#f8fafc',textShadow:'0 0 10px rgba(6,182,212,0.3)'}}>
+              <Trophy className="w-6 h-6 md:w-10 md:h-10" style={{color:'#06b6d4'}}/>טבלת דירוג
             </h1>
-            <p className="text-xs md:text-base" style={{ color: '#94a3b8' }}>מצב העמידה הנוכחי של המשתתפים</p>
-            {recalcProgress && <p className="text-xs mt-1" style={{ color: '#06b6d4' }}>{recalcProgress}</p>}
+            <p className="text-xs md:text-base" style={{color:'#94a3b8'}}>מצב העמידה הנוכחי של המשתתפים</p>
+            {recalcProgress && <p className="text-xs mt-1" style={{color:'#06b6d4'}}>{recalcProgress}</p>}
           </div>
-
           {isAdmin && (
             <div className="flex gap-2 md:gap-3 w-full md:w-auto">
-              <Button onClick={handleSetBaseline} disabled={settingBaseline || recalculating}
-                style={{ background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)' }}
-                className="text-white flex-1 md:flex-none h-8 md:h-10 text-[10px] md:text-sm">
-                {settingBaseline ? <Loader2 className="w-3 h-3 animate-spin ml-1" /> : <CheckCircle className="w-3 h-3 ml-1" />}
-                קבע דירוג
+              <Button onClick={handleSetBaseline} disabled={settingBaseline||recalculating} style={{background:'linear-gradient(135deg,#10b981 0%,#059669 100%)'}} className="text-white flex-1 md:flex-none h-8 md:h-10 text-[10px] md:text-sm">
+                {settingBaseline?<Loader2 className="w-3 h-3 animate-spin ml-1"/>:<CheckCircle className="w-3 h-3 ml-1"/>}קבע דירוג
               </Button>
-              <Button onClick={handleRecalculateScores} disabled={recalculating || settingBaseline}
-                style={{ background: 'linear-gradient(135deg, #06b6d4 0%, #0ea5e9 100%)' }}
-                className="text-white flex-1 md:flex-none h-8 md:h-10 text-[10px] md:text-sm">
-                {recalculating ? <Loader2 className="w-3 h-3 animate-spin ml-1" /> : <RefreshCw className="w-3 h-3 ml-1" />}
-                {recalculating ? recalcProgress || 'מחשב...' : 'חשב ניקוד'}
+              <Button onClick={handleRecalculateScores} disabled={recalculating||settingBaseline} style={{background:'linear-gradient(135deg,#06b6d4 0%,#0ea5e9 100%)'}} className="text-white flex-1 md:flex-none h-8 md:h-10 text-[10px] md:text-sm">
+                {recalculating?<Loader2 className="w-3 h-3 animate-spin ml-1"/>:<RefreshCw className="w-3 h-3 ml-1"/>}{recalculating?recalcProgress||'מחשב...':'חשב ניקוד'}
               </Button>
             </div>
           )}
         </div>
 
-        {/* סטטיסטיקות */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-4 mb-4 md:mb-8">
-          {[
-            { label: 'סה"כ משתתפים', value: rankings.length, icon: Users, color: '#06b6d4' },
-            { label: 'ניקוד ממוצע', value: avgScore.toFixed(1), icon: Target, color: '#0ea5e9' },
-            { label: 'ניקוד מקסימלי', value: maxScore.toFixed(1), icon: TrendingUp, color: '#8b5cf6' },
-            { label: 'ניקוד מינימלי', value: minScore.toFixed(1), icon: TrendingDown, color: '#94a3b8' }
-          ].map((stat, idx) => (
-            <Card key={idx} style={{ background: 'rgba(30, 41, 59, 0.6)', border: '1px solid rgba(6, 182, 212, 0.2)' }}>
+          {[{label:'סה"כ משתתפים',value:rankings.length,icon:Users,color:'#06b6d4'},{label:'ניקוד ממוצע',value:avgScore.toFixed(1),icon:Target,color:'#0ea5e9'},{label:'ניקוד מקסימלי',value:maxScore.toFixed(1),icon:TrendingUp,color:'#8b5cf6'},{label:'ניקוד מינימלי',value:minScore.toFixed(1),icon:TrendingDown,color:'#94a3b8'}].map((stat,idx)=>(
+            <Card key={idx} style={{background:'rgba(30,41,59,0.6)',border:'1px solid rgba(6,182,212,0.2)'}}>
               <CardContent className="p-2 md:p-4">
                 <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-[9px] md:text-sm" style={{ color: '#94a3b8' }}>{stat.label}</p>
-                    <p className="text-lg md:text-3xl font-bold" style={{ color: stat.color }}>{stat.value}</p>
-                  </div>
-                  <stat.icon className="w-6 h-6 md:w-10 md:h-10" style={{ color: stat.color, opacity: 0.5 }} />
+                  <div><p className="text-[9px] md:text-sm" style={{color:'#94a3b8'}}>{stat.label}</p><p className="text-lg md:text-3xl font-bold" style={{color:stat.color}}>{stat.value}</p></div>
+                  <stat.icon className="w-6 h-6 md:w-10 md:h-10" style={{color:stat.color,opacity:0.5}}/>
                 </div>
               </CardContent>
             </Card>
           ))}
         </div>
 
-        {/* טבלת דירוג */}
-        <Card style={{ background: 'rgba(30, 41, 59, 0.6)', border: '1px solid rgba(6, 182, 212, 0.2)' }}>
-          <CardHeader className="py-2 md:py-4">
-            <CardTitle className="text-sm md:text-lg" style={{ color: '#06b6d4' }}>הדירוג הנוכחי</CardTitle>
-          </CardHeader>
+        <Card style={{background:'rgba(30,41,59,0.6)',border:'1px solid rgba(6,182,212,0.2)'}}>
+          <CardHeader className="py-2 md:py-4"><CardTitle className="text-sm md:text-lg" style={{color:'#06b6d4'}}>הדירוג הנוכחי</CardTitle></CardHeader>
           <CardContent className="p-0">
-            {rankings.length === 0 ? (
-              <div className="p-8 text-center" style={{ color: '#94a3b8' }}>
-                אין נתוני דירוג — לחץ "חשב ניקוד" כדי לחשב
-              </div>
+            {rankings.length===0 ? (
+              <div className="p-8 text-center" style={{color:'#94a3b8'}}>אין נתוני דירוג — לחץ "חשב ניקוד" כדי לחשב</div>
             ) : (
-              <div style={{ maxHeight: '600px', overflow: 'auto' }}>
-                <table className="w-full" style={{ borderCollapse: 'collapse' }}>
-                  <thead style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: '#1e293b' }}>
-                    <tr style={{ borderBottom: '2px solid rgba(6, 182, 212, 0.3)' }}>
-                      {[
-                        { key: 'current_position', label: '#', mobile: true },
-                        { key: 'participant_name', label: 'שם', mobile: true, align: 'right' },
-                        { key: 'current_score', label: "נק'", mobile: true },
-                        { key: 'previous_position', label: 'מיקום קודם', mobile: false },
-                        { key: 'previous_score', label: 'ניקוד קודם', mobile: false },
-                        { key: 'score_change', label: 'שינוי בניקוד', mobileLabel: '+/-', mobile: true },
-                        { key: 'position_change', label: 'שינוי במיקום', mobileLabel: '↕', mobile: true },
-                      ].map(col => (
-                        <th key={col.key}
-                          className={`${col.mobile ? '' : 'hidden md:table-cell'} text-${col.align || 'center'} p-1 md:p-3 cursor-pointer hover:bg-cyan-900/20 text-[8px] md:text-sm`}
-                          style={{ backgroundColor: '#1e293b', color: '#94a3b8' }}
-                          onClick={() => handleSort(col.key)}>
-                          <div className={`flex items-center justify-${col.align === 'right' ? 'start' : 'center'} gap-0.5 md:gap-2`}>
+              <div style={{maxHeight:'600px',overflow:'auto'}}>
+                <table className="w-full" style={{borderCollapse:'collapse'}}>
+                  <thead style={{position:'sticky',top:0,zIndex:10,backgroundColor:'#1e293b'}}>
+                    <tr style={{borderBottom:'2px solid rgba(6,182,212,0.3)'}}>
+                      {[{key:'current_position',label:'#',mobile:true},{key:'participant_name',label:'שם',mobile:true,align:'right'},{key:'current_score',label:"נק'",mobile:true},{key:'previous_position',label:'מיקום קודם',mobile:false},{key:'previous_score',label:'ניקוד קודם',mobile:false},{key:'score_change',label:'שינוי בניקוד',mobileLabel:'+/-',mobile:true},{key:'position_change',label:'שינוי במיקום',mobileLabel:'↕',mobile:true}].map(col=>(
+                        <th key={col.key} className={`${col.mobile?'':'hidden md:table-cell'} text-${col.align||'center'} p-1 md:p-3 cursor-pointer hover:bg-cyan-900/20 text-[8px] md:text-sm`} style={{backgroundColor:'#1e293b',color:'#94a3b8'}} onClick={()=>handleSort(col.key)}>
+                          <div className={`flex items-center justify-${col.align==='right'?'start':'center'} gap-0.5 md:gap-2`}>
                             <span className="hidden md:inline">{col.label}</span>
-                            {col.mobileLabel && <span className="md:hidden">{col.mobileLabel}</span>}
-                            {!col.mobileLabel && <span className="md:hidden">{col.label}</span>}
-                            <SortIcon column={col.key} />
+                            {col.mobileLabel&&<span className="md:hidden">{col.mobileLabel}</span>}
+                            {!col.mobileLabel&&<span className="md:hidden">{col.label}</span>}
+                            <SortIcon column={col.key}/>
                           </div>
                         </th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
-                    {sortedRankings.map((rank) => (
-                      <tr key={rank.id} className="hover:bg-cyan-500/10"
-                        style={{ borderBottom: '1px solid rgba(6, 182, 212, 0.1)' }}>
+                    {sortedRankings.map(rank=>(
+                      <tr key={rank.id} className="hover:bg-cyan-500/10" style={{borderBottom:'1px solid rgba(6,182,212,0.1)'}}>
                         <td className="text-center p-1 md:p-2">
                           <div className="flex items-center justify-center gap-0.5 md:gap-1.5">
                             <span className="hidden md:inline">{getPositionIcon(rank.current_position)}</span>
-                            <span className="font-bold text-xs md:text-base" style={{ color: '#f8fafc' }}>
-                              {rank.current_position}
-                            </span>
+                            <span className="font-bold text-xs md:text-base" style={{color:'#f8fafc'}}>{rank.current_position}</span>
                           </div>
                         </td>
-                        <td className="font-medium text-[10px] md:text-base cursor-pointer hover:underline text-right p-1 md:p-2"
-                          style={{ color: '#0ea5e9' }}
-                          onClick={() => loadParticipantDetails(rank.participant_name)}>
-                          {rank.participant_name}
-                        </td>
-                        <td className="text-center p-1 md:p-2">
-                          <Badge className="text-white text-[10px] md:text-base px-1.5 md:px-3 py-0.5 md:py-1"
-                            style={{ background: '#06b6d4', boxShadow: '0 0 10px rgba(6, 182, 212, 0.4)' }}>
-                            {rank.current_score}
-                          </Badge>
-                        </td>
-                        <td className="hidden md:table-cell text-center p-2 text-sm" style={{ color: '#94a3b8' }}>
-                          {rank.previous_position || '-'}
-                        </td>
-                        <td className="hidden md:table-cell text-center p-2 text-sm" style={{ color: '#94a3b8' }}>
-                          {rank.previous_score || '0'}
-                        </td>
+                        <td className="font-medium text-[10px] md:text-base cursor-pointer hover:underline text-right p-1 md:p-2" style={{color:'#0ea5e9'}} onClick={()=>loadParticipantDetails(rank.participant_name)}>{rank.participant_name}</td>
+                        <td className="text-center p-1 md:p-2"><Badge className="text-white text-[10px] md:text-base px-1.5 md:px-3 py-0.5 md:py-1" style={{background:'#06b6d4',boxShadow:'0 0 10px rgba(6,182,212,0.4)'}}>{rank.current_score}</Badge></td>
+                        <td className="hidden md:table-cell text-center p-2 text-sm" style={{color:'#94a3b8'}}>{rank.previous_position||'-'}</td>
+                        <td className="hidden md:table-cell text-center p-2 text-sm" style={{color:'#94a3b8'}}>{rank.previous_score||'0'}</td>
                         <td className="text-center p-1 md:p-2">
                           <div className="flex items-center justify-center gap-0.5 md:gap-1">
-                            {rank.score_change > 0 && (
-                              <Badge className="text-white text-[8px] md:text-xs px-1 md:px-2" style={{ background: '#10b981' }}>
-                                +{rank.score_change}
-                              </Badge>
-                            )}
-                            {rank.score_change < 0 && (
-                              <Badge className="text-white text-[8px] md:text-xs px-1 md:px-2" style={{ background: '#ef4444' }}>
-                                {rank.score_change}
-                              </Badge>
-                            )}
-                            {(!rank.score_change || rank.score_change === 0) && (
-                              <Badge className="text-white text-[8px] md:text-xs px-1 md:px-2" style={{ background: '#475569' }}>
-                                0
-                              </Badge>
-                            )}
+                            {rank.score_change>0&&<Badge className="text-white text-[8px] md:text-xs px-1 md:px-2" style={{background:'#10b981'}}>+{rank.score_change}</Badge>}
+                            {rank.score_change<0&&<Badge className="text-white text-[8px] md:text-xs px-1 md:px-2" style={{background:'#ef4444'}}>{rank.score_change}</Badge>}
+                            {(!rank.score_change||rank.score_change===0)&&<Badge className="text-white text-[8px] md:text-xs px-1 md:px-2" style={{background:'#475569'}}>0</Badge>}
                           </div>
                         </td>
                         <td className="text-center p-1 md:p-2">
                           <div className="flex items-center justify-center gap-0.5 md:gap-1">
-                            {getPositionChangeIcon(rank.position_change)}
-                            <span className={`font-medium text-[10px] md:text-sm ${rank.position_change > 0 ? 'text-green-400' : rank.position_change < 0 ? 'text-red-400' : 'text-gray-400'}`}>
-                              {rank.position_change !== 0 ? Math.abs(rank.position_change) : '-'}
-                            </span>
+                            {getChangeIcon(rank.position_change)}
+                            <span className={`font-medium text-[10px] md:text-sm ${rank.position_change>0?'text-green-400':rank.position_change<0?'text-red-400':'text-gray-400'}`}>{rank.position_change!==0?Math.abs(rank.position_change):'-'}</span>
                           </div>
                         </td>
                       </tr>
@@ -563,96 +388,51 @@ export default function LeaderboardNew() {
         </Card>
       </div>
 
-      {/* פופאפ פרטי משתתף */}
-      <Dialog open={selectedParticipant !== null} onOpenChange={() => setSelectedParticipant(null)}>
-        <DialogContent className="max-w-6xl max-h-[85vh] w-[95vw] md:w-auto flex flex-col" style={{
-          background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
-          border: '1px solid rgba(6, 182, 212, 0.2)',
-          boxShadow: '0 0 30px rgba(6, 182, 212, 0.3)'
-        }} dir="rtl">
-          <DialogHeader className="flex-shrink-0 pb-2 md:pb-4" style={{ borderBottom: '1px solid rgba(6, 182, 212, 0.3)' }}>
-            <DialogTitle className="text-base md:text-2xl font-bold text-right" style={{ color: '#f8fafc' }}>
-              {participantDetails?.name}
-            </DialogTitle>
+      <Dialog open={selectedParticipant!==null} onOpenChange={()=>setSelectedParticipant(null)}>
+        <DialogContent className="max-w-6xl max-h-[85vh] w-[95vw] md:w-auto flex flex-col" style={{background:'linear-gradient(135deg,#0f172a 0%,#1e293b 100%)',border:'1px solid rgba(6,182,212,0.2)',boxShadow:'0 0 30px rgba(6,182,212,0.3)'}} dir="rtl">
+          <DialogHeader className="flex-shrink-0 pb-2 md:pb-4" style={{borderBottom:'1px solid rgba(6,182,212,0.3)'}}>
+            <DialogTitle className="text-base md:text-2xl font-bold text-right" style={{color:'#f8fafc'}}>{participantDetails?.name}</DialogTitle>
             <div className="flex flex-wrap items-center gap-2 md:gap-4 mt-1 md:mt-2">
-              <Badge className="text-white text-xs md:text-lg px-2 md:px-4 py-1 md:py-2 rounded-full" style={{ background: '#0ea5e9' }}>
-                סה"כ: {participantDetails?.totalScore} נקודות
-              </Badge>
-              <span className="text-[10px] md:text-base" style={{ color: '#94a3b8' }}>
-                {participantDetails?.scores.filter(s => s.score > 0).length} פריטים עם ניקוד
-              </span>
+              <Badge className="text-white text-xs md:text-lg px-2 md:px-4 py-1 md:py-2 rounded-full" style={{background:'#0ea5e9'}}>סה"כ: {participantDetails?.totalScore} נקודות</Badge>
+              <span className="text-[10px] md:text-base" style={{color:'#94a3b8'}}>{participantDetails?.scores.filter(s=>s.score>0).length} פריטים עם ניקוד</span>
             </div>
           </DialogHeader>
-          <div className="flex-1" style={{ overflow: 'auto' }}>
-            <table className="w-full" style={{ borderCollapse: 'separate', borderSpacing: '0 4px' }}>
-              <thead style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: '#0f172a' }}>
+          <div className="flex-1" style={{overflow:'auto'}}>
+            <table className="w-full" style={{borderCollapse:'separate',borderSpacing:'0 4px'}}>
+              <thead style={{position:'sticky',top:0,zIndex:10,backgroundColor:'#0f172a'}}>
                 <tr>
-                  <th className="text-center p-2 text-xs" style={{ backgroundColor: '#0f172a', color: '#94a3b8', width: '60px' }}>טבלה</th>
-                  <th className="text-center p-2 text-xs" style={{ backgroundColor: '#0f172a', color: '#94a3b8', width: '50px' }}>מס׳</th>
-                  <th className="text-right p-2 text-xs" style={{ backgroundColor: '#0f172a', color: '#94a3b8' }}>שאלה</th>
-                  <th className="text-center p-2 text-xs" style={{ backgroundColor: '#0f172a', color: '#94a3b8', width: '90px' }}>ניחוש</th>
-                  <th className="text-center p-2 text-xs" style={{ backgroundColor: '#0f172a', color: '#94a3b8', width: '90px' }}>תוצאה</th>
-                  <th className="text-center p-2 text-xs" style={{ backgroundColor: '#0f172a', color: '#94a3b8', width: '70px' }}>ניקוד</th>
+                  {[['טבלה','60px'],['מס׳','50px'],['שאלה',null,'right'],['ניחוש','90px'],['תוצאה','90px'],['ניקוד','70px']].map(([label,w,align],i)=>(
+                    <th key={i} className={`text-${align||'center'} p-2 text-xs`} style={{backgroundColor:'#0f172a',color:'#94a3b8',width:w||'auto'}}>{label}</th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
-                {(participantDetails?.scores || []).map((s, index) => {
-                  let badgeColor = 'bg-slate-600 text-white';
-                  if (s.score === s.max_score && s.max_score > 0) badgeColor = 'bg-green-600 text-white';
-                  else if (s.score === 0) badgeColor = 'bg-red-600 text-white';
-                  else if (s.score >= 7) badgeColor = 'bg-blue-600 text-white';
-                  else if (s.score > 0) badgeColor = 'bg-yellow-500 text-white';
-
+                {(participantDetails?.scores||[]).map((s,index)=>{
+                  let badgeColor='bg-slate-600 text-white';
+                  if(s.score===s.max_score&&s.max_score>0) badgeColor='bg-green-600 text-white';
+                  else if(s.score===0) badgeColor='bg-red-600 text-white';
+                  else if(s.score>=7) badgeColor='bg-blue-600 text-white';
+                  else if(s.score>0) badgeColor='bg-yellow-500 text-white';
                   return (
-                    <tr key={index} className="transition-colors hover:bg-cyan-500/10"
-                      style={{
-                        backgroundColor: s.isBonus ? 'rgba(6, 182, 212, 0.08)' : '#1e293b',
-                        borderTop: s.isBonus ? '1px solid rgba(6, 182, 212, 0.2)' : 'none'
-                      }}>
-                      <td className="text-center p-1.5">
-                        <Badge variant="outline" className="rounded-full px-1.5 py-0.5 text-[10px]"
-                          style={{ borderColor: '#06b6d4', color: '#06b6d4', background: 'rgba(6, 182, 212, 0.1)' }}>
-                          {s.table_id}
-                        </Badge>
-                      </td>
-                      <td className="text-center p-1.5">
-                        <Badge variant="outline" className="rounded-full px-1.5 py-0.5 text-[10px]"
-                          style={{ borderColor: '#0ea5e9', color: '#0ea5e9', background: 'rgba(14, 165, 233, 0.1)' }}>
-                          {s.question_id_display}
-                        </Badge>
-                      </td>
+                    <tr key={index} className="transition-colors hover:bg-cyan-500/10" style={{backgroundColor:s.isBonus?'rgba(6,182,212,0.08)':'#1e293b',borderTop:s.isBonus?'1px solid rgba(6,182,212,0.2)':'none'}}>
+                      <td className="text-center p-1.5"><Badge variant="outline" className="rounded-full px-1.5 py-0.5 text-[10px]" style={{borderColor:'#06b6d4',color:'#06b6d4',background:'rgba(6,182,212,0.1)'}}>{s.table_id}</Badge></td>
+                      <td className="text-center p-1.5"><Badge variant="outline" className="rounded-full px-1.5 py-0.5 text-[10px]" style={{borderColor:'#0ea5e9',color:'#0ea5e9',background:'rgba(14,165,233,0.1)'}}>{s.question_id_display}</Badge></td>
                       <td className="text-right p-1.5">
-                        {s.home_team && s.away_team ? (
-                          <div className="flex items-center justify-start gap-1 text-xs" style={{ color: '#f8fafc' }}>
+                        {s.home_team&&s.away_team?(
+                          <div className="flex items-center justify-start gap-1 text-xs" style={{color:'#f8fafc'}}>
                             <span>{s.home_team}</span>
-                            {s.home_team_logo && (
-                              <img src={s.home_team_logo} alt={s.home_team} className="w-4 h-4 rounded-full"
-                                onError={e => e.target.style.display = 'none'} />
-                            )}
+                            {s.home_team_logo&&<img src={s.home_team_logo} alt={s.home_team} className="w-4 h-4 rounded-full" onError={e=>e.target.style.display='none'}/>}
                             <span>-</span>
-                            {s.away_team_logo && (
-                              <img src={s.away_team_logo} alt={s.away_team} className="w-4 h-4 rounded-full"
-                                onError={e => e.target.style.display = 'none'} />
-                            )}
+                            {s.away_team_logo&&<img src={s.away_team_logo} alt={s.away_team} className="w-4 h-4 rounded-full" onError={e=>e.target.style.display='none'}/>}
                             <span>{s.away_team}</span>
                           </div>
-                        ) : (
-                          <span className="text-xs" style={{ color: s.isBonus ? '#06b6d4' : '#f8fafc', fontWeight: s.isBonus ? 'bold' : 'normal' }}>
-                            {s.question_text}
-                          </span>
+                        ):(
+                          <span className="text-xs" style={{color:s.isBonus?'#06b6d4':'#f8fafc',fontWeight:s.isBonus?'bold':'normal'}}>{s.question_text}</span>
                         )}
                       </td>
-                      <td className="text-center p-1.5">
-                        <span className="font-medium text-xs" style={{ color: '#94a3b8' }}>{s.prediction || '-'}</span>
-                      </td>
-                      <td className="text-center p-1.5">
-                        <span className="font-medium text-xs" style={{ color: '#f8fafc' }}>{s.actual_result || '-'}</span>
-                      </td>
-                      <td className="text-center p-1.5">
-                        <Badge className={`${badgeColor} text-xs font-bold px-2 py-0.5 rounded-full`}>
-                          {s.score}/{s.max_score}
-                        </Badge>
-                      </td>
+                      <td className="text-center p-1.5"><span className="font-medium text-xs" style={{color:'#94a3b8'}}>{s.prediction||'-'}</span></td>
+                      <td className="text-center p-1.5"><span className="font-medium text-xs" style={{color:'#f8fafc'}}>{s.actual_result||'-'}</span></td>
+                      <td className="text-center p-1.5"><Badge className={`${badgeColor} text-xs font-bold px-2 py-0.5 rounded-full`}>{s.score}/{s.max_score}</Badge></td>
                     </tr>
                   );
                 })}
