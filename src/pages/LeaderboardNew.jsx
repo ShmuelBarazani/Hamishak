@@ -191,6 +191,7 @@ export default function LeaderboardNew() {
           if (bonusResult) totalScore += (bonusResult.basicScore||0) + (bonusResult.teamsBonus||0) + (bonusResult.orderBonus||0);
         }
 
+        console.log(`🔢 RECALC ${name}: ${totalScore}`);
         participantScores.push({ participant_name: name, current_score: totalScore });
       }
 
@@ -348,6 +349,7 @@ export default function LeaderboardNew() {
           return (parseFloat(a.question_id_display) || 999) - (parseFloat(b.question_id_display) || 999);
         });
 
+      console.log(`🔢 POPUP ${participantName}: ${totalScore}`);
       setParticipantDetails({ name: participantName, scores: filteredScores, totalScore });
       setSelectedParticipant(participantName);
     } catch (error) {
