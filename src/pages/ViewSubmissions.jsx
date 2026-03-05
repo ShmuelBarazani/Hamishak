@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { Prediction, Question, Team, ValidationList, Ranking } from "@/api/entities";
+import { Prediction, Question, Team, ValidationList, Ranking, GameParticipant } from "@/api/entities";
 import { Users, Loader2, ChevronDown, ChevronUp, FileText, Trash2, AlertTriangle, Trophy, Pencil, Save, Award } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 import RoundTableReadOnly from "../components/predictions/RoundTableReadOnly";
@@ -109,11 +109,11 @@ export default function ViewSubmissions() {
     const loadData = async () => {
       setLoading(true);
       try {
-        const [samplePredictions, questions, teams, validationLists] = await Promise.all([
-          Prediction.list(null, 1000),
-          Question.list("-created_date", 10000),
-          Team.list(null, 5000),
-          ValidationList.list(null, 5000)
+        const [gameParticipants, questions, teams, validationLists] = await Promise.all([
+          GameParticipant.filter({}, 'participant_name', 500),
+          Question.filter({}, 'question_id', 10000),
+          Team.filter({}, null, 5000),
+          ValidationList.filter({}, null, 5000)
         ]);
 
         const teamsMap = teams.reduce((acc, team) => { acc[team.name] = team; return acc; }, {});
@@ -126,11 +126,14 @@ export default function ViewSubmissions() {
         );
 
         if (teamListObj) {
-          console.log(`✅ נמצאה רשימת אימות של קבוצות: ${teamListObj.list_name} עם ${teamListObj.options.length} קבוצות`);
           setTeamValidationList(teamListObj.options);
         }
 
-        const uniqueParticipants = [...new Set(samplePredictions.map(p => p.participant_name))].sort();
+        const uniqueParticipants = gameParticipants
+          .filter(p => p.is_active !== false)
+          .map(p => p.participant_name)
+          .filter(Boolean)
+          .sort();
         setAllParticipants(uniqueParticipants);
 
         const rTables = {}, sTables = {};
@@ -234,7 +237,7 @@ export default function ViewSubmissions() {
         // 🚀 טען ניחושים, שאלות, וניקוד מ-Ranking
         const [predictions, allQuestions, rankingEntries] = await Promise.all([
           Prediction.filter({ participant_name: selectedParticipant }, null, 10000),
-          Question.list(null, 5000),
+          Question.filter({}, null, 5000),
           Ranking.filter({ participant_name: selectedParticipant }, null, 1)
         ]);
         
@@ -342,7 +345,7 @@ export default function ViewSubmissions() {
 
   const loadParticipantStats = async () => {
     try {
-      const allPredictions = await Prediction.list(null, 10000);
+      const allPredictions = await Prediction.filter({}, null, 10000);
       
       // 🚀 reduce במקום forEach
       const stats = allPredictions.reduce((acc, pred) => {
