@@ -144,7 +144,10 @@ export default function LeaderboardNew() {
       totalScore += score;
     });
 
+    const baseScore = totalScore;
+
     const locationTables = ['T14', 'T15', 'T16', 'T17', 'T19'];
+    let locationBonus = 0;
     for (const tableId of locationTables) {
       const tableQuestions = questionsWithResults.filter(q => q.table_id === tableId);
       if (tableQuestions.length === 0) continue;
@@ -157,7 +160,15 @@ export default function LeaderboardNew() {
         if (pred) tablePredictions[q.id] = pred;
       });
       const bonusResult = calculateLocationTableBonus(tableId, tableQuestions, tablePredictions);
-      if (bonusResult) totalScore += (bonusResult.basicScore||0) + (bonusResult.teamsBonus||0) + (bonusResult.orderBonus||0);
+      if (bonusResult) {
+        const bonus = (bonusResult.basicScore||0) + (bonusResult.teamsBonus||0) + (bonusResult.orderBonus||0);
+        locationBonus += bonus;
+        totalScore += bonus;
+      }
+    }
+
+    if (name === 'אביב רחמים' || name === 'עודד רגב') {
+      console.log(`🔍 ${name}: preds=${preds.length}, qWithResults=${questionsWithResults.length}, baseScore=${baseScore}, locationBonus=${locationBonus}, total=${totalScore}`);
     }
 
     return { totalScore, predictionsMap, questionsWithResults };
