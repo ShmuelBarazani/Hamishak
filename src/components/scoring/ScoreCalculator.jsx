@@ -212,7 +212,6 @@ export function calculateLocationTableBonus(tableId, tableQuestions, predictions
     return null;
   }
   
-  console.log(`🔬 ${tableId}: completedQ=${completedQuestions.length}, predKeys=${Object.keys(predictions).length}, sample_pred="${Object.values(predictions)[0]}"`);
 
   // בנה רשימה של כל התוצאות האמיתיות (רק מהשאלות המושלמות)
   const actualResults = completedQuestions.map(q => q.actual_result);
