@@ -136,7 +136,6 @@ export default function ViewSubmissions() {
           .map(p => p.participant_name)
           .filter(Boolean)
           .sort();
-        console.log('✅ Loaded participants:', uniqueParticipants.length, uniqueParticipants.slice(0,3));
         setAllParticipants(uniqueParticipants);
 
         const rTables = {}, sTables = {};
@@ -210,8 +209,7 @@ export default function ViewSubmissions() {
 
         // 🔥 כל השאר (ללא T19)
         const allSpecialTables = Object.values(sTables).filter(table => {
-            const desc = table.description?.trim();
-            return desc && !/^\d+$/.test(desc) && !locationTableIds.includes(table.id) && table.id !== 'T19';
+            return !locationTableIds.includes(table.id) && table.id !== 'T19';
         }).sort((a,b) => (parseInt(a.id.replace('T','')) || 0) - (parseInt(b.id.replace('T','')) || 0));
         
         setSpecialTables(allSpecialTables);
@@ -569,6 +567,7 @@ export default function ViewSubmissions() {
     }
     
     allLocationTables.forEach(table => {
+      if (!table || !table.questions) return;
       const sortedQuestions = [...table.questions].sort((a, b) => parseFloat(a.question_id) - parseFloat(b.question_id));
       const predForBonus = {};
       sortedQuestions.forEach(q => {
@@ -1341,6 +1340,7 @@ export default function ViewSubmissions() {
   }
 
   specialTables.forEach(table => {
+    if (!table) return;
     const description = table.description;
     allButtons.push({
       numericId: parseInt(table.id.replace('T', ''), 10),
