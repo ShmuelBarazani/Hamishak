@@ -163,13 +163,19 @@ export default function LeaderboardNew() {
         if (pred) tablePredictions[q.id] = pred;
       });
       const predCount = Object.keys(tablePredictions).length;
-      if (name === 'אביב רחמים') {
-        console.log(`  📊 ${tableId}: tableQ=${tableQuestions.length}, preds=${predCount}`);
-        if (predCount === 0) {
-          // Show sample question id vs predictionsMap keys
-          const sampleQ = tableQuestions[0];
-          const mapKeys = [...predictionsMap.keys()].slice(0, 3);
-          console.log(`    sampleQ.id=${sampleQ?.id}, mapKeys[0]=${mapKeys[0]}, same=${sampleQ?.id === mapKeys[0]}`);
+      if (name === 'אביב רחמים' && tableId === 'T14') {
+        const sampleQ = tableQuestions[0];
+        const mapKeys = [...predictionsMap.keys()];
+        const sampleKey = mapKeys[0];
+        const directLookup = predictionsMap.get(sampleQ?.id);
+        console.log(`  📊 T14: tableQ=${tableQuestions.length}, predCount=${predCount}`);
+        console.log(`    sampleQ.id="${sampleQ?.id}" (${typeof sampleQ?.id})`);
+        console.log(`    mapKey[0]="${sampleKey}" (${typeof sampleKey})`);
+        console.log(`    directLookup="${directLookup}"`);
+        console.log(`    === match: ${sampleQ?.id === sampleKey}`);
+        // Show first few map entries
+        for (let i = 0; i < Math.min(3, mapKeys.length); i++) {
+          console.log(`    mapKey[${i}]="${mapKeys[i]}" → "${predictionsMap.get(mapKeys[i])}"`);
         }
       }
       const bonusResult = calculateLocationTableBonus(tableId, tableQuestions, tablePredictions);
