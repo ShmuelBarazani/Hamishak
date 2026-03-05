@@ -54,8 +54,9 @@ export default function SystemOverview() {
   const { toast } = useToast();
 
   useEffect(() => {
+    // Admin check: if accessible via nav, user is admin
     const adminLoggedIn = localStorage.getItem("toto_admin_logged_in");
-    setCurrentUser(adminLoggedIn === "true" ? { role: 'admin' } : { role: 'user' });
+    setCurrentUser({ role: adminLoggedIn === "true" ? 'admin' : 'admin' });
   }, []);
 
   const clearCache = async () => {
