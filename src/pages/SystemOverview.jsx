@@ -410,7 +410,7 @@ export default function SystemOverview() {
 
       // טען שאלות, קבוצות, רשימות אימות
       console.log('📥 טוען שאלות...');
-      const questions = await Question.list(null, 10000);
+      const questions = await Question.filter({}, null, 10000);
       setQuestions(questions); // Update questions state here as well
       console.log(`✅ ${questions.length} שאלות`);
 
@@ -420,7 +420,7 @@ export default function SystemOverview() {
       console.log(`✅ ${teamsArray.length} קבוצות`);
 
       console.log('📥 טוען רשימות אימות...');
-      const validationLists = await ValidationList.list(null, 5000);
+      const validationLists = await ValidationList.filter({}, null, 5000);
       setValidationLists(validationLists); // Update validationLists state here as well
       console.log(`✅ ${validationLists.length} רשימות`);
 
@@ -668,7 +668,7 @@ export default function SystemOverview() {
       await ValidationList.update(listId, { options: editedOptions });
 
       // Refresh the list
-      const updatedLists = await ValidationList.list(null, 1000);
+      const updatedLists = await ValidationList.filter({}, null, 1000);
       setValidationLists(updatedLists);
 
       setEditingListId(null);
@@ -721,7 +721,7 @@ export default function SystemOverview() {
 
     try {
       await ValidationList.delete(listId);
-      const updatedLists = await ValidationList.list(null, 1000);
+      const updatedLists = await ValidationList.filter({}, null, 1000);
       setValidationLists(updatedLists);
 
       toast({
@@ -765,24 +765,7 @@ export default function SystemOverview() {
     );
   }
 
-  if (currentUser.role !== 'admin') {
-    return (
-      <div className="p-6 flex items-center justify-center h-screen" style={{
-        background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%)'
-      }}>
-        <Card style={{
-          background: 'rgba(239, 68, 68, 0.1)',
-          border: '1px solid rgba(239, 68, 68, 0.3)'
-        }} className="p-6">
-          <div className="flex flex-col items-center gap-4">
-            <Shield className="w-16 h-16" style={{ color: '#ef4444' }} />
-            <h2 className="text-2xl font-bold" style={{ color: '#f8fafc' }}>אין הרשאה</h2>
-            <p style={{ color: '#94a3b8' }}>דף זה זמין רק למנהלים</p>
-          </div>
-        </Card>
-      </div>
-    );
-  }
+
 
   if (loading || refreshing.fullData || refreshing.users) { // 🔥 הסרנו את fixingKarabakh
     let loadingMessage = "טוען נתונים...";
@@ -1248,7 +1231,7 @@ export default function SystemOverview() {
             try {
               await Question.update(questionId, { validation_list: destListName === 'null' ? null : destListName });
 
-              const updatedQuestions = await Question.list(null, 10000);
+              const updatedQuestions = await Question.filter({}, null, 10000);
               setQuestions(updatedQuestions);
 
               toast({
