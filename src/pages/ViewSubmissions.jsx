@@ -1,4 +1,14 @@
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useMemo, useCallback, Component } from "react";
+
+class ErrorBoundary extends Component {
+  constructor(props) { super(props); this.state = { error: null }; }
+  componentDidCatch(error, info) { console.error('🚨 CRASH:', error.message, info.componentStack?.split('\n')[1]); }
+  static getDerivedStateFromError(error) { return { error }; }
+  render() {
+    if (this.state.error) return <div style={{color:'red',padding:'20px',direction:'rtl'}}>שגיאה: {this.state.error.message}</div>;
+    return this.props.children;
+  }
+}
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
@@ -1654,14 +1664,14 @@ export default function ViewSubmissions() {
                         <div key="rounds-section" className="mb-6 space-y-6"> {/* Added space-y-6 for spacing between tables */}
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                             {roundTables.map(table => (
-                                <RoundTableReadOnly
+                                <ErrorBoundary key={table.id}><RoundTableReadOnly
                                     key={table.id}
                                     table={table}
                                     teams={data.teams}
                                     predictions={getCombinedPredictionsMap()} // This will use the current/edited predictions for display
                                     isEditMode={isEditMode && isAdmin}
                                     handlePredictionEdit={handlePredictionEdit}
-                                />
+                                /></ErrorBoundary>
                             ))}
                           </div>
                           {/* Added StandingsTable component */}
