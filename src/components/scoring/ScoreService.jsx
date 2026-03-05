@@ -42,7 +42,10 @@ export function calculateQuestionScore(question, prediction) {
   const normalizedPred   = normalizeScore(prediction);
 
   // ✅ EXACT BASE44: בדוק home_team && away_team לפני חישוב תוצאת משחק
-  if (question.home_team && question.away_team && normalizedActual.includes('-')) {
+  // גם אם home_team חסר ב-DB אבל הטבלה היא טבלת משחקים (T2-T9, T20) — חשב כמשחק
+  const isMatchTable = ['T2','T3','T4','T5','T6','T7','T8','T9','T20'].includes(question.table_id);
+  const hasTeams = question.home_team && question.away_team;
+  if ((hasTeams || isMatchTable) && normalizedActual.includes('-')) {
     const actualParts = normalizedActual.split('-').map(x => parseInt(x));
     const predParts   = normalizedPred.split('-').map(x => parseInt(x));
 
