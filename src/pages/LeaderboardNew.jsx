@@ -168,14 +168,8 @@ export default function LeaderboardNew() {
         const mapKeys = [...predictionsMap.keys()];
         const sampleKey = mapKeys[0];
         const directLookup = predictionsMap.get(sampleQ?.id);
-        console.log(`  📊 T14: tableQ=${tableQuestions.length}, predCount=${predCount}`);
-        console.log(`    sampleQ.id="${sampleQ?.id}" (${typeof sampleQ?.id})`);
-        console.log(`    mapKey[0]="${sampleKey}" (${typeof sampleKey})`);
-        console.log(`    directLookup="${directLookup}"`);
-        console.log(`    === match: ${sampleQ?.id === sampleKey}`);
         // Show first few map entries
         for (let i = 0; i < Math.min(3, mapKeys.length); i++) {
-          console.log(`    mapKey[${i}]="${mapKeys[i]}" → "${predictionsMap.get(mapKeys[i])}"`);
         }
       }
       const bonusResult = calculateLocationTableBonus(tableId, tableQuestions, tablePredictions);
@@ -188,7 +182,6 @@ export default function LeaderboardNew() {
     }
 
     if (name === 'אביב רחמים' || name === 'עודד רגב') {
-      console.log(`🔍 ${name}: preds=${preds.length}, qWithResults=${questionsWithResults.length}, baseScore=${baseScore}, locationBonus=${locationBonus}, total=${totalScore}`);
     }
 
     return { totalScore, predictionsMap, questionsWithResults };
@@ -225,7 +218,6 @@ export default function LeaderboardNew() {
         i++;
         setRecalcProgress(`מחשב ניקוד: ${i}/${validParticipants.size} — ${name}`);
         const { totalScore } = await computeParticipantScore(name, allQuestions);
-        console.log(`🔢 RECALC ${name}: ${totalScore}`);
         participantScores.push({ participant_name: name, current_score: totalScore });
       }
 
@@ -363,7 +355,6 @@ export default function LeaderboardNew() {
           return (parseFloat(a.question_id_display) || 999) - (parseFloat(b.question_id_display) || 999);
         });
 
-      console.log(`🔢 POPUP ${participantName}: ${totalScore}`);
       setParticipantDetails({ name: participantName, scores: filteredScores, totalScore });
       setSelectedParticipant(participantName);
     } catch (error) {
