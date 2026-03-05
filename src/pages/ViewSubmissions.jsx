@@ -5,12 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { Prediction } from "@/entities/Prediction";
-import { Question } from "@/entities/Question";
-import { Team } from "@/entities/Team";
-import { ValidationList } from "@/entities/ValidationList";
-import { User } from "@/entities/User";
-import { Ranking } from "@/entities/Ranking";
+import { Prediction, Question, Team, ValidationList, Ranking } from "@/api/entities";
 import { Users, Loader2, ChevronDown, ChevronUp, FileText, Trash2, AlertTriangle, Trophy, Pencil, Save, Award } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 import RoundTableReadOnly from "../components/predictions/RoundTableReadOnly";
@@ -105,16 +100,9 @@ export default function ViewSubmissions() {
   const isAdmin = currentUser?.role === 'admin';
 
   useEffect(() => {
-    const loadUser = async () => {
-      try {
-        const user = await User.me();
-        setCurrentUser(user);
-      } catch (error) {
-        console.error("Error loading current user:", error);
-        setCurrentUser(null);
-      }
-    };
-    loadUser();
+    // בדיקת admin לפי localStorage (כמו AdminResults)
+    const adminLoggedIn = localStorage.getItem("toto_admin_logged_in");
+    setCurrentUser(adminLoggedIn === "true" ? { role: 'admin' } : null);
   }, []);
 
   useEffect(() => {
