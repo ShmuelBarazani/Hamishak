@@ -150,7 +150,10 @@ export default function LeaderboardNew() {
     let locationBonus = 0;
     for (const tableId of locationTables) {
       const tableQuestions = questionsWithResults.filter(q => q.table_id === tableId);
-      if (tableQuestions.length === 0) continue;
+      if (tableQuestions.length === 0) {
+        if (name === 'אביב רחמים') console.log(`  ❌ ${tableId}: no questions in questionsWithResults`);
+        continue;
+      }
       const tablePredictions = {};
       const sourceQuestions = tableId === 'T19'
         ? allQuestions.filter(q => q.table_id === 'T19')
@@ -159,11 +162,22 @@ export default function LeaderboardNew() {
         const pred = predictionsMap.get(q.id);
         if (pred) tablePredictions[q.id] = pred;
       });
+      const predCount = Object.keys(tablePredictions).length;
+      if (name === 'אביב רחמים') {
+        console.log(`  📊 ${tableId}: tableQ=${tableQuestions.length}, preds=${predCount}`);
+        if (predCount === 0) {
+          // Show sample question id vs predictionsMap keys
+          const sampleQ = tableQuestions[0];
+          const mapKeys = [...predictionsMap.keys()].slice(0, 3);
+          console.log(`    sampleQ.id=${sampleQ?.id}, mapKeys[0]=${mapKeys[0]}, same=${sampleQ?.id === mapKeys[0]}`);
+        }
+      }
       const bonusResult = calculateLocationTableBonus(tableId, tableQuestions, tablePredictions);
       if (bonusResult) {
         const bonus = (bonusResult.basicScore||0) + (bonusResult.teamsBonus||0) + (bonusResult.orderBonus||0);
         locationBonus += bonus;
         totalScore += bonus;
+        if (name === 'אביב רחמים') console.log(`  ✅ ${tableId}: bonus=${bonus} (basic=${bonusResult.basicScore}, correct=${bonusResult.correctTeamsCount})`);
       }
     }
 
