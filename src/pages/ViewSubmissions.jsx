@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { Prediction, Question, Team, ValidationList, Ranking, GameParticipant } from "@/api/entities";
+import { Prediction, Question, ValidationList, Ranking, GameParticipant, Game } from "@/api/entities";
 import { Users, Loader2, ChevronDown, ChevronUp, FileText, Trash2, AlertTriangle, Trophy, Pencil, Save, Award } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 import RoundTableReadOnly from "../components/predictions/RoundTableReadOnly";
@@ -109,14 +109,16 @@ export default function ViewSubmissions() {
     const loadData = async () => {
       setLoading(true);
       try {
-        const [gameParticipants, questions, teams, validationLists] = await Promise.all([
+        const [gameParticipants, questions, validationLists, games] = await Promise.all([
           GameParticipant.filter({}, 'participant_name', 500),
           Question.filter({}, 'question_id', 10000),
-          Team.filter({}, null, 5000),
-          ValidationList.filter({}, null, 5000)
+          ValidationList.filter({}, null, 5000),
+          Game.filter({}, null, 10)
         ]);
 
-        const teamsMap = teams.reduce((acc, team) => { acc[team.name] = team; return acc; }, {});
+        // בנה teamsMap מ-games.teams_data
+        const currentGame = games[0] || {};
+        const teamsMap = (currentGame.teams_data || []).reduce((acc, team) => { acc[team.name] = team; return acc; }, {});
         const listsMap = validationLists.reduce((acc, list) => { acc[list.list_name] = list.options; return acc; }, {});
 
         // 🔥 שמור את רשימת הקבוצות מרשימת האימות
@@ -134,6 +136,7 @@ export default function ViewSubmissions() {
           .map(p => p.participant_name)
           .filter(Boolean)
           .sort();
+        console.log('✅ Loaded participants:', uniqueParticipants.length, uniqueParticipants.slice(0,3));
         setAllParticipants(uniqueParticipants);
 
         const rTables = {}, sTables = {};
