@@ -8,7 +8,7 @@ import { supabase } from '@/api/supabaseClient';
 import * as db from '@/api/entities';
 import { useToast } from "@/components/ui/use-toast";
 import { useGame } from "@/components/contexts/GameContext";
-import { calculateTotalScore } from "@/components/scoring/ScoreService";
+import { calculateQuestionScore, calculateLocationTableBonus } from "@/components/scoring/ScoreCalculator";
 
 export default function LeaderboardNew() {
   const [rankings, setRankings] = useState([]);
@@ -136,31 +136,65 @@ export default function LeaderboardNew() {
         setRecalculating(false); return;
       }
 
-      setRecalcProgress(`טוען שאלות... (${validParticipants.size} משתתפים)`);
+      setRecalcProgress(`טוען שאלות...`);
       const allQuestions = await loadAllQuestions(currentGame.id);
-      setRecalcProgress('טוען ניחושים...');
-      const allPredictions = await loadAllPredictions(currentGame.id);
 
-      // 2️⃣ קבץ ניחושים — רק משתתפים רשמיים!
-      const participantRawPreds = {};
-      for (const pred of allPredictions) {
-        const name = pred.participant_name?.trim();
-        if (!name || !validParticipants.has(name)) continue;
-        if (!participantRawPreds[name]) participantRawPreds[name] = [];
-        participantRawPreds[name].push(pred);
-      }
+      // סנן שאלות עם תוצאות אמיתיות
+      const questionsWithResults = allQuestions.filter(q => {
+        if (!q.actual_result) return false;
+        const r = String(q.actual_result).trim();
+        return r !== '' && r !== '__CLEAR__' && r !== '-' && r !== 'null' && !r.toLowerCase().includes('null');
+      });
 
-      setRecalcProgress(`מחשב ניקוד ל-${validParticipants.size} משתתפים...`);
-
-      // 3️⃣ חשב ניקוד
+      // 2️⃣ חשב ניקוד לכל משתתף — בדיוק כמו הפופאפ (ScoreCalculator)
       const participantScores = [];
+      let i = 0;
       for (const name of validParticipants) {
-        const predMap = buildLatestPredMap(participantRawPreds[name] || []);
-        const { total } = calculateTotalScore(allQuestions, predMap);
-        participantScores.push({ participant_name: name, current_score: total });
+        i++;
+        setRecalcProgress(`מחשב ניקוד: ${i}/${validParticipants.size} — ${name}`);
+
+        const preds = await loadAllPredictions(currentGame.id, name);
+
+        // ניחוש אחרון לכל שאלה (לפי created_at)
+        const latestPreds = {};
+        preds.forEach(p => {
+          const ex = latestPreds[p.question_id];
+          if (!ex || new Date(p.created_at||0) > new Date(ex.created_at||0)) latestPreds[p.question_id] = p;
+        });
+        const predictionsMap = new Map(Object.values(latestPreds).map(p => [p.question_id, p.text_prediction]));
+
+        let totalScore = 0;
+
+        // שאלות רגילות — זהה לפופאפ
+        questionsWithResults.forEach(q => {
+          const prediction = predictionsMap.get(q.id);
+          if (!prediction) return;
+          const score = calculateQuestionScore(q, prediction);
+          if (score === null) return;
+          totalScore += score;
+        });
+
+        // טבלאות מיקומים — זהה לפופאפ
+        const locationTables = ['T14', 'T15', 'T16', 'T17', 'T19'];
+        for (const tableId of locationTables) {
+          const tableQuestions = questionsWithResults.filter(q => q.table_id === tableId);
+          if (tableQuestions.length === 0) continue;
+          const tablePredictions = {};
+          const sourceQuestions = tableId === 'T19'
+            ? allQuestions.filter(q => q.table_id === 'T19')
+            : tableQuestions;
+          sourceQuestions.forEach(q => {
+            const pred = predictionsMap.get(q.id);
+            if (pred) tablePredictions[q.id] = pred;
+          });
+          const bonusResult = calculateLocationTableBonus(tableId, tableQuestions, tablePredictions);
+          if (bonusResult) totalScore += (bonusResult.basicScore||0) + (bonusResult.teamsBonus||0) + (bonusResult.orderBonus||0);
+        }
+
+        participantScores.push({ participant_name: name, current_score: totalScore });
       }
 
-      // 4️⃣ מיין + מיקומים
+      // 3️⃣ מיין + מיקומים
       participantScores.sort((a, b) => b.current_score - a.current_score);
       let position = 1;
       for (let i = 0; i < participantScores.length; i++) {
@@ -168,14 +202,12 @@ export default function LeaderboardNew() {
         participantScores[i].current_position = position;
       }
 
-      // 5️⃣ baseline קיים
+      // 4️⃣ שמור
       const baselines = await db.Ranking.filter({ game_id: currentGame.id }, null, 500);
       const baselineMap = {};
       baselines.forEach(b => { baselineMap[b.participant_name] = b; });
 
       setRecalcProgress(`שומר ${participantScores.length} רשומות...`);
-
-      // 6️⃣ שמור parallel
       const BATCH = 10;
       for (let i = 0; i < participantScores.length; i += BATCH) {
         const chunk = participantScores.slice(i, i + BATCH);
@@ -201,12 +233,9 @@ export default function LeaderboardNew() {
         setRecalcProgress(`שמירה: ${Math.min(i + BATCH, participantScores.length)}/${participantScores.length}`);
       }
 
-      // 7️⃣ מחק רשומות ישנות (81→78)
+      // 5️⃣ מחק רשומות ישנות
       const orphaned = baselines.filter(b => !validParticipants.has(b.participant_name));
-      if (orphaned.length > 0) {
-        console.log(`מוחק ${orphaned.length} רשומות ישנות:`, orphaned.map(r => r.participant_name));
-        await Promise.all(orphaned.map(r => db.Ranking.delete(r.id)));
-      }
+      if (orphaned.length > 0) await Promise.all(orphaned.map(r => db.Ranking.delete(r.id)));
 
       toast({ title: "הצלחה!", description: `עודכן דירוג ל-${participantScores.length} משתתפים`, className: "bg-cyan-900/30 border-cyan-500 text-cyan-200" });
       await loadRankings();
@@ -242,18 +271,76 @@ export default function LeaderboardNew() {
         loadAllQuestions(currentGame.id),
         loadAllPredictions(currentGame.id, participantName)
       ]);
-      const predMap = buildLatestPredMap(allPredictions);
-      const { total: totalScore, breakdown } = calculateTotalScore(allQuestions, predMap);
       const teamsMap = (currentGame.teams_data || []).reduce((acc, t) => { acc[t.name] = t; return acc; }, {});
 
-      const filteredScores = breakdown
-        .map(item => {
-          const question = allQuestions.find(q => q.id === item.question_id);
-          if (!question) return { question_id: item.question_id, score: item.score, max_score: item.max_score, table_id: item.table_id || '?', question_id_display: item.question_id_text || '🎁', question_text: item.question_id_text || '', home_team: null, away_team: null, actual_result: '✓', prediction: '✓', home_team_logo: null, away_team_logo: null, isBonus: true };
-          const pred = allPredictions.find(p => p.question_id === item.question_id);
-          return { question_id: question.id, score: item.score, max_score: item.max_score, table_id: item.table_id || '?', question_id_display: item.question_id_text || question.question_id || '?', question_text: question.question_text || '', home_team: question.home_team, away_team: question.away_team, actual_result: formatScore(question.actual_result || ''), prediction: formatScore(pred?.text_prediction || ''), home_team_logo: question.home_team ? teamsMap[question.home_team]?.logo_url : null, away_team_logo: question.away_team ? teamsMap[question.away_team]?.logo_url : null, isBonus: item.isBonus || false };
-        })
-        .filter(s => s !== null && s.score > 0)
+      // ניחוש אחרון לכל שאלה
+      const latestPreds = {};
+      allPredictions.forEach(p => {
+        const ex = latestPreds[p.question_id];
+        if (!ex || new Date(p.created_at||0) > new Date(ex.created_at||0)) latestPreds[p.question_id] = p;
+      });
+      const predictionsMap = new Map(Object.values(latestPreds).map(p => [p.question_id, p.text_prediction]));
+
+      // שאלות עם תוצאות
+      const questionsWithResults = allQuestions.filter(q => {
+        if (!q.actual_result) return false;
+        const r = String(q.actual_result).trim();
+        return r !== '' && r !== '__CLEAR__' && r !== '-' && r !== 'null' && !r.toLowerCase().includes('null');
+      });
+
+      const enrichedScores = [];
+      let totalScore = 0;
+
+      // שאלות רגילות
+      questionsWithResults.forEach(question => {
+        const prediction = predictionsMap.get(question.id);
+        if (!prediction) return;
+        const score = calculateQuestionScore(question, prediction);
+        if (score === null) return;
+        const maxScore = (question.home_team && question.away_team) || ['T2','T3','T4','T5','T6','T7','T8','T9','T20'].includes(question.table_id)
+          ? (question.table_id === 'T20' ? 6 : 10)
+          : (question.possible_points || 0);
+        totalScore += score;
+        enrichedScores.push({
+          question_id: question.id, score, max_score: maxScore,
+          table_id: question.table_id || '?',
+          question_id_display: question.question_id || '?',
+          question_text: question.question_text || '',
+          home_team: question.home_team, away_team: question.away_team,
+          actual_result: formatScore(question.actual_result || ''),
+          prediction: formatScore(prediction || ''),
+          home_team_logo: question.home_team ? teamsMap[question.home_team]?.logo_url : null,
+          away_team_logo: question.away_team ? teamsMap[question.away_team]?.logo_url : null,
+          isBonus: false
+        });
+      });
+
+      // טבלאות מיקומים
+      const locationTables = ['T14', 'T15', 'T16', 'T17', 'T19'];
+      for (const tableId of locationTables) {
+        const tableQuestions = questionsWithResults.filter(q => q.table_id === tableId);
+        if (tableQuestions.length === 0) continue;
+        const tablePredictions = {};
+        const sourceQuestions = tableId === 'T19' ? allQuestions.filter(q => q.table_id === 'T19') : tableQuestions;
+        sourceQuestions.forEach(q => { const p = predictionsMap.get(q.id); if (p) tablePredictions[q.id] = p; });
+        const bonusResult = calculateLocationTableBonus(tableId, tableQuestions, tablePredictions);
+        if (!bonusResult) continue;
+        if (bonusResult.basicScore > 0) {
+          totalScore += bonusResult.basicScore;
+          enrichedScores.push({ question_id: `${tableId}_BASIC`, score: bonusResult.basicScore, max_score: bonusResult.basicScore, table_id: tableId, question_id_display: '🎁', question_text: `ניקוד קבוצות (${bonusResult.correctTeamsCount})`, home_team: null, away_team: null, actual_result: '✓', prediction: '✓', home_team_logo: null, away_team_logo: null, isBonus: true });
+        }
+        if (bonusResult.teamsBonus > 0) {
+          totalScore += bonusResult.teamsBonus;
+          enrichedScores.push({ question_id: `${tableId}_TEAMS`, score: bonusResult.teamsBonus, max_score: bonusResult.teamsBonus, table_id: tableId, question_id_display: '🎁', question_text: 'בונוס עולות', home_team: null, away_team: null, actual_result: '✓', prediction: '✓', home_team_logo: null, away_team_logo: null, isBonus: true });
+        }
+        if (bonusResult.orderBonus > 0) {
+          totalScore += bonusResult.orderBonus;
+          enrichedScores.push({ question_id: `${tableId}_ORDER`, score: bonusResult.orderBonus, max_score: bonusResult.orderBonus, table_id: tableId, question_id_display: '🎁', question_text: 'בונוס סדר מדויק', home_team: null, away_team: null, actual_result: '✓', prediction: '✓', home_team_logo: null, away_team_logo: null, isBonus: true });
+        }
+      }
+
+      const filteredScores = enrichedScores
+        .filter(s => s.score > 0)
         .sort((a, b) => {
           const tA = parseInt(String(a.table_id).replace('T', '')) || 999;
           const tB = parseInt(String(b.table_id).replace('T', '')) || 999;
