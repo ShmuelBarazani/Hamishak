@@ -53,6 +53,13 @@ function createEntity(table) {
       return data || [];
     },
 
+    // alias for BASE44 compatibility: list(orderBy, limit) = filter({}, orderBy, limit)
+    async list(orderBy = null, limit = 1000, offset = 0) {
+      const { data, error } = await buildQuery(table, {}, orderBy, limit, offset);
+      if (error) throw error;
+      return data || [];
+    },
+
     async get(id) {
       const { data, error } = await supabase
         .from(table).select('*').eq('id', id).single();
