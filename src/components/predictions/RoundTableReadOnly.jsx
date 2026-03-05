@@ -113,6 +113,7 @@ export default function RoundTableReadOnly({ table, teams, predictions, isEditMo
     };
 
     const sortedQuestions = useMemo(() => {
+        if (!table?.questions) return [];
         return [...table.questions].sort((a, b) => {
             const parseDate = (dateStr) => {
                 if (!dateStr) return null;
