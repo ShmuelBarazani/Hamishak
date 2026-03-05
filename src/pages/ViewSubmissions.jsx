@@ -312,17 +312,20 @@ export default function ViewSubmissions() {
 
   // 🚀 useMemo - נחשב רק כשמשתנה selectedParticipant או predictions
   const participantPredictions = useMemo(() => {
+    try {
     if (!selectedParticipant) return {};
     return data.predictions.reduce((acc, p) => {
       acc[p.question_id] = p.text_prediction;
       return acc;
     }, {});
+    } catch(e) { console.error('💥 CRASH participantPredictions:', e.message); return {}; }
   }, [selectedParticipant, data.predictions]);
 
   // 🚀 useMemo ל-existingPredictionsMap
-  const existingPredictionsMap = useMemo(() => 
-    new Map(data.predictions.map(p => [p.question_id, p])),
-  [data.predictions]);
+  const existingPredictionsMap = useMemo(() => {
+    try { return new Map(data.predictions.map(p => [p.question_id, p])); }
+    catch(e) { console.error('💥 CRASH existingPredictionsMap:', e.message); return new Map(); }
+  }, [data.predictions]);
 
   // Helper function to get the currently displayed prediction value (original or edited)
   const getPredictionValueForDisplay = useCallback((questionId) => {
@@ -341,6 +344,7 @@ export default function ViewSubmissions() {
   const getCombinedPredictionsMap = useCallback(() => combinedPredictionsMap, [combinedPredictionsMap]);
 
   const participantDetails = useMemo(() => {
+    try {
     if (!selectedParticipant) return {};
     const details = { name: selectedParticipant };
     participantQuestions.forEach(q => {
@@ -352,6 +356,7 @@ export default function ViewSubmissions() {
       }
     });
     return details;
+    } catch(e) { console.error('💥 CRASH participantDetails:', e.message); return {}; }
   }, [selectedParticipant, participantQuestions, data.predictions]);
 
   const loadParticipantStats = async () => {
@@ -519,6 +524,7 @@ export default function ViewSubmissions() {
 
   // 🚀 TEAM_NAME_MAPPING עם useMemo
   const TEAM_NAME_MAPPING = useMemo(() => {
+    try {
     const mapping = new Map();
     teamValidationList.forEach(validName => {
       const normalizedBaseName = normalizeTeamNameCached(cleanTeamNameCached(validName));
@@ -538,6 +544,7 @@ export default function ViewSubmissions() {
       });
     });
     return mapping;
+    } catch(e) { console.error('💥 CRASH TEAM_NAME_MAPPING:', e.message); return new Map(); }
   }, [teamValidationList]);
 
   // 🔥 פונקציה חדשה - מחפשת את השם המתאים ברשימת האימות
@@ -568,6 +575,7 @@ export default function ViewSubmissions() {
 
   // 🚀 Pre-calculate bonusInfo for each location table outside render
   const locationTableBonuses = useMemo(() => {
+    try {
     if (!selectedParticipant) return {};
     
     const bonuses = {};
@@ -589,6 +597,7 @@ export default function ViewSubmissions() {
     });
     
     return bonuses;
+    } catch(e) { console.error('💥 CRASH locationTableBonuses:', e.message); return {}; }
   }, [selectedParticipant, locationTables, playoffWinnersTable, participantPredictions, editedPredictions]);
 
   // 🚀 renderReadOnlySelect עם useCallback
