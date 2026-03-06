@@ -15,9 +15,10 @@ import {
   Loader2,
   FileWarning
 } from "lucide-react";
-
-import { supabase } from '@/api/supabaseClient';
-import * as db from '@/api/entities'; // Corrected Core import to base44
+import { Question } from "@/entities/Question";
+import { Prediction } from "@/entities/Prediction";
+import { ValidationList } from "@/entities/ValidationList";
+import { base44 } from "@/api/base44Client"; // Corrected Core import to base44
 import { useToast } from "@/components/ui/use-toast";
 import { useUploadStatus } from '@/components/contexts/UploadStatusContext'; // Corrected import path
 
@@ -106,10 +107,30 @@ export default function Upload() {
     setUploadStatus({ inProgress: true, message: "מעבד קובץ רשימות אימות...", progress: 10, error: null });
     
     try {
-      const { data: { publicUrl: file_url } } = supabase.storage.from('uploads').getPublicUrl((await supabase.storage.from('uploads').upload(`${Date.now()}.${file.name.split('.').pop()}`, file)).data?.path || '');
+      const { file_url } = await base44.integrations.Core.UploadFile({ file });
       setUploadStatus({ inProgress: true, message: "מחלץ נתונים מהקובץ...", progress: 30, error: null });
 
-      // ExtractDataFromUploadedFile - requires backend implementation
+      const extractResponse = await base44.integrations.Core.ExtractDataFromUploadedFile({
+        file_url,
+        json_schema: {
+          type: "object",
+          properties: {
+            lists: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  list_name: { type: "string" },
+                  options: {
+                    type: "array",
+                    items: { type: "string" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      });
 
       if (extractResponse.status !== "success" || !extractResponse.output) {
         throw new Error(extractResponse.details || "Failed to extract data");
