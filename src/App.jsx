@@ -13,45 +13,45 @@ const mainPageKey = mainPage ?? Object.keys(Pages)[0];
 const MainPage = mainPageKey ? Pages[mainPageKey] : null;
 
 const LayoutWrapper = ({ children, currentPageName }) =>
-        Layout ? (
-                  <Layout currentPageName={currentPageName}>{children}</Layout>Layout>
-                ) : (
-                  <>{children}</>>
-                );
+  Layout ? (
+    <Layout currentPageName={currentPageName}>{children}</Layout>
+  ) : (
+    <>{children}</>
+  );
 
 function App() {
-        return (
-                  <QueryClientProvider client={queryClientInstance}>
-                        <GameProvider>
-                                <Router>
-                                          <Routes>
-                                                      <Route path="/login" element={<Login />} />
-                                                      <Route
-                                                                          path="/"
-                                                                          element={
-                                                                                                <LayoutWrapper currentPageName={mainPageKey}>
-                                                                                                      {MainPage && <MainPage />}
-                                                                                                      </LayoutWrapper>LayoutWrapper>
-                                                            }
-                                                                  />
-                                                            {Object.entries(Pages).map(([path, Page]) => (
-                                                                                              <Route
-                                                                                                                    key={path}
-                                                                                                                    path={`/${path}`}
-                                                                                                                    element={
-                                                                                                                                            <LayoutWrapper currentPageName={path}>
-                                                                                                                                                                <Page />
-                                                                                                                                                  </LayoutWrapper>LayoutWrapper>
-                                                                                                    }
-                                                                                                            />
-                                                                                                          ))}
-                                                                                                          <Route path="*" element={<PageNotFound />} />
-                                                                                                    </Route>Routes>
-                                                                                </Router>
-                                                                                </>GameProvider>
-                                                                                      <Toaster />
-                                                                                </QueryClientProvider>
-                                                                                  );
-                                                            }
-                                                      
-                                                      export default App;</>
+  return (
+    <QueryClientProvider client={queryClientInstance}>
+      <GameProvider>
+        <Router>
+          <Routes>
+            <Route path="/login" element={<Login />} />
+            <Route
+              path="/"
+              element={
+                <LayoutWrapper currentPageName={mainPageKey}>
+                  {MainPage && <MainPage />}
+                </LayoutWrapper>
+              }
+            />
+            {Object.entries(Pages).map(([path, Page]) => (
+              <Route
+                key={path}
+                path={`/${path}`}
+                element={
+                  <LayoutWrapper currentPageName={path}>
+                    <Page />
+                  </LayoutWrapper>
+                }
+              />
+            ))}
+            <Route path="*" element={<PageNotFound />} />
+          </Routes>
+        </Router>
+      </GameProvider>
+      <Toaster />
+    </QueryClientProvider>
+  );
+}
+
+export default App;
