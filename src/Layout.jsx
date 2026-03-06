@@ -18,8 +18,6 @@ import { Label } from "@/components/ui/label";
 import { UploadStatusProvider } from '@/components/contexts/UploadStatusContext';
 import UploadStatusIndicator from '@/components/layout/UploadStatusIndicator';
 import { useToast } from "@/components/ui/use-toast";
-import { ThemeProvider } from '@/components/contexts/ThemeContext';
-import ThemeSettings from '@/components/layout/ThemeSettings';
 import { Settings } from 'lucide-react';
 
 const allNavigationItems = [
