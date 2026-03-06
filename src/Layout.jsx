@@ -18,7 +18,6 @@ import { Label } from "@/components/ui/label";
 import { UploadStatusProvider } from '@/components/contexts/UploadStatusContext';
 import UploadStatusIndicator from '@/components/layout/UploadStatusIndicator';
 import { useToast } from "@/components/ui/use-toast";
-import { Settings } from 'lucide-react';
 
 const allNavigationItems = [
   {
@@ -69,7 +68,6 @@ export default function Layout({ children, currentPageName }) {
   const [isAdmin, setIsAdmin] = useState(false);
   const [isMainAdmin, setIsMainAdmin] = useState(false);
   const [showAdminDialog, setShowAdminDialog] = useState(false);
-  const [showThemeSettings, setShowThemeSettings] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [adminUsers, setAdminUsers] = useState([]);
@@ -158,15 +156,10 @@ export default function Layout({ children, currentPageName }) {
     };
   }, []);
 
-  // ✅ תיקון: SystemSettings מבוטל - אין יותר קריאה ל-BASE44
+  // ✅ תיקון: SystemSettings מבוטל - אין קריאה ל-BASE44
   useEffect(() => {
-    loadAdminUsers();
-  }, []);
-
-  const loadAdminUsers = async () => {
-    // SystemSettings disabled - using localStorage only
     setAdminUsers([]);
-  };
+  }, []);
 
   useEffect(() => {
     const adminLoggedIn = localStorage.getItem("toto_admin_logged_in");
@@ -242,9 +235,8 @@ export default function Layout({ children, currentPageName }) {
   );
 
   return (
-    <ThemeProvider>
-      <UploadStatusProvider>
-        <style>{`
+    <UploadStatusProvider>
+      <style>{`
         :root {
           --primary-bg: #0f172a;
           --secondary-bg: #1e293b;
@@ -257,119 +249,49 @@ export default function Layout({ children, currentPageName }) {
           --border-color: rgba(6, 182, 212, 0.2);
           --glow-cyan: rgba(6, 182, 212, 0.4);
         }
-        
         html, body {
-          margin: 0;
-          padding: 0;
-          width: 100%;
-          min-height: 100vh;
+          margin: 0; padding: 0;
+          width: 100%; min-height: 100vh;
           background: #0f172a;
           color: var(--text-primary);
         }
-        
-        #root {
-          width: 100%;
-          min-height: 100vh;
-        }
-        
+        #root { width: 100%; min-height: 100vh; }
         @supports (padding: env(safe-area-inset-top)) {
-          .app-header {
-            padding-top: env(safe-area-inset-top);
-          }
-          .app-main {
-            padding-bottom: env(safe-area-inset-bottom);
-          }
+          .app-header { padding-top: env(safe-area-inset-top); }
+          .app-main { padding-bottom: env(safe-area-inset-bottom); }
         }
-        
-        .neon-border {
-          border: 1px solid rgba(6, 182, 212, 0.3);
-          box-shadow: 0 0 10px rgba(6, 182, 212, 0.2);
-        }
-        
-        .neon-glow {
-          box-shadow: 0 0 20px rgba(6, 182, 212, 0.3);
-        }
-        
-        .crypto-card {
-          background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
-          border: 1px solid rgba(6, 182, 212, 0.2);
-          border-radius: 8px;
-        }
-        
-        ::-webkit-scrollbar {
-          width: 10px;
-          height: 10px;
-        }
-        
-        ::-webkit-scrollbar-track {
-          background: #1e293b;
-        }
-        
+        ::-webkit-scrollbar { width: 10px; height: 10px; }
+        ::-webkit-scrollbar-track { background: #1e293b; }
         ::-webkit-scrollbar-thumb {
           background: linear-gradient(180deg, #06b6d4 0%, #0ea5e9 100%);
           border-radius: 5px;
         }
-        
-        ::-webkit-scrollbar-thumb:hover {
-          background: linear-gradient(180deg, #0ea5e9 0%, #06b6d4 100%);
-        }
-
         @media (max-width: 768px) {
-          body {
-            overflow-y: auto;
-            overflow-x: hidden;
-          }
-          
-          .app-container {
-            min-height: 100vh;
-            display: flex;
-            flex-direction: column;
-          }
-          
-          .app-header {
-            position: sticky;
-            top: 0;
-            z-index: 50;
-          }
-          
-          .app-main {
-            flex: 1;
-            overflow-y: auto;
-            -webkit-overflow-scrolling: touch;
-          }
-        }
-        
-        @media (max-width: 768px) and (orientation: landscape) {
-          .app-header {
-            position: sticky;
-            top: 0;
-          }
-          
-          .app-header .py-2 {
-            padding-top: 0.25rem;
-            padding-bottom: 0.25rem;
-          }
+          body { overflow-y: auto; overflow-x: hidden; }
+          .app-container { min-height: 100vh; display: flex; flex-direction: column; }
+          .app-header { position: sticky; top: 0; z-index: 50; }
+          .app-main { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
         }
       `}</style>
-      <div className="app-container w-full min-h-screen" style={{ 
+      <div className="app-container w-full min-h-screen" style={{
         background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%)'
       }} dir="rtl">
-        <header className="app-header" style={{ 
-          background: 'rgba(15, 23, 42, 0.95)', 
+        <header className="app-header" style={{
+          background: 'rgba(15, 23, 42, 0.95)',
           backdropFilter: 'blur(12px)',
           borderBottom: '1px solid rgba(6, 182, 212, 0.2)',
           boxShadow: '0 4px 24px 0 rgba(6, 182, 212, 0.1)'
         }}>
           <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
             <div className="flex justify-between items-center py-2 sm:py-3">
-              <Link to={createPageUrl("LeaderboardNew")} className="flex items-center gap-2 sm:gap-3 mr-0">
-                <img 
+              <Link to={createPageUrl("LeaderboardNew")} className="flex items-center gap-2 sm:gap-3">
+                <img
                   src="https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/68d81aa00ebfb4a62a9ba9b2/952cd4e3c_2025-11-06124540.png"
                   alt="ליגת האלופות"
                   className="w-9 h-9 sm:w-11 sm:h-11 flex-shrink-0"
                 />
                 <div className="flex flex-col items-center">
-                  <h1 className="font-bold text-base sm:text-2xl leading-tight whitespace-nowrap" style={{ 
+                  <h1 className="font-bold text-base sm:text-2xl leading-tight whitespace-nowrap" style={{
                     color: '#f8fafc',
                     textShadow: '0 0 10px rgba(6, 182, 212, 0.3)'
                   }}>טוטו ליגת אלופות 2025-2026</h1>
@@ -377,6 +299,7 @@ export default function Layout({ children, currentPageName }) {
                 </div>
               </Link>
 
+              {/* Desktop nav */}
               <div className="hidden md:flex items-center gap-3">
                 <nav className="flex items-center space-x-reverse space-x-3">
                   {navigationItems.map((item) => (
@@ -391,15 +314,12 @@ export default function Layout({ children, currentPageName }) {
                         borderLeft: '2px solid #06b6d4',
                         color: '#06b6d4',
                         boxShadow: '0 0 15px rgba(6, 182, 212, 0.2)'
-                      } : {
-                        color: '#94a3b8'
-                      }}
+                      } : { color: '#94a3b8' }}
                     >
                       <item.icon className="w-3.5 h-3.5" />
                       <span className="text-xs">{item.title}</span>
                     </Link>
                   ))}
-                  
                   {isMainAdmin && (
                     <Link
                       to={createPageUrl("AdminManagement")}
@@ -411,91 +331,59 @@ export default function Layout({ children, currentPageName }) {
                         borderLeft: '2px solid #06b6d4',
                         color: '#06b6d4',
                         boxShadow: '0 0 15px rgba(6, 182, 212, 0.2)'
-                      } : {
-                        color: '#94a3b8'
-                      }}
+                      } : { color: '#94a3b8' }}
                     >
                       <Users className="w-3.5 h-3.5" />
                       <span className="text-xs">ניהול מנהלים</span>
                     </Link>
                   )}
                 </nav>
-                
-                <div className="flex flex-col items-center gap-1 pr-3" style={{ 
-                  borderRight: '1px solid rgba(6, 182, 212, 0.2)' 
+
+                <div className="flex flex-col items-center gap-1 pr-3" style={{
+                  borderRight: '1px solid rgba(6, 182, 212, 0.2)'
                 }}>
                   {isAdmin ? (
                     <div className="flex flex-col items-center gap-1">
                       <div className="flex items-center gap-1.5" style={{ color: '#94a3b8' }}>
                         <Shield className="w-3 h-3" />
-                        <span className="text-xs">
-                          {isMainAdmin ? 'מנהל ראשי' : 'מנהל'}
-                        </span>
+                        <span className="text-xs">{isMainAdmin ? 'מנהל ראשי' : 'מנהל'}</span>
                       </div>
-                      <div className="flex gap-1">
-                        <Button 
-                          onClick={() => setShowThemeSettings(true)} 
-                          variant="outline" 
-                          size="sm"
-                          className="h-6 px-2 text-xs hover:bg-cyan-500/10 hover:border-cyan-500"
-                          style={{ 
-                            borderColor: 'rgba(6, 182, 212, 0.3)',
-                            color: '#94a3b8',
-                            background: 'transparent'
-                          }}
-                        >
-                          <Settings className="w-3 h-3" />
-                        </Button>
-                        <Button 
-                          onClick={handleLogout} 
-                          variant="outline" 
-                          size="sm"
-                          className="h-6 px-2 text-xs hover:bg-cyan-500/10 hover:border-cyan-500"
-                          style={{ 
-                            borderColor: 'rgba(6, 182, 212, 0.3)',
-                            color: '#94a3b8',
-                            background: 'transparent'
-                          }}
-                        >
-                          <LogOut className="w-3 h-3 ml-1" />
-                          התנתק
-                        </Button>
-                      </div>
+                      <Button
+                        onClick={handleLogout}
+                        variant="outline"
+                        size="sm"
+                        className="h-6 px-2 text-xs"
+                        style={{
+                          borderColor: 'rgba(6, 182, 212, 0.3)',
+                          color: '#94a3b8',
+                          background: 'transparent'
+                        }}
+                      >
+                        <LogOut className="w-3 h-3 ml-1" />
+                        התנתק
+                      </Button>
                     </div>
                   ) : (
-                    <div className="flex gap-1">
-                      <Button 
-                        onClick={() => setShowThemeSettings(true)} 
-                        size="sm"
-                        className="h-7 px-2 text-xs hover:bg-cyan-500/20"
-                        style={{
-                          background: 'linear-gradient(135deg, rgba(6, 182, 212, 0.1) 0%, rgba(14, 165, 233, 0.1) 100%)',
-                          borderColor: 'rgba(6, 182, 212, 0.3)',
-                          color: '#06b6d4'
-                        }}
-                      >
-                        <Settings className="w-3.5 h-3.5" />
-                      </Button>
-                      <Button 
-                        onClick={() => setShowAdminDialog(true)} 
-                        size="sm"
-                        className="h-7 px-3 text-xs hover:bg-cyan-500/20"
-                        style={{
-                          background: 'linear-gradient(135deg, rgba(6, 182, 212, 0.1) 0%, rgba(14, 165, 233, 0.1) 100%)',
-                          borderColor: 'rgba(6, 182, 212, 0.3)',
-                          color: '#06b6d4'
-                        }}
-                      >
-                        <Shield className="w-3.5 h-3.5 ml-1.5" />
-                        התחבר כמנהל
-                      </Button>
-                    </div>
+                    <Button
+                      onClick={() => setShowAdminDialog(true)}
+                      size="sm"
+                      className="h-7 px-3 text-xs"
+                      style={{
+                        background: 'linear-gradient(135deg, rgba(6, 182, 212, 0.1) 0%, rgba(14, 165, 233, 0.1) 100%)',
+                        borderColor: 'rgba(6, 182, 212, 0.3)',
+                        color: '#06b6d4'
+                      }}
+                    >
+                      <Shield className="w-3.5 h-3.5 ml-1.5" />
+                      התחבר כמנהל
+                    </Button>
                   )}
                 </div>
               </div>
             </div>
           </div>
 
+          {/* Mobile nav */}
           <div className="md:hidden" style={{ borderTop: '1px solid rgba(6, 182, 212, 0.2)' }}>
             <div className="max-w-7xl mx-auto px-2 py-1.5">
               <div className="grid grid-cols-3 gap-1.5">
@@ -519,23 +407,11 @@ export default function Layout({ children, currentPageName }) {
                 ))}
               </div>
               <div className="mt-1.5 flex justify-center gap-1">
-                <Button 
-                  onClick={() => setShowThemeSettings(true)} 
-                  size="sm"
-                  className="h-5 px-1.5 text-[9px]"
-                  style={{
-                    background: 'rgba(6, 182, 212, 0.1)',
-                    borderColor: 'rgba(6, 182, 212, 0.3)',
-                    color: '#06b6d4'
-                  }}
-                >
-                  <Settings className="w-2.5 h-2.5" />
-                </Button>
                 {isAdmin ? (
                   <div className="flex items-center gap-1 text-[10px]" style={{ color: '#94a3b8' }}>
                     <span>{isMainAdmin ? 'מנהל ראשי' : 'מנהל'}</span>
-                    <Button 
-                      onClick={handleLogout} 
+                    <Button
+                      onClick={handleLogout}
                       variant="ghost"
                       size="sm"
                       className="h-5 px-1.5 text-[9px]"
@@ -545,8 +421,8 @@ export default function Layout({ children, currentPageName }) {
                     </Button>
                   </div>
                 ) : (
-                  <Button 
-                    onClick={() => setShowAdminDialog(true)} 
+                  <Button
+                    onClick={() => setShowAdminDialog(true)}
                     size="sm"
                     className="h-5 px-2 text-[9px]"
                     style={{
@@ -571,13 +447,13 @@ export default function Layout({ children, currentPageName }) {
         <UploadStatusIndicator />
 
         <Dialog open={showAdminDialog} onOpenChange={setShowAdminDialog}>
-          <DialogContent style={{ 
+          <DialogContent style={{
             background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)',
             border: '1px solid rgba(6, 182, 212, 0.3)',
             boxShadow: '0 0 40px rgba(6, 182, 212, 0.2)'
           }} dir="rtl">
             <DialogHeader>
-              <DialogTitle className="text-2xl font-bold flex items-center gap-2" style={{ 
+              <DialogTitle className="text-2xl font-bold flex items-center gap-2" style={{
                 color: '#06b6d4',
                 textShadow: '0 0 10px rgba(6, 182, 212, 0.5)'
               }}>
@@ -588,7 +464,6 @@ export default function Layout({ children, currentPageName }) {
                 הזן מייל וסיסמה כדי להתחבר כמנהל
               </DialogDescription>
             </DialogHeader>
-            
             <div className="space-y-4">
               <div>
                 <Label className="text-sm font-medium mb-2 block" style={{ color: '#94a3b8' }}>מייל</Label>
@@ -604,7 +479,6 @@ export default function Layout({ children, currentPageName }) {
                   }}
                 />
               </div>
-              
               <div>
                 <Label className="text-sm font-medium mb-2 block" style={{ color: '#94a3b8' }}>סיסמה</Label>
                 <Input
@@ -620,17 +494,12 @@ export default function Layout({ children, currentPageName }) {
                   }}
                 />
               </div>
-              
               <div className="flex gap-3 justify-end">
                 <Button
                   variant="outline"
-                  onClick={() => {
-                    setShowAdminDialog(false);
-                    setEmail("");
-                    setPassword("");
-                  }}
-                  style={{ 
-                    borderColor: 'rgba(6, 182, 212, 0.3)', 
+                  onClick={() => { setShowAdminDialog(false); setEmail(""); setPassword(""); }}
+                  style={{
+                    borderColor: 'rgba(6, 182, 212, 0.3)',
                     color: '#94a3b8',
                     background: 'transparent'
                   }}
@@ -652,10 +521,7 @@ export default function Layout({ children, currentPageName }) {
             </div>
           </DialogContent>
         </Dialog>
-
-        <ThemeSettings open={showThemeSettings} onOpenChange={setShowThemeSettings} />
       </div>
     </UploadStatusProvider>
-  </ThemeProvider>
   );
 }
