@@ -3,12 +3,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { BarChart3, Users, Target, Loader2, PieChart, ChevronDown, ChevronUp, TrendingUp, Award, AlertTriangle, Trophy } from "lucide-react";
+import { BarChart3, Users, Target, Loader2, PieChart, ChevronDown, ChevronUp, TrendingUp, Award, Database, AlertTriangle, Trophy } from "lucide-react";
+import { Question } from "@/entities/Question";
+import { Prediction } from "@/entities/Prediction";
+import { ValidationList } from "@/entities/ValidationList";
+import { Team } from "@/entities/Team";
 import { PieChart as RechartsPieChart, Pie, Cell, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
 import { Tooltip as UITooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { supabase } from '@/api/supabaseClient';
-import * as db from '@/api/entities';
-import { useGame } from "@/components/contexts/GameContext";
 
 import InsightsAnalyzer from "../components/insights/InsightsAnalyzer";
 
@@ -105,11 +106,10 @@ export default function Statistics() {
 
   const [gameStats, setGameStats] = useState(null);
   const [specialStats, setSpecialStats] = useState(null);
+  // Removed hoveredSlice and hoverTimeout states
   const [userStats, setUserStats] = useState(null);
   const [userStatsLoading, setUserStatsLoading] = useState(false);
   const [userStatsError, setUserStatsError] = useState(null);
-
-  const { currentGame } = useGame();
 
   const formatResult = useCallback((result) => {
     if (!result || result === '__CLEAR__') return '';
@@ -122,128 +122,44 @@ export default function Statistics() {
 
   useEffect(() => {
     loadAllData();
-  }, [currentGame]);
+  }, []);
 
   const loadAllData = async () => {
-    if (!currentGame) {
-      setLoading(false);
-      return;
-    }
-
     setLoading(true);
     try {
-      console.log('📊 מתחיל טעינת נתונים עבור:', currentGame.id);
-      
-      // 🔥 טעינת שאלות
-      const questions = await db.Question.filter({ game_id: currentGame.id }, null, 5000);
-      console.log(`✅ נטענו ${questions.length} שאלות`);
-      
-      // 🔥 טעינת Predictions בבאצ'ים של 5000
-      console.log('📊 מתחיל לטעון predictions בבאצ\'ים...');
+      const [questions, allTeams, lists] = await Promise.all([
+        Question.list(null, 5000),
+        Team.list(null, 5000),
+        ValidationList.list(null, 5000),
+      ]);
+
+      console.log('📊 טוען predictions...');
       let predictions = [];
       let offset = 0;
       let hasMore = true;
       const batchSize = 5000;
       
       while (hasMore) {
-        const batch = await db.Prediction.filter(
-          { game_id: currentGame.id },
-          null,
-          batchSize,
-          offset
-        );
-        console.log(`   ✅ batch #${Math.floor(offset/batchSize) + 1}: ${batch.length} predictions (offset: ${offset})`);
+        const batch = await Prediction.list(null, batchSize, offset);
+        console.log(`✅ טען batch: ${batch.length} predictions (offset: ${offset})`);
         predictions = predictions.concat(batch);
         
         if (batch.length < batchSize) {
-          console.log(`   ⛔ batch אחרון - ${batch.length} < ${batchSize}, עוצר`);
           hasMore = false;
         } else {
           offset += batchSize;
         }
       }
-      
-      console.log(`✅ סה"כ נטענו ${predictions.length} predictions`);
-      
-      if (predictions.length > 0) {
-        console.log('🔍 דוגמה לניחוש:', predictions[0]);
-        const uniqueParticipants = new Set(predictions.map(p => p.participant_name));
-        console.log(`✅ ${uniqueParticipants.size} משתתפים עם ניחושים`);
-        
-        // 🔥 לוג מפורט לפי table_id
-        const predsByTable = {};
-        predictions.forEach(pred => {
-          const question = questions.find(q => q.id === pred.question_id);
-          if (question) {
-            const tableId = question.table_id || 'unknown';
-            if (!predsByTable[tableId]) predsByTable[tableId] = 0;
-            predsByTable[tableId]++;
-          }
-        });
-        console.log('📊 ניחושים לפי טבלאות:', predsByTable);
-        
-        // 🔍 ניתוח מפורט של T12.7 (גאווה ישראלית, שאלה 7)
-        const t12Questions = questions.filter(q => q.table_id === 'T12');
-        const t12q7 = t12Questions.find(q => q.question_id === '7');
-        
-        if (t12q7) {
-          console.log('🔍🔍🔍 ניתוח מפורט T12.7 🔍🔍🔍');
-          console.log('📋 פרטי שאלה:', {
-            id: t12q7.id,
-            table_id: t12q7.table_id,
-            question_id: t12q7.question_id,
-            question_text: t12q7.question_text
-          });
-          
-          const t12q7Predictions = predictions.filter(p => p.question_id === t12q7.id);
-          console.log(`📊 סה"כ ${t12q7Predictions.length} ניחושים לשאלה T12.7 מתוך ${uniqueParticipants.size} משתתפים`);
-          
-          // 🔍 בדוק אם יש משתתפים חסרים
-          const allParticipants = Array.from(uniqueParticipants);
-          const t12q7Participants = new Set(t12q7Predictions.map(p => p.participant_name));
-          const missingParticipants = allParticipants.filter(name => !t12q7Participants.has(name));
-          
-          if (missingParticipants.length > 0) {
-            console.log(`⚠️⚠️⚠️ חסרים ${missingParticipants.length} משתתפים ל-T12.7:`);
-            console.log(missingParticipants);
-          }
-          
-          // קבץ לפי תשובה
-          const answerCounts = {};
-          const validAnswers = [];
-          const invalidAnswers = [];
-          
-          t12q7Predictions.forEach(pred => {
-            const answer = pred.text_prediction || '';
-            const trimmed = answer.trim();
-            
-            if (!trimmed || trimmed === '__CLEAR__' || trimmed.toLowerCase() === 'null') {
-              invalidAnswers.push({ name: pred.participant_name, answer });
-            } else {
-              validAnswers.push({ name: pred.participant_name, answer: trimmed });
-              answerCounts[trimmed] = (answerCounts[trimmed] || 0) + 1;
-            }
-          });
-          
-          console.log('✅ תשובות תקינות:', validAnswers.length);
-          console.log('❌ תשובות לא תקינות:', invalidAnswers.length, invalidAnswers);
-          console.log('📊 התפלגות תשובות תקינות:', answerCounts);
-        }
-      } else {
-        console.log('⚠️ אין ניחושים למשחק הזה!');
-      }
-      
-      setAllQuestions(questions);
-      setAllPredictions(predictions);
 
-      const allTeams = currentGame.teams_data || [];
+      console.log(`✅ סה"כ נטענו ${predictions.length} predictions`);
+
+      // 🚀 reduce במקום forEach
       const teamsMap = allTeams.reduce((acc, team) => {
         acc[normalizeTeamName(team.name)] = team;
         return acc;
       }, {});
       setTeams(teamsMap);
 
-      const lists = currentGame.validation_lists || [];
       const listsMap = lists.reduce((acc, list) => {
         acc[list.list_name] = list.options;
         return acc;
@@ -301,6 +217,7 @@ export default function Statistics() {
         return aNum - bNum;
       });
       setRoundTables(sortedRoundTables);
+      // Set the initial selected round after roundTables are loaded
       if (sortedRoundTables.length > 0) {
         setSelectedRound(sortedRoundTables[0].id);
       }
@@ -321,6 +238,9 @@ export default function Statistics() {
 
       setSpecialTables(allSpecialTables);
 
+      setAllQuestions(questions);
+      setAllPredictions(predictions);
+
     } catch (error) {
       console.error("Error loading data:", error);
     }
@@ -334,13 +254,11 @@ export default function Statistics() {
         if (specificId) {
           tablesToProcess = roundTables.filter(table => table.id === specificId);
         } else {
-          tablesToProcess = roundTables;
+          tablesToProcess = roundTables; // If no specific round selected, process all
         }
       } else if (type === 'israeli') {
         tablesToProcess = israeliTable ? [israeliTable] : [];
       }
-
-      console.log('🔍 calculateGameStats:', { type, specificId, tablesToProcess: tablesToProcess.map(t => t?.id) });
 
       if (tablesToProcess.length === 0 || (tablesToProcess.length > 0 && tablesToProcess[0] === null)) {
         setGameStats(null);
@@ -356,16 +274,11 @@ export default function Statistics() {
         predictionsByQuestion.get(p.question_id).push(p);
       });
 
-      console.log(`📊 סה"כ ${allPredictions.length} ניחושים במערכת`);
-      console.log(`📊 מפת ניחושים לפי question_id: ${predictionsByQuestion.size} שאלות`);
-
       const gameStatsData = {};
 
       for (const table of tablesToProcess) {
-        console.log(`📋 מעבד טבלה ${table.id} עם ${table.questions.length} שאלות`);
         for (const q of table.questions) {
           const gamePredictions = predictionsByQuestion.get(q.id) || [];
-          console.log(`  🎯 שאלה ${q.table_id}.${q.question_id} (id: ${q.id}): ${gamePredictions.length} ניחושים`);
 
           // 🚀 reduce במקום forEach
           const resultCounts = gamePredictions.reduce((acc, pred) => {
@@ -377,7 +290,7 @@ export default function Statistics() {
           const totalPredictions = gamePredictions.length;
 
           const tempChartData = Object.entries(resultCounts)
-            .sort((a, b) => b[1] - a[1])
+            .sort((a, b) => b[1] - a[1]) // Keep this sort for mostPopular and initial sorting
             .map(([result, count]) => ({
               name: result,
               value: count,
@@ -387,7 +300,7 @@ export default function Statistics() {
           // ✅ סדר מחדש - גדול-קטן-גדול-קטן למניעת דריסת תוויות
           const chartDataFinal = alternateSliceOrder(tempChartData).map(entry => ({
             ...entry,
-            percentage: parseFloat(entry.percentage)
+            percentage: parseFloat(entry.percentage) // Ensure percentage is a number
           }));
 
 
@@ -466,70 +379,47 @@ export default function Statistics() {
           };
         } else {
           if (table.id !== 'T1') {
-          for (const q of table.questions) {
-            // סנן ניחושים לפי question_id
-            const qPredictions = allPredictions.filter(p => p.question_id === q.id);
+            for (const q of table.questions) {
+              const qPredictions = allPredictions.filter(p => p.question_id === q.id);
 
-            console.log(`📊 שאלה ${q.table_id}.${q.question_id}: ${qPredictions.length} ניחושים`);
-
-            // 🔍 לוג מפורט לשאלה T12.7
-            if (q.table_id === 'T12' && q.question_id === '7') {
-              console.log('🔍🔍 calculateSpecialStats - T12.7:');
-              console.log(`   📊 סה"כ ${qPredictions.length} ניחושים נמצאו`);
-              console.log('   📋 הניחושים:', qPredictions.map(p => ({
-                participant: p.participant_name,
-                answer: p.text_prediction
-              })));
-            }
-
-              // 🚀 reduce לספירת תשובות
+              // 🚀 reduce במקום forEach
               const answerCounts = qPredictions.reduce((acc, pred) => {
                 let answer = String(pred.text_prediction || '').trim();
-                
-                // בדיקה בסיסית
+
+                // נורמליזציה ובדיקות מקיפות לניחושים ריקים
+
+                // דלג על כל סוגי הניחושים הריקים
                 if (
                   !answer ||
                   answer === '' ||
+                  answer === 'לא ענה' ||
+                  answer === 'לא ניחש' ||
                   answer === '__CLEAR__' ||
                   answer.toLowerCase() === 'null' ||
                   answer.toLowerCase() === 'undefined'
                 ) {
-                  return acc;
+                  return acc; // דלג על ניחוש זה ופשוט החזר את ה-accumulator
                 }
 
-                // 🔥 טיפול בקבוצות - רק אם validation_list מכיל "קבוצ" וזה לא כן/לא/מספר
-                const isYesNo = ['כן', 'לא', 'yes', 'no'].includes(answer);
-                const isNumber = !isNaN(Number(answer));
-                
-                if (!isYesNo && !isNumber && q.validation_list && q.validation_list.toLowerCase().includes('קבוצ')) {
+                if (q.validation_list && q.validation_list.toLowerCase().includes('קבוצ')) {
                   answer = cleanTeamName(answer);
                 }
 
-                // בדיקה אחרי ניקוי
+                // בדיקה נוספת אחרי cleanTeamName
                 if (!answer || answer.trim() === '') {
-                  return acc;
+                  return acc; // דלג על ניחוש זה
                 }
 
-                // ✅ ספירה
                 acc[answer] = (acc[answer] || 0) + 1;
-                
                 return acc;
               }, {});
 
+              // חשב את סך התשובות בפועל (לא כולל ריקים)
               const totalAnswersWithContent = Object.values(answerCounts).reduce((sum, count) => sum + count, 0);
-              
-              // 🔍 לוג מפורט לשאלה T12.7
-              if (q.table_id === 'T12' && q.question_id === '7') {
-                console.log('📊 תוצאה סופית T12.7:');
-                console.log(`   סה"כ ניחושים שהתקבלו: ${qPredictions.length}`);
-                console.log(`   סה"כ תשובות שנספרו ב-answerCounts: ${totalAnswersWithContent}`);
-                console.log('   answerCounts:', JSON.stringify(answerCounts));
-                console.log('   Object.keys(answerCounts):', Object.keys(answerCounts));
-                console.log('   Object.values(answerCounts):', Object.values(answerCounts));
-              }
 
+              // אם אין תשובות בכלל - דלג על השאלה או הצג הודעה
               const tempChartData = Object.entries(answerCounts)
-                .sort((a, b) => b[1] - a[1])
+                .sort((a, b) => b[1] - a[1]) // Keep this sort for mostPopular and initial sorting
                 .map(([answer, count]) => ({
                   answer,
                   count,
@@ -541,7 +431,7 @@ export default function Statistics() {
 
               tableStats.questions.push({
                 question: q,
-                totalAnswers: totalAnswersWithContent,
+                totalAnswers: totalAnswersWithContent, // רק תשובות עם תוכן
                 chartData,
                 mostPopular: tempChartData[0] || { answer: '-', count: 0, percentage: 0 },
                 diversity: chartData.length
@@ -568,6 +458,7 @@ export default function Statistics() {
     try {
       console.log('📊 טוען נתוני משתמשים מטבלה T1...');
 
+      // מצא את השאלות מטבלה T1 (פרטי משתתפים)
       const t1Questions = allQuestions.filter(q => q.table_id === 'T1');
       console.log('📋 שאלות T1:', t1Questions);
 
@@ -588,6 +479,7 @@ export default function Statistics() {
         return;
       }
 
+      // טען את התשובות לשאלות אלו
       const professionPredictions = professionQuestion
         ? allPredictions.filter(p => p.question_id === professionQuestion.id)
         : [];
@@ -598,10 +490,12 @@ export default function Statistics() {
       console.log('📊 תשובות מקצוע:', professionPredictions.length);
       console.log('📊 תשובות גיל:', agePredictions.length);
 
+      // חישוב מקצועות - רק מקצועות שמולאו
       // 🚀 reduce במקום forEach
       const professionCounts = professionPredictions.reduce((acc, pred) => {
         const profession = pred.text_prediction?.trim();
 
+        // דלג על מקצועות ריקים/לא מוגדרים/0
         if (
           !profession ||
           profession === '' ||
@@ -610,15 +504,16 @@ export default function Statistics() {
           profession.toLowerCase() === 'undefined' ||
           profession === '__CLEAR__'
         ) {
-          return acc;
+          return acc; // דלג על ניחוש זה והחזר את ה-accumulator
         }
 
         acc[profession] = (acc[profession] || 0) + 1;
-        return acc;
+        return acc; // החזר את ה-accumulator
       }, {});
 
       console.log('📊 מקצועות שנמצאו:', professionCounts);
 
+      // חשב את סך התשובות בפועל (לא כולל ריקים)
       const totalProfessionsWithContent = Object.values(professionCounts).reduce((sum, count) => sum + count, 0);
 
       const professionData = Object.entries(professionCounts)
@@ -632,6 +527,7 @@ export default function Statistics() {
 
       console.log('📊 professionData:', professionData);
 
+      // חישוב קבוצות גיל - רק גילאים שמולאו
       const ageGroups = {
         'מתחת ל-20': 0,
         '21-25': 0,
@@ -649,8 +545,9 @@ export default function Statistics() {
         const ageStr = pred.text_prediction?.trim();
         const age = parseInt(ageStr, 10);
 
+        // דלג על גילאים ריקים/לא מוגדרים/0
         if (!ageStr || ageStr === '' || ageStr === '0' || isNaN(age) || age === 0) {
-          return;
+          return; // דלג על ניחוש זה
         }
 
         totalAgesWithContent++;
@@ -668,6 +565,7 @@ export default function Statistics() {
 
       console.log('📊 קבוצות גיל:', ageGroups);
 
+      // הצג רק קבוצות גיל עם נתונים
       const ageData = Object.entries(ageGroups)
         .filter(([_, count]) => count > 0)
         .map(([group, count]) => ({
@@ -678,6 +576,7 @@ export default function Statistics() {
 
       console.log('📊 ageData:', ageData);
 
+      // קבל רשימה ייחודית של משתתפים
       const allParticipants = new Set([
         ...professionPredictions.map(p => p.participant_name),
         ...agePredictions.map(p => p.participant_name)
@@ -696,6 +595,7 @@ export default function Statistics() {
     } catch (error) {
       console.error("❌ שגיאה בטעינת נתוני משתמשים:", error);
 
+      // If it's a Rate Limit or other specific error (though less likely with local data)
       if (error.message?.includes('Rate limit') || error.response?.status === 429) {
         setUserStatsError('rate_limit');
       } else {
@@ -706,7 +606,7 @@ export default function Statistics() {
     }
   }, [userStats, allQuestions, allPredictions]);
 
-  // 🚀 useCallback לחישוב outcomes
+  // 🚀 useCallback לחישוב outcomes - זו פונקציה שנשמרת
   const analyzeGameOutcomes = useCallback((chartData) => {
     return chartData.reduce((acc, entry) => {
       const result = entry.name;
@@ -744,21 +644,9 @@ export default function Statistics() {
   const participantsByQuestionAndAnswer = useMemo(() => {
     const index = new Map();
     allPredictions.forEach(p => {
-      if (!p.text_prediction || !p.text_prediction.trim()) return;
-      
-      // נרמל את הניחוש
-      const normalized = normalizePrediction(p.text_prediction.trim());
-      const key = `${p.question_id}_${normalized}`;
-      
+      const key = `${p.question_id}_${normalizePrediction(p.text_prediction)}`;
       if (!index.has(key)) index.set(key, []);
       index.get(key).push(p.participant_name);
-      
-      // 🔥 גם שמור בלי נורמליזציה למקרים מיוחדים
-      const keyOriginal = `${p.question_id}_${p.text_prediction.trim()}`;
-      if (keyOriginal !== key) {
-        if (!index.has(keyOriginal)) index.set(keyOriginal, []);
-        index.get(keyOriginal).push(p.participant_name);
-      }
     });
 
     // Sort each array once
@@ -811,85 +699,83 @@ export default function Statistics() {
     return outcomeMap;
   }, [gameStats, participantsByQuestionAndAnswer]);
 
-  const allButtons = useMemo(() => {
-    const buttons = [];
+  const allButtons = [];
 
-    buttons.push({
-      numericId: 0,
-      key: 'insights',
-      description: 'תובנות AI ומחנות',
-      icon: PieChart
-    });
+  allButtons.push({
+    numericId: -1,
+    key: 'users',
+    description: 'פרטי מנחשים',
+    icon: Users
+  });
 
-    buttons.push({
-      numericId: 0.5,
-      key: 'users',
-      description: 'פרטי המנחשים',
-      icon: Users
-    });
+  allButtons.push({
+    numericId: 0,
+    key: 'insights',
+    description: 'תובנות AI ומחנות',
+    icon: PieChart
+  });
 
-    if (roundTables.length > 0) {
-      const firstRoundTableId = roundTables[0]?.id || 'T2';
-      buttons.push({
-        numericId: parseInt(firstRoundTableId.replace('T', ''), 10),
-        key: 'rounds',
-        description: 'סטטיסטיקות משחקי הליגה',
-        icon: Target
-      });
-    }
-
-    specialTables.forEach(table => {
-      // סנן טבלאות T1 (פרטי משתתף) ו"פרטי מנחשים"
-      if (table.id === 'T1' || (table.description && table.description.includes('פרטי מנחשים'))) {
-        return;
-      }
-
-      buttons.push({
-        numericId: parseInt(table.id.replace('T', ''), 10),
-        key: table.id,
-        description: table.description,
-        icon: TrendingUp
-      });
-    });
-
-    if (locationTables.length > 0) {
-      const firstLocationTableId = locationTables[0]?.id || 'T14';
-      buttons.push({
-        numericId: parseInt(firstLocationTableId.replace('T', ''), 10),
-        key: 'locations',
-        description: 'מיקומים בסיום שלב הליגה',
-        icon: Award
-      });
-    }
-
-    if (playoffTable) {
-      buttons.push({
-        numericId: parseInt(playoffTable.id.replace('T', ''), 10),
-        key: playoffTable.id,
-        description: playoffTable.description,
-      icon: Award
-      });
-    }
-
-    if (israeliTable) {
-      buttons.push({
-        numericId: parseInt(israeliTable.id.replace('T', ''), 10),
-        key: israeliTable.id,
-        description: israeliTable.description,
+  if (roundTables.length > 0) {
+    const firstRoundTableId = roundTables[0]?.id || 'T2';
+    allButtons.push({
+      numericId: parseInt(firstRoundTableId.replace('T', ''), 10),
+      key: 'rounds',
+      description: 'סטטיסטיקות משחקי הליגה',
       icon: Target
-      });
+    });
+  }
+
+  specialTables.forEach(table => {
+    // דלג על טבלה שה-description שלה "פרטי מנחשים"
+    if (table.description && table.description.includes('פרטי מנחשים')) {
+      return; // דלג על הטבלה הזו
     }
 
-    return buttons.sort((a, b) => a.numericId - b.numericId);
-  }, [roundTables, specialTables, locationTables, playoffTable, israeliTable]);
+    allButtons.push({
+      numericId: parseInt(table.id.replace('T', ''), 10),
+      key: table.id,
+      description: table.description,
+      icon: TrendingUp
+    });
+  });
+
+  if (locationTables.length > 0) {
+    const firstLocationTableId = locationTables[0]?.id || 'T14';
+    allButtons.push({
+      numericId: parseInt(firstLocationTableId.replace('T', ''), 10),
+      key: 'locations',
+      description: 'מיקומים בסיום שלב הליגה',
+      icon: Award
+    });
+  }
+
+  if (playoffTable) {
+    allButtons.push({
+      numericId: parseInt(playoffTable.id.replace('T', ''), 10),
+      key: playoffTable.id,
+      description: playoffTable.description,
+    icon: Award
+    });
+  }
+
+  if (israeliTable) {
+    allButtons.push({
+      numericId: parseInt(israeliTable.id.replace('T', ''), 10),
+      key: israeliTable.id,
+      description: israeliTable.description,
+    icon: Target
+    });
+  }
+
+  allButtons.sort((a, b) => a.numericId - b.numericId);
 
   useEffect(() => {
-    if (selectedSection && !loading && allQuestions.length > 0 && allPredictions.length > 0) {
+    if (selectedSection && !loading) {
       const buttonInfo = allButtons.find(btn => btn.key === selectedSection);
       if (!buttonInfo) return;
 
       if (buttonInfo.key === 'rounds') {
-        calculateGameStats('rounds', selectedRound);
+        calculateGameStats('rounds', selectedRound); // Pass selectedRound
       } else if (buttonInfo.key === 'israeli' || buttonInfo.key === israeliTable?.id) {
         calculateGameStats('israeli');
       } else if (buttonInfo.key === 'locations') {
@@ -897,14 +783,16 @@ export default function Statistics() {
       } else if (buttonInfo.key === playoffTable?.id) {
         calculateSpecialStats('playoff');
       } else if (buttonInfo.key === 'insights') {
-        // No specific calculation needed
+        // No specific calculation needed here, InsightsAnalyzer will handle its own data.
+        // But we might want to ensure allQuestions and allPredictions are loaded.
       } else if (buttonInfo.key === 'users') {
         calculateUserStats();
-      } else {
+      }
+      else {
         calculateSpecialStats('special', buttonInfo.key);
       }
     }
-  }, [selectedSection, loading, allQuestions, allPredictions, calculateGameStats, calculateSpecialStats, calculateUserStats, allButtons, israeliTable, playoffTable, selectedRound]);
+  }, [selectedSection, loading, calculateGameStats, calculateSpecialStats, calculateUserStats, allButtons, israeliTable, playoffTable, selectedRound]); // Add selectedRound to dependencies
 
   const toggleSection = (sectionId) => {
     setSelectedSection(selectedSection === sectionId ? null : sectionId);
@@ -975,322 +863,298 @@ export default function Statistics() {
           </CardContent>
         </Card>
 
-        {/* 🧠 תצוגת תובנות AI */}
-        {selectedSection === 'insights' && (
-          <InsightsAnalyzer
-            allQuestions={allQuestions}
-            allPredictions={allPredictions}
-          />
-        )}
-
-        {/* 📊 תצוגת פרטי מנחשים */}
+        {/* 👥 תצוגת פרטי מנחשים */}
         {selectedSection === 'users' && (
           <div className="space-y-6">
-            {userStatsLoading ? (
+            {userStatsLoading && (
               <Card style={{
                 background: 'rgba(30, 41, 59, 0.6)',
                 border: '1px solid rgba(6, 182, 212, 0.2)'
               }}>
                 <CardContent className="p-12 text-center">
                   <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4" style={{ color: '#06b6d4' }} />
-                  <p style={{ color: '#94a3b8' }}>טוען נתוני מנחשים...</p>
+                  <p style={{ color: '#94a3b8' }}>טוען נתוני משתמשים...</p>
                 </CardContent>
               </Card>
-            ) : userStatsError ? (
+            )}
+
+            {userStatsError === 'no_questions' && (
               <Card style={{
                 background: 'rgba(239, 68, 68, 0.1)',
                 border: '1px solid rgba(239, 68, 68, 0.3)'
               }}>
                 <CardContent className="p-8 text-center">
                   <AlertTriangle className="w-12 h-12 mx-auto mb-4" style={{ color: '#ef4444' }} />
-                  <p className="text-xl font-bold mb-2" style={{ color: '#ef4444' }}>
-                    {userStatsError === 'no_questions' ? 'לא נמצאו שאלות פרטי מנחשים' : 
-                     userStatsError === 'rate_limit' ? 'יותר מדי בקשות - נסה שוב בעוד כמה שניות' : 
-                     'שגיאה בטעינת הנתונים'}
+                  <h3 className="text-xl font-bold mb-2" style={{ color: '#ef4444' }}>לא נמצאו שאלות פרטי משתתפים</h3>
+                  <p style={{ color: '#fca5a5' }}>
+                    לא נמצאו שאלות מקצוע וגיל בטבלה T1
                   </p>
                 </CardContent>
               </Card>
-            ) : userStats ? (
+            )}
+
+            {userStatsError === 'cache_not_found' && (
+              <Card style={{
+                background: 'rgba(249, 115, 22, 0.1)',
+                border: '1px solid rgba(249, 115, 22, 0.3)'
+              }}>
+                <CardContent className="p-8 text-center">
+                  <Database className="w-12 h-12 mx-auto mb-4" style={{ color: '#f97316' }} />
+                  <h3 className="text-xl font-bold mb-2" style={{ color: '#f97316' }}>נתוני משתמשים לא זמינים במטמון</h3>
+                  <p className="mb-4" style={{ color: '#fdba74' }}>
+                    כדי להציג סטטיסטיקות משתמשים, יש צורך ליצור מטמון של הנתונים.
+                  </p>
+                  <p className="text-sm" style={{ color: '#94a3b8' }}>
+                    <strong>מה לעשות:</strong> עבור לעמוד "סקירת מערכת" ולחץ על כפתור "רענן מטמון משתמשים"
+                  </p>
+                </CardContent>
+              </Card>
+            )}
+
+            {userStatsError === 'rate_limit' && (
+              <Card style={{
+                background: 'rgba(239, 68, 68, 0.1)',
+                border: '1px solid rgba(239, 68, 68, 0.3)'
+              }}>
+                <CardContent className="p-8 text-center">
+                  <AlertTriangle className="w-12 h-12 mx-auto mb-4" style={{ color: '#ef4444' }} />
+                  <h3 className="text-xl font-bold mb-2" style={{ color: '#ef4444' }}>יותר מדי קריאות לשרת</h3>
+                  <p className="mb-4" style={{ color: '#fca5a5' }}>
+                    המערכת חוסמת קריאות זמנית. אנא נסה שוב בעוד מספר שניות.
+                  </p>
+                  <Button
+                    onClick={() => {
+                      setUserStatsError(null);
+                      calculateUserStats();
+                    }}
+                    style={{
+                      background: 'linear-gradient(135deg, #06b6d4 0%, #0ea5e9 100%)',
+                      color: 'white'
+                    }}
+                  >
+                    נסה שוב
+                  </Button>
+                </CardContent>
+              </Card>
+            )}
+
+            {userStatsError === 'general_error' && (
+              <Card style={{
+                background: 'rgba(239, 68, 68, 0.1)',
+                border: '1px solid rgba(239, 68, 68, 0.3)'
+              }}>
+                <CardContent className="p-6 text-center">
+                  <p style={{ color: '#ef4444' }}>לא ניתן לטעון נתוני משתמשים כרגע.</p>
+                </CardContent>
+              </Card>
+            )}
+
+            {userStats && !userStatsLoading && !userStatsError && (
               <>
                 <div className="grid md:grid-cols-2 gap-6">
+                  {/* גרף מקצועות */}
                   <Card style={{
                     background: 'rgba(30, 41, 59, 0.6)',
                     border: '1px solid rgba(6, 182, 212, 0.2)'
                   }}>
                     <CardHeader>
                       <CardTitle className="flex items-center gap-2" style={{ color: '#06b6d4' }}>
-                        <BarChart3 className="w-5 h-5" />
+                        <Users className="w-5 h-5" />
                         מקצועות המנחשים
                       </CardTitle>
                     </CardHeader>
                     <CardContent>
-                      <ResponsiveContainer width="100%" height={450}>
-                        <BarChart data={userStats.professionData} margin={{ top: 10, right: 30, left: 20, bottom: 60 }}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                          <defs>
-                            <linearGradient id="barHover" x1="0" y1="0" x2="0" y2="1">
-                              <stop offset="0%" stopColor="rgba(6, 182, 212, 0.15)" stopOpacity="1" />
-                              <stop offset="100%" stopColor="rgba(6, 182, 212, 0.05)" stopOpacity="1" />
-                            </linearGradient>
-                          </defs>
-                          <XAxis 
-                            dataKey="profession" 
-                            angle={0} 
-                            textAnchor="middle" 
-                            height={80}
-                            stroke="#94a3b8"
-                            interval={0}
-                            tick={({ x, y, payload }) => {
-                              const maxCharsPerLine = 8;
-                              const words = String(payload.value).split(' ');
-                              const lines = [];
-                              let currentLine = '';
+                      {userStats.professionData.length > 0 ? (
+                        <ResponsiveContainer width="100%" height={500}>
+                          <BarChart data={userStats.professionData} margin={{ top: 10, right: 5, left: 5, bottom: 100 }}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                            <XAxis
+                              dataKey="profession"
+                              angle={0} // Changed from -45 to 0 for custom tick
+                              textAnchor="middle"
+                              height={100}
+                              stroke="#94a3b8"
+                              interval={0}
+                              tick={({ x, y, payload }) => {
+                                const maxCharsPerLine = 10; // Adjust as needed
+                                const words = String(payload.value).split(' ');
+                                const lines = [];
+                                let currentLine = '';
 
-                              words.forEach(word => {
-                                const testLine = currentLine ? `${currentLine} ${word}` : word;
-                                if (testLine.length <= maxCharsPerLine) {
-                                  currentLine = testLine;
-                                } else {
-                                  if (currentLine) lines.push(currentLine);
-                                  currentLine = word;
-                                }
-                              });
-                              if (currentLine) lines.push(currentLine);
+                                words.forEach(word => {
+                                  const testLine = currentLine ? `${currentLine} ${word}` : word;
+                                  if (testLine.length <= maxCharsPerLine) {
+                                    currentLine = testLine;
+                                  } else {
+                                    if (currentLine) lines.push(currentLine);
+                                    currentLine = word;
+                                  }
+                                });
+                                if (currentLine) lines.push(currentLine);
 
-                              const displayLines = lines.slice(0, 3);
+                                const displayLines = lines.slice(0, 3); // Max 3 lines
 
-                              return (
-                                <g transform={`translate(${x},${y})`}>
-                                  {displayLines.map((line, index) => (
-                                    <text
-                                      key={index}
-                                      x={0}
-                                      y={index * 14 + 10}
-                                      textAnchor="middle"
-                                      fill="#ffffff"
-                                      fontSize="10px"
+                                return (
+                                  <g transform={`translate(${x},${y})`}>
+                                    {displayLines.map((line, index) => (
+                                      <text
+                                        key={index}
+                                        x={0}
+                                        y={index * 14 + 10} // Adjusted Y position
+                                        textAnchor="middle"
+                                        fill="#94a3b8"
+                                        fontSize="10px"
                                       >
-                                      {line}
+                                        {line}
                                       </text>
-                                  ))}
-                                </g>
-                              );
-                            }}
-                          />
-                          <YAxis stroke="#94a3b8" tick={{ fontSize: 12, fill: '#94a3b8' }} />
-                          <Tooltip
-                            wrapperStyle={{ zIndex: 1000 }}
-                            cursor={false}
-                            content={({ payload }) => {
-                              if (!payload || !payload[0]) return null;
-                              const data = payload[0].payload;
-                              
-                              const professionQuestion = allQuestions.find(q => 
-                                q.table_id === 'T1' && q.question_text?.includes('מקצוע')
-                              );
-                              
-                              const participants = professionQuestion 
-                                ? allPredictions
-                                    .filter(p => 
-                                      p.question_id === professionQuestion.id && 
-                                      p.text_prediction?.trim() === data.profession
-                                    )
-                                    .map(p => p.participant_name)
-                                    .filter((name, index, self) => self.indexOf(name) === index)
-                                    .sort((a, b) => a.localeCompare(b, 'he'))
-                                : [];
-                              
-                              return (
-                                <div style={{ 
-                                  background: '#0a0f1a', 
-                                  backgroundColor: '#0a0f1a',
-                                  border: '2px solid #06b6d4', 
-                                  borderRadius: '8px', 
-                                  padding: '12px', 
-                                  maxWidth: '350px',
-                                  boxShadow: '0 4px 12px rgba(0,0,0,0.8)'
-                                }}>
-                                  <p style={{ color: '#06b6d4', fontWeight: 'bold', marginBottom: '8px', fontSize: '13px' }}>
-                                    {data.profession}
-                                  </p>
-                                  <p style={{ color: '#f8fafc', fontSize: '12px', marginBottom: '8px' }}>
-                                    {data.count} משתתפים ({data.percentage}%)
-                                  </p>
-                                  {participants.length > 0 && (
-                                    <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid #475569' }}>
-                                      <p style={{ color: '#94a3b8', fontSize: '11px', marginBottom: '6px', fontWeight: 'bold' }}>
-                                        המשתתפים:
-                                      </p>
-                                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                                        {participants.map((name, idx) => (
-                                          <span key={idx} style={{ 
-                                            background: '#1e293b', 
-                                            color: '#f8fafc',
-                                            padding: '4px 8px',
-                                            borderRadius: '4px',
-                                            fontSize: '10px'
-                                          }}>
-                                            {name}
-                                          </span>
-                                        ))}
+                                    ))}
+                                  </g>
+                                );
+                              }}
+                            />
+                            <YAxis stroke="#94a3b8" tick={{ fontSize: 10, fill: '#94a3b8' }} />
+                            <Tooltip
+                              contentStyle={{
+                                background: '#0f172a',
+                                border: '2px solid #06b6d4',
+                                borderRadius: '8px',
+                                opacity: 1
+                              }}
+                              content={({ payload }) => {
+                                if (!payload || !payload[0]) return null;
+                                const data = payload[0].payload;
+
+                                const t1Questions = allQuestions.filter(q => q.table_id === 'T1');
+                                const professionQuestion = t1Questions.find(q => q.question_text?.includes('מקצוע'));
+
+                                if (!professionQuestion) return null;
+
+                                // 🚀 שימוש ב-pre-calculated index
+                                const key = `${professionQuestion.id}_${normalizePrediction(data.profession)}`;
+                                const participants = participantsByQuestionAndAnswer.get(key) || [];
+
+                                return (
+                                  <div className="rounded-lg p-3 shadow-2xl" style={{ maxWidth: '500px', background: '#0f172a', border: '2px solid #06b6d4' }}>
+                                    <p className="text-cyan-300 font-bold mb-2">{data.profession}</p>
+                                    <p className="text-white text-sm mb-2">{data.count} משתתפים ({data.percentage}%)</p>
+                                    {participants.length > 0 && (
+                                      <div className="mt-2 pt-2 border-t border-slate-700" style={{ background: '#0f172a' }}>
+                                        <p className="text-slate-400 text-xs mb-2">משתתפים:</p>
+                                        <div className="flex flex-wrap gap-2" style={{ background: '#0f172a' }}>
+                                          {participants.map((name, idx) => (
+                                            <span key={idx} className="text-slate-200 text-xs px-2 py-1 rounded" style={{ background: '#1e293b' }}>
+                                              {name}
+                                            </span>
+                                          ))}
+                                        </div>
                                       </div>
-                                    </div>
-                                  )}
-                                </div>
-                              );
-                            }}
-                          />
-                          <Bar 
-                            dataKey="count" 
-                            fill="#06b6d4" 
-                            radius={[8, 8, 0, 0]} 
-                            cursor={{ fill: 'transparent' }}
-                            activeBar={false}
-                          >
-                            {userStats.professionData.map((entry, index) => (
-                              <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                            ))}
-                          </Bar>
-                        </BarChart>
-                      </ResponsiveContainer>
+                                    )}
+                                  </div>
+                                );
+                              }}
+                            />
+                            <Bar dataKey="count" fill="#06b6d4" radius={[8, 8, 0, 0]}>
+                              {userStats.professionData.map((entry, index) => (
+                                <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                              ))}
+                            </Bar>
+                          </BarChart>
+                        </ResponsiveContainer>
+                      ) : (
+                        <div className="text-center py-8 text-slate-500">
+                          אין נתוני מקצועות
+                        </div>
+                      )}
                     </CardContent>
                   </Card>
 
+                  {/* גרף גילאים */}
                   <Card style={{
                     background: 'rgba(30, 41, 59, 0.6)',
                     border: '1px solid rgba(6, 182, 212, 0.2)'
                   }}>
                     <CardHeader>
                       <CardTitle className="flex items-center gap-2" style={{ color: '#06b6d4' }}>
-                        <PieChart className="w-5 h-5" />
+                        <Target className="w-5 h-5" />
                         קבוצות גיל המנחשים
                       </CardTitle>
                     </CardHeader>
                     <CardContent>
-                      <ResponsiveContainer width="100%" height={450}>
-                        <BarChart data={userStats.ageData} margin={{ top: 10, right: 30, left: 20, bottom: 40 }}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                          <defs>
-                            <linearGradient id="barHover2" x1="0" y1="0" x2="0" y2="1">
-                              <stop offset="0%" stopColor="rgba(6, 182, 212, 0.15)" stopOpacity="1" />
-                              <stop offset="100%" stopColor="rgba(6, 182, 212, 0.05)" stopOpacity="1" />
-                            </linearGradient>
-                          </defs>
-                          <XAxis 
-                            dataKey="group" 
-                            angle={0}
-                            textAnchor="middle"
-                            height={60}
-                            stroke="#94a3b8"
-                            interval={0}
-                            tick={({ x, y, payload }) => {
-                              return (
-                                <text
-                                  x={x}
-                                  y={y + 10}
-                                  textAnchor="middle"
-                                  fill="#94a3b8"
-                                  fontSize="11px"
-                                >
-                                  {payload.value}
-                                </text>
-                              );
-                            }}
-                          />
-                          <YAxis stroke="#94a3b8" tick={{ fontSize: 12, fill: '#94a3b8' }} />
-                          <Tooltip
-                            wrapperStyle={{ zIndex: 1000 }}
-                            cursor={false}
-                            content={({ payload }) => {
-                              if (!payload || !payload[0]) return null;
-                              const data = payload[0].payload;
-                              
-                              const ageQuestion = allQuestions.find(q => 
-                                q.table_id === 'T1' && q.question_text?.includes('גיל')
-                              );
-                              
-                              const participants = ageQuestion 
-                                ? allPredictions
-                                    .filter(p => {
-                                      if (p.question_id !== ageQuestion.id) return false;
-                                      const age = parseInt(p.text_prediction?.trim(), 10);
-                                      if (isNaN(age) || age === 0) return false;
-                                      
-                                      if (data.group === 'מתחת ל-20' && age < 20) return true;
-                                      if (data.group === '21-25' && age >= 21 && age <= 25) return true;
-                                      if (data.group === '26-30' && age >= 26 && age <= 30) return true;
-                                      if (data.group === '31-35' && age >= 31 && age <= 35) return true;
-                                      if (data.group === '36-40' && age >= 36 && age <= 40) return true;
-                                      if (data.group === '41-45' && age >= 41 && age <= 45) return true;
-                                      if (data.group === '46-50' && age >= 46 && age <= 50) return true;
-                                      if (data.group === '51-55' && age >= 51 && age <= 55) return true;
-                                      if (data.group === '56+' && age >= 56) return true;
-                                      return false;
-                                    })
-                                    .map(p => p.participant_name)
-                                    .filter((name, index, self) => self.indexOf(name) === index)
-                                    .sort((a, b) => a.localeCompare(b, 'he'))
-                                : [];
-                              
-                              return (
-                                <div style={{ 
-                                  background: '#0a0f1a',
-                                  backgroundColor: '#0a0f1a',
-                                  border: '2px solid #06b6d4', 
-                                  borderRadius: '8px', 
-                                  padding: '12px', 
-                                  maxWidth: '350px',
-                                  boxShadow: '0 4px 12px rgba(0,0,0,0.8)'
-                                }}>
-                                  <p style={{ color: '#06b6d4', fontWeight: 'bold', marginBottom: '8px', fontSize: '13px' }}>
-                                    {data.group}
-                                  </p>
-                                  <p style={{ color: '#f8fafc', fontSize: '12px', marginBottom: '8px' }}>
-                                    {data.count} משתתפים ({data.percentage}%)
-                                  </p>
-                                  {participants.length > 0 && (
-                                    <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid #475569' }}>
-                                      <p style={{ color: '#94a3b8', fontSize: '11px', marginBottom: '6px', fontWeight: 'bold' }}>
-                                        המשתתפים:
-                                      </p>
-                                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                                        {participants.map((name, idx) => (
-                                          <span key={idx} style={{ 
-                                            background: '#1e293b', 
-                                            color: '#f8fafc',
-                                            padding: '4px 8px',
-                                            borderRadius: '4px',
-                                            fontSize: '10px'
-                                          }}>
-                                            {name}
-                                          </span>
-                                        ))}
-                                      </div>
-                                    </div>
-                                  )}
-                                </div>
-                              );
-                            }}
-                          />
-                          <Bar 
-                            dataKey="count" 
-                            fill="#8b5cf6" 
-                            radius={[8, 8, 0, 0]} 
-                            cursor={{ fill: 'transparent' }}
-                            activeBar={false}
-                          >
-                            {userStats.ageData.map((entry, index) => (
-                              <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                            ))}
-                          </Bar>
-                        </BarChart>
-                      </ResponsiveContainer>
+                      {userStats.ageData.length > 0 ? (
+                        <ResponsiveContainer width="100%" height={500}>
+                          <BarChart data={userStats.ageData} margin={{ top: 10, right: 5, left: 5, bottom: 60 }}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                            <XAxis
+                              dataKey="group"
+                              stroke="#94a3b8"
+                              tick={{ fontSize: 11, fill: '#94a3b8' }}
+                              height={60}
+                            />
+                            <YAxis stroke="#94a3b8" tick={{ fontSize: 10, fill: '#94a3b8' }} />
+                            <Tooltip
+                              contentStyle={{
+                                background: '#0f172a',
+                                border: '2px solid #06b6d4',
+                                borderRadius: '8px',
+                                opacity: 1
+                              }}
+                              formatter={(value, name, props) => {
+                                return [`${value} (${props.payload.percentage}%)`, 'מספר'];
+                              }}
+                            />
+                            <Bar dataKey="count" fill="#0ea5e9" radius={[8, 8, 0, 0]}>
+                              {userStats.ageData.map((entry, index) => (
+                                <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                              ))}
+                            </Bar>
+                          </BarChart>
+                        </ResponsiveContainer>
+                      ) : (
+                        <div className="text-center py-8 text-slate-500">
+                          אין נתוני גילאים
+                        </div>
+                      )}
                     </CardContent>
                   </Card>
                 </div>
+
+                {/* סיכום */}
+                <Card style={{
+                  background: 'linear-gradient(135deg, rgba(6, 182, 212, 0.1) 0%, rgba(14, 165, 233, 0.1) 100%)',
+                  border: '1px solid rgba(6, 182, 212, 0.3)'
+                }}>
+                  <CardContent className="p-6">
+                    <div className="grid md:grid-cols-4 gap-4">
+                      <div>
+                        <p className="text-sm" style={{ color: '#94a3b8' }}>סה"כ מנחשים</p>
+                        <p className="text-3xl font-bold" style={{ color: '#06b6d4' }}>{userStats.totalUsers}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm" style={{ color: '#94a3b8' }}>מקצועות שונים</p>
+                        <p className="text-3xl font-bold" style={{ color: '#10b981' }}>{userStats.professionData.length}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm" style={{ color: '#94a3b8' }}>עם מקצוע</p>
+                        <p className="text-3xl font-bold" style={{ color: '#f59e0b' }}>{userStats.totalWithProfession}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm" style={{ color: '#94a3b8' }}>עם גיל</p>
+                        <p className="text-3xl font-bold" style={{ color: '#8b5cf6' }}>{userStats.totalWithAge}</p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
               </>
-            ) : null}
+            )}
           </div>
+        )}
+
+        {/* 🧠 תצוגת תובנות AI */}
+        {selectedSection === 'insights' && (
+          <InsightsAnalyzer
+            allQuestions={allQuestions}
+            allPredictions={allPredictions}
+          />
         )}
 
         {/* תצוגת משחקים */}
@@ -1864,20 +1728,17 @@ export default function Statistics() {
                                             ניחשו ניצחון {normalizedHome}
                                           </p>
                                           {outcomeData.homeWinParticipants.length > 0 ? (
-                                            <>
-                                              <p className="text-xs mb-1" style={{ color: '#94a3b8' }}>({outcomeData.homeWinParticipants.length} משתתפים)</p>
-                                              <div className="flex flex-wrap gap-2 max-h-48 overflow-y-auto">
-                                                {outcomeData.homeWinParticipants.map((name, idx) => (
-                                                  <span
-                                                    key={idx}
-                                                    className="text-xs px-2 py-1 rounded"
-                                                    style={{ background: '#1e293b', color: '#f8fafc' }}
-                                                  >
-                                                    {name}
-                                                  </span>
-                                                ))}
-                                              </div>
-                                            </>
+                                            <div className="flex flex-wrap gap-2">
+                                              {outcomeData.homeWinParticipants.map((name, idx) => (
+                                                <span
+                                                  key={idx}
+                                                  className="text-xs px-2 py-1 rounded"
+                                                  style={{ background: '#1e293b', color: '#f8fafc' }}
+                                                >
+                                                  {name}
+                                                </span>
+                                              ))}
+                                            </div>
                                           ) : (
                                             <p className="text-xs" style={{ color: '#94a3b8' }}>אין מנחשים</p>
                                           )}
@@ -1911,20 +1772,17 @@ export default function Statistics() {
                                             ניחשו תיקו
                                           </p>
                                           {outcomeData.drawParticipants.length > 0 ? (
-                                            <>
-                                              <p className="text-xs mb-1" style={{ color: '#94a3b8' }}>({outcomeData.drawParticipants.length} משתתפים)</p>
-                                              <div className="flex flex-wrap gap-2 max-h-48 overflow-y-auto">
-                                                {outcomeData.drawParticipants.map((name, idx) => (
-                                                  <span
-                                                    key={idx}
-                                                    className="text-xs px-2 py-1 rounded"
-                                                    style={{ background: '#1e293b', color: '#f8fafc' }}
-                                                  >
-                                                    {name}
-                                                  </span>
-                                                ))}
-                                              </div>
-                                            </>
+                                            <div className="flex flex-wrap gap-2">
+                                              {outcomeData.drawParticipants.map((name, idx) => (
+                                                <span
+                                                  key={idx}
+                                                  className="text-xs px-2 py-1 rounded"
+                                                  style={{ background: '#1e293b', color: '#f8fafc' }}
+                                                >
+                                                  {name}
+                                                </span>
+                                              ))}
+                                            </div>
                                           ) : (
                                             <p className="text-xs" style={{ color: '#94a3b8' }}>אין מנחשים</p>
                                           )}
@@ -1958,20 +1816,17 @@ export default function Statistics() {
                                             ניצחון {normalizedAway}
                                           </p>
                                           {outcomeData.awayWinParticipants.length > 0 ? (
-                                            <>
-                                              <p className="text-xs mb-1" style={{ color: '#94a3b8' }}>({outcomeData.awayWinParticipants.length} משתתפים)</p>
-                                              <div className="flex flex-wrap gap-2 max-h-48 overflow-y-auto">
-                                                {outcomeData.awayWinParticipants.map((name, idx) => (
-                                                  <span
-                                                    key={idx}
-                                                    className="text-xs px-2 py-1 rounded"
-                                                    style={{ background: '#1e293b', color: '#f8fafc' }}
-                                                  >
-                                                    {name}
-                                                  </span>
-                                                ))}
-                                              </div>
-                                            </>
+                                            <div className="flex flex-wrap gap-2">
+                                              {outcomeData.awayWinParticipants.map((name, idx) => (
+                                                <span
+                                                  key={idx}
+                                                  className="text-xs px-2 py-1 rounded"
+                                                  style={{ background: '#1e293b', color: '#f8fafc' }}
+                                                >
+                                                  {name}
+                                                </span>
+                                              ))}
+                                            </div>
                                           ) : (
                                             <p className="text-xs" style={{ color: '#94a3b8' }}>אין מנחשים</p>
                                           )}
@@ -1985,120 +1840,375 @@ export default function Statistics() {
                           </TooltipProvider>
 
                           <div className="relative">
-                           <ResponsiveContainer width="100%" height={650}>
-                             <RechartsPieChart>
-                               <Pie
-                                 data={game.chartData}
-                                 cx="50%"
-                                 cy="45%"
-                                 startAngle={-60}
-                                 endAngle={300}
-                                 outerRadius={160}
-                                 innerRadius={0}
-                                 dataKey="value"
-                                 labelLine={false}
-                                 label={(entry) => {
-                                  const RADIAN = Math.PI / 180;
-                                  const percentage = parseFloat(entry.percentage);
+                            <ResponsiveContainer width="100%" height={650}>
+                              <RechartsPieChart>
+                                <Pie
+                                  data={game.chartData}
+                                  cx="50%"
+                                  cy="45%"
+                                  startAngle={-60}
+                                  endAngle={300}
+                                  labelLine={(entry) => {
+                                    const percentage = parseFloat(entry.percentage);
 
-                                  const isActualResult = hasActualResult &&
-                                    normalizePrediction(entry.name) === normalizePrediction(q.actual_result);
-                                  const displayName = formatResult(entry.name);
+                                    if (percentage >= 5) {
+                                      return null;
+                                    }
 
-                                  // פלחים גדולים (>10%) - תווית בתוך הפלח
-                                  if (percentage > 10) {
-                                    const radius = entry.outerRadius * 0.65;
-                                    const x = entry.cx + radius * Math.cos(-entry.midAngle * RADIAN);
-                                    const y = entry.cy + radius * Math.sin(-entry.midAngle * RADIAN);
+                                    const RADIAN = Math.PI / 180;
+                                    const cx = entry.cx;
+                                    const cy = entry.cy;
+                                    const outerRadius = entry.outerRadius;
+
+                                    const startX = cx + outerRadius * Math.cos(-entry.midAngle * RADIAN);
+                                    const startY = cy + outerRadius * Math.sin(-entry.midAngle * RADIAN);
+                                    const endX = cx + (outerRadius + 35) * Math.cos(-entry.midAngle * RADIAN);
+                                    const endY = cy + (outerRadius + 35) * Math.sin(-entry.midAngle * RADIAN);
+
+                                    return (
+                                      <line
+                                        x1={startX}
+                                        y1={startY}
+                                        x2={endX}
+                                        y2={endY}
+                                        stroke="#94a3b8"
+                                        strokeWidth={1}
+                                      />
+                                    );
+                                  }}
+                                  label={(entry) => {
+                                    const RADIAN = Math.PI / 180;
+                                    const cx = entry.cx; // Use entry.cx
+                                    const cy = entry.cy; // Use entry.cy
+                                    const outerRadius = entry.outerRadius; // Use entry.outerRadius
+                                    const percentage = parseFloat(entry.percentage);
+
+                                    const isActualResult = hasActualResult &&
+                                      normalizePrediction(entry.name) === normalizePrediction(q.actual_result);
+                                    const displayName = formatResult(entry.name);
+
+                                    // פלחים גדולים (מעל 15%)
+                                    if (percentage > 15) {
+                                      const radius = outerRadius * 0.7;
+                                      const x = cx + radius * Math.cos(-entry.midAngle * RADIAN);
+                                      const y = cy + radius * Math.sin(-entry.midAngle * RADIAN);
+
+                                      return (
+                                        <g>
+                                          {isActualResult ? (
+                                            <>
+                                              <text
+                                                x={x}
+                                                y={y - 10}
+                                                fill="#fbbf24"
+                                                textAnchor="middle"
+                                                dominantBaseline="middle"
+                                                style={{
+                                                  fontSize: '16px',
+                                                  textShadow: '0 0 3px rgba(0,0,0,0.8)'
+                                                }}
+                                              >
+                                                ⭐
+                                              </text>
+                                              <text
+                                                x={x}
+                                                y={y + 5}
+                                                fill="#ffffff"
+                                                textAnchor="middle"
+                                                dominantBaseline="middle"
+                                                style={{
+                                                  fontSize: '13px',
+                                                  fontWeight: 'bold',
+                                                  textShadow: '0 0 3px rgba(0,0,0,0.8)'
+                                                }}
+                                              >
+                                                {displayName}
+                                              </text>
+                                              <text
+                                                x={x}
+                                                y={y + 21}
+                                                fill="#ffffff"
+                                                textAnchor="middle"
+                                                dominantBaseline="middle"
+                                                style={{
+                                                  fontSize: '11px',
+                                                  textShadow: '0 0 3px rgba(0,0,0,0.8)'
+                                                }}
+                                              >
+                                                {percentage}%
+                                              </text>
+                                            </>
+                                          ) : (
+                                            <>
+                                              <text
+                                                x={x}
+                                                y={y}
+                                                fill="#ffffff"
+                                                textAnchor="middle"
+                                                dominantBaseline="middle"
+                                                style={{
+                                                  fontSize: '13px',
+                                                  fontWeight: 'bold',
+                                                  textShadow: '0 0 3px rgba(0,0,0,0.8)'
+                                                }}
+                                              >
+                                                {displayName}
+                                              </text>
+                                              <text
+                                                x={x}
+                                                y={y + 16}
+                                                fill="#ffffff"
+                                                textAnchor="middle"
+                                                dominantBaseline="middle"
+                                                style={{
+                                                  fontSize: '11px',
+                                                  textShadow: '0 0 3px rgba(0,0,0,0.8)'
+                                                }}
+                                              >
+                                                {percentage}%
+                                              </text>
+                                            </>
+                                          )}
+                                        </g>
+                                      );
+                                    }
+
+                                    // פלחים בינוניים (5-15%)
+                                    if (percentage >= 5) {
+                                      const x = cx + (outerRadius + 30) * Math.cos(-entry.midAngle * RADIAN);
+                                      const y = cy + (outerRadius + 30) * Math.sin(-entry.midAngle * RADIAN);
+
+                                      const angle = (entry.midAngle + 360) % 360;
+                                      const textAnchor = (angle < 180 && angle > 0) ? 'start' : 'end';
+
+                                      return (
+                                        <g>
+                                          {isActualResult ? (
+                                            <>
+                                              <text
+                                                x={x}
+                                                y={y - 12}
+                                                fill="#fbbf24"
+                                                textAnchor={textAnchor}
+                                                dominantBaseline="middle"
+                                                style={{ fontSize: '14px' }}
+                                              >
+                                                ⭐
+                                              </text>
+                                              <text
+                                                x={x}
+                                                y={y}
+                                                fill="#ffffff"
+                                                textAnchor={textAnchor}
+                                                dominantBaseline="middle"
+                                                style={{
+                                                  fontSize: '11px',
+                                                  fontWeight: '600'
+                                                }}
+                                              >
+                                                {displayName}
+                                              </text>
+                                              <text
+                                                x={x}
+                                                y={y + 14}
+                                                fill="#ffffff"
+                                                textAnchor={textAnchor}
+                                                dominantBaseline="middle"
+                                                style={{ fontSize: '10px' }}
+                                              >
+                                                {percentage}%
+                                              </text>
+                                            </>
+                                          ) : (
+                                            <>
+                                              <text
+                                                x={x}
+                                                y={y}
+                                                fill="#ffffff"
+                                                textAnchor={textAnchor}
+                                                dominantBaseline="middle"
+                                                style={{
+                                                  fontSize: '11px',
+                                                  fontWeight: '600'
+                                                }}
+                                              >
+                                                {displayName}
+                                              </text>
+                                              <text
+                                                x={x}
+                                                y={y + 14}
+                                                fill="#ffffff"
+                                                textAnchor={textAnchor}
+                                                dominantBaseline="middle"
+                                                style={{ fontSize: '10px' }}
+                                              >
+                                                {percentage}%
+                                              </text>
+                                            </>
+                                          )}
+                                        </g>
+                                      );
+                                    }
+
+                                    // פלחים קטנים (מתחת ל-5%)
+                                    const lineEndX = cx + (outerRadius + 35) * Math.cos(-entry.midAngle * RADIAN);
+                                    const lineEndY = cy + (outerRadius + 35) * Math.sin(-entry.midAngle * RADIAN);
+
+                                    const angle = (entry.midAngle + 360) % 360;
+                                    let textAnchor = 'middle';
+                                    let yOffset = 0;
+
+                                    if (angle >= 337.5 || angle < 22.5) {
+                                      textAnchor = 'start';
+                                      yOffset = 0;
+                                    } else if (angle >= 22.5 && angle < 67.5) {
+                                      textAnchor = 'start';
+                                      yOffset = -3;
+                                    } else if (angle >= 67.5 && angle < 112.5) {
+                                      textAnchor = 'middle';
+                                      yOffset = -10;
+                                    } else if (angle >= 112.5 && angle < 157.5) {
+                                      textAnchor = 'end';
+                                      yOffset = -3;
+                                    } else if (angle >= 157.5 && angle < 202.5) {
+                                      textAnchor = 'end';
+                                      yOffset = 0;
+                                    } else if (angle >= 202.5 && angle < 247.5) {
+                                      textAnchor = 'end';
+                                      yOffset = 3;
+                                    } else if (angle >= 247.5 && angle < 292.5) {
+                                      textAnchor = 'middle';
+                                      yOffset = 15;
+                                    } else {
+                                      textAnchor = 'start';
+                                      yOffset = 3;
+                                    }
 
                                     return (
                                       <g>
-                                        <text x={x} y={y} fill="#ffffff" textAnchor="middle" dominantBaseline="middle"
-                                              style={{ fontSize: '12px', fontWeight: 'bold' }}>
-                                          {displayName}
-                                        </text>
-                                        <text x={x} y={y + 15} fill="#ffffff" textAnchor="middle" dominantBaseline="middle"
-                                              style={{ fontSize: '10px' }}>
-                                          {percentage}%
-                                        </text>
+                                        {isActualResult ? (
+                                          <>
+                                            <text
+                                              x={lineEndX}
+                                              y={lineEndY + yOffset - 12}
+                                              fill="#fbbf24"
+                                              textAnchor={textAnchor}
+                                              dominantBaseline="middle"
+                                              style={{ fontSize: '12px' }}
+                                            >
+                                              ⭐
+                                            </text>
+                                            <text
+                                              x={lineEndX}
+                                              y={lineEndY + yOffset}
+                                              fill="#ffffff"
+                                              textAnchor={textAnchor}
+                                              dominantBaseline="middle"
+                                              style={{
+                                                fontSize: '10px',
+                                                fontWeight: '600'
+                                              }}
+                                            >
+                                              {displayName}
+                                            </text>
+                                            <text
+                                              x={lineEndX}
+                                              y={lineEndY + yOffset + 12}
+                                              fill="#ffffff"
+                                              textAnchor={textAnchor}
+                                              dominantBaseline="middle"
+                                              style={{ fontSize: '9px' }}
+                                            >
+                                              {percentage}%
+                                            </text>
+                                          </>
+                                        ) : (
+                                          <>
+                                            <text
+                                              x={lineEndX}
+                                              y={lineEndY + yOffset}
+                                              fill="#ffffff"
+                                              textAnchor={textAnchor}
+                                              dominantBaseline="middle"
+                                              style={{
+                                                fontSize: '10px',
+                                                fontWeight: '600'
+                                              }}
+                                            >
+                                              {displayName}
+                                            </text>
+                                            <text
+                                              x={lineEndX}
+                                              y={lineEndY + yOffset + 12}
+                                              fill="#ffffff"
+                                              textAnchor={textAnchor}
+                                              dominantBaseline="middle"
+                                              style={{ fontSize: '9px' }}
+                                            >
+                                              {percentage}%
+                                            </text>
+                                          </>
+                                        )}
                                       </g>
                                     );
-                                  }
+                                  }}
+                                  outerRadius={160}
+                                  innerRadius={0}
+                                  fill="#8884d8"
+                                  dataKey="value"
+                                  // Removed onMouseEnter for hoveredSlice state - recharts Tooltip handles it
+                                  style={{ cursor: 'pointer', filter: 'drop-shadow(0 4px 6px rgba(0,0,0,0.3))' }}
+                                >
+                                  {game.chartData.map((entry, index) => {
+                                    const isActualResult = hasActualResult &&
+                                      normalizePrediction(entry.name) === normalizePrediction(q.actual_result);
 
-                                  // פלחים קטנים - תווית מחוץ במרכז הקשת
-                                  const labelRadius = entry.outerRadius + 30;
-                                  const x = entry.cx + labelRadius * Math.cos(-entry.midAngle * RADIAN);
-                                  const y = entry.cy + labelRadius * Math.sin(-entry.midAngle * RADIAN);
-
-                                  return (
-                                    <g>
-                                      <text x={x} y={y} fill="#ffffff" textAnchor="middle" dominantBaseline="middle"
-                                            style={{ fontSize: '10px', fontWeight: 'bold' }}>
-                                        {displayName}
-                                      </text>
-                                      <text x={x} y={y + 13} fill="#ffffff" textAnchor="middle" dominantBaseline="middle"
-                                            style={{ fontSize: '9px' }}>
-                                        {percentage}%
-                                      </text>
-                                    </g>
-                                  );
-                                 }}
-                               >
-                                 {game.chartData.map((entry, index) => {
-                                   const isActualResult = hasActualResult &&
-                                     normalizePrediction(entry.name) === normalizePrediction(q.actual_result);
-
-                                   return (
-                                     <Cell
-                                       key={`cell-${index}`}
-                                       fill={COLORS[index % COLORS.length]}
-                                       stroke={isActualResult ? '#fbbf24' : 'rgba(15, 23, 42, 0.8)'}
-                                       strokeWidth={isActualResult ? 3 : 2}
-                                     />
-                                   );
-                                 })}
-                               </Pie>
-                               <Tooltip
-                                  cursor={false}
+                                    return (
+                                      <Cell
+                                        key={`cell-${index}`}
+                                        fill={COLORS[index % COLORS.length]}
+                                        stroke={isActualResult ? '#fbbf24' : 'rgba(15, 23, 42, 0.8)'}
+                                        strokeWidth={isActualResult ? 3 : 2}
+                                        style={{
+                                          filter: isActualResult ? 'brightness(1.2) drop-shadow(0 0 8px rgba(251, 191, 36, 0.6))' : 'none'
+                                        }}
+                                      />
+                                    );
+                                  })}
+                                </Pie>
+                                <Tooltip
                                   content={({ payload }) => {
                                     if (!payload || !payload[0]) return null;
                                     const data = payload[0].payload;
 
+                                    // 🚀 שימוש ב-pre-calculated index
                                     const key = `${q.id}_${normalizePrediction(data.name)}`;
                                     const participants = participantsByQuestionAndAnswer.get(key) || [];
 
                                     return (
                                       <div
+                                        className="rounded-lg p-3 shadow-2xl"
                                         style={{
                                           maxWidth: '500px',
-                                          background: '#0a0f1a',
-                                          backgroundColor: '#0a0f1a',
+                                          background: '#0f172a',
                                           border: '2px solid #06b6d4',
-                                          borderRadius: '8px',
-                                          padding: '12px',
-                                          boxShadow: '0 4px 12px rgba(0,0,0,0.8)'
+                                          opacity: 1
                                         }}
                                       >
-                                        <p className="font-bold mb-2" style={{ color: '#06b6d4', fontSize: '13px' }}>
-                                          {formatResult(data.name)}
-                                        </p>
-                                        <p style={{ color: '#f8fafc', fontSize: '12px', marginBottom: '8px' }}>
-                                          {data.value} משתתפים ({data.percentage}%)
-                                        </p>
+                                        <div className="mb-3">
+                                          <Badge className="bg-gradient-to-r from-cyan-500 to-blue-500 text-white mb-2 text-sm font-bold">
+                                            {formatResult(data.name)}
+                                          </Badge>
+                                          <p className="text-cyan-300 text-sm font-semibold">
+                                            {data.value} משתתפים ({data.percentage}%)
+                                          </p>
+                                        </div>
                                         {participants.length > 0 && (
-                                          <div className="mt-2 pt-2" style={{ borderTop: '1px solid #475569' }}>
-                                            <p style={{ color: '#94a3b8', fontSize: '11px', marginBottom: '8px', fontWeight: 'bold' }}>
-                                              המשתתפים שניחשו ({participants.length}):
-                                            </p>
-                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', maxHeight: '200px', overflowY: 'auto' }}>
+                                          <div className="mt-2 pt-2 border-t border-slate-700" style={{ background: '#0f172a' }}>
+                                            <p className="text-slate-400 text-xs mb-2">המשתתפים שניחשו:</p>
+                                            <div className="flex flex-wrap gap-2" style={{ background: '#0f172a' }}>
                                               {participants.map((name, idx) => (
-                                                <span key={idx} style={{ 
-                                                  background: '#1e293b', 
-                                                  color: '#f8fafc',
-                                                  padding: '4px 8px',
-                                                  borderRadius: '4px',
-                                                  fontSize: '10px'
-                                                }}>
+                                                <span key={idx} className="text-slate-200 text-xs px-2 py-1 rounded" style={{ background: '#1e293b' }}>
                                                   {name}
                                                 </span>
                                               ))}
@@ -2109,8 +2219,8 @@ export default function Statistics() {
                                     );
                                   }}
                                 />
-                             </RechartsPieChart>
-                           </ResponsiveContainer>
+                              </RechartsPieChart>
+                            </ResponsiveContainer>
                           </div>
 
                           {hasActualResult && (
@@ -2174,17 +2284,11 @@ export default function Statistics() {
                         <CardTitle className="text-cyan-300">10 הקבוצות הפופולריות ביותר</CardTitle>
                       </CardHeader>
                       <CardContent className="px-2 pb-3">
-                        <ResponsiveContainer width="100%" height={450}>
+                        <ResponsiveContainer width="100%" height={500}>
                           <BarChart
                             data={tableStats.locationsData.topTeams.slice(0, 10)}
-                            margin={{ top: 30, right: 0, left: 0, bottom: 130 }}
+                            margin={{ top: 20, right: 0, left: 0, bottom: 120 }}
                           >
-                            <defs>
-                              <linearGradient id="barHover3" x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="0%" stopColor="rgba(6, 182, 212, 0.15)" stopOpacity="1" />
-                                <stop offset="100%" stopColor="rgba(6, 182, 212, 0.05)" stopOpacity="1" />
-                              </linearGradient>
-                            </defs>
                             <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
                             <XAxis
                               dataKey="team"
@@ -2235,8 +2339,12 @@ export default function Statistics() {
                               tick={{ fontSize: 12, fill: '#94a3b8' }}
                             />
                             <Tooltip
-                              wrapperStyle={{ zIndex: 1000 }}
-                              cursor={false}
+                              contentStyle={{
+                                background: '#0f172a',
+                                border: '2px solid #06b6d4',
+                                borderRadius: '8px',
+                                opacity: 1
+                              }}
                               content={({ payload }) => {
                                 if (!payload || !payload[0]) return null;
                                 const data = payload[0].payload;
@@ -2244,42 +2352,23 @@ export default function Statistics() {
                                 const allQuestionsInTable = locationTables
                                   .find(t => t.id === tableStats.table.id)?.questions || [];
 
+                                // 🚀 שימוש ב-pre-calculated index
                                 const participants = allQuestionsInTable.flatMap(q => {
                                     const key = `${q.id}_${normalizePrediction(data.team)}`;
                                     return participantsByQuestionAndAnswer.get(key) || [];
-                                }).filter((name, index, self) => self.indexOf(name) === index)
+                                }).filter((name, index, self) => self.indexOf(name) === index) // Unique participants
                                 .sort((a, b) => a.localeCompare(b, 'he'));
 
                                 return (
-                                  <div style={{ 
-                                    background: '#0a0f1a',
-                                    backgroundColor: '#0a0f1a',
-                                    border: '2px solid #06b6d4', 
-                                    borderRadius: '8px', 
-                                    padding: '12px', 
-                                    maxWidth: '350px',
-                                    boxShadow: '0 4px 12px rgba(0,0,0,0.8)'
-                                  }}>
-                                    <p style={{ color: '#06b6d4', fontWeight: 'bold', marginBottom: '8px', fontSize: '13px' }}>
-                                      {data.team}
-                                    </p>
-                                    <p style={{ color: '#f8fafc', fontSize: '12px', marginBottom: '8px' }}>
-                                      {data.count} בחירות ({data.percentage}%)
-                                    </p>
+                                  <div className="rounded-lg p-3 shadow-2xl" style={{ maxWidth: '500px', background: '#0f172a', border: '2px solid #06b6d4' }}>
+                                    <p className="text-cyan-300 font-bold mb-2">{data.team}</p>
+                                    <p className="text-white text-sm mb-2">{data.count} בחירות ({data.percentage}%)</p>
                                     {participants.length > 0 && (
-                                      <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid #475569' }}>
-                                        <p style={{ color: '#94a3b8', fontSize: '11px', marginBottom: '6px', fontWeight: 'bold' }}>
-                                          המשתתפים:
-                                        </p>
-                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                                      <div className="mt-2 pt-2 border-t border-slate-700" style={{ background: '#0f172a' }}>
+                                        <p className="text-slate-400 text-xs mb-2">משתתפים:</p>
+                                        <div className="flex flex-wrap gap-2" style={{ background: '#0f172a' }}>
                                           {participants.map((name, idx) => (
-                                            <span key={idx} style={{ 
-                                              background: '#1e293b', 
-                                              color: '#f8fafc',
-                                              padding: '4px 8px',
-                                              borderRadius: '4px',
-                                              fontSize: '10px'
-                                            }}>
+                                            <span key={idx} className="text-slate-200 text-xs px-2 py-1 rounded" style={{ background: '#1e293b' }}>
                                               {name}
                                             </span>
                                           ))}
@@ -2290,13 +2379,7 @@ export default function Statistics() {
                                 );
                               }}
                             />
-                            <Bar 
-                              dataKey="count" 
-                              fill="#06b6d4" 
-                              radius={[8, 8, 0, 0]} 
-                              cursor={{ fill: 'transparent' }}
-                              activeBar={false}
-                            >
+                            <Bar dataKey="count" fill="#06b6d4">
                               {tableStats.locationsData.topTeams.slice(0, 10).map((entry, index) => (
                                 <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                               ))}
@@ -2309,7 +2392,7 @@ export default function Statistics() {
                 ) : (
                   <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
                     {tableStats.questions
-                      .filter(qStat => qStat.question.question_id !== '11.1')
+                      .filter(qStat => qStat.question.question_id !== '11.1') // Filtering out question 11.1
                       .sort((a, b) => parseFloat(a.question.question_id) - parseFloat(b.question.question_id))
                       .map(qStat => {
                       const q = qStat.question;
@@ -2340,74 +2423,94 @@ export default function Statistics() {
                           <CardContent className="px-2 pb-3 flex-1 flex flex-col">
                             {qStat.chartData.length > 0 ? (
                               <>
+                                {/* 🔥 גובה קבוע לכל הגרפים - 300px */}
                                 <div className="flex-1 flex items-end" style={{ minHeight: '300px', maxHeight: '300px' }}>
                                   <ResponsiveContainer width="100%" height="100%">
                                     {usePieChart ? (
-                                     <RechartsPieChart>
-                                       <Pie
-                                         data={qStat.chartData}
-                                         cx="50%"
-                                         cy="50%"
-                                         labelLine={false}
-                                         label={({ cx, cy, midAngle, innerRadius, outerRadius, answer, percentage, count }) => {
+                                      <RechartsPieChart>
+                                        <Pie
+                                          data={qStat.chartData}
+                                          cx="50%"
+                                          cy="50%"
+                                          labelLine={{
+                                            stroke: '#94a3b8',
+                                            strokeWidth: 1
+                                          }}
+                                          label={({ cx, cy, midAngle, innerRadius, outerRadius, answer, percentage, count }) => {
                                             const RADIAN = Math.PI / 180;
-                                            const percentNum = parseFloat(percentage);
+                                            const radius = outerRadius + 35; // Adjusted from 30 to 35
+                                            const x = cx + radius * Math.cos(-midAngle * RADIAN);
+                                            const y = cy + radius * Math.sin(-midAngle * RADIAN);
+
+                                            // Remove colon from "כן:", "לא:"
                                             const cleanAnswer = answer.replace(':', '').trim();
 
                                             const hasActualResultLocal = q.actual_result && q.actual_result.trim() !== '' && q.actual_result !== '__CLEAR__';
                                             const isActualResult = hasActualResultLocal && answer === q.actual_result;
 
-                                            // פלחים גדולים (>15%) - תווית בתוך הפלח
-                                            if (percentNum > 15) {
-                                              const radius = outerRadius * 0.65;
-                                              const x = cx + radius * Math.cos(-midAngle * RADIAN);
-                                              const y = cy + radius * Math.sin(-midAngle * RADIAN);
-
-                                              return (
-                                                <g>
-                                                  {isActualResult && (
-                                                    <text x={x} y={y - 14} fill="#fbbf24" textAnchor="middle" dominantBaseline="middle"
-                                                          style={{ fontSize: '11px' }}>
-                                                      ⭐
-                                                    </text>
-                                                  )}
-                                                  <text x={x} y={y} fill="#ffffff" textAnchor="middle" dominantBaseline="middle"
-                                                        style={{ fontSize: '11px', fontWeight: 'bold' }}>
-                                                    {cleanAnswer}
-                                                  </text>
-                                                  <text x={x} y={y + 13} fill="#ffffff" textAnchor="middle" dominantBaseline="middle"
-                                                        style={{ fontSize: '9px' }}>
-                                                    {percentage}%
-                                                  </text>
-                                                </g>
-                                              );
-                                            }
-
-                                            // פלחים קטנים - תווית מחוץ במרכז הקשת
-                                            const labelRadius = outerRadius + 25;
-                                            const x = cx + labelRadius * Math.cos(-midAngle * RADIAN);
-                                            const y = cy + labelRadius * Math.sin(-midAngle * RADIAN);
-
                                             return (
                                               <g>
-                                                {isActualResult && (
-                                                  <text x={x} y={y - 12} fill="#fbbf24" textAnchor="middle" dominantBaseline="middle"
-                                                        style={{ fontSize: '10px' }}>
-                                                    ⭐
-                                                  </text>
+                                                {isActualResult ? (
+                                                  <>
+                                                    <text
+                                                      x={x}
+                                                      y={y - 12}
+                                                      fill="#fbbf24"
+                                                      textAnchor={x > cx ? 'start' : 'end'}
+                                                      dominantBaseline="central"
+                                                      style={{ fontSize: '12px' }}
+                                                    >
+                                                      ⭐
+                                                    </text>
+                                                    <text
+                                                      x={x}
+                                                      y={y}
+                                                      fill="#ffffff"
+                                                      textAnchor={x > cx ? 'start' : 'end'}
+                                                      dominantBaseline="central"
+                                                      style={{ fontSize: '11px', fontWeight: 'bold' }}
+                                                    >
+                                                      {cleanAnswer}
+                                                    </text>
+                                                    <text
+                                                      x={x}
+                                                      y={y + 14}
+                                                      fill="#ffffff"
+                                                      textAnchor={x > cx ? 'start' : 'end'}
+                                                      dominantBaseline="central"
+                                                      style={{ fontSize: '10px' }}
+                                                    >
+                                                      {percentage}%
+                                                    </text>
+                                                  </>
+                                                ) : (
+                                                  <>
+                                                    <text
+                                                      x={x}
+                                                      y={y}
+                                                      fill="#ffffff"
+                                                      textAnchor={x > cx ? 'start' : 'end'}
+                                                      dominantBaseline="central"
+                                                      style={{ fontSize: '11px', fontWeight: 'bold' }}
+                                                    >
+                                                      {cleanAnswer}
+                                                    </text>
+                                                    <text
+                                                      x={x}
+                                                      y={y + 14}
+                                                      fill="#ffffff"
+                                                      textAnchor={x > cx ? 'start' : 'end'}
+                                                      dominantBaseline="central"
+                                                      style={{ fontSize: '10px' }}
+                                                    >
+                                                      {percentage}%
+                                                    </text>
+                                                  </>
                                                 )}
-                                                <text x={x} y={y} fill="#ffffff" textAnchor="middle" dominantBaseline="middle"
-                                                      style={{ fontSize: '10px', fontWeight: 'bold' }}>
-                                                  {cleanAnswer}
-                                                </text>
-                                                <text x={x} y={y + 12} fill="#ffffff" textAnchor="middle" dominantBaseline="middle"
-                                                      style={{ fontSize: '9px' }}>
-                                                  {percentage}%
-                                                </text>
                                               </g>
                                             );
                                           }}
-                                          outerRadius={70}
+                                          outerRadius={70} // Adjusted from 80 to 70
                                           fill="#8884d8"
                                           dataKey="count"
                                           style={{ outline: 'none' }}
@@ -2430,201 +2533,33 @@ export default function Statistics() {
                                           })}
                                         </Pie>
                                         <Tooltip
-                                        wrapperStyle={{ zIndex: 1000 }}
-                                        cursor={false}
-                                        content={({ payload }) => {
-                                          if (!payload || !payload[0]) return null;
-                                          const data = payload[0].payload;
+                                          contentStyle={{
+                                            maxWidth: '500px',
+                                            background: '#0f172a',
+                                            border: '2px solid #06b6d4',
+                                            opacity: 1,
+                                            borderRadius: '8px',
+                                            padding: '0.75rem',
+                                            boxShadow: '0 0 15px rgba(6, 182, 212, 0.2)'
+                                          }}
+                                          content={({ payload }) => {
+                                            if (!payload || !payload[0]) return null;
+                                            const data = payload[0].payload;
 
-                                          const normalized = normalizePrediction(data.answer.trim());
-                                          const key1 = `${q.id}_${normalized}`;
-                                          const key2 = `${q.id}_${data.answer.trim()}`;
-                                          let participants = participantsByQuestionAndAnswer.get(key1) || [];
-                                          if (participants.length === 0) {
-                                            participants = participantsByQuestionAndAnswer.get(key2) || [];
-                                          }
-
-                                          return (
-                                            <div style={{ 
-                                              background: '#0a0f1a',
-                                              backgroundColor: '#0a0f1a',
-                                              border: '2px solid #06b6d4', 
-                                              borderRadius: '8px', 
-                                              padding: '12px', 
-                                              maxWidth: '350px',
-                                              boxShadow: '0 4px 12px rgba(0,0,0,0.8)'
-                                            }}>
-                                               <p style={{ color: '#06b6d4', fontWeight: 'bold', marginBottom: '8px', fontSize: '13px' }}>
-                                                 {data.answer}
-                                               </p>
-                                               <p style={{ color: '#f8fafc', fontSize: '12px', marginBottom: '8px' }}>
-                                                 {data.count} תשובות ({data.percentage}%)
-                                               </p>
-                                               {participants.length > 0 && (
-                                                 <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid #475569' }}>
-                                                   <p style={{ color: '#94a3b8', fontSize: '11px', marginBottom: '6px', fontWeight: 'bold' }}>
-                                                     המשתתפים:
-                                                   </p>
-                                                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', maxHeight: '200px', overflowY: 'auto' }}>
-                                                     {participants.map((name, idx) => (
-                                                       <span key={idx} style={{ 
-                                                         background: '#1e293b', 
-                                                         color: '#f8fafc',
-                                                         padding: '4px 8px',
-                                                         borderRadius: '4px',
-                                                         fontSize: '10px'
-                                                       }}>
-                                                         {name}
-                                                       </span>
-                                                     ))}
-                                                   </div>
-                                                 </div>
-                                               )}
-                                             </div>
-                                           );
-                                         }}
-                                        />
-                                        </RechartsPieChart>
-                                    ) : (
-                                      <BarChart
-                                       data={(() => {
-                                         const sortedData = [...qStat.chartData];
-
-                                         // מיון לפי רשימת אימות אם קיימת
-                                         if (q.validation_list && validationLists[q.validation_list]) {
-                                           const validationOrder = validationLists[q.validation_list];
-                                           sortedData.sort((a, b) => {
-                                             const aIndex = validationOrder.indexOf(a.answer);
-                                             const bIndex = validationOrder.indexOf(b.answer);
-
-                                             // אם שניהם ברשימה - לפי הסדר
-                                             if (aIndex !== -1 && bIndex !== -1) return aIndex - bIndex;
-                                             // אם רק a ברשימה - a לפני b
-                                             if (aIndex !== -1) return -1;
-                                             // אם רק b ברשימה - b לפני a
-                                             if (bIndex !== -1) return 1;
-                                             // אם שניהם לא ברשימה - מיון אלפביתי
-                                             return a.answer.localeCompare(b.answer, 'he');
-                                           });
-                                         } else {
-                                           // אם אין רשימת אימות - מיון לפי אותיות עבריות או אלפביתי
-                                           const hasHebrewLetters = sortedData.some(item =>
-                                             /[א-ת]/.test(item.answer)
-                                           );
-
-                                           if (hasHebrewLetters) {
-                                             const hebrewOrder = 'אבגדהוזחטיכלמנסעפצקרשת';
-                                             sortedData.sort((a, b) => {
-                                               const aLetter = a.answer.match(/[א-ת]/)?.[0] || '';
-                                               const bLetter = b.answer.match(/[א-ת]/)?.[0] || '';
-                                               return hebrewOrder.indexOf(aLetter) - hebrewOrder.indexOf(bLetter);
-                                             });
-                                           } else {
-                                             sortedData.sort((a, b) => a.answer.localeCompare(b.answer, 'he'));
-                                           }
-                                         }
-
-                                         return sortedData.slice(0, 10);
-                                       })()}
-                                       margin={{ top: 10, right: 5, left: 5, bottom: 60 }}
-                                       >
-                                        <defs>
-                                          <linearGradient id="barHover4" x1="0" y1="0" x2="0" y2="1">
-                                            <stop offset="0%" stopColor="rgba(6, 182, 212, 0.15)" stopOpacity="1" />
-                                            <stop offset="100%" stopColor="rgba(6, 182, 212, 0.05)" stopOpacity="1" />
-                                          </linearGradient>
-                                        </defs>
-                                        <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                                        <XAxis
-                                          dataKey="answer"
-                                          angle={0}
-                                          textAnchor="middle"
-                                          height={60}
-                                          stroke="#94a3b8"
-                                          interval={0}
-                                          tick={({ x, y, payload }) => {
-                                            const maxCharsPerLine = 8;
-                                            const words = String(payload.value).split(' ');
-                                            const lines = [];
-                                            let currentLine = '';
-
-                                            words.forEach(word => {
-                                              const testLine = currentLine ? `${currentLine} ${word}` : word;
-                                              if (testLine.length <= maxCharsPerLine) {
-                                                currentLine = testLine;
-                                              } else {
-                                                if (currentLine) lines.push(currentLine);
-                                                currentLine = word;
-                                              }
-                                            });
-                                            if (currentLine) lines.push(currentLine);
-
-                                            const displayLines = lines.slice(0, 3);
+                                            // 🚀 שימוש ב-pre-calculated index
+                                            const key = `${q.id}_${normalizePrediction(data.answer)}`;
+                                            const participants = participantsByQuestionAndAnswer.get(key) || [];
 
                                             return (
-                                              <g transform={`translate(${x},${y})`}>
-                                                {displayLines.map((line, index) => (
-                                                  <text
-                                                    key={index}
-                                                    x={0}
-                                                    y={index * 10 + 6}
-                                                    textAnchor="middle"
-                                                    fill="#94a3b8"
-                                                    fontSize="8px"
-                                                  >
-                                                    {line}
-                                                  </text>
-                                                ))}
-                                              </g>
-                                            );
-                                          }}
-                                        />
-                                        <YAxis stroke="#94a3b8" tick={{ fontSize: 10, fill: '#94a3b8' }} />
-                                        <Tooltip
-                                         wrapperStyle={{ zIndex: 1000 }}
-                                         cursor={false}
-                                         content={({ payload }) => {
-                                           if (!payload || !payload[0]) return null;
-                                           const data = payload[0].payload;
-
-                                           const normalized = normalizePrediction(data.answer.trim());
-                                           const key1 = `${q.id}_${normalized}`;
-                                           const key2 = `${q.id}_${data.answer.trim()}`;
-                                           let participants = participantsByQuestionAndAnswer.get(key1) || [];
-                                           if (participants.length === 0) {
-                                             participants = participantsByQuestionAndAnswer.get(key2) || [];
-                                           }
-
-                                           return (
-                                             <div style={{ 
-                                               background: '#0a0f1a',
-                                               backgroundColor: '#0a0f1a',
-                                               border: '2px solid #06b6d4', 
-                                               borderRadius: '8px', 
-                                               padding: '12px', 
-                                               maxWidth: '350px',
-                                               boxShadow: '0 4px 12px rgba(0,0,0,0.8)'
-                                             }}>
-                                                <p style={{ color: '#06b6d4', fontWeight: 'bold', marginBottom: '8px', fontSize: '13px' }}>
-                                                  {data.answer}
-                                                </p>
-                                                <p style={{ color: '#f8fafc', fontSize: '12px', marginBottom: '8px' }}>
-                                                  {data.count} תשובות ({data.percentage}%)
-                                                </p>
+                                              <div style={{ background: '#0f172a' }}>
+                                                <p className="text-cyan-300 font-bold mb-2">{data.answer}</p>
+                                                <p className="text-white text-sm mb-2">{data.count} תשובות ({data.percentage}%)</p>
                                                 {participants.length > 0 && (
-                                                  <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid #475569' }}>
-                                                    <p style={{ color: '#94a3b8', fontSize: '11px', marginBottom: '6px', fontWeight: 'bold' }}>
-                                                      המשתתפים ({participants.length}):
-                                                    </p>
-                                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', maxHeight: '200px', overflowY: 'auto' }}>
+                                                  <div className="mt-2 pt-2 border-t border-slate-700" style={{ background: '#0f172a' }}>
+                                                    <p className="text-slate-400 text-xs mb-2">משתתפים:</p>
+                                                    <div className="flex flex-wrap gap-2" style={{ background: '#0f172a' }}>
                                                       {participants.map((name, idx) => (
-                                                        <span key={idx} style={{ 
-                                                          background: '#1e293b', 
-                                                          color: '#f8fafc',
-                                                          padding: '4px 8px',
-                                                          borderRadius: '4px',
-                                                          fontSize: '10px'
-                                                        }}>
+                                                        <span key={idx} className="text-slate-200 text-xs px-2 py-1 rounded" style={{ background: '#1e293b' }}>
                                                           {name}
                                                         </span>
                                                       ))}
@@ -2635,13 +2570,141 @@ export default function Statistics() {
                                             );
                                           }}
                                         />
-                                        <Bar 
-                                          dataKey="count" 
-                                          fill="#06b6d4" 
-                                          radius={[8, 8, 0, 0]} 
-                                          cursor={{ fill: 'transparent' }}
-                                          activeBar={false}
-                                        >
+                                      </RechartsPieChart>
+                                    ) : (
+                                      <BarChart
+                                        data={(() => {
+                                          // מיון מיוחד לפי תוית הנתונים (answer)
+                                          const sortedData = [...qStat.chartData];
+
+                                          // בדוק אם התשובות מכילות מחזורים (א', ב', ג'...)
+                                          const hasHebrewLetters = sortedData.some(item =>
+                                            /[א-ת]/.test(item.answer)
+                                          );
+
+                                          if (hasHebrewLetters) {
+                                            // מיון לפי סדר האותיות העבריות
+                                            const hebrewOrder = 'אבגדהוזחטיכלמנסעפצקרשת';
+                                            sortedData.sort((a, b) => {
+                                              const aLetter = a.answer.match(/[א-ת]/)?.[0] || '';
+                                              const bLetter = b.answer.match(/[א-ת]/)?.[0] || '';
+                                              return hebrewOrder.indexOf(aLetter) - hebrewOrder.indexOf(bLetter);
+                                            });
+                                          } else {
+                                            // מיון אלפביתי רגיל
+                                            sortedData.sort((a, b) => a.answer.localeCompare(b.answer, 'he'));
+                                          }
+
+                                          return sortedData.slice(0, 10);
+                                        })()}
+                                        margin={{ top: 10, right: 5, left: 5, bottom: 100 }}
+                                      >
+                                        <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                                        <XAxis
+                                          dataKey="answer"
+                                          angle={0}
+                                          textAnchor="middle"
+                                          height={100}
+                                          stroke="#94a3b8"
+                                          interval={0}
+                                          tick={({ x, y, payload }) => {
+                                            const maxCharsPerLine = 8;
+                                            const text = String(payload.value);
+
+                                            if (text.length <= maxCharsPerLine) {
+                                              return (
+                                                <text
+                                                  x={x}
+                                                  y={10}
+                                                  textAnchor="middle"
+                                                  fill="#94a3b8"
+                                                  fontSize="10px"
+                                                >
+                                                  {text}
+                                                </text>
+                                              );
+                                            }
+
+                                            const words = text.split(' ');
+                                            const line1 = [];
+                                            const line2 = [];
+                                            let currentLength = 0;
+
+                                            words.forEach(word => {
+                                              if (currentLength + word.length <= maxCharsPerLine && line2.length === 0) {
+                                                line1.push(word);
+                                                currentLength += word.length + 1;
+                                              } else {
+                                                line2.push(word);
+                                              }
+                                            });
+
+                                            const firstLine = line1.join(' ');
+                                            const secondLine = line2.join(' ');
+
+                                            return (
+                                              <g transform={`translate(${x},${y})`}>
+                                                <text
+                                                  x={0}
+                                                  y={10}
+                                                  textAnchor="middle"
+                                                  fill="#94a3b8"
+                                                  fontSize="10px"
+                                                >
+                                                  {firstLine}
+                                                </text>
+                                                {secondLine && (
+                                                  <text
+                                                    x={0}
+                                                    y={22}
+                                                    textAnchor="middle"
+                                                    fill="#94a3b8"
+                                                    fontSize="10px"
+                                                  >
+                                                    {secondLine}
+                                                  </text>
+                                                )}
+                                              </g>
+                                            );
+                                          }}
+                                        />
+                                        <YAxis stroke="#94a3b8" tick={{ fontSize: 10, fill: '#94a3b8' }} />
+                                        <Tooltip
+                                          contentStyle={{
+                                            background: '#0f172a',
+                                            border: '2px solid #06b6d4',
+                                            borderRadius: '8px',
+                                            opacity: 1
+                                          }}
+                                          content={({ payload }) => {
+                                            if (!payload || !payload[0]) return null;
+                                            const data = payload[0].payload;
+
+                                            // 🚀 שימוש ב-pre-calculated index
+                                            const key = `${q.id}_${normalizePrediction(data.answer)}`;
+                                            const participants = participantsByQuestionAndAnswer.get(key) || [];
+
+                                            return (
+                                              <div style={{ background: '#0f172a' }}>
+                                                <p className="text-cyan-300 font-bold mb-2">{data.answer}</p>
+                                                <p className="text-white text-sm mb-2">{data.count} תשובות ({data.percentage}%)</p>
+                                                {participants.length > 0 && (
+                                                  <div className="mt-2 pt-2 border-t border-slate-700" style={{ background: '#0f172a' }}>
+                                                    <p className="text-slate-400 text-xs mb-2">משתתפים:</p>
+                                                    <div className="flex flex-wrap gap-2" style={{ background: '#0f172a' }}>
+                                                      {participants.map((name, idx) => (
+                                                        <span key={idx} className="text-slate-200 text-xs px-2 py-1 rounded" style={{ background: '#1e293b' }}>
+                                                          {name}
+                                                        </span>
+                                                      ))}
+                                                    </div>
+                                                  </div>
+                                                )}
+                                              </div>
+                                            );
+                                          }}
+                                        />
+                                        <Bar dataKey="count" fill="#06b6d4">
                                           {qStat.chartData.slice(0, 10).map((entry, index) => (
                                             <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                                           ))}
