@@ -4,6 +4,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Progress } from "@/components/ui/progress";
+import { Question } from "@/entities/Question";
+import { Prediction } from "@/entities/Prediction";
+import { ValidationList } from "@/entities/ValidationList";
+import { Team } from "@/entities/Team";
+import { ScoreTable } from "@/entities/ScoreTable";
 import { Badge } from "@/components/ui/badge";
 import { Trash2, Loader2, CheckCircle, AlertTriangle, Database, RefreshCw } from "lucide-react";
 
