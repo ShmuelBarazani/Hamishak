@@ -1,21 +1,15 @@
-import React, { useState, useEffect, useMemo, useCallback, Component } from "react";
-
-class ErrorBoundary extends Component {
-  constructor(props) { super(props); this.state = { error: null }; }
-  componentDidCatch(error, info) { console.error('🚨 CRASH:', error.message, info.componentStack?.split('\n')[1]); }
-  static getDerivedStateFromError(error) { return { error }; }
-  render() {
-    if (this.state.error) return <div style={{color:'red',padding:'20px',direction:'rtl'}}>שגיאה: {this.state.error.message}</div>;
-    return this.props.children;
-  }
-}
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { Prediction, Question, ValidationList, Ranking, GameParticipant, Game } from "@/api/entities";
+import { Question } from "@/entities/Question";
+import { Prediction } from "@/entities/Prediction";
+import { ValidationList } from "@/entities/ValidationList";
+import { Team } from "@/entities/Team";
+import { Ranking } from "@/entities/Ranking";
 import { Users, Loader2, ChevronDown, ChevronUp, FileText, Trash2, AlertTriangle, Trophy, Pencil, Save, Award } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 import RoundTableReadOnly from "../components/predictions/RoundTableReadOnly";
@@ -110,25 +104,30 @@ export default function ViewSubmissions() {
   const isAdmin = currentUser?.role === 'admin';
 
   useEffect(() => {
-    // בדיקת admin לפי localStorage (כמו AdminResults)
-    const adminLoggedIn = localStorage.getItem("toto_admin_logged_in");
-    setCurrentUser(adminLoggedIn === "true" ? { role: 'admin' } : null);
+    const loadUser = async () => {
+      try {
+        const user = await User.me();
+        setCurrentUser(user);
+      } catch (error) {
+        console.error("Error loading current user:", error);
+        setCurrentUser(null);
+      }
+    };
+    loadUser();
   }, []);
 
   useEffect(() => {
     const loadData = async () => {
       setLoading(true);
       try {
-        const [gameParticipants, questions, validationLists, games] = await Promise.all([
-          GameParticipant.filter({}, 'participant_name', 500),
-          Question.filter({}, 'question_id', 10000),
-          ValidationList.filter({}, null, 5000),
-          Game.filter({}, null, 10)
+        const [samplePredictions, questions, teams, validationLists] = await Promise.all([
+          Prediction.list(null, 1000),
+          Question.list("-created_date", 10000),
+          Team.list(null, 5000),
+          ValidationList.list(null, 5000)
         ]);
 
-        // בנה teamsMap מ-games.teams_data
-        const currentGame = games[0] || {};
-        const teamsMap = (currentGame.teams_data || []).reduce((acc, team) => { acc[team.name] = team; return acc; }, {});
+        const teamsMap = teams.reduce((acc, team) => { acc[team.name] = team; return acc; }, {});
         const listsMap = validationLists.reduce((acc, list) => { acc[list.list_name] = list.options; return acc; }, {});
 
         // 🔥 שמור את רשימת הקבוצות מרשימת האימות
@@ -138,14 +137,11 @@ export default function ViewSubmissions() {
         );
 
         if (teamListObj) {
+          console.log(`✅ נמצאה רשימת אימות של קבוצות: ${teamListObj.list_name} עם ${teamListObj.options.length} קבוצות`);
           setTeamValidationList(teamListObj.options);
         }
 
-        const uniqueParticipants = gameParticipants
-          .filter(p => p.is_active !== false)
-          .map(p => p.participant_name)
-          .filter(Boolean)
-          .sort();
+        const uniqueParticipants = [...new Set(samplePredictions.map(p => p.participant_name))].sort();
         setAllParticipants(uniqueParticipants);
 
         const rTables = {}, sTables = {};
@@ -219,7 +215,8 @@ export default function ViewSubmissions() {
 
         // 🔥 כל השאר (ללא T19)
         const allSpecialTables = Object.values(sTables).filter(table => {
-            return !locationTableIds.includes(table.id) && table.id !== 'T19';
+            const desc = table.description?.trim();
+            return desc && !/^\d+$/.test(desc) && !locationTableIds.includes(table.id) && table.id !== 'T19';
         }).sort((a,b) => (parseInt(a.id.replace('T','')) || 0) - (parseInt(b.id.replace('T','')) || 0));
         
         setSpecialTables(allSpecialTables);
@@ -248,7 +245,7 @@ export default function ViewSubmissions() {
         // 🚀 טען ניחושים, שאלות, וניקוד מ-Ranking
         const [predictions, allQuestions, rankingEntries] = await Promise.all([
           Prediction.filter({ participant_name: selectedParticipant }, null, 10000),
-          Question.filter({}, null, 5000),
+          Question.list(null, 5000),
           Ranking.filter({ participant_name: selectedParticipant }, null, 1)
         ]);
         
@@ -312,20 +309,17 @@ export default function ViewSubmissions() {
 
   // 🚀 useMemo - נחשב רק כשמשתנה selectedParticipant או predictions
   const participantPredictions = useMemo(() => {
-    try {
     if (!selectedParticipant) return {};
     return data.predictions.reduce((acc, p) => {
       acc[p.question_id] = p.text_prediction;
       return acc;
     }, {});
-    } catch(e) { console.error('💥 CRASH participantPredictions:', e.message); return {}; }
   }, [selectedParticipant, data.predictions]);
 
   // 🚀 useMemo ל-existingPredictionsMap
-  const existingPredictionsMap = useMemo(() => {
-    try { return new Map(data.predictions.map(p => [p.question_id, p])); }
-    catch(e) { console.error('💥 CRASH existingPredictionsMap:', e.message); return new Map(); }
-  }, [data.predictions]);
+  const existingPredictionsMap = useMemo(() => 
+    new Map(data.predictions.map(p => [p.question_id, p])),
+  [data.predictions]);
 
   // Helper function to get the currently displayed prediction value (original or edited)
   const getPredictionValueForDisplay = useCallback((questionId) => {
@@ -344,7 +338,6 @@ export default function ViewSubmissions() {
   const getCombinedPredictionsMap = useCallback(() => combinedPredictionsMap, [combinedPredictionsMap]);
 
   const participantDetails = useMemo(() => {
-    try {
     if (!selectedParticipant) return {};
     const details = { name: selectedParticipant };
     participantQuestions.forEach(q => {
@@ -356,12 +349,11 @@ export default function ViewSubmissions() {
       }
     });
     return details;
-    } catch(e) { console.error('💥 CRASH participantDetails:', e.message); return {}; }
   }, [selectedParticipant, participantQuestions, data.predictions]);
 
   const loadParticipantStats = async () => {
     try {
-      const allPredictions = await Prediction.filter({}, null, 10000);
+      const allPredictions = await Prediction.list(null, 10000);
       
       // 🚀 reduce במקום forEach
       const stats = allPredictions.reduce((acc, pred) => {
@@ -524,7 +516,6 @@ export default function ViewSubmissions() {
 
   // 🚀 TEAM_NAME_MAPPING עם useMemo
   const TEAM_NAME_MAPPING = useMemo(() => {
-    try {
     const mapping = new Map();
     teamValidationList.forEach(validName => {
       const normalizedBaseName = normalizeTeamNameCached(cleanTeamNameCached(validName));
@@ -544,7 +535,6 @@ export default function ViewSubmissions() {
       });
     });
     return mapping;
-    } catch(e) { console.error('💥 CRASH TEAM_NAME_MAPPING:', e.message); return new Map(); }
   }, [teamValidationList]);
 
   // 🔥 פונקציה חדשה - מחפשת את השם המתאים ברשימת האימות
@@ -575,7 +565,6 @@ export default function ViewSubmissions() {
 
   // 🚀 Pre-calculate bonusInfo for each location table outside render
   const locationTableBonuses = useMemo(() => {
-    try {
     if (!selectedParticipant) return {};
     
     const bonuses = {};
@@ -585,7 +574,6 @@ export default function ViewSubmissions() {
     }
     
     allLocationTables.forEach(table => {
-      if (!table || !table.questions) return;
       const sortedQuestions = [...table.questions].sort((a, b) => parseFloat(a.question_id) - parseFloat(b.question_id));
       const predForBonus = {};
       sortedQuestions.forEach(q => {
@@ -597,7 +585,6 @@ export default function ViewSubmissions() {
     });
     
     return bonuses;
-    } catch(e) { console.error('💥 CRASH locationTableBonuses:', e.message); return {}; }
   }, [selectedParticipant, locationTables, playoffWinnersTable, participantPredictions, editedPredictions]);
 
   // 🚀 renderReadOnlySelect עם useCallback
@@ -1359,7 +1346,6 @@ export default function ViewSubmissions() {
   }
 
   specialTables.forEach(table => {
-    if (!table) return;
     const description = table.description;
     allButtons.push({
       numericId: parseInt(table.id.replace('T', ''), 10),
@@ -1673,14 +1659,14 @@ export default function ViewSubmissions() {
                         <div key="rounds-section" className="mb-6 space-y-6"> {/* Added space-y-6 for spacing between tables */}
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                             {roundTables.map(table => (
-                                <ErrorBoundary key={table.id}><RoundTableReadOnly
+                                <RoundTableReadOnly
                                     key={table.id}
                                     table={table}
                                     teams={data.teams}
                                     predictions={getCombinedPredictionsMap()} // This will use the current/edited predictions for display
                                     isEditMode={isEditMode && isAdmin}
                                     handlePredictionEdit={handlePredictionEdit}
-                                /></ErrorBoundary>
+                                />
                             ))}
                           </div>
                           {/* Added StandingsTable component */}
