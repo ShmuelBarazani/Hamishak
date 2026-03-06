@@ -30,16 +30,16 @@ export default function PredictionForm() {
   const [israeliTable, setIsraeliTable] = useState(null);
   const [specialTables, setSpecialTables] = useState([]);
   const [locationTables, setLocationTables] = useState([]);
-  const [playoffWinnersTable, setPlayoffWinnersTable] = useState(null); // 🆕 state נפרד ל-T19
+  const [playoffWinnersTable, setPlayoffWinnersTable] = useState(null); // ð state × ×¤×¨× ×-T19
 
   const [participantName, setParticipantName] = useState("");
   const [openSections, setOpenSections] = useState({});
-  const [isAdmin, setIsAdmin] = useState(false); // 🔥 שינוי
+  const [isAdmin, setIsAdmin] = useState(false); // ð¥ ×©×× ××
   const { toast } = useToast();
   const [selectedLocationTeams, setSelectedLocationTeams] = useState(new Set());
-  const [selectedPlayoffTeams, setSelectedPlayoffTeams] = useState(new Set()); // 🆕 state נפרד ל-T19
+  const [selectedPlayoffTeams, setSelectedPlayoffTeams] = useState(new Set()); // ð state × ×¤×¨× ×-T19
 
-  // 🔥 בדיקה אם המשתמש מנהל
+  // ð¥ ××××§× ×× ×××©×ª××© ×× ××
   useEffect(() => {
     const adminLoggedIn = localStorage.getItem("toto_admin_logged_in");
     setIsAdmin(adminLoggedIn === "true");
@@ -48,7 +48,7 @@ export default function PredictionForm() {
   const loadInitialData = useCallback(async () => {
     setLoading(true);
     try {
-      // 🔥 הסרת הטעינה של משתמש - לא צריך
+      // ð¥ ××¡×¨×ª ×××¢×× × ×©× ××©×ª××© - ×× ×¦×¨××
       // Removed:
       // let user = null;
       // try {
@@ -59,7 +59,7 @@ export default function PredictionForm() {
       //   setCurrentUser(null);
       // }
 
-      // טען סטטוס נעילה
+      // ××¢× ×¡××××¡ × ×¢×××
       const settings = await SystemSettings.filter({ setting_key: "prediction_form_status" }, null, 1);
       if (settings.length > 0) {
         setIsFormLocked(settings[0].setting_value === "locked");
@@ -86,8 +86,8 @@ export default function PredictionForm() {
         
         if (q.table_id === 'T20' && q.question_text) {
           let teams = null;
-          if (q.question_text.includes(' נגד ')) {
-            teams = q.question_text.split(' נגד ').map(t => t.trim());
+          if (q.question_text.includes(' × ×× ')) {
+            teams = q.question_text.split(' × ×× ').map(t => t.trim());
           } else if (q.question_text.includes(' - ')) {
             teams = q.question_text.split(' - ').map(t => t.trim());
           }
@@ -100,21 +100,21 @@ export default function PredictionForm() {
 
         const tableCollection = (q.home_team && q.away_team) ? rTables : sTables;
         
-        // 🎯 שינוי שמות T12 ו-T13 לשמות קצרים
+        // ð¯ ×©×× ×× ×©×××ª T12 ×-T13 ××©×××ª ×§×¦×¨××
         let tableDescription = q.table_description;
         if (q.table_id === 'T12') {
-          tableDescription = 'שלב הליגה - פינת הגאווה הישראלית - 7 בוםםםםםםםםםם !!!';
+          tableDescription = '×©×× ××××× - ×¤×× ×ª ×××××× ×××©×¨××××ª - 7 ×××××××××××× !!!';
         } else if (q.table_id === 'T13') {
-          tableDescription = 'שלב ראש בראש - "מבול מטאורים של כוכבים (*)"';
+          tableDescription = '×©×× ×¨××© ××¨××© - "×××× ×××××¨×× ×©× ×××××× (*)"';
         } else if (q.table_id === 'T20') { // Added T20 description
-          tableDescription = 'המסלול "הישראלי" - פצצת אנרגיה (אירופית) צהובה';
+          tableDescription = '×××¡××× "×××©×¨×××" - ×¤×¦×¦×ª ×× ×¨××× (×××¨××¤××ª) ×¦××××';
         }
-        // 🔥 הסרתי את השינוי של T19 - עכשיו זה יקח את השם המקורי מהקובץ
+        // ð¥ ××¡×¨×ª× ××ª ××©×× ×× ×©× T19 - ×¢××©×× ×× ××§× ××ª ××©× ×××§××¨× ×××§×××¥
         
         if (!tableCollection[q.table_id]) {
           tableCollection[q.table_id] = {
             id: q.table_id,
-            description: tableDescription || (q.home_team && q.away_team ? `מחזור ${q.table_id.replace('T','')}` : `שאלות ${q.table_id.replace('T','')}`),
+            description: tableDescription || (q.home_team && q.away_team ? `×××××¨ ${q.table_id.replace('T','')}` : `×©××××ª ${q.table_id.replace('T','')}`),
             questions: []
           };
         }
@@ -135,7 +135,7 @@ export default function PredictionForm() {
       setParticipantQuestions(uniqueParticipantQns);
       delete sTables['T1'];
 
-      // 🆕 Extract T19 (playoffWinnersTable)
+      // ð Extract T19 (playoffWinnersTable)
       const t19Table = sTables['T19'];
       delete sTables['T19'];
       setPlayoffWinnersTable(t19Table || null);
@@ -155,7 +155,7 @@ export default function PredictionForm() {
 
       const allSpecialTables = Object.values(sTables).filter(table => {
           const desc = table.description?.trim();
-          // 🆕 Exclude T19 from general special tables
+          // ð Exclude T19 from general special tables
           return desc && !/^\d+$/.test(desc) && !locationTableIds.includes(table.id) && table.id !== 'T19';
       }).sort((a,b) => (parseInt(a.id.replace('T','')) || 0) - (parseInt(b.id.replace('T','')) || 0));
       
@@ -164,15 +164,15 @@ export default function PredictionForm() {
       // Removed block that used `user` after `User.me()` was removed:
       // if (user && user.full_name) {
       //   setParticipantName(user.full_name);
-      //   const nameQuestion = uniqueParticipantQns.find(q => q.question_text?.includes("שם"));
+      //   const nameQuestion = uniqueParticipantQns.find(q => q.question_text?.includes("×©×"));
       //   if (nameQuestion) {
       //     setParticipantDetails(prev => ({ ...prev, [nameQuestion.id]: user.full_name }));
       //   }
       // }
       
     } catch (error) {
-      console.error("שגיאה בטעינת הנתונים:", error);
-      toast({ title: "שגיאה", description: "טעינת הנתונים נכשלה.", variant: "destructive" });
+      console.error("×©×××× ×××¢×× ×ª ×× ×ª×× ××:", error);
+      toast({ title: "×©××××", description: "××¢×× ×ª ×× ×ª×× ×× × ××©××.", variant: "destructive" });
     }
     setLoading(false);
   }, [toast]);
@@ -181,7 +181,7 @@ export default function PredictionForm() {
     loadInitialData();
   }, [loadInitialData]); 
 
-  // 🔥 עדכון קבוצות שנבחרו בטבלאות מיקומים T14-T17 (36 קבוצות)
+  // ð¥ ×¢×××× ×§×××¦××ª ×©× ×××¨× ×××××××ª ×××§×××× T14-T17 (36 ×§×××¦××ª)
   useEffect(() => {
     const mainLocationTableIds = ['T14', 'T15', 'T16', 'T17'];
     const allLocationQuestions = locationTables.flatMap(t => t.questions).filter(q => mainLocationTableIds.includes(q.table_id));
@@ -197,7 +197,7 @@ export default function PredictionForm() {
     setSelectedLocationTeams(selected);
   }, [predictions, locationTables]);
 
-  // 🔥 עדכון קבוצות שנבחרו ב-T19 (8 קבוצות) - בנפרד לגמרי!
+  // ð¥ ×¢×××× ×§×××¦××ª ×©× ×××¨× ×-T19 (8 ×§×××¦××ª) - ×× ×¤×¨× ××××¨×!
   useEffect(() => {
     if (!playoffWinnersTable) return;
     
@@ -225,18 +225,18 @@ export default function PredictionForm() {
         await SystemSettings.create({
           setting_key: "prediction_form_status",
           setting_value: newStatus,
-          description: "סטטוס טופס מילוי ניחושים"
+          description: "×¡××××¡ ×××¤×¡ ××××× × ××××©××"
         });
       }
       
       setIsFormLocked(!isFormLocked);
       toast({
-        title: isFormLocked ? "הטופס נפתח!" : "הטופס ננעל!",
-        description: isFormLocked ? "משתתפים יכולים למלא ניחושים" : "הטופס נעול למילוי"
+        title: isFormLocked ? "××××¤×¡ × ×¤×ª×!" : "××××¤×¡ × × ×¢×!",
+        description: isFormLocked ? "××©×ª×ª×¤×× ×××××× ×××× × ××××©××" : "××××¤×¡ × ×¢×× ××××××"
       });
     } catch (error) {
       console.error("Error toggling lock:", error);
-      toast({ title: "שגיאה", description: "עדכון הסטטוס נכשל", variant: "destructive" });
+      toast({ title: "×©××××", description: "×¢×××× ××¡××××¡ × ××©×", variant: "destructive" });
     }
   };
 
@@ -245,7 +245,7 @@ export default function PredictionForm() {
   };
   
   const handleDetailsChange = (questionId, value) => {
-    const nameQuestion = participantQuestions.find(q => q.question_text?.includes("שם"));
+    const nameQuestion = participantQuestions.find(q => q.question_text?.includes("×©×"));
     if (nameQuestion && nameQuestion.id === questionId) {
       setParticipantName(value);
     }
@@ -254,7 +254,7 @@ export default function PredictionForm() {
 
   const saveAllPredictions = async () => {
     if (!participantName.trim()) {
-      toast({ title: "שגיאה", description: "נא למלא שם בפרטי המשתתף.", variant: "destructive" });
+      toast({ title: "×©××××", description: "× × ×××× ×©× ××¤×¨×× ×××©×ª×ª×£.", variant: "destructive" });
       return;
     }
 
@@ -295,16 +295,16 @@ export default function PredictionForm() {
       if (allPredictionsToSave.length > 0) {
         await Prediction.bulkCreate(allPredictionsToSave);
         toast({
-          title: "נשמר בהצלחה!",
-          description: `נשמרו ${allPredictionsToSave.length} ניחושים ופרטים.`,
+          title: "× ×©××¨ ×××¦×××!",
+          description: `× ×©××¨× ${allPredictionsToSave.length} × ××××©×× ××¤×¨×××.`,
         });
         setPredictions({}); 
       } else {
-        toast({ title: "אין מה לשמור", description: "לא מולאו ניחושים או פרטים.", variant: "warning" });
+        toast({ title: "××× ×× ××©×××¨", description: "×× ××××× × ××××©×× ×× ×¤×¨×××.", variant: "warning" });
       }
     } catch (error) {
       console.error("Error saving predictions:", error);
-      toast({ title: "שגיאה", description: "שמירת הניחושים נכשלה.", variant: "destructive" });
+      toast({ title: "×©××××", description: "×©×××¨×ª ×× ××××©×× × ××©××.", variant: "destructive" });
     }
     setSaving(false);
   };
@@ -315,12 +315,12 @@ export default function PredictionForm() {
 
   const renderSelectWithLogos = (question, value, onChange, customWidth = "w-[180px]") => {
     const options = validationLists[question.validation_list] || [];
-    const isTeamsList = question.validation_list?.toLowerCase().includes('קבוצ');
+    const isTeamsList = question.validation_list?.toLowerCase().includes('×§×××¦');
 
-    // 🔍 בדיקה אם זו שאלת מיקום ב-T14-T17
+    // ð ××××§× ×× ×× ×©×××ª ×××§×× ×-T14-T17
     const isLocationQuestion = ['T14', 'T15', 'T16', 'T17'].includes(question.table_id);
     
-    // 🆕 בדיקה אם זו שאלה ב-T19
+    // ð ××××§× ×× ×× ×©××× ×-T19
     const isPlayoffWinnersQuestion = question.table_id === 'T19';
 
     return (
@@ -331,7 +331,7 @@ export default function PredictionForm() {
             border: '1px solid rgba(6, 182, 212, 0.2)',
             color: '#f8fafc',
           }}>
-            <SelectValue placeholder="בחר..." />
+            <SelectValue placeholder="×××¨..." />
           </SelectTrigger>
           <SelectContent style={{
             background: 'rgba(15, 23, 42, 0.9)',
@@ -345,12 +345,12 @@ export default function PredictionForm() {
             {options.map(opt => {
               const team = isTeamsList ? teams[opt] : null;
               
-              // 🔍 בדיקה אם הקבוצה כבר נבחרה בטבלאות מיקומים
+              // ð ××××§× ×× ××§×××¦× ×××¨ × ×××¨× ×××××××ª ×××§××××
               const isAlreadySelectedInLocation = isLocationQuestion && 
                                        selectedLocationTeams.has(opt) && 
                                        value !== opt;
               
-              // 🆕 בדיקה אם הקבוצה כבר נבחרה ב-T19
+              // ð ××××§× ×× ××§×××¦× ×××¨ × ×××¨× ×-T19
               const isAlreadySelectedInPlayoff = isPlayoffWinnersQuestion && 
                                                  selectedPlayoffTeams.has(opt) && 
                                                  value !== opt;
@@ -425,10 +425,10 @@ export default function PredictionForm() {
               const isQuestion11 = main.question_id === '11';
               const sortedSubs = [...subs].sort((a, b) => parseFloat(a.question_id) - parseFloat(b.question_id));
               
-              // 🔵 קבוצה 1: שאלות 1-2, 14-26 (ללא תתי-שאלות)
+              // ðµ ×§×××¦× 1: ×©××××ª 1-2, 14-26 (××× ×ª×ª×-×©××××ª)
               const isGroup1 = (mainId >= 1 && mainId <= 2) || (mainId >= 14 && mainId <= 26);
               
-              // 🟡 קבוצה 3: שאלה 11
+              // ð¡ ×§×××¦× 3: ×©××× 11
               if (isQuestion11 && sortedSubs.length > 0) {
                 const sub11_1 = sortedSubs.find(s => s.question_id === '11.1');
                 const sub11_2 = sortedSubs.find(s => s.question_id === '11.2');
@@ -449,7 +449,7 @@ export default function PredictionForm() {
                     }}
                     className="hover:bg-cyan-900/20 hover:border-cyan-700/50"
                   >
-                    {/* שאלה 11 */}
+                    {/* ×©××× 11 */}
                     <Badge variant="outline" style={{
                       borderColor: 'rgba(6, 182, 212, 0.5)',
                       color: '#06b6d4',
@@ -464,7 +464,7 @@ export default function PredictionForm() {
                       {renderSelectWithLogos(main, predictions[main.id] || "", (val) => handlePredictionChange(main.id, val), "w-[120px]")}
                     </span>
 
-                    {/* תת-שאלה 11.1 */}
+                    {/* ×ª×ª-×©××× 11.1 */}
                     {sub11_1 && (
                       <>
                         <Badge variant="outline" style={{
@@ -481,7 +481,7 @@ export default function PredictionForm() {
                           value={predictions[sub11_1.id] || ""}
                           onChange={(e) => handlePredictionChange(sub11_1.id, e.target.value)}
                           className="h-9"
-                          placeholder="הזן תשובה..."
+                          placeholder="××× ×ª×©×××..."
                           style={{
                             background: 'rgba(15, 23, 42, 0.6)',
                             border: '1px solid rgba(6, 182, 212, 0.2)',
@@ -492,7 +492,7 @@ export default function PredictionForm() {
                       </>
                     )}
 
-                    {/* תת-שאלה 11.2 - באותה שורה! */}
+                    {/* ×ª×ª-×©××× 11.2 - ××××ª× ×©××¨×! */}
                     {sub11_2 && (
                       <>
                         <Badge variant="outline" style={{
@@ -514,7 +514,7 @@ export default function PredictionForm() {
                 );
               }
 
-              // 🔵 קבוצה 1: תשובות מיושרות עם תתי-שאלות של קבוצה 2
+              // ðµ ×§×××¦× 1: ×ª×©××××ª ××××©×¨××ª ×¢× ×ª×ª×-×©××××ª ×©× ×§×××¦× 2
               else if (isGroup1 && sortedSubs.length === 0) {
                 return (
                   <div 
@@ -545,7 +545,7 @@ export default function PredictionForm() {
                 );
               }
 
-              // 🟢 קבוצה 2: לא נוגעים (שאלות 3-10, 12-13 + תתי שאלות)
+              // ð¢ ×§×××¦× 2: ×× × ×××¢×× (×©××××ª 3-10, 12-13 + ×ª×ª× ×©××××ª)
               return (
                 <div 
                   key={main.id} 
@@ -631,7 +631,7 @@ export default function PredictionForm() {
       return renderT10Questions(table);
     }
 
-    // כל שאר הטבלאות - יישור תקין
+    // ×× ×©××¨ ×××××××ª - ×××©××¨ ×ª×§××
     const sortedQuestions = [...table.questions].sort((a, b) => parseFloat(a.question_id) - parseFloat(b.question_id));
 
     return (
@@ -656,7 +656,7 @@ export default function PredictionForm() {
                   value={predictions[q.id] || ""}
                   onChange={(e) => handlePredictionChange(q.id, e.target.value)}
                   className="h-9"
-                  placeholder="הזן תשובה..."
+                  placeholder="××× ×ª×©×××..."
                   style={{
                     background: 'rgba(15, 23, 42, 0.6)',
                     border: '1px solid rgba(6, 182, 212, 0.2)',
@@ -667,11 +667,11 @@ export default function PredictionForm() {
 
               if (isCompactQuestion) {
                 return (
-                  <div key={q.id} className="p-3 rounded-lg" style={{
+                  <div key={q.id} className="p-3 rounded-lg hover:bg-cyan-900/20 hover:border-cyan-700/50" style={{{
                     background: 'rgba(15, 23, 42, 0.4)',
                     border: '1px solid rgba(6, 182, 212, 0.1)',
                     transition: 'all 0.2s ease-in-out'
-                  }} className="hover:bg-cyan-900/20 hover:border-cyan-700/50">
+                  }}>
                     <div className="grid grid-cols-[auto_1fr_auto] gap-4 items-center">
                       <Badge variant="outline" style={{
                         borderColor: 'rgba(6, 182, 212, 0.5)',
@@ -690,11 +690,11 @@ export default function PredictionForm() {
               }
               
               return (
-                <div key={q.id} className="p-3 rounded-lg" style={{
+                <div key={q.id} className="p-3 rounded-lg hover:bg-cyan-900/20 hover:border-cyan-700/50" style={{{
                   background: 'rgba(15, 23, 42, 0.4)',
                   border: '1px solid rgba(6, 182, 212, 0.1)',
                   transition: 'all 0.2s ease-in-out'
-                }} className="hover:bg-cyan-900/20 hover:border-cyan-700/50">
+                }}>
                   <div className="grid grid-cols-[auto_1fr_auto] gap-3 items-center">
                     <Badge variant="outline" style={{
                       borderColor: 'rgba(6, 182, 212, 0.5)',
@@ -724,14 +724,14 @@ export default function PredictionForm() {
         minHeight: '100vh'
       }}>
         <Loader2 className="w-8 h-8 animate-spin text-blue-600 mr-3" />
-        <span className="text-blue-600">טוען נתונים...</span>
+        <span className="text-blue-600">×××¢× × ×ª×× ××...</span>
       </div>
     );
   }
 
   // Removed: const isAdmin = currentUser?.role === 'admin'; // This line is removed as isAdmin is now a state derived from localStorage
 
-  // 🔥 אם הטופס נעול והמשתמש לא מנהל
+  // ð¥ ×× ××××¤×¡ × ×¢×× ××××©×ª××© ×× ×× ××
   if (isFormLocked && !isAdmin) {
     return (
       <div className="p-6 flex flex-col items-center justify-center h-64" style={{ 
@@ -745,7 +745,7 @@ export default function PredictionForm() {
         }} className="max-w-md">
           <Lock className="w-4 h-4" style={{ color: '#06b6d4' }} />
           <AlertDescription>
-            מילוי ניחושים נעול כרגע. פנה למנהל המערכת.
+            ××××× × ××××©×× × ×¢×× ××¨××¢. ×¤× × ××× ×× ×××¢×¨××ª.
           </AlertDescription>
         </Alert>
       </div>
@@ -759,7 +759,7 @@ export default function PredictionForm() {
     allButtons.push({
       numericId: parseInt(firstRoundTableId.replace('T', ''), 10),
       key: 'rounds',
-      description: 'מחזורי המשחקים',
+      description: '×××××¨× ×××©××§××',
       sectionKey: 'rounds'
     });
   }
@@ -778,7 +778,7 @@ export default function PredictionForm() {
     allButtons.push({
       numericId: parseInt(firstLocationTableId.replace('T', ''), 10),
       key: 'locations',
-      description: 'מיקומים בתום שלב הבתים',
+      description: '×××§×××× ××ª×× ×©×× ×××ª××',
       sectionKey: 'locations'
     });
   }
@@ -792,7 +792,7 @@ export default function PredictionForm() {
     });
   }
 
-  // 🆕 Add button for T19 (playoffWinnersTable)
+  // ð Add button for T19 (playoffWinnersTable)
   if (playoffWinnersTable) {
     allButtons.push({
       numericId: parseInt(playoffWinnersTable.id.replace('T', ''), 10),
@@ -804,7 +804,7 @@ export default function PredictionForm() {
 
   allButtons.sort((a, b) => a.numericId - b.numericId);
 
-  const TEXT_LENGTH_THRESHOLD = 18; // 🆕 הגדרת סף לטקסט ארוך
+  const TEXT_LENGTH_THRESHOLD = 18; // ð ××××¨×ª ×¡×£ ×××§×¡× ××¨××
 
   return (
     <div className="p-3 md:p-6 max-w-7xl mx-auto" dir="rtl" style={{ 
@@ -818,9 +818,9 @@ export default function PredictionForm() {
               textShadow: '0 0 10px rgba(6, 182, 212, 0.3)'
             }}>
               <Trophy className="w-6 h-6 md:w-8 md:h-8" style={{ color: '#06b6d4' }} />
-              מילוי ניחושים
+              ××××× × ××××©××
             </h1>
-            <p className="text-xs md:text-base" style={{ color: '#94a3b8' }}>מלא את פרטיך ובחר שלב למילוי הניחושים.</p>
+            <p className="text-xs md:text-base" style={{ color: '#94a3b8' }}>××× ××ª ×¤×¨××× ××××¨ ×©×× ×××××× ×× ××××©××.</p>
         </div>
         <div className="flex gap-2 md:gap-3 w-full md:w-auto">
           {isAdmin && (
@@ -832,12 +832,12 @@ export default function PredictionForm() {
               {isFormLocked ? (
                 <>
                   <Lock className="w-4 h-4 md:w-5 md:h-5 ml-1 md:ml-2" />
-                  נעול
+                  × ×¢××
                 </>
               ) : (
                 <>
                   <Unlock className="w-4 h-4 md:w-5 md:h-5 ml-1 md:ml-2" />
-                  פתוח
+                  ×¤×ª××
                 </>
               )}
             </Button>
@@ -847,7 +847,7 @@ export default function PredictionForm() {
             boxShadow: '0 0 20px rgba(6, 182, 212, 0.4)'
           }}>
             {saving ? <Loader2 className="w-4 h-4 md:w-5 md:h-5 animate-spin ml-1 md:ml-2" /> : <Save className="w-4 h-4 md:w-5 md:h-5 ml-1 md:ml-2" />}
-            {saving ? "שומר..." : "שמור"}
+            {saving ? "×©×××¨..." : "×©×××¨"}
           </Button>
         </div>
       </div>
@@ -860,7 +860,7 @@ export default function PredictionForm() {
         }}>
           <FileText className="w-4 h-4" />
           <AlertDescription>
-            לא נמצאו שאלות במערכת. אנא העלה קבצים תחילה בעמוד "העלאת קבצים".
+            ×× × ××¦×× ×©××××ª ×××¢×¨××ª. ×× × ××¢×× ×§××¦×× ×ª×××× ××¢××× "××¢×××ª ×§××¦××".
           </AlertDescription>
         </Alert>
       ) : (
@@ -872,7 +872,7 @@ export default function PredictionForm() {
               backdropFilter: 'blur(10px)'
             }}>
               <CardHeader className="py-2">
-                <CardTitle style={{ color: '#06b6d4' }}>פרטי המשתתף</CardTitle>
+                <CardTitle style={{ color: '#06b6d4' }}>×¤×¨×× ×××©×ª×ª×£</CardTitle>
               </CardHeader>
               <CardContent className="p-3">
                 <div className="grid md:grid-cols-3 gap-3">
@@ -907,11 +907,11 @@ export default function PredictionForm() {
               backdropFilter: 'blur(10px)'
             }}>
                <CardHeader className="py-2">
-                  <CardTitle style={{ color: '#06b6d4' }}>בחירת שלב לניחוש</CardTitle>
+                  <CardTitle style={{ color: '#06b6d4' }}>××××¨×ª ×©×× ×× ××××©</CardTitle>
                </CardHeader>
                <CardContent className="grid grid-cols-2 md:grid-cols-4 gap-3 p-3">
                   {allButtons.map(button => {
-                    // 🆕 חישוב אם הטקסט ארוך
+                    // ð ×××©×× ×× ×××§×¡× ××¨××
                     const isLongText = button.description.length > TEXT_LENGTH_THRESHOLD;
                     
                     return (
@@ -1028,7 +1028,7 @@ export default function PredictionForm() {
                           {locationTables.map(table => renderSpecialQuestions(table))}
                       </div>
                   );
-              } else if (button.sectionKey === 'playoffWinners' && playoffWinnersTable) { // 🆕 Render T19
+              } else if (button.sectionKey === 'playoffWinners' && playoffWinnersTable) { // ð Render T19
                   return (
                       <div key="playoff-winners-section" className="mb-6">
                           {renderSpecialQuestions(playoffWinnersTable)}
