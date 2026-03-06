@@ -11,13 +11,3 @@ export const base44 = createClient({
   requiresAuth: false,
   appBaseUrl
 });
-```
-- לחץ **Commit changes**
-
----
-
-**שלב 2 — צור את 6 קבצי entities מחדש:**
-
-כנס לכתובת:
-```
-https://github.com/ShmuelBarazani/Hamishak/new/main/src/entities
