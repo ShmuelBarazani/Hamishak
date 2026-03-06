@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -8,7 +9,10 @@ import { Input } from "@/components/ui/input";
 
 
 import { useToast } from "@/components/ui/use-toast";
-import { Question, Prediction, ValidationList, GameParticipant, Game } from "@/api/entities";
+import { Question } from "@/entities/Question";
+import { Prediction } from "@/entities/Prediction";
+import { ValidationList } from "@/entities/ValidationList";
+import { Team } from "@/entities/Team";
 import { Database, Users, FileQuestion, Trophy, List, Table, Loader2, BarChart3, Shield, RefreshCw, CheckCircle, Trash2, AlertTriangle, Edit, GripVertical, UploadIcon } from "lucide-react";
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import UploadFilesDialog from "@/components/system/UploadFilesDialog";
@@ -53,23 +57,30 @@ export default function SystemOverview() {
   const { toast } = useToast();
 
   useEffect(() => {
-    // Admin check: if accessible via nav, user is admin
-    const adminLoggedIn = localStorage.getItem("toto_admin_logged_in");
-    setCurrentUser({ role: adminLoggedIn === "true" ? 'admin' : 'admin' });
+    const loadUser = async () => {
+      try {
+        const user = await User.me();
+        setCurrentUser(user);
+      } catch (error) {
+        console.error("Error loading current user:", error);
+        setCurrentUser(null);
+      }
+    };
+    loadUser();
   }, []);
 
   const clearCache = async () => {
     try {
-      const cachedData = [];
-      const userCacheData = [];
+      const cachedData = await SystemCache.filter({ cache_key: "system_overview_full_data" }, null, 1);
+      const userCacheData = await SystemCache.filter({ cache_key: "user_stats_cache" }, null, 1);
       
       let cacheCleared = false;
       if (cachedData.length > 0) {
-        // await SystemCache.delete(cachedData[0].id);
+        await SystemCache.delete(cachedData[0].id);
         cacheCleared = true;
       }
       if (userCacheData.length > 0) {
-        // await SystemCache.delete(userCacheData[0].id);
+        await SystemCache.delete(userCacheData[0].id);
         cacheCleared = true;
       }
 
@@ -123,7 +134,7 @@ export default function SystemOverview() {
 
     try {
       console.log('📦 מחפש מטמון מלא...');
-      const cachedData = [];
+      const cachedData = await SystemCache.filter({ cache_key: "system_overview_full_data" }, null, 1);
 
       if (cachedData.length > 0) {
         const cache = cachedData[0];
@@ -409,17 +420,17 @@ export default function SystemOverview() {
 
       // טען שאלות, קבוצות, רשימות אימות
       console.log('📥 טוען שאלות...');
-      const questions = await Question.filter({}, null, 10000);
+      const questions = await Question.list(null, 10000);
       setQuestions(questions); // Update questions state here as well
       console.log(`✅ ${questions.length} שאלות`);
 
       console.log('📥 טוען קבוצות...');
-      const teamsArray = await [];
+      const teamsArray = await Team.list(null, 5000);
       setTeams(teamsArray);
       console.log(`✅ ${teamsArray.length} קבוצות`);
 
       console.log('📥 טוען רשימות אימות...');
-      const validationLists = await ValidationList.filter({}, null, 5000);
+      const validationLists = await ValidationList.list(null, 5000);
       setValidationLists(validationLists); // Update validationLists state here as well
       console.log(`✅ ${validationLists.length} רשימות`);
 
@@ -554,7 +565,7 @@ export default function SystemOverview() {
         lastUpdate: now
       };
 
-      const existingCache = [];
+      const existingCache = await SystemCache.filter({ cache_key: "system_overview_full_data" }, null, 1);
       const cacheRecord = {
         cache_key: "system_overview_full_data",
         cache_data: fullData,
@@ -562,9 +573,9 @@ export default function SystemOverview() {
       };
 
       if (existingCache.length > 0) {
-        // await SystemCache.update(existingCache[0].id, cacheRecord);
+        await SystemCache.update(existingCache[0].id, cacheRecord);
       } else {
-        // await SystemCache.create(cacheRecord);
+        await SystemCache.create(cacheRecord);
       }
 
       console.log('✅ כל הנתונים נשמרו במטמון!');
@@ -597,7 +608,7 @@ export default function SystemOverview() {
       console.log('📊 מתחיל רענון מטמון משתמשים...');
       
       // טען את כל המשתמשים
-      const users = await GameParticipant.filter({}, 'participant_name', 1000);
+      const users = await User.list(null, 1000);
       console.log(`✅ נטענו ${users.length} משתמשים`);
       
       // הצג דוגמה למשתמש כדי לראות מה יש בו
@@ -607,7 +618,21 @@ export default function SystemOverview() {
       }
       
       // שמור במטמון עם כל השדות
-      console.log(`Loaded ${users.length} participants`);
+      const cacheKey = 'user_stats_cache';
+      const existingCache = await SystemCache.filter({ cache_key: cacheKey }, null, 1);
+      
+      if (existingCache.length > 0) {
+        await SystemCache.update(existingCache[0].id, {
+          cache_data: { users },
+          last_updated: new Date().toISOString()
+        });
+      } else {
+        await SystemCache.create({
+          cache_key: cacheKey,
+          cache_data: { users },
+          last_updated: new Date().toISOString()
+        });
+      }
       
       console.log('✅ מטמון משתמשים עודכן בהצלחה');
       toast({
@@ -667,7 +692,7 @@ export default function SystemOverview() {
       await ValidationList.update(listId, { options: editedOptions });
 
       // Refresh the list
-      const updatedLists = await ValidationList.filter({}, null, 1000);
+      const updatedLists = await ValidationList.list(null, 1000);
       setValidationLists(updatedLists);
 
       setEditingListId(null);
@@ -720,7 +745,7 @@ export default function SystemOverview() {
 
     try {
       await ValidationList.delete(listId);
-      const updatedLists = await ValidationList.filter({}, null, 1000);
+      const updatedLists = await ValidationList.list(null, 1000);
       setValidationLists(updatedLists);
 
       toast({
@@ -741,7 +766,7 @@ export default function SystemOverview() {
   // Load teams for dialog
   const loadTeams = async () => {
     try {
-      const teamsData = await [];
+      const teamsData = await Team.list(null, 5000);
       setTeams(teamsData);
       setShowTeamsDialog(true);
     } catch (error) {
@@ -764,7 +789,24 @@ export default function SystemOverview() {
     );
   }
 
-
+  if (currentUser.role !== 'admin') {
+    return (
+      <div className="p-6 flex items-center justify-center h-screen" style={{
+        background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%)'
+      }}>
+        <Card style={{
+          background: 'rgba(239, 68, 68, 0.1)',
+          border: '1px solid rgba(239, 68, 68, 0.3)'
+        }} className="p-6">
+          <div className="flex flex-col items-center gap-4">
+            <Shield className="w-16 h-16" style={{ color: '#ef4444' }} />
+            <h2 className="text-2xl font-bold" style={{ color: '#f8fafc' }}>אין הרשאה</h2>
+            <p style={{ color: '#94a3b8' }}>דף זה זמין רק למנהלים</p>
+          </div>
+        </Card>
+      </div>
+    );
+  }
 
   if (loading || refreshing.fullData || refreshing.users) { // 🔥 הסרנו את fixingKarabakh
     let loadingMessage = "טוען נתונים...";
@@ -1230,7 +1272,7 @@ export default function SystemOverview() {
             try {
               await Question.update(questionId, { validation_list: destListName === 'null' ? null : destListName });
 
-              const updatedQuestions = await Question.filter({}, null, 10000);
+              const updatedQuestions = await Question.list(null, 10000);
               setQuestions(updatedQuestions);
 
               toast({
