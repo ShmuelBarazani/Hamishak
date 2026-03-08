@@ -33,7 +33,7 @@ export default function UploadFilesDialog({ open, onOpenChange }) {
   const { toast } = useToast();
 
   const { status, startProcessing, setUploadStatus } = useUploadStatus();
-  const { inProgress, message, error, warnings: globalWarnings, results } = status;
+  const { inProgress, message, error, warnings: globalWarnings, results } = status || {};
   const { currentGame } = useGame();
 
   useEffect(() => {
@@ -43,10 +43,10 @@ export default function UploadFilesDialog({ open, onOpenChange }) {
   }, [open]);
 
   useEffect(() => {
-    if (status.progress === 100 && !status.inProgress && !status.error) {
+    if (status?.progress === 100 && !status?.inProgress && !status?.error) {
       checkExistingData();
     }
-  }, [status.progress, status.inProgress, status.error]);
+  }, [status?.progress, status?.inProgress, status?.error]);
 
   const checkExistingData = async () => {
     try {

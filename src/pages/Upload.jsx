@@ -36,7 +36,7 @@ export default function Upload() {
   // Consume the global upload status context
   const { status, startProcessing, setUploadStatus } = useUploadStatus(); // Added setUploadStatus
   // Destructure relevant parts of the global status for easier access
-  const { inProgress, message, error, warnings: globalWarnings, results } = status;
+  const { inProgress, message, error, warnings: globalWarnings, results } = status || {};
 
   useEffect(() => {
     checkExistingData();
