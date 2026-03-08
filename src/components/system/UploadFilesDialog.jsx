@@ -33,7 +33,7 @@ export default function UploadFilesDialog({ open, onOpenChange }) {
   const { toast } = useToast();
 
   const { status, startProcessing, setUploadStatus } = useUploadStatus();
-  const { inProgress, message, error, warnings: globalWarnings, results } = status || {};
+  const { inProgress = false, message = '', error = null, warnings: globalWarnings = [], results = [] } = status || {};
   const { currentGame } = useGame();
 
   useEffect(() => {
