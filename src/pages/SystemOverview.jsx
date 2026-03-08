@@ -1704,6 +1704,7 @@ export default function SystemOverview() {
                             </div>
                           </div>
                         )}
+                      </CardContent>
                     </Card>
                   );
                 })}
@@ -1753,6 +1754,7 @@ export default function SystemOverview() {
                   </div>
                 </CardContent>
               </Card>
+            </div>
           </div>
         </DialogContent>
       </Dialog>
