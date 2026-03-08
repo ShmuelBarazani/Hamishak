@@ -144,7 +144,7 @@ export default function PredictionForm() {
       }
 
       // Changed: filter questions by game_id
-      const loadedQuestions = await db.Question.filter({ game_id: currentGame.id }, "-created_date", 5000);
+      const loadedQuestions = await db.Question.filter({ game_id: currentGame.id }, "-created_at", 5000);
       
       // 🔥 סינון שאלות T1 - לא להציג בטופס ניחושים!
       const filteredQuestions = loadedQuestions.filter(q => q.table_id !== 'T1');
@@ -155,7 +155,7 @@ export default function PredictionForm() {
       const userPredictions = await db.Prediction.filter({
         game_id: currentGame.id,
         participant_name: user.full_name
-      }, '-created_date', 5000);
+      }, '-created_at', 5000);
 
       console.log('📥 נטענו ניחושים קיימים:', userPredictions.length);
 
@@ -163,7 +163,7 @@ export default function PredictionForm() {
       const predictionsByQuestion = {};
       userPredictions.forEach(pred => {
         if (!predictionsByQuestion[pred.question_id] || 
-            new Date(pred.created_date) > new Date(predictionsByQuestion[pred.question_id].created_date)) {
+            new Date(pred.created_at) > new Date(predictionsByQuestion[pred.question_id].created_date)) {
           predictionsByQuestion[pred.question_id] = pred;
         }
       });

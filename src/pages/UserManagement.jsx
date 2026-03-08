@@ -52,7 +52,8 @@ export default function UserManagement() {
       
       setCurrentUser(currentUserData);
       
-      if (currentUserData.role !== 'admin') {
+      const userRole = currentUserData?.user_metadata?.role || currentUserData?.role;
+      if (userRole !== 'admin') {
         toast({
           title: "אין הרשאות",
           description: "רק מנהלים יכולים לגשת לדף זה",
@@ -66,7 +67,7 @@ export default function UserManagement() {
       
       // 🆕 טען את כל המשחקים והמשתתפים
       const [games, participants] = await Promise.all([
-        db.Game.list('-created_date', 100),
+        db.Game.filter({}, '-created_at', 100),
         db.GameParticipant.list(null, 1000)
       ]);
       
@@ -263,7 +264,8 @@ ${appUrl}
     );
   }
 
-  if (currentUser?.role !== 'admin') {
+  const userRole = currentUser?.user_metadata?.role || currentUser?.role;
+  if (userRole !== 'admin') {
     return (
       <div className="p-6 max-w-4xl mx-auto">
         <Alert variant="destructive">

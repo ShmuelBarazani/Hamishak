@@ -61,7 +61,7 @@ export default function LeaderboardNew() {
     const tempPreds = {};
     predictions.forEach(pred => {
       const existing = tempPreds[pred.question_id];
-      if (!existing || new Date(pred.created_date) > new Date(existing.created_date)) {
+      if (!existing || new Date(pred.created_at) > new Date(existing.created_date)) {
         tempPreds[pred.question_id] = pred;
       }
     });
@@ -304,7 +304,7 @@ export default function LeaderboardNew() {
       const tempPredictions = {};
       participantPredictions.forEach((pred) => {
         const existing = tempPredictions[pred.question_id];
-        if (!existing || new Date(pred.created_date) > new Date(existing.created_date)) {
+        if (!existing || new Date(pred.created_at) > new Date(existing.created_date)) {
           tempPredictions[pred.question_id] = pred;
         }
       });
@@ -314,7 +314,7 @@ export default function LeaderboardNew() {
       for (const [qid, pred] of Object.entries(tempPredictions)) {
         tempPreds[qid] = {
           text_prediction: pred.text_prediction,
-          created_date: pred.created_date
+          created_at: pred.created_at
         };
       }
 

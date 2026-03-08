@@ -156,7 +156,7 @@ export default function FormBuilder() {
 
   const loadAvailableGames = async () => {
     try {
-      const allGames = await db.Game.filter({}, '-created_date', 100);
+      const allGames = await db.Game.filter({}, '-created_at', 100);
       setAvailableGames(allGames.filter(g => g.id !== currentGame?.id));
     } catch (error) {
       console.error("Error loading games:", error);

@@ -209,7 +209,7 @@ export default function SystemOverview() {
           try {
             const questionPredictions = await db.Prediction.filter(
               { question_id: question.id }, 
-              '-created_date', 
+              '-created_at', 
               500
             );
 
@@ -263,7 +263,7 @@ export default function SystemOverview() {
         } else {
           // בדוק אם זה ניחוש חדש יותר
           const existing = byParticipantAndQuestion.get(key);
-          if (new Date(pred.created_date) > new Date(existing.created_date)) {
+          if (new Date(pred.created_at) > new Date(existing.created_date)) {
             byParticipantAndQuestion.set(key, pred);
           }
         }
@@ -836,7 +836,7 @@ export default function SystemOverview() {
     );
   }
 
-  if (currentUser.role !== 'admin') {
+  if ((currentUser?.role !== 'admin') && (currentUser?.user_metadata?.role !== 'admin')) {
     return (
       <div className="p-6 flex items-center justify-center h-screen" style={{
         background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%)'

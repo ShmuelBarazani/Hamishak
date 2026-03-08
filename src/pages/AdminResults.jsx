@@ -63,7 +63,7 @@ export default function AdminResults() {
 
     setLoading(true);
     try {
-      const questions = await db.Question.filter({ game_id: currentGame.id }, "-created_date", 5000);
+      const questions = await db.Question.filter({ game_id: currentGame.id }, "-created_at", 5000);
       setAllQuestions(questions);
 
       // מיפוי קבוצות ורשימות

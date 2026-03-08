@@ -41,10 +41,10 @@ function ParticipantTotalScore({ participantName, gameId }) {
         const tempPredictions = {};
         for (const p of allPredictions) {
           const existing = tempPredictions[p.question_id];
-          if (!existing || new Date(p.created_date) > new Date(existing.created_date)) {
+          if (!existing || new Date(p.created_at) > new Date(existing.created_date)) {
             tempPredictions[p.question_id] = {
               text_prediction: p.text_prediction,
-              created_date: p.created_date
+              created_at: p.created_at
             };
           }
         }
@@ -156,7 +156,7 @@ export default function ViewSubmissions() {
         // 🎯 טען רק נתונים של המשחק הנוכחי
         const [samplePredictions, questions] = await Promise.all([
           Prediction.filter({ game_id: currentGame.id }, null, 10000),
-          Question.filter({ game_id: currentGame.id }, "-created_date", 10000)
+          Question.filter({ game_id: currentGame.id }, "-created_at", 10000)
         ]);
 
         // 🎯 השתמש בנתוני המשחק עצמו במקום entities נפרדות
@@ -337,10 +337,10 @@ export default function ViewSubmissions() {
     const tempPreds = {};
     data.predictions.forEach(p => {
       const existing = tempPreds[p.question_id];
-      if (!existing || new Date(p.created_date) > new Date(existing.created_date)) {
+      if (!existing || new Date(p.created_at) > new Date(existing.created_date)) {
         tempPreds[p.question_id] = {
           text_prediction: p.text_prediction,
-          created_date: p.created_date
+          created_at: p.created_at
         };
       }
     });
@@ -599,7 +599,7 @@ export default function ViewSubmissions() {
         }
         
         const existing = predictionsByParticipant[pred.participant_name][pred.question_id];
-        if (!existing || new Date(pred.created_date) > new Date(existing.created_date)) {
+        if (!existing || new Date(pred.created_at) > new Date(existing.created_date)) {
           predictionsByParticipant[pred.participant_name][pred.question_id] = pred;
         }
       });
