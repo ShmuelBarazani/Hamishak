@@ -464,7 +464,7 @@ export default function SystemOverview() {
       setLastUpdated(new Date().toISOString()); // Data is fresh from server
       
       // 💾 שמור cache
-      const cacheKey = `system_overview_${currentGame.id}`;
+      const cacheKey = `system_overview_v2_${currentGame.id}`;
       try {
         localStorage.setItem(cacheKey, JSON.stringify({
           stats: {
@@ -514,14 +514,35 @@ export default function SystemOverview() {
   useEffect(() => {
     if (!currentUser || !currentGame) return;
 
-    const cacheKey = `system_overview_${currentGame.id}`;
+    const cacheKey = `system_overview_v2_${currentGame.id}`;
     try {
+      // Clear old cache format
+      localStorage.removeItem(`system_overview_${currentGame.id}`);
       const cached = localStorage.getItem(cacheKey);
       if (cached) {
         const cachedData = JSON.parse(cached);
-        setStats(cachedData.stats);
+        const cachedStats = cachedData.stats || {};
+        setStats({
+          totalQuestions: 0,
+          totalParticipants: 0,
+          totalPredictions: 0,
+          totalTeams: 0,
+          totalValidationLists: 0,
+          totalTables: 0,
+          tableBreakdown: {},
+          participantBreakdown: {},
+          missingPredictionsReport: [],
+          allParticipants: [],
+          ...cachedStats
+        });
         setLocationDuplicates(cachedData.locationDuplicates || []);
-        setValidationLists(cachedData.validationLists || []);
+        const cachedLists = (cachedData.validationLists || []).map(list => ({
+          ...list,
+          options: list.options || [],
+          missingTeams: list.missingTeams || [],
+          extraTeams: list.extraTeams || []
+        }));
+        setValidationLists(cachedLists);
         setTeams(cachedData.teams || []);
         setQuestions(cachedData.questions || []);
         setGames(cachedData.games || []);
@@ -1479,7 +1500,7 @@ export default function SystemOverview() {
           <div>
             <div className="space-y-6">
               {validationLists // Use validationLists from state
-                .sort((a, b) => a.list_name.localeCompare(b.list_name, 'he'))
+                .sort((a, b) => (a.list_name || '').localeCompare((b.list_name || ''), 'he'))
                 .map((list, listIndex) => {
                   const questionsUsingThisList = questions.filter(q => q.validation_list === list.list_name);
                   const isEditing = editingListId === list.list_name;
