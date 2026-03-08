@@ -76,7 +76,7 @@ export default function CreateGame() {
   const loadGames = async () => {
     setLoading(true);
     try {
-      const allGames = await db.Game.filter({}, '-created_date', 100);
+      const allGames = await db.Game.filter({}, '-created_at', 100);
       setGames(allGames);
     } catch (error) {
       console.error("Error loading games:", error);

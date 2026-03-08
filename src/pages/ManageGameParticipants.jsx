@@ -44,7 +44,7 @@ export default function ManageGameParticipants() {
       setAllUsers(users);
       setParticipants(gameParticipants);
       
-      if (user.role !== 'admin') {
+      if (user.user_metadata?.role !== 'admin' && user.role !== 'admin') {
         toast({
           title: "אין הרשאות",
           description: "רק מנהלים יכולים לגשת לדף זה",
@@ -227,7 +227,7 @@ export default function ManageGameParticipants() {
     );
   }
 
-  if (currentUser?.role !== 'admin') {
+  if ((currentUser?.role !== 'admin') && (currentUser?.user_metadata?.role !== 'admin')) {
     return (
       <div className="p-6 max-w-4xl mx-auto">
         <Alert variant="destructive">

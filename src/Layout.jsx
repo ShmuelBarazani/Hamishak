@@ -41,7 +41,7 @@ function LayoutContent({ children, currentPageName }) {
   const [adminPassword, setAdminPassword] = useState("");
   const { toast } = useToast();
   
-  const { currentGame, games, selectGame, loading: gamesLoading, currentParticipant } = useGame();
+  const { currentGame, games, selectGame, loading: gamesLoading, currentParticipant, currentUser: gameContextUser } = useGame();
 
   // פריטי ניווט למשתמשים לא מחוברים (אורחים)
   const guestNavigationItems = [
@@ -219,27 +219,20 @@ function LayoutContent({ children, currentPageName }) {
 
   // בחירת פריטי ניווט לפי סטטוס משתמש
   // הרול נמצא ב-user_metadata של Supabase
-  const supabaseRole = currentUser?.user_metadata?.role || currentUser?.role || null;
-  let userRole = supabaseRole || (currentUser ? "predictor" : "guest");
-  
-  // 🔍 לוג לבדיקה
-  console.log('🔍 Layout Navigation Check:', {
-    currentUser: currentUser?.email,
-    currentUserRole: supabaseRole,
-    currentParticipant: currentParticipant,
-    participantRole: currentParticipant?.role_in_game
-  });
+  // השתמש במשתמש מ-GameContext שכבר מכיל role נכון
+  const effectiveUser = gameContextUser || currentUser;
+  const supabaseRole = effectiveUser?.role || effectiveUser?.user_metadata?.role || null;
+  let userRole = supabaseRole || (effectiveUser ? "predictor" : "guest");
   
   // אם זה לא מנהל כללי ויש participant - השתמש בתפקיד מהמשחק
-  if (currentUser && supabaseRole !== "admin" && currentParticipant) {
+  if (effectiveUser && supabaseRole !== "admin" && currentParticipant) {
     userRole = currentParticipant.role_in_game;
-    console.log('✅ מעדכן userRole מ-participant:', userRole);
   }
   
   console.log('📋 Final userRole:', userRole);
   
   const isAdmin = supabaseRole === "admin";
-  const navigationItems = currentUser 
+  const navigationItems = effectiveUser 
     ? allNavigationItems.filter(item => item.roles.includes(userRole))
     : guestNavigationItems;
     
