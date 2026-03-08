@@ -457,7 +457,7 @@ export default function UploadFilesDialog({ open, onOpenChange }) {
             </Alert>
           )}
 
-          {status.progress === 100 && !inProgress && !error && (
+          {status?.progress === 100 && !inProgress && !error && (
             <Alert style={{
               background: 'rgba(16, 185, 129, 0.1)',
               border: '1px solid rgba(16, 185, 129, 0.3)'

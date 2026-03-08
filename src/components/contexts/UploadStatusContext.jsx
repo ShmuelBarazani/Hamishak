@@ -3,10 +3,10 @@ import { createContext, useContext, useState } from 'react';
 const UploadStatusContext = createContext(null);
 
 export function UploadStatusProvider({ children }) {
-  const [status, setStatus] = useState(null);
+  const [status, setStatus] = useState({ inProgress: false, message: '', error: null, progress: 0, warnings: [], results: [] });
 
   const startProcessing = (message = 'מעבד...') => {
-    setStatus({ type: 'processing', message });
+    setStatus({ inProgress: true, message, error: null, progress: 0, warnings: [], results: [] });
   };
 
   const setUploadStatus = (newStatus) => {
@@ -14,7 +14,7 @@ export function UploadStatusProvider({ children }) {
   };
 
   const clearStatus = () => {
-    setStatus(null);
+    setStatus({ inProgress: false, message: '', error: null, progress: 0, warnings: [], results: [] });
   };
 
   return (

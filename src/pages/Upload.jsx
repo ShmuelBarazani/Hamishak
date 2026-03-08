@@ -44,11 +44,11 @@ export default function Upload() {
 
   // Effect to re-check existing data after a successful upload from the context
   useEffect(() => {
-    if (status.progress === 100 && !status.inProgress && !status.error) {
+    if (status?.progress === 100 && !status?.inProgress && !status?.error) {
       // Upload finished successfully, refresh existing data status
       checkExistingData();
     }
-  }, [status.progress, status.inProgress, status.error]);
+  }, [status?.progress, status?.inProgress, status?.error]);
 
   const checkExistingData = async () => {
     try {
@@ -498,7 +498,7 @@ export default function Upload() {
         </Alert>
       )}
 
-      {status.progress === 100 && !inProgress && !error && (
+      {status?.progress === 100 && !inProgress && !error && (
         <Alert className="mb-6" style={{
           background: 'rgba(16, 185, 129, 0.1)',
           border: '1px solid rgba(16, 185, 129, 0.3)'
