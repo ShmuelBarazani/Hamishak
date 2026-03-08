@@ -33,7 +33,7 @@ export default function UploadFilesDialog({ open, onOpenChange }) {
   const { toast } = useToast();
 
   const { status, startProcessing, setUploadStatus } = useUploadStatus();
-  const { inProgress = false, message = '', error = null, warnings: globalWarnings = [], results = [] } = status || {};
+  const { inProgress = false, message = '', error = null, warnings: globalWarnings = [], results = {} } = status || {};
   const { currentGame } = useGame();
 
   useEffect(() => {
@@ -95,32 +95,6 @@ export default function UploadFilesDialog({ open, onOpenChange }) {
     startProcessing({ pasteData: pasteData.trim() }, existingData, currentGame);
     };
 
-  const handleValidationListsUpload = async (file) => {
-    setUploadStatus({ inProgress: true, message: "מעבד קובץ רשימות אימות...", progress: 10, error: null });
-    
-    try {
-      const { data: { publicUrl: file_url } } = supabase.storage.from('uploads').getPublicUrl((await supabase.storage.from('uploads').upload(`${Date.now()}.${file.name.split('.').pop()}`, file)).data?.path || '');
-      setUploadStatus({ inProgress: true, message: "מחלץ נתונים מהקובץ...", progress: 30, error: null });
-
-      // ExtractDataFromUploadedFile - requires backend implementation
-
-      if (extractResponse.status !== "success" || !extractResponse.output) {
-        throw new Error(extractResponse.details || "Failed to extract data");
-      }
-
-      const listsData = extractResponse.output.lists || [];
-      setUploadStatus({ inProgress: true, message: "שומר רשימות אימות...", progress: 60, error: null });
-
-      const hebrewLetters = ['א', 'ב', 'ג', 'ד', 'ה', 'ו', 'ז', 'ח'];
-      const processedLists = listsData.map(list => {
-        const isCycleList = list.list_name?.includes('מחזור') ||
-                           list.options?.some(opt => opt?.includes('מחזור'));
-        
-        if (isCycleList) {
-          return {
-            ...list,
-            options: hebrewLetters.slice(0, list.options?.length || hebrewLetters.length)
-          };
         }
         return list;
       });
@@ -470,7 +444,7 @@ export default function UploadFilesDialog({ open, onOpenChange }) {
             </Alert>
           )}
 
-          {Object.keys(results).length > 0 && !inProgress && (
+          {results && Object.keys(results).length > 0 && !inProgress && (
             <Card style={{
               background: 'rgba(6, 182, 212, 0.1)',
               border: '1px solid rgba(6, 182, 212, 0.3)'

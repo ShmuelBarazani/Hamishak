@@ -36,7 +36,7 @@ export default function Upload() {
   // Consume the global upload status context
   const { status, startProcessing, setUploadStatus } = useUploadStatus(); // Added setUploadStatus
   // Destructure relevant parts of the global status for easier access
-  const { inProgress = false, message = '', error = null, warnings: globalWarnings = [], results = [] } = status || {};
+  const { inProgress = false, message = '', error = null, warnings: globalWarnings = [], results = {} } = status || {};
 
   useEffect(() => {
     checkExistingData();
@@ -79,15 +79,8 @@ export default function Upload() {
   };
 
   const processFiles = () => {
-    // Client-side check for large file and confirmation
-    if (files.questions && files.questions.size > 200000) {
-      if (!window.confirm("הקובץ שלך גדול יחסית (" + Math.round(files.questions.size / 1024) + "KB). זה עלול לקחת זמן או להיכשל. האם להמשיך?")) {
-        return; // User cancelled, do not proceed with upload
-      }
-    }
-    setLocalWarnings([]); // Clear any existing local warnings before starting the global process
-    // Initiate the global processing managed by the context
-    startProcessing(files, existingData, toast);
+    setLocalWarnings([]);
+    startProcessing(files, existingData, null);
   };
 
   const handlePasteUpload = async () => {
@@ -95,81 +88,8 @@ export default function Upload() {
       toast({ title: "שגיאה", description: "אין נתונים להדביק", variant: "destructive" });
       return;
     }
-
     setLocalWarnings([]);
-    // Pass pasteData in an object format that the context's startProcessing function expects.
-    // Assuming startProcessing can handle a 'pasteData' key directly.
-    startProcessing({ pasteData: pasteData.trim() }, existingData, toast);
-  };
-
-  const handleValidationListsUpload = async (file) => {
-    setUploadStatus({ inProgress: true, message: "מעבד קובץ רשימות אימות...", progress: 10, error: null });
-    
-    try {
-      const { data: { publicUrl: file_url } } = supabase.storage.from('uploads').getPublicUrl((await supabase.storage.from('uploads').upload(`${Date.now()}.${file.name.split('.').pop()}`, file)).data?.path || '');
-      setUploadStatus({ inProgress: true, message: "מחלץ נתונים מהקובץ...", progress: 30, error: null });
-
-      // ExtractDataFromUploadedFile - requires backend implementation
-
-      if (extractResponse.status !== "success" || !extractResponse.output) {
-        throw new Error(extractResponse.details || "Failed to extract data");
-      }
-
-      const listsData = extractResponse.output.lists || [];
-      setUploadStatus({ inProgress: true, message: "שומר רשימות אימות...", progress: 60, error: null });
-
-      // 🔥 שינוי רשימת מחזורים לאותיות עבריות
-      const hebrewLetters = ['א', 'ב', 'ג', 'ד', 'ה', 'ו', 'ז', 'ח'];
-      const processedLists = listsData.map(list => {
-        // אם זו רשימת מחזורים (בודק אם יש "מחזור" בשם או באופציות)
-        const isCycleList = list.list_name?.includes('מחזור') ||
-                           list.options?.some(opt => opt?.includes('מחזור'));
-        
-        if (isCycleList) {
-          // המר "מחזור 1", "מחזור 2" וכו' לאותיות א, ב, ג...
-          return {
-            ...list,
-            options: hebrewLetters.slice(0, list.options?.length || hebrewLetters.length)
-          };
-        }
-        return list;
-      });
-
-      for (const list of processedLists) {
-        const existing = await ValidationList.filter({ list_name: list.list_name }, null, 1);
-        if (existing.length > 0) {
-          await ValidationList.update(existing[0].id, { options: list.options });
-        } else {
-          await ValidationList.create(list);
-        }
-      }
-
-      setUploadStatus({
-        inProgress: false,
-        message: `✅ ${processedLists.length} רשימות אימות נטענו בהצלחה!`,
-        progress: 100,
-        error: null
-      });
-
-      toast({
-        title: "הועלה בהצלחה!",
-        description: `${processedLists.length} רשימות אימות נשמרו במערכת`,
-      });
-
-    } catch (error) {
-      console.error("Error uploading validation lists:", error);
-      setUploadStatus({
-        inProgress: false,
-        message: "שגיאה בהעלאת רשימות אימות",
-        progress: 0,
-        error: error.message
-      });
-      toast({
-        title: "שגיאה",
-        description: "העלאת רשימות האימות נכשלה",
-        variant: "destructive"
-      });
-    }
+    startProcessing({ pasteData: pasteData.trim() }, existingData, null);
   };
 
   const FileUploadCard = ({ title, type, description, icon: Icon, isRequired = false }) => {
@@ -511,7 +431,7 @@ export default function Upload() {
         </Alert>
       )}
 
-      {Object.keys(results).length > 0 && !inProgress && (
+      {results && Object.keys(results).length > 0 && !inProgress && (
         <Card className="mb-6" style={{
           background: 'rgba(6, 182, 212, 0.1)',
           border: '1px solid rgba(6, 182, 212, 0.3)'
