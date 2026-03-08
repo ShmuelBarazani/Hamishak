@@ -15,7 +15,7 @@ import { calculateQuestionScore, calculateLocationBonus } from "@/components/sco
 import StandingsTable from "../components/predictions/StandingsTable";
 import { useGame } from "@/components/contexts/GameContext";
 
-// 🆕 קומפוננטה להצגת סך הניקוד של המשתתף - חישוב בזמן אמת!
+// 🆕 קומפוננטה להצגת סך הניקוד של המשתתף - קורא מטבלת rankings
 function ParticipantTotalScore({ participantName, gameId }) {
   const [totalScore, setTotalScore] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -28,38 +28,17 @@ function ParticipantTotalScore({ participantName, gameId }) {
       }
       
       try {
-        // 🔥 טען שאלות וניחושים לחישוב בזמן אמת
-        const [allQuestions, allPredictions] = await Promise.all([
-          db.Question.filter({ game_id: gameId }, null, 10000),
-          db.Prediction.filter({ 
-            participant_name: participantName,
-            game_id: gameId 
-          }, null, 10000)
-        ]);
+        // קרא ישירות מטבלת rankings - הניקוד האמיתי
+        const rankingData = await db.Ranking.filter({ 
+          game_id: gameId,
+          participant_name: participantName
+        }, null, 1);
         
-        // בנה מפת ניחושים - רק את האחרון של כל שאלה
-        const tempPredictions = {};
-        for (const p of allPredictions) {
-          const existing = tempPredictions[p.question_id];
-          if (!existing || new Date(p.created_at) > new Date(existing.created_date)) {
-            tempPredictions[p.question_id] = {
-              text_prediction: p.text_prediction,
-              created_at: p.created_at
-            };
-          }
+        if (rankingData && rankingData.length > 0) {
+          setTotalScore(rankingData[0].current_score);
+        } else {
+          setTotalScore(null);
         }
-        
-        // המר למפה פשוטה
-        const predictionsMap = {};
-        for (const [qid, data] of Object.entries(tempPredictions)) {
-          predictionsMap[qid] = data.text_prediction;
-        }
-        
-        // חשב ניקוד בזמן אמת
-        const { calculateTotalScore } = await import('@/components/scoring/ScoreService');
-        const { total } = calculateTotalScore(allQuestions, predictionsMap);
-        
-        setTotalScore(total);
       } catch (error) {
         console.error("Failed to load participant score:", error);
         setTotalScore(null);
@@ -337,7 +316,7 @@ export default function ViewSubmissions() {
     const tempPreds = {};
     data.predictions.forEach(p => {
       const existing = tempPreds[p.question_id];
-      if (!existing || new Date(p.created_at) > new Date(existing.created_date)) {
+      if (!existing || new Date(p.created_at) > new Date(existing.created_at)) {
         tempPreds[p.question_id] = {
           text_prediction: p.text_prediction,
           created_at: p.created_at
@@ -599,7 +578,7 @@ export default function ViewSubmissions() {
         }
         
         const existing = predictionsByParticipant[pred.participant_name][pred.question_id];
-        if (!existing || new Date(pred.created_at) > new Date(existing.created_date)) {
+        if (!existing || new Date(pred.created_at) > new Date(existing.created_at)) {
           predictionsByParticipant[pred.participant_name][pred.question_id] = pred;
         }
       });

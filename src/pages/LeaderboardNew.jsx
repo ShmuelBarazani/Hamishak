@@ -699,10 +699,14 @@ export default function LeaderboardNew() {
         return qA - qB;
         });
 
+        // Use score from rankings table (authoritative) instead of recalculated score
+        const rankingEntry = rankings.find(r => r.participant_name === participantName);
+        const displayScore = rankingEntry ? rankingEntry.current_score : totalScore;
+        
         setParticipantDetails({
           name: participantName,
           scores: filteredScores,
-          totalScore: totalScore
+          totalScore: displayScore
         });
       setSelectedParticipant(participantName);
     } catch (error) {

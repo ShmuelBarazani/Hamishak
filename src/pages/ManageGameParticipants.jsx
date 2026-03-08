@@ -90,7 +90,6 @@ export default function ManageGameParticipants() {
         game_id: currentGame.id,
         user_email: selectedUser,
         role_in_game: "predictor",
-        joined_date: new Date().toISOString(),
         is_active: true
       });
 
@@ -192,7 +191,6 @@ export default function ManageGameParticipants() {
         game_id: currentGame.id,
         user_email: user.email,
         role_in_game: "predictor",
-        joined_date: new Date().toISOString(),
         is_active: true
       }));
 
@@ -369,7 +367,7 @@ export default function ManageGameParticipants() {
                           <div className="flex items-center gap-2">
                             <UserIcon className="w-4 h-4" style={{ color: '#06b6d4' }} />
                             <span style={{ color: '#f8fafc', fontWeight: '500' }}>
-                              {user?.full_name || 'לא ידוע'}
+                              {user?.participant_name || user?.user_email || 'לא ידוע'}
                             </span>
                           </div>
                         </td>
@@ -400,7 +398,7 @@ export default function ManageGameParticipants() {
                           )}
                         </td>
                         <td className="text-center p-4" style={{ color: '#94a3b8' }}>
-                          {new Date(participant.joined_date).toLocaleDateString('he-IL')}
+                          {participant.created_at ? new Date(participant.created_at).toLocaleDateString('he-IL') : '—'}
                         </td>
                         <td className="p-4">
                           <div className="flex items-center justify-center gap-2">
@@ -478,7 +476,7 @@ export default function ManageGameParticipants() {
                       style={{ color: '#f8fafc' }}
                       className="hover:bg-cyan-500/20 focus:bg-cyan-500/30"
                     >
-                      {user.full_name} ({user.email})
+                      {user.participant_name || user.user_email} ({user.user_email})
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -539,7 +537,7 @@ export default function ManageGameParticipants() {
                   border: '1px solid rgba(239, 68, 68, 0.3)'
                 }}>
                   <AlertDescription style={{ color: '#fca5a5' }}>
-                    האם להסיר את {allUsers.find(u => u.email === participantToDelete.user_email)?.full_name} מהמשחק?
+                    האם להסיר את {allUsers.find(u => u.email === participantToDelete.user_email)?.participant_name || participantToDelete?.user_email} מהמשחק?
                   </AlertDescription>
                 </Alert>
 

@@ -12,7 +12,7 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from '@/api/supabaseClient';
 import * as db from '@/api/entities';
 import { Database, Users, FileQuestion, Trophy, List, Table, Loader2, BarChart3, Shield, RefreshCw, CheckCircle, Trash2, AlertTriangle, Edit, GripVertical, UploadIcon, Plus, Upload } from "lucide-react";
-import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
+// DnD removed - using static list
 import UploadFilesDialog from "@/components/system/UploadFilesDialog";
 import { useGame } from '@/components/contexts/GameContext'; // New import
 
@@ -1476,47 +1476,7 @@ export default function SystemOverview() {
             ));
           })()}
 
-          <DragDropContext onDragEnd={async (result) => {
-            if (!result.destination) {
-              toast({
-                title: "פעולה בוטלה",
-                description: "השאלה לא שוחררה על רשימה חוקית.",
-                variant: "destructive"
-              });
-              return;
-            }
-
-            const sourceListName = result.source.droppableId;
-            const destListName = result.destination.droppableId;
-
-            if (sourceListName === destListName) {
-              return;
-            }
-
-            const questionId = result.draggableId;
-
-            try {
-              await db.Question.update(questionId, { validation_list: destListName === 'null' ? null : destListName });
-
-              // Update questions state directly for immediate UI feedback
-              setQuestions(prevQuestions => prevQuestions.map(q =>
-                q.id === questionId ? { ...q, validation_list: destListName === 'null' ? null : destListName } : q
-              ));
-
-              toast({
-                title: "שאלה הועברה!",
-                description: `השאלה עברה בהצלחה לרשימה "${destListName === 'null' ? 'ללא רשימת אימות' : destListName}"`,
-                className: "bg-green-100 text-green-800"
-              });
-            } catch (error) {
-              console.error("Error moving question:", error);
-              toast({
-                title: "שגיאה",
-                description: "לא ניתן להעביר את השאלה",
-                variant: "destructive"
-              });
-            }
-          }}>
+          <div>
             <div className="space-y-6">
               {validationLists // Use validationLists from state
                 .sort((a, b) => a.list_name.localeCompare(b.list_name, 'he'))
@@ -1707,9 +1667,7 @@ export default function SystemOverview() {
                             <h4 className="text-sm font-bold mb-2 text-slate-300">
                               שאלות שמשתמשות ברשימה (גרור להעברה):
                             </h4>
-                            <Droppable droppableId={list.list_name}>
-                              {(provided, snapshot) => (
-                                <div
+                            <div><div
                                   ref={provided.innerRef}
                                   {...provided.droppableProps}
                                   className="space-y-1 min-h-[60px] p-2 rounded"
@@ -1731,13 +1689,7 @@ export default function SystemOverview() {
                                       return parseFloat(a.question_id) - parseFloat(b.question_id);
                                     })
                                     .map((q, index) => (
-                                      <Draggable
-                                        key={q.id}
-                                        draggableId={q.id}
-                                        index={index}
-                                      >
-                                        {(provided, snapshot) => (
-                                          <div
+                                      <div><div
                                             ref={provided.innerRef}
                                             {...provided.draggableProps}
                                             className="flex items-center gap-2 p-2 rounded text-sm transition-all"
@@ -1765,17 +1717,15 @@ export default function SystemOverview() {
                                             <span className="text-slate-300 flex-1">{q.question_text}</span>
                                           </div>
                                         )}
-                                      </Draggable>
+                                      </div>
                                     ))}
                                   {provided.placeholder}
                                 </div>
                               )}
-                            </Droppable>
+                            </div>
                           </div>
                         ) : (
-                          <Droppable droppableId={list.list_name}>
-                            {(provided, snapshot) => (
-                              <div
+                          <div><div
                                 ref={provided.innerRef}
                                 {...provided.droppableProps}
                                 className="min-h-[60px] p-4 rounded flex items-center justify-center"
@@ -1800,7 +1750,7 @@ export default function SystemOverview() {
                                 {provided.placeholder}
                               </div>
                             )}
-                          </Droppable>
+                          </div>
                         )}
                       </CardContent>
                     </Card>
@@ -1818,7 +1768,7 @@ export default function SystemOverview() {
                   </div>
                 </CardHeader>
                 <CardContent>
-                  <Droppable droppableId="null">
+                  <div>
                     {(provided, snapshot) => (
                       <div
                         ref={provided.innerRef}
@@ -1842,13 +1792,7 @@ export default function SystemOverview() {
                             return parseFloat(a.question_id) - parseFloat(b.question_id);
                           })
                           .map((q, index) => (
-                            <Draggable
-                              key={q.id}
-                              draggableId={q.id}
-                              index={index}
-                            >
-                              {(provided, snapshot) => (
-                                <div
+                            <div><div
                                   ref={provided.innerRef}
                                   {...provided.draggableProps}
                                   className="flex items-center gap-2 p-2 rounded text-sm transition-all"
@@ -1876,7 +1820,7 @@ export default function SystemOverview() {
                                   <span className="text-slate-300 flex-1">{q.question_text}</span>
                                 </div>
                               )}
-                            </Draggable>
+                            </div>
                           ))}
                         {provided.placeholder}
                         {questions.filter(q => !q.validation_list).length === 0 && !snapshot.isDraggingOver && (
@@ -1892,11 +1836,11 @@ export default function SystemOverview() {
                         )}
                       </div>
                     )}
-                  </Droppable>
+                  </div>
                 </CardContent>
               </Card>
             </div>
-          </DragDropContext>
+          </div>
         </DialogContent>
       </Dialog>
 

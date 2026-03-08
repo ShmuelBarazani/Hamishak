@@ -63,12 +63,12 @@ export default function UserManagement() {
         return;
       }
 
-      setUsers(allUsers.sort((a, b) => a.full_name?.localeCompare(b.full_name, 'he') || 0));
+      setUsers(allUsers.sort((a, b) => (a.participant_name || '').localeCompare(b.participant_name || '', 'he')));
       
       // 🆕 טען את כל המשחקים והמשתתפים
       const [games, participants] = await Promise.all([
         db.Game.filter({}, '-created_at', 100),
-        db.GameParticipant.list(null, 1000)
+        db.GameParticipant.filter({}, null, 1000)
       ]);
       
       setAllGames(games);
@@ -189,7 +189,7 @@ ${appUrl}
     setDeletingUser(true);
     try {
       const predictions = await Prediction.filter({ 
-        participant_name: userToDelete.full_name 
+        participant_name: userToDelete.participant_name || userToDelete.user_email 
       }, null, 10000);
       
       for (const pred of predictions) {
@@ -200,7 +200,7 @@ ${appUrl}
 
       toast({
         title: "נמחק בהצלחה!",
-        description: `המשתמש ${userToDelete.full_name} וכל הניחושים שלו נמחקו`,
+        description: `המשתמש ${userToDelete.participant_name || userToDelete.user_email} וכל הניחושים שלו נמחקו`,
         className: "bg-green-900/30 border-green-500 text-green-200"
       });
 
@@ -236,7 +236,7 @@ ${appUrl}
 
       toast({
         title: "עודכן!",
-        description: `${user.full_name} ${newRole === 'admin' ? 'הוגדר כמנהל' : 'הוסר מהרשאות מנהל'}`,
+        description: `${user.participant_name || user.user_email || '—'} ${newRole === 'admin' ? 'הוגדר כמנהל' : 'הוסר מהרשאות מנהל'}`,
         className: "bg-cyan-900/30 border-cyan-500 text-cyan-200"
       });
 
@@ -367,7 +367,7 @@ ${appUrl}
                           <div className="flex items-center gap-2">
                             <UserIcon className="w-4 h-4" style={{ color: '#06b6d4' }} />
                             <span style={{ color: '#f8fafc', fontWeight: '500' }}>
-                              {user.full_name}
+                              {user.participant_name || user.user_email || '—'}
                             </span>
                             {user.id === currentUser.id && (
                               <Badge className="text-xs" style={{ 
@@ -727,7 +727,7 @@ ${appUrl}
                 }}>
                   <AlertDescription style={{ color: '#fca5a5' }}>
                     <p className="font-bold mb-2">המשתמש שיימחק:</p>
-                    <p>שם: {userToDelete.full_name}</p>
+                    <p>שם: {userToDelete.participant_name || userToDelete.user_email}</p>
                     <p>אימייל: {userToDelete.email}</p>
                   </AlertDescription>
                 </Alert>
