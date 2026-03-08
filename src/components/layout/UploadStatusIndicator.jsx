@@ -7,6 +7,7 @@ import { Progress } from "@/components/ui/progress";
 export default function UploadStatusIndicator() {
   const { status } = useUploadStatus();
 
+  if (!status) return null;
   if (!status.inProgress && !status.error && status.progress === 100) return null;
   if (!status.inProgress && !status.error) return null;
 
