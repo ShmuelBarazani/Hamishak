@@ -548,9 +548,15 @@ export default function SystemOverview() {
         setGames(cachedData.games || []);
         setLastUpdated(cachedData.lastUpdated);
         console.log('✅ נתונים נטענו מה-cache');
+      } else {
+        // No cache - load fresh data automatically
+        loadSystemStats();
+        return;
       }
     } catch (e) {
-      console.log('⚠️ אין cache שמור');
+      console.log('⚠️ אין cache שמור - טוען מהשרת...');
+      loadSystemStats();
+      return;
     }
     
     setLoading(false);
