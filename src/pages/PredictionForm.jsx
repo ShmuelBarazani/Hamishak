@@ -77,7 +77,7 @@ export default function PredictionForm() {
         setCurrentUser(user);
         
         // 🔍 מנהלים כלליים תמיד מקבלים גישה
-        if (user.role === 'admin') {
+        if (user.user_metadata?.role === 'admin') {
           console.log('✅ משתמש מנהל - גישה מלאה');
         } else {
           // 🆕 בדוק אם המשתמש שייך למשחק
@@ -139,8 +139,8 @@ export default function PredictionForm() {
       if (settings.length > 0) {
         setIsFormLocked(settings[0].setting_value === "locked");
       } else {
-        // Default to locked if setting not found
-        setIsFormLocked(true);
+        // Default to open if setting not found
+        setIsFormLocked(false);
       }
 
       // Changed: filter questions by game_id
@@ -154,7 +154,7 @@ export default function PredictionForm() {
       // 🔥 טען ניחושים קיימים של המשתמש
       const userPredictions = await db.Prediction.filter({
         game_id: currentGame.id,
-        participant_name: user.full_name
+        participant_name: user.user_metadata?.full_name || user.email
       }, '-created_at', 5000);
 
       console.log('📥 נטענו ניחושים קיימים:', userPredictions.length);
@@ -318,9 +318,9 @@ export default function PredictionForm() {
       
       setSpecialTables(allSpecialTables);
 
-      if (user && user.full_name) {
-        setParticipantName(user.full_name);
-        setParticipantDetails(prev => ({ ...prev, 'temp_name': user.full_name }));
+      if (user && (user.user_metadata?.full_name || user.email)) {
+        setParticipantName(user.user_metadata?.full_name || user.email);
+        setParticipantDetails(prev => ({ ...prev, 'temp_name': user.user_metadata?.full_name || user.email }));
       }
       
     } catch (error) {
@@ -1253,7 +1253,7 @@ export default function PredictionForm() {
     );
   }
 
-  const isAdmin = currentUser?.role === 'admin';
+  const isAdmin = currentUser?.user_metadata?.role === 'admin';
   const isGameLocked = currentGame?.status === 'locked';
 
   // אם הטופס נעול והמשתמש לא מנהל - הצג הודעה ברורה
