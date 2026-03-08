@@ -290,12 +290,9 @@ ${correlations.map(c => `- "${c.q1}" ↔ "${c.q2}" (קשר: ${c.strength}%)`).jo
 `;
 
       // InvokeLLM removed - needs backend
-      const response = { content: "תכונה זו דורשת הגדרת backend" }; /*
-        prompt: prompt,
-        add_context_from_internet: false
-      });
+      const response = { content: "תכונה זו דורשת הגדרת backend" };
       
-      return response || 'מתבצע ניתוח...';
+      return response.content || 'מתבצע ניתוח...';
       
     } catch (error) {
       console.error('Error generating narrative:', error);
