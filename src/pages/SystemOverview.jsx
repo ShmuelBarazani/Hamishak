@@ -669,7 +669,7 @@ export default function SystemOverview() {
   // Start editing a list
   const startEditingList = (list) => {
     setEditingListId(list.list_name);
-    setEditedOptions([...list.options]);
+    setEditedOptions([...(list.options || [])]);
     setNewOption("");
     setEditingOptionIndex(null);
     setEditingOptionValue("");
@@ -1408,12 +1408,12 @@ export default function SystemOverview() {
               const cleanTeamName = (opt) => String(opt).split('(')[0].trim();
 
               const missingTeams = Array.from(allTeamsInQuestions).filter(team => {
-                return !list.options.some(opt => {
+                return !(list.options || []).some(opt => {
                   return cleanTeamName(opt) === team || opt === team;
                 });
               });
 
-              const extraTeams = list.options.filter(opt => {
+              const extraTeams = (list.options || []).filter(opt => {
                 const optBase = cleanTeamName(opt);
                 return !allTeamsInQuestions.has(optBase) && !allTeamsInQuestions.has(String(opt));
               });
@@ -1468,7 +1468,7 @@ export default function SystemOverview() {
                     )}
 
                     <div className="text-xs mt-2" style={{ color: '#94a3b8' }}>
-                      💡 יש {allTeamsInQuestions.size} קבוצות ייחודיות בשאלות, {list.options.length} אופציות ברשימת האימות "{list.list_name}"
+                      💡 יש {allTeamsInQuestions.size} קבוצות ייחודיות בשאלות, {(list.options || []).length} אופציות ברשימת האימות "{list.list_name}"
                     </div>
                   </div>
                 </AlertDescription>
@@ -1483,7 +1483,7 @@ export default function SystemOverview() {
                 .map((list, listIndex) => {
                   const questionsUsingThisList = questions.filter(q => q.validation_list === list.list_name);
                   const isEditing = editingListId === list.list_name;
-                  const displayOptions = isEditing ? editedOptions : list.options;
+                  const displayOptions = isEditing ? editedOptions : (list.options || []);
 
                   return (
                     <Card key={list.list_name} className="bg-slate-800/50 border-cyan-500/30">
