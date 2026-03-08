@@ -218,25 +218,27 @@ function LayoutContent({ children, currentPageName }) {
   };
 
   // בחירת פריטי ניווט לפי סטטוס משתמש
-  let userRole = currentUser?.role || "guest";
+  // הרול נמצא ב-user_metadata של Supabase
+  const supabaseRole = currentUser?.user_metadata?.role || currentUser?.role || null;
+  let userRole = supabaseRole || (currentUser ? "predictor" : "guest");
   
   // 🔍 לוג לבדיקה
   console.log('🔍 Layout Navigation Check:', {
     currentUser: currentUser?.email,
-    currentUserRole: currentUser?.role,
+    currentUserRole: supabaseRole,
     currentParticipant: currentParticipant,
     participantRole: currentParticipant?.role_in_game
   });
   
   // אם זה לא מנהל כללי ויש participant - השתמש בתפקיד מהמשחק
-  if (currentUser && currentUser.role !== "admin" && currentParticipant) {
+  if (currentUser && supabaseRole !== "admin" && currentParticipant) {
     userRole = currentParticipant.role_in_game;
     console.log('✅ מעדכן userRole מ-participant:', userRole);
   }
   
   console.log('📋 Final userRole:', userRole);
   
-  const isAdmin = currentUser?.role === "admin";
+  const isAdmin = supabaseRole === "admin";
   const navigationItems = currentUser 
     ? allNavigationItems.filter(item => item.roles.includes(userRole))
     : guestNavigationItems;
