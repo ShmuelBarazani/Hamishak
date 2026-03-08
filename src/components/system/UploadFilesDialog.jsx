@@ -76,64 +76,17 @@ export default function UploadFilesDialog({ open, onOpenChange }) {
   };
 
   const processFiles = () => {
-    if (files.questions && files.questions.size > 200000) {
-      if (!window.confirm("הקובץ שלך גדול יחסית (" + Math.round(files.questions.size / 1024) + "KB). זה עלול לקחת זמן או להיכשל. האם להמשיך?")) {
-        return;
-      }
-    }
     setLocalWarnings([]);
     startProcessing(files, existingData, currentGame);
-    };
+  };
 
   const handlePasteUpload = async () => {
     if (!pasteData.trim()) {
       toast({ title: "שגיאה", description: "אין נתונים להדביק", variant: "destructive" });
       return;
     }
-
     setLocalWarnings([]);
     startProcessing({ pasteData: pasteData.trim() }, existingData, currentGame);
-    };
-
-        }
-        return list;
-      });
-
-      for (const list of processedLists) {
-        const existing = await ValidationList.filter({ list_name: list.list_name }, null, 1);
-        if (existing.length > 0) {
-          await ValidationList.update(existing[0].id, { options: list.options });
-        } else {
-          await ValidationList.create(list);
-        }
-      }
-
-      setUploadStatus({
-        inProgress: false,
-        message: `✅ ${processedLists.length} רשימות אימות נטענו בהצלחה!`,
-        progress: 100,
-        error: null
-      });
-
-      toast({
-        title: "הועלה בהצלחה!",
-        description: `${processedLists.length} רשימות אימות נשמרו במערכת`,
-      });
-
-    } catch (error) {
-      console.error("Error uploading validation lists:", error);
-      setUploadStatus({
-        inProgress: false,
-        message: "שגיאה בהעלאת רשימות אימות",
-        progress: 0,
-        error: error.message
-      });
-      toast({
-        title: "שגיאה",
-        description: "העלאת רשימות האימות נכשלה",
-        variant: "destructive"
-      });
-    }
   };
 
   const FileUploadCard = ({ title, type, description, icon: Icon, isRequired = false }) => {
