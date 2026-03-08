@@ -4,9 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Question } from "@/entities/Question";
-import { Prediction } from "@/entities/Prediction";
-import { ValidationList } from "@/entities/ValidationList";
+import { Prediction, ValidationList, Question } from "@/entities/all";
 import { Loader2, CheckCircle, AlertTriangle, ArrowRight, RefreshCw } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 

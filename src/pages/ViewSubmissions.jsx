@@ -1,72 +1,93 @@
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { Question } from "@/entities/Question";
-import { Prediction } from "@/entities/Prediction";
-import { ValidationList } from "@/entities/ValidationList";
-import { Team } from "@/entities/Team";
-import { Ranking } from "@/entities/Ranking";
-import { Users, Loader2, ChevronDown, ChevronUp, FileText, Trash2, AlertTriangle, Trophy, Pencil, Save, Award } from "lucide-react";
+import { Prediction, Question, Team, ValidationList, User, SystemSettings } from "@/entities/all";
+import { supabase } from '@/api/supabaseClient';
+import * as db from '@/api/entities'; // 🔧 Fixed import path
+import { Users, Loader2, ChevronDown, ChevronUp, FileText, Trash2, AlertTriangle, Trophy, Pencil, Save, Download, Award, CheckCircle } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 import RoundTableReadOnly from "../components/predictions/RoundTableReadOnly";
-import { calculateQuestionScore, calculateLocationTableBonus } from "@/components/scoring/ScoreCalculator";
-import StandingsTable from "../components/predictions/StandingsTable"; // Added import
+import { calculateQuestionScore, calculateLocationBonus } from "@/components/scoring/ScoreService";
+import StandingsTable from "../components/predictions/StandingsTable";
+import { useGame } from "@/components/contexts/GameContext";
 
-// 🚀 Cache גלובלי לשיפור ביצועים
-const MAX_SCORE_CACHE = new Map();
-const NORMALIZE_TEAM_CACHE = new Map();
-const TEAM_NAME_CLEAN_CACHE = new Map();
+// 🆕 קומפוננטה להצגת סך הניקוד של המשתתף - חישוב בזמן אמת!
+function ParticipantTotalScore({ participantName, gameId }) {
+  const [totalScore, setTotalScore] = useState(null);
+  const [loading, setLoading] = useState(true);
 
-// 🚀 Helper function to get maximum possible score - WITH CACHE
-const getMaxPossibleScore = (question) => {
-  if (MAX_SCORE_CACHE.has(question.id)) {
-    return MAX_SCORE_CACHE.get(question.id);
+  useEffect(() => {
+    const loadScore = async () => {
+      if (!participantName || !gameId) {
+        setLoading(false);
+        return;
+      }
+      
+      try {
+        // 🔥 טען שאלות וניחושים לחישוב בזמן אמת
+        const [allQuestions, allPredictions] = await Promise.all([
+          db.Question.filter({ game_id: gameId }, null, 10000),
+          db.Prediction.filter({ 
+            participant_name: participantName,
+            game_id: gameId 
+          }, null, 10000)
+        ]);
+        
+        // בנה מפת ניחושים - רק את האחרון של כל שאלה
+        const tempPredictions = {};
+        for (const p of allPredictions) {
+          const existing = tempPredictions[p.question_id];
+          if (!existing || new Date(p.created_date) > new Date(existing.created_date)) {
+            tempPredictions[p.question_id] = {
+              text_prediction: p.text_prediction,
+              created_date: p.created_date
+            };
+          }
+        }
+        
+        // המר למפה פשוטה
+        const predictionsMap = {};
+        for (const [qid, data] of Object.entries(tempPredictions)) {
+          predictionsMap[qid] = data.text_prediction;
+        }
+        
+        // חשב ניקוד בזמן אמת
+        const { calculateTotalScore } = await import('@/components/scoring/ScoreService');
+        const { total } = calculateTotalScore(allQuestions, predictionsMap);
+        
+        setTotalScore(total);
+      } catch (error) {
+        console.error("Failed to load participant score:", error);
+        setTotalScore(null);
+      }
+      setLoading(false);
+    };
+    
+    loadScore();
+  }, [participantName, gameId]);
+
+  if (loading) {
+    return <Loader2 className="w-4 h-4 animate-spin" style={{ color: '#06b6d4' }} />;
   }
-  
-  const isIsraeliTableMatchQuestion = question.table_id === 'T20' && question.home_team && question.away_team;
-  let score;
-  
-  if (isIsraeliTableMatchQuestion) {
-    score = 6;
-  } else if (question.possible_points != null && question.possible_points > 0) {
-    score = question.possible_points;
-  } else if (question.actual_result != null && question.actual_result !== '') {
-    score = 10; 
-  } else {
-    score = 0;
+
+  if (totalScore === null) {
+    return null;
   }
-  
-  MAX_SCORE_CACHE.set(question.id, score);
-  return score;
-};
 
-// 🚀 Cache לנורמליזציה
-const normalizeTeamNameCached = (name) => {
-  if (!name) return name;
-  if (NORMALIZE_TEAM_CACHE.has(name)) return NORMALIZE_TEAM_CACHE.get(name);
-  
-  const result = name
-    .replace(/קרבאך/g, 'קרבאח')
-    .replace(/קראבח/g, 'קרבאח')
-    .replace(/קראבך/g, 'קרבאח')
-    .trim();
-  
-  NORMALIZE_TEAM_CACHE.set(name, result);
-  return result;
-};
-
-const cleanTeamNameCached = (name) => {
-  if (!name) return name;
-  if (TEAM_NAME_CLEAN_CACHE.has(name)) return TEAM_NAME_CLEAN_CACHE.get(name);
-  
-  const result = name.split('(')[0].trim();
-  TEAM_NAME_CLEAN_CACHE.set(name, result);
-  return result;
-};
+  return (
+    <Badge className="text-white text-sm px-3 py-1 flex items-center gap-1.5" style={{ 
+      background: 'linear-gradient(135deg, #06b6d4 0%, #0ea5e9 100%)',
+      boxShadow: '0 0 10px rgba(6, 182, 212, 0.4)'
+    }}>
+      <Award className="w-4 h-4" />
+      סה"כ: {totalScore} נקודות
+    </Badge>
+  );
+}
 
 export default function ViewSubmissions() {
   const [loading, setLoading] = useState(true);
@@ -94,11 +115,13 @@ export default function ViewSubmissions() {
 
   // 🔥 State חדש לרשימת קבוצות מרשימת האימות
   const [teamValidationList, setTeamValidationList] = useState([]);
-
-  // 🆕 ניקוד המשתתף הנבחר - מחושב
-  const [participantScore, setParticipantScore] = useState(null);
+  const [exporting, setExporting] = useState(false);
+  const [showMissingReport, setShowMissingReport] = useState(false);
+  const [missingPredictions, setMissingPredictions] = useState([]);
+  const [loadingMissing, setLoadingMissing] = useState(false);
 
   const { toast } = useToast();
+  const { currentGame } = useGame();
 
   // 🔥 חשוב: isAdmin חייב להיות מחושב לפני כל השימושים בו
   const isAdmin = currentUser?.role === 'admin';
@@ -106,10 +129,15 @@ export default function ViewSubmissions() {
   useEffect(() => {
     const loadUser = async () => {
       try {
-        const user = await User.me();
-        setCurrentUser(user);
+        const isAuth = await supabase.auth.getSession().then(r => !!r.data.session);
+        if (isAuth) {
+          const user = await supabase.auth.getUser().then(r => r.data.user);
+          setCurrentUser(user);
+        } else {
+          setCurrentUser(null);
+        }
       } catch (error) {
-        console.error("Error loading current user:", error);
+        console.error("Failed to load current user:", error);
         setCurrentUser(null);
       }
     };
@@ -118,20 +146,28 @@ export default function ViewSubmissions() {
 
   useEffect(() => {
     const loadData = async () => {
+      if (!currentGame) {
+        setLoading(false);
+        return;
+      }
+
       setLoading(true);
       try {
-        const [samplePredictions, questions, teams, validationLists] = await Promise.all([
-          Prediction.list(null, 1000),
-          Question.list("-created_date", 10000),
-          Team.list(null, 5000),
-          ValidationList.list(null, 5000)
+        // 🎯 טען רק נתונים של המשחק הנוכחי
+        const [samplePredictions, questions] = await Promise.all([
+          Prediction.filter({ game_id: currentGame.id }, null, 10000),
+          Question.filter({ game_id: currentGame.id }, "-created_date", 10000)
         ]);
 
-        const teamsMap = teams.reduce((acc, team) => { acc[team.name] = team; return acc; }, {});
-        const listsMap = validationLists.reduce((acc, list) => { acc[list.list_name] = list.options; return acc; }, {});
+        // 🎯 השתמש בנתוני המשחק עצמו במקום entities נפרדות
+        const teamsData = currentGame.teams_data || [];
+        const validationListsData = currentGame.validation_lists || [];
+
+        const teamsMap = teamsData.reduce((acc, team) => { acc[team.name] = team; return acc; }, {});
+        const listsMap = validationListsData.reduce((acc, list) => { acc[list.list_name] = list.options; return acc; }, {});
 
         // 🔥 שמור את רשימת הקבוצות מרשימת האימות
-        const teamListObj = validationLists.find(list =>
+        const teamListObj = validationListsData.find(list =>
           list.list_name?.toLowerCase().includes('קבוצ') &&
           !list.list_name?.toLowerCase().includes('מוקדמות')
         );
@@ -163,22 +199,35 @@ export default function ViewSubmissions() {
 
           const tableCollection = (q.home_team && q.away_team) ? rTables : sTables;
           
-          // 🎯 שינוי שמות T12 ו-T13 לשמות קצרים
+          // 🎯 קביעת מזהה ותיאור טבלה
+          let tableId = q.table_id;
           let tableDescription = q.table_description;
+          
+          // אם זה בית - קבץ לפי stage_name
+          if (q.stage_name && q.stage_name.includes('בית')) {
+            tableId = q.stage_name;
+            tableDescription = q.stage_name;
+          }
+          // 🔥 אם זה שלב מיוחד עם stage_order - קבץ לפי stage_order
+          else if (q.table_description?.includes('שאלות מיוחדות') && q.stage_order) {
+            tableId = `custom_order_${q.stage_order}`;
+            tableDescription = q.stage_name || q.table_description;
+          }
+          
           if (q.table_id === 'T12') {
             tableDescription = 'שלב הליגה - פינת הגאווה הישראלית - 7 בוםםםםםםםםםם !!!';
           } else if (q.table_id === 'T13') {
             tableDescription = 'שלב ראש בראש - "מבול מטאורים של כוכבים (*)"';
           }
           
-          if (!tableCollection[q.table_id]) {
-            tableCollection[q.table_id] = {
-              id: q.table_id,
-              description: tableDescription || (q.home_team && q.away_team ? `מחזור ${q.table_id.replace('T','')}` : `שאלות ${q.table_id.replace('T','')}`),
+          if (!tableCollection[tableId]) {
+            tableCollection[tableId] = {
+              id: tableId,
+              description: tableDescription || (q.home_team && q.away_team ? `מחזור ${tableId.replace('T','')}` : `שאלות ${tableId.replace('T','')}`),
               questions: []
             };
           }
-          tableCollection[q.table_id].questions.push(q);
+          tableCollection[tableId].questions.push(q);
         });
 
         const t20Table = rTables['T20'];
@@ -195,15 +244,29 @@ export default function ViewSubmissions() {
         setParticipantQuestions(uniqueParticipantQns);
         delete sTables['T1'];
 
+        // 🔄 מיון בתים בסדר עברי נכון (א', ב', ג' וכו')
         const sortedRoundTables = Object.values(rTables).sort((a,b) => {
+          const aIsGroup = a.id.includes('בית');
+          const bIsGroup = b.id.includes('בית');
+
+          if (aIsGroup && !bIsGroup) return -1; // בתים קודם
+          if (!aIsGroup && bIsGroup) return 1;
+
+          if (aIsGroup && bIsGroup) {
+            // מיון לפי האות האחרונה (א', ב', ג')
+            const aLetter = a.id.charAt(a.id.length - 1);
+            const bLetter = b.id.charAt(b.id.length - 1);
+            return aLetter.localeCompare(bLetter, 'he');
+          }
+
           const aNum = parseInt(a.id.replace('T','')) || 0;
           const bNum = parseInt(b.id.replace('T','')) || 0;
           return aNum - bNum;
         });
         setRoundTables(sortedRoundTables);
 
-        // 🔥 הפרדה: T14-T17 בלבד במיקומים
-        const locationTableIds = ['T14', 'T15', 'T16', 'T17'];
+        // 🔥 הפרדה: T9, T14-T17 במיקומים
+        const locationTableIds = ['T9', 'T14', 'T15', 'T16', 'T17'];
         const locationGroup = Object.values(sTables)
             .filter(table => locationTableIds.includes(table.id))
             .sort((a,b) => (parseInt(a.id.replace('T','')) || 0) - (parseInt(b.id.replace('T','')) || 0));
@@ -213,12 +276,19 @@ export default function ViewSubmissions() {
         const t19Table = sTables['T19'];
         setPlayoffWinnersTable(t19Table || null);
 
-        // 🔥 כל השאר (ללא T19)
+        // 🔥 כל השאר (ללא T19 וללא בתים) - מיון לפי stage_order
         const allSpecialTables = Object.values(sTables).filter(table => {
             const desc = table.description?.trim();
-            return desc && !/^\d+$/.test(desc) && !locationTableIds.includes(table.id) && table.id !== 'T19';
-        }).sort((a,b) => (parseInt(a.id.replace('T','')) || 0) - (parseInt(b.id.replace('T','')) || 0));
-        
+            const isGroup = table.id.includes('בית') || desc?.includes('בית');
+            return desc && !/^\d+$/.test(desc) && !locationTableIds.includes(table.id) && table.id !== 'T19' && !isGroup;
+        }).sort((a,b) => {
+            // מיון לפי stage_order
+            const orderA = a.questions[0]?.stage_order || 999;
+            const orderB = b.questions[0]?.stage_order || 999;
+            if (orderA !== orderB) return orderA - orderB;
+            return (parseInt(a.id.replace('T','')) || 0) - (parseInt(b.id.replace('T','')) || 0);
+        });
+
         setSpecialTables(allSpecialTables);
 
         setData(prev => ({ ...prev, questions, teams: teamsMap, validationLists: listsMap }));
@@ -228,98 +298,61 @@ export default function ViewSubmissions() {
       setLoading(false);
     };
     loadData();
-  }, []);
+  }, [currentGame]);
 
   useEffect(() => {
     const loadParticipantPredictions = async () => {
       if (!selectedParticipant) {
         setData(prev => ({ ...prev, predictions: [] }));
-        setEditedPredictions({});
-        setIsEditMode(false);
-        setParticipantScore(null);
+        setEditedPredictions({}); // Reset edited predictions
+        setIsEditMode(false); // Exit edit mode
         return;
       }
       
+      // 🔐 אורחים יכולים לצפות בכל הניחושים ללא הגבלה
+      
       setLoadingPredictions(true);
       try {
-        // 🚀 טען ניחושים, שאלות, וניקוד מ-Ranking
-        const [predictions, allQuestions, rankingEntries] = await Promise.all([
-          Prediction.filter({ participant_name: selectedParticipant }, null, 10000),
-          Question.list(null, 5000),
-          Ranking.filter({ participant_name: selectedParticipant }, null, 1)
-        ]);
-        
-        // 🔥 חשב ניקוד בזמן אמת (כמו ב-LeaderboardNew)
-        let totalScore = 0;
-        
-        // סנן שאלות עם תוצאות אמיתיות
-        const questionsWithResults = allQuestions.filter(q => {
-          if (!q.actual_result) return false;
-          const result = String(q.actual_result).trim();
-          return result !== '' && result !== '__CLEAR__' && result !== '-' && result !== 'null' && !result.toLowerCase().includes('null');
-        });
-        
-        // בנה map של ניחושים
-        const predictionsMap = new Map(predictions.map(p => [p.question_id, p.text_prediction]));
-        
-        // חשב ניקוד לכל שאלה רגילה (לא טבלאות מיקום)
-        questionsWithResults.forEach(question => {
-          const prediction = predictionsMap.get(question.id);
-          if (!prediction) return;
-          
-          const score = calculateQuestionScore(question, prediction);
-          if (score !== null) {
-            totalScore += score;
-          }
-        });
-        
-        // 🎁 חשב בונוסים מטבלאות מיקומים (רק פעם אחת לכל טבלה!)
-        const locationTableIds = ['T14', 'T15', 'T16', 'T17', 'T19'];
-        for (const tableId of locationTableIds) {
-          const tableQuestions = questionsWithResults.filter(q => q.table_id === tableId);
-          if (tableQuestions.length === 0) continue;
-          
-          const tablePredictions = {};
-          tableQuestions.forEach(q => {
-            const pred = predictionsMap.get(q.id);
-            if (pred) tablePredictions[q.id] = pred;
-          });
-          
-          const bonusResult = calculateLocationTableBonus(tableId, tableQuestions, tablePredictions);
-          if (bonusResult) {
-            totalScore += (bonusResult.basicScore || 0) + (bonusResult.teamsBonus || 0) + (bonusResult.orderBonus || 0);
-          }
-        }
-        
-        console.log(`✅ ניקוד מחושב בזמן אמת עבור ${selectedParticipant}: ${totalScore}`);
-        
+        const predictions = await Prediction.filter({ 
+          participant_name: selectedParticipant,
+          game_id: currentGame.id 
+        }, null, 10000);
         setData(prev => ({ ...prev, predictions }));
-        setEditedPredictions({});
-        setIsEditMode(false);
-        setParticipantScore(totalScore);
+        setEditedPredictions({}); // Reset edited predictions after loading
+        setIsEditMode(false); // Exit edit mode after loading
       } catch (error) {
         console.error("Error loading participant predictions:", error);
-        setParticipantScore(null);
       }
       setLoadingPredictions(false);
     };
 
     loadParticipantPredictions();
-  }, [selectedParticipant, data.questions]);
+  }, [selectedParticipant, currentUser]);
 
-  // 🚀 useMemo - נחשב רק כשמשתנה selectedParticipant או predictions
+  // 🔥 useMemo חייב להיות לפני כל פונקציה שמשתמשת בו
   const participantPredictions = useMemo(() => {
     if (!selectedParticipant) return {};
-    return data.predictions.reduce((acc, p) => {
-      acc[p.question_id] = p.text_prediction;
-      return acc;
-    }, {});
+    
+    // 🔥 קבץ רק את הניחוש האחרון של כל שאלה לפי created_date
+    const tempPreds = {};
+    data.predictions.forEach(p => {
+      const existing = tempPreds[p.question_id];
+      if (!existing || new Date(p.created_date) > new Date(existing.created_date)) {
+        tempPreds[p.question_id] = {
+          text_prediction: p.text_prediction,
+          created_date: p.created_date
+        };
+      }
+    });
+    
+    // המר למפה פשוטה
+    const predMap = {};
+    for (const [qid, data] of Object.entries(tempPreds)) {
+      predMap[qid] = data.text_prediction;
+    }
+    
+    return predMap;
   }, [selectedParticipant, data.predictions]);
-
-  // 🚀 useMemo ל-existingPredictionsMap
-  const existingPredictionsMap = useMemo(() => 
-    new Map(data.predictions.map(p => [p.question_id, p])),
-  [data.predictions]);
 
   // Helper function to get the currently displayed prediction value (original or edited)
   const getPredictionValueForDisplay = useCallback((questionId) => {
@@ -328,14 +361,13 @@ export default function ViewSubmissions() {
       : participantPredictions[questionId];
   }, [editedPredictions, participantPredictions]);
 
-  // 🚀 useMemo ל-combinedPredictionsMap
-  const combinedPredictionsMap = useMemo(() => ({
-    ...participantPredictions,
-    ...editedPredictions,
-  }), [participantPredictions, editedPredictions]);
-
   // 🆕 Function to combine original and edited predictions for components that need a full map
-  const getCombinedPredictionsMap = useCallback(() => combinedPredictionsMap, [combinedPredictionsMap]);
+  const getCombinedPredictionsMap = useCallback(() => {
+    return {
+      ...participantPredictions, // Start with all original predictions
+      ...editedPredictions,     // Overlay with any edited predictions
+    };
+  }, [participantPredictions, editedPredictions]);
 
   const participantDetails = useMemo(() => {
     if (!selectedParticipant) return {};
@@ -352,17 +384,18 @@ export default function ViewSubmissions() {
   }, [selectedParticipant, participantQuestions, data.predictions]);
 
   const loadParticipantStats = async () => {
+    if (!currentGame) return;
+    
     try {
-      const allPredictions = await Prediction.list(null, 10000);
+      const allPredictions = await Prediction.filter({ game_id: currentGame.id }, null, 10000);
+      const stats = {};
       
-      // 🚀 reduce במקום forEach
-      const stats = allPredictions.reduce((acc, pred) => {
-        if (!acc[pred.participant_name]) {
-          acc[pred.participant_name] = 0;
+      allPredictions.forEach(pred => {
+        if (!stats[pred.participant_name]) {
+          stats[pred.participant_name] = 0;
         }
-        acc[pred.participant_name]++;
-        return acc;
-      }, {});
+        stats[pred.participant_name]++;
+      });
 
       const statsArray = Object.entries(stats).map(([name, count]) => ({
         name,
@@ -382,24 +415,49 @@ export default function ViewSubmissions() {
   };
 
   const handleDeleteParticipant = async (participantName) => {
+    if (!currentGame) return;
+    
     if (!window.confirm(`האם אתה בטוח שברצונך למחוק את כל הניחושים של "${participantName}"? פעולה זו אינה הפיכה!`)) {
       return;
     }
 
     setDeletingParticipant(participantName);
     try {
-      const predictionsToDelete = await Prediction.filter({ participant_name: participantName }, null, 10000);
+      // טען את כל הניחושים
+      const predictionsToDelete = await Prediction.filter({ 
+        participant_name: participantName,
+        game_id: currentGame.id 
+      }, null, 10000);
       
-      // 🚀 מחיקה במקביל בקבוצות של 20
-      const batchSize = 20;
-      for (let i = 0; i < predictionsToDelete.length; i += batchSize) {
-        const batch = predictionsToDelete.slice(i, i + batchSize);
+      console.log(`🗑️ מוחק ${predictionsToDelete.length} ניחושים של ${participantName}...`);
+      
+      // מחיקה בקבוצות של 10 עם delay
+      const BATCH_SIZE = 10;
+      const DELAY_MS = 500;
+      
+      for (let i = 0; i < predictionsToDelete.length; i += BATCH_SIZE) {
+        const batch = predictionsToDelete.slice(i, i + BATCH_SIZE);
+        console.log(`   מוחק batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(predictionsToDelete.length / BATCH_SIZE)}`);
+        
         await Promise.all(batch.map(pred => Prediction.delete(pred.id)));
+        
+        // עדכן toast
+        toast({
+          title: "מוחק...",
+          description: `נמחקו ${Math.min(i + BATCH_SIZE, predictionsToDelete.length)}/${predictionsToDelete.length}`,
+          className: "bg-yellow-900/30 border-yellow-500 text-yellow-200"
+        });
+        
+        // delay בין batches
+        if (i + BATCH_SIZE < predictionsToDelete.length) {
+          await new Promise(resolve => setTimeout(resolve, DELAY_MS));
+        }
       }
 
       toast({
         title: "נמחק בהצלחה!",
         description: `נמחקו ${predictionsToDelete.length} ניחושים של ${participantName}.`,
+        className: "bg-green-900/30 border-green-500 text-green-200"
       });
 
       setAllParticipants(prev => prev.filter(p => p !== participantName));
@@ -414,7 +472,7 @@ export default function ViewSubmissions() {
       console.error("Error deleting participant:", error);
       toast({
         title: "שגיאה",
-        description: "מחיקת המשתתף נכשלה.",
+        description: "מחיקת המשתתף נכשלה: " + error.message,
         variant: "destructive"
       });
     } finally {
@@ -423,7 +481,7 @@ export default function ViewSubmissions() {
   };
 
   // 🆕 פונקציה לעדכון ניחוש במצב עריכה
-  const handlePredictionEdit = useCallback((questionId, newValue) => {
+  const handlePredictionEdit = (questionId, newValue) => {
     if (!isEditMode) return;
     
     // בדוק אם השתנה מהמקורי
@@ -441,7 +499,7 @@ export default function ViewSubmissions() {
         [questionId]: newValue
       }));
     }
-  }, [isEditMode, participantPredictions]);
+  };
 
   // 🆕 שמירת שינויים
   const handleSaveChanges = async () => {
@@ -458,43 +516,39 @@ export default function ViewSubmissions() {
 
     setSavingChanges(true);
     try {
-      // 🚀 Map של predictions קיימים
-      // existingPredictionsMap כבר מחושב ב-useMemo
-
-      const updatePromises = [];
-      const createData = [];
+      let updatedCount = 0;
       
       for (const [questionId, newValue] of changedPredictions) {
-        const prediction = existingPredictionsMap.get(questionId);
+        const prediction = data.predictions.find(p => p.question_id === questionId);
         
-        if (prediction) {
-          updatePromises.push(
-            Prediction.update(prediction.id, { text_prediction: newValue })
-          );
-        } else {
-          createData.push({
+        // Only update if it's an existing prediction and the value has actually changed
+        // from the *original* value. The 'editedPredictions' state already ensures this.
+        if (prediction) { // Update existing prediction
+          await Prediction.update(prediction.id, {
+            text_prediction: newValue
+          });
+          updatedCount++;
+        } else { // Create new prediction if it didn't exist
+          await Prediction.create({
             question_id: questionId,
             participant_name: selectedParticipant,
             text_prediction: newValue
           });
+          updatedCount++;
         }
       }
 
-      // 🚀 ביצוע במקביל
-      await Promise.all(updatePromises);
-      
-      if (createData.length > 0) {
-        await Prediction.bulkCreate(createData);
-      }
-      
       toast({
         title: "שינויים נשמרו!",
-        description: `עודכנו ${changedPredictions.length} ניחושים עבור ${selectedParticipant}`,
+        description: `עודכנו ${updatedCount} ניחושים עבור ${selectedParticipant}`,
         className: "bg-green-900/30 border-green-500 text-green-200"
       });
 
       // טען מחדש את הניחושים
-      const predictions = await Prediction.filter({ participant_name: selectedParticipant }, null, 10000);
+      const predictions = await Prediction.filter({ 
+        participant_name: selectedParticipant,
+        game_id: currentGame.id 
+      }, null, 10000);
       setData(prev => ({ ...prev, predictions }));
       setEditedPredictions({});
       setIsEditMode(false);
@@ -514,28 +568,231 @@ export default function ViewSubmissions() {
     setOpenSections(prev => ({...prev, [sectionId]: !prev[sectionId]}));
   };
 
-  // 🚀 TEAM_NAME_MAPPING עם useMemo
-  const TEAM_NAME_MAPPING = useMemo(() => {
-    const mapping = new Map();
-    teamValidationList.forEach(validName => {
-      const normalizedBaseName = normalizeTeamNameCached(cleanTeamNameCached(validName));
-      mapping.set(normalizedBaseName, validName);
+  // 🆕 דוח ניחושים חסרים
+  const handleMissingReport = async () => {
+    if (!currentGame) return;
+    
+    setLoadingMissing(true);
+    setShowMissingReport(true);
+    
+    try {
+      console.log('🔍 מתחיל חישוב דוח חסרים...');
       
-      // Add variations that might exist in user input
-      const variants = [
-        validName.replace(/קרבאח/g, 'קרבאך'),
-        validName.replace(/קרבאח/g, 'קראבח'),
-        validName.replace(/קרבאח/g, 'קראבך'),
-        validName.replace(/ת"א/g, 'תל אביב'),
-        validName.replace(/ת.א/g, 'תל אביב'),
-      ];
-      variants.forEach(v => {
-        const normalizedVariantBaseName = normalizeTeamNameCached(cleanTeamNameCached(v));
-        mapping.set(normalizedVariantBaseName, validName);
+      // טען את כל הניחושים
+      let allPredictions = [];
+      let skip = 0;
+      while (true) {
+        const batch = await Prediction.filter({ game_id: currentGame.id }, null, 10000, skip);
+        allPredictions = [...allPredictions, ...batch];
+        if (batch.length < 10000) break;
+        skip += 10000;
+      }
+      
+      console.log(`✅ נטענו ${allPredictions.length} ניחושים`);
+      console.log(`✅ ${data.questions.length} שאלות במשחק`);
+      
+      // קבץ ניחושים לפי משתתף - רק את האחרון של כל שאלה
+      const predictionsByParticipant = {};
+      allPredictions.forEach(pred => {
+        if (!predictionsByParticipant[pred.participant_name]) {
+          predictionsByParticipant[pred.participant_name] = {};
+        }
+        
+        const existing = predictionsByParticipant[pred.participant_name][pred.question_id];
+        if (!existing || new Date(pred.created_date) > new Date(existing.created_date)) {
+          predictionsByParticipant[pred.participant_name][pred.question_id] = pred;
+        }
       });
-    });
-    return mapping;
-  }, [teamValidationList]);
+      
+      // מצא ניחושים חסרים
+      const missing = [];
+      const participants = Object.keys(predictionsByParticipant).sort();
+      
+      console.log(`👥 ${participants.length} משתתפים`);
+      
+      // 🔄 קבוצה לפי שאלה (ולא לפי משתתף!)
+      const missingByQuestion = {};
+      
+      data.questions.forEach(q => {
+        // דלג על פרטי משתתף (T1)
+        if (q.table_id === 'T1') return;
+        
+        const questionKey = `${q.table_id}.${q.question_id}`;
+        const missingParticipants = [];
+        
+        participants.forEach(participant => {
+          const participantPredictions = predictionsByParticipant[participant];
+          const pred = participantPredictions[q.id];
+          
+          // 🔍 לוג לבדיקה
+          if (questionKey === 'T12.7') {
+            console.log(`🔍 ${participant} - T12.7:`, {
+              hasPred: !!pred,
+              value: pred?.text_prediction,
+              trimmed: pred?.text_prediction?.trim(),
+              isEmpty: !pred?.text_prediction || pred.text_prediction.trim() === ''
+            });
+          }
+          
+          // ✅ בדיקה: האם חסר ניחוש?
+          const hasPrediction = pred && 
+                                pred.text_prediction !== null &&
+                                pred.text_prediction !== undefined &&
+                                pred.text_prediction.toString().trim() !== '' && 
+                                pred.text_prediction !== '__CLEAR__';
+          
+          if (!hasPrediction) {
+            missingParticipants.push(participant);
+          }
+        });
+        
+        if (missingParticipants.length > 0) {
+          missingByQuestion[questionKey] = {
+            table_id: q.table_id,
+            table_description: q.table_description || q.stage_name || '',
+            question_id: q.question_id,
+            question_text: q.question_text || `${q.home_team || ''} נגד ${q.away_team || ''}`,
+            stage_order: q.stage_order || 0,
+            missing_count: missingParticipants.length,
+            missing_participants: missingParticipants.sort((a, b) => a.localeCompare(b, 'he'))
+          };
+        }
+      });
+      
+      // המרה למערך וממיין לפי סדר השאלות
+      const missingArray = Object.entries(missingByQuestion)
+        .map(([key, data]) => ({ ...data, full_id: key }))
+        .sort((a, b) => {
+          if (a.stage_order !== b.stage_order) {
+            return a.stage_order - b.stage_order;
+          }
+          const tableA = parseInt(a.table_id.replace('T', '')) || 0;
+          const tableB = parseInt(b.table_id.replace('T', '')) || 0;
+          if (tableA !== tableB) return tableA - tableB;
+          return (parseFloat(a.question_id) || 0) - (parseFloat(b.question_id) || 0);
+        });
+      
+      console.log(`❌ נמצאו ${missingArray.length} שאלות עם ניחושים חסרים`);
+      missingArray.forEach(m => {
+        console.log(`   ${m.full_id}: ${m.missing_count} משתתפים - ${m.question_text}`);
+      });
+      
+      setMissingPredictions(missingArray);
+      
+    } catch (error) {
+      console.error("Error generating missing report:", error);
+      toast({
+        title: "שגיאה",
+        description: "יצירת הדוח נכשלה",
+        variant: "destructive"
+      });
+    }
+    setLoadingMissing(false);
+  };
+
+  // 🆕 ייצוא נתונים לקובץ CSV
+  const handleExportData = async () => {
+    if (!currentGame) return;
+    
+    setExporting(true);
+    try {
+      // טען את כל הניחושים למשחק בקבוצות של 10000
+      let allPredictions = [];
+      let skip = 0;
+      const batchSize = 10000;
+      
+      while (true) {
+        const batch = await Prediction.filter({ game_id: currentGame.id }, null, batchSize, skip);
+        allPredictions = [...allPredictions, ...batch];
+        if (batch.length < batchSize) break;
+        skip += batchSize;
+      }
+      
+      // מפה של question_id ל-question
+      const questionsMap = {};
+      data.questions.forEach(q => {
+        questionsMap[q.id] = q;
+      });
+      
+      // מצא את כל המשתתפים הייחודיים
+      const participants = [...new Set(allPredictions.map(p => p.participant_name))].sort();
+      
+      // בנה את הכותרות: שלב, מס' שאלה, שאלה, רשימת אימות, [שמות משתתפים]
+      const headers = ['שלב', 'מס\' שאלה', 'שאלה', 'רשימת אימות', ...participants];
+      
+      // קבץ ניחושים לפי שאלה
+      const predictionsByQuestion = {};
+      allPredictions.forEach(p => {
+        if (!predictionsByQuestion[p.question_id]) {
+          predictionsByQuestion[p.question_id] = {};
+        }
+        predictionsByQuestion[p.question_id][p.participant_name] = p.text_prediction || '';
+      });
+      
+      // מיין שאלות לפי stage_order ואז question_id
+      const sortedQuestions = [...data.questions].sort((a, b) => {
+        const stageOrderA = a.stage_order || 0;
+        const stageOrderB = b.stage_order || 0;
+        if (stageOrderA !== stageOrderB) return stageOrderA - stageOrderB;
+        return (parseFloat(a.question_id) || 0) - (parseFloat(b.question_id) || 0);
+      });
+      
+      // בנה שורות
+      const rows = sortedQuestions.map(q => {
+        const stageName = q.stage_name || q.table_description || q.table_id || '';
+        const questionId = q.question_id || '';
+        const questionText = q.question_text || `${q.home_team || ''} נגד ${q.away_team || ''}`;
+        const validationList = q.validation_list || '';
+        
+        const participantValues = participants.map(p => {
+          let pred = predictionsByQuestion[q.id]?.[p] || '';
+          // 🔥 הוסף גרש בתחילת כל תא שמכיל מקף כדי למנוע המרה לתאריך באקסל
+          if (pred && pred.includes('-')) {
+            pred = "'" + pred;
+          }
+          return pred;
+        });
+        
+        // 🔥 תקן גם את טקסט השאלה
+        let safeQuestionText = questionText;
+        if (safeQuestionText && safeQuestionText.includes('-')) {
+          safeQuestionText = "'" + safeQuestionText;
+        }
+        
+        return [stageName, questionId, safeQuestionText, validationList, ...participantValues];
+      });
+      
+      // המר ל-CSV
+      const csvContent = [headers, ...rows]
+        .map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+        .join('\n');
+      
+      // הוסף BOM לתמיכה בעברית
+      const BOM = '\uFEFF';
+      const blob = new Blob([BOM + csvContent], { type: 'text/csv;charset=utf-8;' });
+      
+      // הורד את הקובץ
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `predictions_export_${currentGame.game_name}_${new Date().toISOString().split('T')[0]}.csv`;
+      link.click();
+      
+      toast({
+        title: "ייצוא הושלם!",
+        description: `יוצאו ${sortedQuestions.length} שאלות עבור ${participants.length} משתתפים`,
+        className: "bg-green-900/30 border-green-500 text-green-200"
+      });
+      
+    } catch (error) {
+      console.error("Error exporting data:", error);
+      toast({
+        title: "שגיאה",
+        description: "ייצוא הנתונים נכשל",
+        variant: "destructive"
+      });
+    }
+    setExporting(false);
+  };
 
   // 🔥 פונקציה חדשה - מחפשת את השם המתאים ברשימת האימות
   const findMatchedTeamName = useCallback((predictionName) => {
@@ -548,47 +805,59 @@ export default function ViewSubmissions() {
       return trimmedPrediction;
     }
     
-    // בדיקה 2: התאמה לפי שם בסיסי מנורמל
-    const normalizedBaseName = normalizeTeamNameCached(cleanTeamNameCached(trimmedPrediction));
+    // בדיקה 2: התאמה לפי שם בסיסי (ללא סוגריים)
+    const baseName = trimmedPrediction.split('(')[0].trim();
     
-    // חפש במפת המיפוי
-    const matched = TEAM_NAME_MAPPING.get(normalizedBaseName);
-    if (matched) {
-      // console.log(`✅ נמצאה התאמה: "${trimmedPrediction}" → "${matched}"`);
-      return matched;
+    // 🔥 טבלת החלפות לווריאציות שונות
+    const normalizeTeamName = (name) => {
+      // Replace variations with a standard form
+      return name
+        .replace(/קרבאך/g, 'קרבאח')
+        .replace(/קראבח/g, 'קרבאח')
+        .replace(/קראבך/g, 'קרבאח')
+        .replace(/ת"א/g, 'תל אביב')
+        .replace(/ת.א/g, 'תל אביב');
+    };
+    
+    const normalizedBaseName = normalizeTeamName(baseName);
+    
+    // חפש בכל רשימת האימות
+    for (const validName of teamValidationList) {
+      const validBaseName = validName.split('(')[0].trim();
+      const normalizedValidName = normalizeTeamName(validBaseName);
+      
+      // השווה את השמות המנורמלים
+      if (normalizedBaseName === normalizedValidName) {
+        console.log(`✅ נמצאה התאמה: "${trimmedPrediction}" → "${validName}"`);
+        return validName; // החזר את השם המלא מרשימת האימות
+      }
     }
     
     // אם לא נמצאה התאמה - החזר את המקורי
-    // console.log(`⚠️ לא נמצאה התאמה עבור: "${trimmedPrediction}"`);
+    console.log(`⚠️ לא נמצאה התאמה עבור: "${trimmedPrediction}"`);
     return trimmedPrediction;
-  }, [teamValidationList, TEAM_NAME_MAPPING]);
+  }, [teamValidationList]);
 
-  // 🚀 Pre-calculate bonusInfo for each location table outside render
-  const locationTableBonuses = useMemo(() => {
-    if (!selectedParticipant) return {};
-    
-    const bonuses = {};
-    const allLocationTables = [...locationTables];
-    if (playoffWinnersTable) {
-      allLocationTables.push(playoffWinnersTable);
+  // Helper function to get maximum possible score for a question
+  const getMaxPossibleScore = (question) => {
+    const isIsraeliTableMatchQuestion = question.table_id === 'T20' && question.home_team && question.away_team;
+    if (isIsraeliTableMatchQuestion) {
+      return 6; // Israeli League matches have 6 potential points for correct score
     }
-    
-    allLocationTables.forEach(table => {
-      const sortedQuestions = [...table.questions].sort((a, b) => parseFloat(a.question_id) - parseFloat(b.question_id));
-      const predForBonus = {};
-      sortedQuestions.forEach(q => {
-        predForBonus[q.id] = editedPredictions[q.id] !== undefined 
-          ? editedPredictions[q.id] 
-          : (participantPredictions[q.id] || "");
-      });
-      bonuses[table.id] = calculateLocationTableBonus(table.id, sortedQuestions, predForBonus);
-    });
-    
-    return bonuses;
-  }, [selectedParticipant, locationTables, playoffWinnersTable, participantPredictions, editedPredictions]);
+    if (question.possible_points != null && question.possible_points > 0) {
+      return question.possible_points;
+    }
+    // If actual_result is present, it's scorable. If possible_points is missing/0,
+    // we should assume a default for display based on typical special question points.
+    // This heuristic ensures correct max score display for questions that are scorable but lack explicit possible_points.
+    if (question.actual_result != null && question.actual_result !== '') {
+      return 10; 
+    }
+    // Fallback for non-scorable or truly 0-point questions
+    return 0;
+  };
 
-  // 🚀 renderReadOnlySelect עם useCallback
-  const renderReadOnlySelect = useCallback((question, originalValue) => {
+  const renderReadOnlySelect = (question, originalValue) => {
     const isTeamsList = question.validation_list?.toLowerCase().includes('קבוצ');
     const locationTableIds = ['T14', 'T15', 'T16', 'T17', 'T19'];
     const isLocationQuestion = locationTableIds.includes(question.table_id);
@@ -599,14 +868,14 @@ export default function ViewSubmissions() {
     }
     const team = isTeamsList ? data.teams[displayTeamNameForReadonly] : null; 
     
-    const qMaxScore = getMaxPossibleScore(question);
+    const maxScore = getMaxPossibleScore(question);
     const hasValue = originalValue && originalValue.trim() !== '';
     
-    const qHasActualResult = question.actual_result && 
-                            question.actual_result.trim() !== '' && 
-                            question.actual_result !== '__CLEAR__';
+    const hasActualResult = question.actual_result && 
+                           question.actual_result.trim() !== '' && 
+                           question.actual_result !== '__CLEAR__';
     
-    const qTextColor = qHasActualResult ? '#06b6d4' : '#f8fafc';
+    const textColor = hasActualResult ? '#06b6d4' : '#f8fafc';
     
     const isQuestion11_1 = question.question_id === '11.1';
     const isQuestion11_2 = question.question_id === '11.2';
@@ -638,6 +907,7 @@ export default function ViewSubmissions() {
               border: '1px solid rgba(6, 182, 212, 0.3)',
               color: '#f8fafc'
             }}>
+              {/* 🔥 הצג את הערך הנוכחי כטקסט */}
               {currentValue ? (
                 <div className="flex items-center gap-2 w-full">
                   {currentTeam?.logo_url && (
@@ -645,8 +915,6 @@ export default function ViewSubmissions() {
                       src={currentTeam.logo_url} 
                       alt={displayCurrentTeamNameForEdit} 
                       className="w-4 h-4 rounded-full" 
-                      loading="lazy"
-                      decoding="async"
                       onError={(e) => e.target.style.display = 'none'}
                     />
                   )}
@@ -673,8 +941,6 @@ export default function ViewSubmissions() {
                           src={optTeam.logo_url} 
                           alt={opt} 
                           className="w-4 h-4 rounded-full" 
-                          loading="lazy"
-                          decoding="async"
                           onError={(e) => e.target.style.display = 'none'}
                         />
                       )}
@@ -707,7 +973,7 @@ export default function ViewSubmissions() {
                 }}
             />
             <Badge className="bg-slate-600 text-slate-300 text-xs px-1.5 py-0.5 min-w-[45px] justify-center">
-                ?/{qMaxScore}
+                ?/{maxScore}
             </Badge>
         </div>
       );
@@ -728,180 +994,50 @@ export default function ViewSubmissions() {
       );
     }
 
-    // 🔥 טיפול מיוחד לשאלות מטבלאות מיקומים
-    const isLocationTableQuestion = ['T14', 'T15', 'T16', 'T17', 'T19'].includes(question.table_id);
-    
-    // חישוב מידע לטבלאות מיקומים
-    let locationInfo = null;
-    if (isLocationTableQuestion && originalValue && question.actual_result && 
-        question.actual_result.trim() !== '' && question.actual_result !== '__CLEAR__') {
-      
-      // נורמליזציה של הניחוש והתוצאה האמיתית
-      const normalizeScore = (score) => {
-        if (!score) return '';
-        return score.replace(/\s*\([^)]*\)/g, '').replace(/\s+/g, '').trim();
-      };
-      
-      const normalizedPred = normalizeScore(originalValue);
-      const normalizedActual = normalizeScore(question.actual_result);
-      
-      // בדוק אם הניחוש תואם לתוצאה האמיתית (מיקום מדויק)
-      const isPerfectPosition = normalizedPred === normalizedActual;
-      
-      // בדוק אם הקבוצה המנוחשת נמצאת בכלל בטבלה הזו
-      // צריך לבדוק מול כל השאלות של הטבלה
-      const tableQuestions = data.questions.filter(q => q.table_id === question.table_id);
-      const allActualResults = tableQuestions
-        .filter(q => q.actual_result && q.actual_result.trim() !== '' && q.actual_result !== '__CLEAR__')
-        .map(q => normalizeScore(q.actual_result));
-      
-      const isInCorrectTable = allActualResults.includes(normalizedPred);
-      
-      // חישוב הניקוד הבסיסי (20 או 30 לפי הטבלה)
-      const isT19 = question.table_id === 'T19';
-      const pointsPerTeam = isT19 ? 30 : 20;
-      
-      locationInfo = {
-        isPerfectPosition,
-        isInCorrectTable,
-        points: isInCorrectTable ? pointsPerTeam : 0
-      };
-    }
-    
-    const score = isLocationTableQuestion ? null : calculateQuestionScore(question, originalValue);
+    const score = calculateQuestionScore(question, originalValue);
 
     let badgeColor = 'bg-slate-600 text-slate-300';
     if (score !== null) {
-      if (score === qMaxScore && qMaxScore > 0) {
+      if (score === maxScore && maxScore > 0) {
         badgeColor = 'bg-green-700 text-green-100';
       } else if (score === 0) {
         badgeColor = 'bg-red-700 text-red-100';
-      } else if (qMaxScore > 0 && score >= qMaxScore * 0.7) {
+      } else if (maxScore > 0 && score >= maxScore * 0.7) {
         badgeColor = 'bg-blue-700 text-blue-100';
       } else if (score > 0) {
-        badgeColor = 'bg-yellow-700 text-yellow-100';
+        badgeColor = 'bg-yellow-500 text-white';
       }
     }
 
     return (
       <>
         <div className={`rounded-md px-2 py-2 ${boxWidth} flex items-center gap-1`} style={{
-          background: 'rgba(15, 23, 42, 0.6)',
-          border: '1px solid rgba(6, 182, 212, 0.2)'
+          background: hasActualResult ? 'rgba(6, 182, 212, 0.2)' : 'rgba(15, 23, 42, 0.6)',
+          border: hasActualResult ? '1px solid #06b6d4' : '1px solid rgba(6, 182, 212, 0.2)',
+          boxShadow: hasActualResult ? '0 0 10px rgba(6, 182, 212, 0.4)' : 'none'
         }}>
           {team?.logo_url && (
             <img 
               src={team.logo_url} 
               alt={displayTeamNameForReadonly} 
               className="w-4 h-4 rounded-full flex-shrink-0" 
-              loading="lazy"
-              decoding="async"
               onError={(e) => e.target.style.display = 'none'}
             />
           )}
-          <span style={{ color: qTextColor, fontSize: isQuestion11_1 ? '0.65rem' : '0.875rem', fontWeight: qHasActualResult ? '600' : 'normal' }}>{displayTeamNameForReadonly}</span>
-        </div>
-        {/* 🔥 תצוגת ניקוד לטבלאות מיקומים */}
-        {isLocationTableQuestion && locationInfo ? (
-          <div className="flex items-center gap-1">
-            <Badge className={`text-xs font-bold px-2 py-0.5 ${
-              locationInfo.isInCorrectTable ? 'bg-green-700 text-green-100' : 'bg-red-700 text-red-100'
-            }`}>
-              {locationInfo.isInCorrectTable ? '✓' : '✗'} {locationInfo.points}
-            </Badge>
-            {locationInfo.isPerfectPosition && (
-              <Badge className="bg-yellow-600 text-white text-xs px-1.5 py-0.5">
-                ✨
-              </Badge>
-            )}
-          </div>
-        ) : isLocationTableQuestion ? (
-          <Badge className="bg-slate-600 text-slate-300 text-xs px-1.5 py-0.5 min-w-[45px] justify-center">
-            ?
-          </Badge>
-        ) : score !== null ? (
-          <Badge className={`${badgeColor} text-xs font-bold px-1.5 py-0.5 min-w-[45px] justify-center`}>
-            {score}/{qMaxScore}
-          </Badge>
-        ) : (
-          <Badge className="bg-slate-600 text-slate-300 text-xs px-1.5 py-0.5 min-w-[45px] justify-center">
-            ?/{qMaxScore}
-          </Badge>
-        )}
-      </>
-    );
-  }, [data.teams, data.validationLists, findMatchedTeamName, isEditMode, isAdmin, editedPredictions, handlePredictionEdit, participantPredictions]);
-
-  // 🚀 renderTeamPrediction עם useMemo פנימי (converted to useCallback)
-  const renderTeamPrediction = useCallback((question, originalValue) => {
-    const valueToDisplay = editedPredictions[question.id] !== undefined 
-      ? editedPredictions[question.id] 
-      : originalValue;
-
-    if (!valueToDisplay || valueToDisplay.trim() === '') {
-      return (
-        <>
-          <div className="rounded-md px-2 py-2 min-w-[135px] max-w-[140px] flex items-center gap-1" style={{
-            background: 'rgba(15, 23, 42, 0.6)',
-            border: '1px solid rgba(6, 182, 212, 0.2)'
-          }}>
-            <span style={{ color: '#94a3b8', fontSize: '0.875rem' }}>-</span>
-          </div>
-          <div className="w-12"></div>
-        </>
-      );
-    }
-
-    const matchedName = findMatchedTeamName(valueToDisplay);
-    const team = data.teams[matchedName];
-    
-    // 🔥 חישוב ניקוד עבור שאלות קבוצה
-    const qMaxScore = getMaxPossibleScore(question);
-    const score = calculateQuestionScore(question, valueToDisplay);
-    
-    let badgeColor = 'bg-slate-600 text-slate-300';
-    if (score !== null) {
-      if (score === qMaxScore && qMaxScore > 0) {
-        badgeColor = 'bg-green-700 text-green-100';
-      } else if (score === 0) {
-        badgeColor = 'bg-red-700 text-red-100';
-      } else if (qMaxScore > 0 && score >= qMaxScore * 0.7) {
-        badgeColor = 'bg-blue-700 text-blue-100';
-      } else if (score > 0) {
-        badgeColor = 'bg-yellow-700 text-yellow-100';
-      }
-    }
-    
-    return (
-      <>
-        <div className="rounded-md px-2 py-2 min-w-[135px] max-w-[140px] flex items-center gap-1" style={{
-          background: 'rgba(15, 23, 42, 0.6)',
-          border: '1px solid rgba(6, 182, 212, 0.2)'
-        }}>
-          {team?.logo_url && (
-            <img 
-              src={team.logo_url} 
-              alt={matchedName} 
-              className="w-4 h-4 rounded-full flex-shrink-0" 
-              loading="lazy"
-              decoding="async"
-              onError={(e) => e.target.style.display = 'none'}
-            />
-          )}
-          <span style={{ color: '#f8fafc', fontSize: '0.875rem', fontWeight: 'normal' }}>{matchedName}</span>
+          <span style={{ color: textColor, fontSize: isQuestion11_1 ? '0.65rem' : '0.875rem', fontWeight: hasActualResult ? '700' : 'normal' }}>{displayTeamNameForReadonly}</span>
         </div>
         {score !== null ? (
           <Badge className={`${badgeColor} text-xs font-bold px-1.5 py-0.5 min-w-[45px] justify-center`}>
-            {score}/{qMaxScore}
+            {score}/{maxScore}
           </Badge>
         ) : (
           <Badge className="bg-slate-600 text-slate-300 text-xs px-1.5 py-0.5 min-w-[45px] justify-center">
-            ?/{qMaxScore}
+            ?/{maxScore}
           </Badge>
         )}
       </>
     );
-  }, [editedPredictions, findMatchedTeamName, data.teams, data.questions]);
+  };
 
   const renderT10Questions = (table) => {
     const questions = table.questions;
@@ -923,7 +1059,60 @@ export default function ViewSubmissions() {
 
     // 🔥 פונקציה עזר להחלפת שם ולוגו עבור שאלות T10 שהן קבוצות
     // פונקציה זו אינה תומכת במצב עריכה - עבור T10 שאלות קבוצה במצב עריכה יופיעו כתיבת טקסט רגילה דרך renderReadOnlySelect
-    // renderTeamPrediction is already a useCallback and handles edited state.
+    const renderTeamPrediction = (questionId, originalValue) => {
+      // Use edited value if exists, otherwise original
+      const valueToDisplay = editedPredictions[questionId] !== undefined 
+        ? editedPredictions[questionId] 
+        : originalValue;
+
+      if (!valueToDisplay || valueToDisplay.trim() === '') {
+        return (
+          <>
+            <div className="rounded-md px-2 py-2 min-w-[135px] max-w-[140px] flex items-center gap-1" style={{
+              background: 'rgba(15, 23, 42, 0.6)',
+              border: '1px solid rgba(6, 182, 212, 0.2)'
+            }}>
+              <span style={{ color: '#94a3b8', fontSize: '0.875rem' }}>-</span>
+            </div>
+            <div className="w-12"></div>
+          </>
+        );
+      }
+
+      // 🔥 החלף לשם מרשימת האימות
+      const matchedName = findMatchedTeamName(valueToDisplay);
+      const team = data.teams[matchedName];
+      
+      // 🔥 בדוק אם יש תוצאה אמיתית עבור T10
+      const q = questions.find(question => question.id === questionId);
+      const hasActualResult = q?.actual_result && 
+                             q.actual_result.trim() !== '' && 
+                             q.actual_result !== '__CLEAR__';
+      const textColor = hasActualResult ? '#06b6d4' : '#f8fafc';
+      
+      return (
+        <>
+          <div className="rounded-md px-2 py-2 min-w-[135px] max-w-[140px] flex items-center gap-1" style={{
+            background: hasActualResult ? 'rgba(6, 182, 212, 0.2)' : 'rgba(15, 23, 42, 0.6)',
+            border: hasActualResult ? '1px solid #06b6d4' : '1px solid rgba(6, 182, 212, 0.2)',
+            boxShadow: hasActualResult ? '0 0 10px rgba(6, 182, 212, 0.4)' : 'none'
+          }}>
+            {team?.logo_url && (
+              <img 
+                src={team.logo_url} 
+                alt={matchedName} 
+                className="w-4 h-4 rounded-full flex-shrink-0" 
+                onError={(e) => e.target.style.display = 'none'}
+              />
+            )}
+            <span style={{ color: textColor, fontSize: '0.875rem', fontWeight: hasActualResult ? '700' : 'normal' }}>{matchedName}</span>
+          </div>
+          <Badge className="bg-slate-600 text-slate-300 text-xs px-1.5 py-0.5 min-w-[45px] justify-center">
+            ?/10
+          </Badge>
+        </>
+      );
+    };
 
     return (
       <Card className="bg-slate-800/40 border-slate-700 shadow-lg shadow-slate-900/20">
@@ -936,180 +1125,94 @@ export default function ViewSubmissions() {
               const { main, subs } = grouped[mainId];
               if (!main) return null;
 
-              const isQuestion11 = main.question_id === '11';
               const sortedSubs = [...subs].sort((a, b) => parseFloat(a.question_id) - parseFloat(b.question_id));
               const mainNumericId = parseFloat(main.question_id);
               const isGroup1 = (mainNumericId >= 1 && mainNumericId <= 2) || (mainNumericId >= 14 && mainNumericId <= 26);
-              
-              // 🔥 זיהוי שאלות שצריכות החלפה - אלו שאלות קבוצה בתוך T10
               const isTeamQuestion = (mainNumericId >= 5 && mainNumericId <= 10) || (mainNumericId >= 12 && mainNumericId <= 13);
-              
-              if (isQuestion11 && sortedSubs.length > 0) {
-                const sub11_1 = sortedSubs.find(s => s.question_id === '11.1');
-                const sub11_2 = sortedSubs.find(s => s.question_id === '11.2');
-                
-                return (
-                  <div 
-                    key={main.id} 
-                    style={{
-                      display: 'grid',
-                      gridTemplateColumns: '50px 140px 140px 50px 50px 100px 65px 50px 50px 180px 150px 50px',
-                      gap: '8px',
-                      alignItems: 'center',
-                      padding: '12px',
-                      borderRadius: '8px'
-                    }}
-                    className="bg-slate-700/20 border border-slate-600/30"
-                  >
-                    <Badge variant="outline" className="border-cyan-400 text-cyan-200 w-[45px] justify-center text-xs">
-                      {main.question_id}
-                    </Badge>
-                    <span className="font-medium text-blue-100 text-xs leading-tight" style={{ lineHeight: '1.2' }}>
-                      {main.question_text}
-                    </span>
-                    <div className="contents">
-                      {renderReadOnlySelect(main, participantPredictions[main.id] || "")}
-                    </div>
 
-                    {sub11_1 ? (
-                      <>
-                        <Badge variant="outline" className="border-cyan-400 text-cyan-200 w-[45px] justify-center text-xs">
-                          {sub11_1.question_id}
-                        </Badge>
-                        <span className="font-medium text-blue-100 text-xs leading-tight break-words" style={{ lineHeight: '1.2', wordBreak: 'break-word' }}>
-                          {sub11_1.question_text}
-                        </span>
-                        <div className="contents">
-                          {renderReadOnlySelect(sub11_1, participantPredictions[sub11_1.id] || "")}
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        <div></div>
-                        <div></div>
-                        <div></div>
-                        <div></div>
-                      </>
-                    )}
-
-                    {sub11_2 ? (
-                      <>
-                        <Badge variant="outline" className="border-cyan-400 text-cyan-200 w-[45px] justify-center text-xs">
-                          {sub11_2.question_id}
-                        </Badge>
-                        <span className="font-medium text-blue-100 text-xs leading-tight break-words" style={{ lineHeight: '1.2', wordBreak: 'break-word' }}>
-                          {sub11_2.question_text}
-                        </span>
-                        <div className="contents">
-                          {renderReadOnlySelect(sub11_2, participantPredictions[sub11_2.id] || "")}
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        <div></div>
-                        <div></div>
-                        <div></div>
-                        <div></div>
-                      </>
-                    )}
-                  </div>
-                );
-              }
-
-              if (isGroup1 && sortedSubs.length === 0) {
-                // 🔥 שאלות קבוצה 1 (1-2, 14-26) - אלו לא שאלות קבוצה המזוהות עם לוגo
+              // שאלה ללא תתי-שאלות - 4 עמודות
+              if (sortedSubs.length === 0) {
                 return (
                   <div 
                     key={main.id} 
                     style={{ 
                       display: 'grid',
-                      gridTemplateColumns: '60px 1fr 180px 60px',
+                      gridTemplateColumns: '50px 1fr 160px 50px',
                       gap: '8px',
                       alignItems: 'center',
-                      padding: '12px',
-                      borderRadius: '8px'
+                      padding: '8px 12px',
+                      borderRadius: '6px'
                     }}
                     className="bg-slate-700/20 border border-slate-600/30"
                   >
-                    <Badge variant="outline" className="border-cyan-400 text-cyan-200 w-[50px] justify-center">
-                      {main.question_id}
-                    </Badge>
-                    <span className="font-medium text-blue-100 text-sm">{main.question_text}</span>
+                    <Badge variant="outline" className="border-cyan-400 text-cyan-200 justify-center text-xs h-6 w-full">{main.question_id}</Badge>
+                    <span className="text-right font-medium text-sm text-blue-100 truncate">{main.question_text}</span>
+                    <div className="contents">{renderReadOnlySelect(main, participantPredictions[main.id] || "")}</div>
+                  </div>
+                );
+              }
+
+              // שאלה עם תת-שאלה אחת - 9 עמודות
+              if (sortedSubs.length === 1) {
+                return (
+                  <div 
+                    key={main.id} 
+                    style={{ 
+                      display: 'grid',
+                      gridTemplateColumns: '50px minmax(250px, 2fr) 160px 50px 1fr 50px minmax(180px, 1.5fr) 160px 50px',
+                      gap: '8px',
+                      alignItems: 'center',
+                      padding: '8px 12px',
+                      borderRadius: '6px'
+                    }}
+                    className="bg-slate-700/20 border border-slate-600/30"
+                  >
+                    <Badge variant="outline" className="border-cyan-400 text-cyan-200 justify-center text-xs h-6 w-full">{main.question_id}</Badge>
+                    <span className="text-right font-medium text-sm text-blue-100">{main.question_text}</span>
                     <div className="contents">
-                      {renderReadOnlySelect(main, participantPredictions[main.id] || "")}
+                      {isTeamQuestion ? renderTeamPrediction(main.id, participantPredictions[main.id] || "") : renderReadOnlySelect(main, participantPredictions[main.id] || "")}
+                    </div>
+                    
+                    <div></div>
+
+                    <Badge variant="outline" className="border-cyan-400 text-cyan-200 justify-center text-xs h-6 w-full">{sortedSubs[0].question_id}</Badge>
+                    <span className="text-right font-medium text-sm text-blue-100">{sortedSubs[0].question_text}</span>
+                    <div className="contents">
+                      {isTeamQuestion ? renderTeamPrediction(sortedSubs[0].id, participantPredictions[sortedSubs[0].id] || "") : renderReadOnlySelect(sortedSubs[0], participantPredictions[sortedSubs[0].id] || "")}
                     </div>
                   </div>
                 );
               }
 
+              // שאלה עם 2 תתי-שאלות - 12 עמודות
               return (
                 <div 
                   key={main.id} 
                   style={{ 
                     display: 'grid',
-                    gridTemplateColumns: '60px minmax(300px, 2fr) 180px 60px 50px minmax(150px, 1fr) 180px 60px',
-                    gap: '8px',
+                    gridTemplateColumns: '45px 1fr 140px 45px 45px 1fr 140px 45px 45px 1fr 140px 45px',
+                    gap: '6px',
                     alignItems: 'center',
-                    padding: '12px',
-                    borderRadius: '8px'
+                    padding: '8px 12px',
+                    borderRadius: '6px'
                   }}
                   className="bg-slate-700/20 border border-slate-600/30"
                 >
-                  <Badge variant="outline" className="border-cyan-400 text-cyan-200 w-[50px] justify-center">
-                    {main.question_id}
-                  </Badge>
-                  
-                  <span className="font-medium text-blue-100 text-sm">
-                    {main.question_text}
-                  </span>
-                  
-                  {/* 🔥 השאלה הראשית - אם זו שאלת קבוצה, השתמש ב-renderTeamPrediction. אחרת, renderReadOnlySelect */}
+                  <Badge variant="outline" className="border-cyan-400 text-cyan-200 justify-center text-xs h-6 w-full">{main.question_id}</Badge>
+                  <span className="text-right font-medium text-sm text-blue-100 truncate">{main.question_text}</span>
                   <div className="contents">
-                    {isTeamQuestion 
-                      ? renderTeamPrediction(main, participantPredictions[main.id] || "") 
-                      : renderReadOnlySelect(main, participantPredictions[main.id] || "")}
+                    {isTeamQuestion ? renderTeamPrediction(main.id, participantPredictions[main.id] || "") : renderReadOnlySelect(main, participantPredictions[main.id] || "")}
                   </div>
 
-                  {sortedSubs.length > 0 ? (
-                    <>
-                      <div className="flex flex-col gap-2">
-                        {sortedSubs.map(sub => (
-                          <Badge key={sub.id + "-id"} variant="outline" className="border-cyan-400 text-cyan-200 w-[45px] justify-center text-xs">
-                            {sub.question_id}
-                          </Badge>
-                        ))}
+                  {sortedSubs.map(sub => (
+                    <React.Fragment key={sub.id}>
+                      <Badge variant="outline" className="border-cyan-400 text-cyan-200 justify-center text-xs h-6 w-full">{sub.question_id}</Badge>
+                      <span className="text-right font-medium text-sm text-blue-100 truncate">{sub.question_text}</span>
+                      <div className="contents">
+                        {isTeamQuestion ? renderTeamPrediction(sub.id, participantPredictions[sub.id] || "") : renderReadOnlySelect(sub, participantPredictions[sub.id] || "")}
                       </div>
-                      
-                      <div className="flex flex-col gap-2">
-                        {sortedSubs.map(sub => (
-                          <span key={sub.id + "-text"} className="font-medium text-blue-100 text-sm">
-                            {sub.question_text}
-                          </span>
-                        ))}
-                      </div>
-                      
-                      {/* 🔥 התשובות המשניות - גם כאן החלף אם צריך */}
-                      <div className="flex flex-col gap-2">
-                        {sortedSubs.map(sub => {
-                          const subValue = participantPredictions[sub.id] || "";
-                          return (
-                            <div key={sub.id + "-pred-score"} className="flex items-center gap-2">
-                              {isTeamQuestion 
-                                ? renderTeamPrediction(sub, subValue) 
-                                : renderReadOnlySelect(sub, subValue)}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <div></div> {/* Empty cells for grid alignment if no subs */}
-                      <div></div>
-                      <div></div>
-                      <div></div>
-                    </>
-                  )}
+                    </React.Fragment>
+                  ))}
                 </div>
               );
             })}
@@ -1120,18 +1223,39 @@ export default function ViewSubmissions() {
   };
 
   const renderSpecialQuestions = (table) => {
-    const isT10 = table.description.includes('T10') || table.id === 'T10';
+    const isT10 = table.description.includes('T10') || table.id === 'T10' || table.id.includes('custom_order');
     
     if (isT10) {
       return renderT10Questions(table);
     }
 
-    const sortedQuestions = [...table.questions].sort((a, b) => parseFloat(a.question_id) - parseFloat(b.question_id));
+    // קיבוץ שאלות עם תת-שאלות
+    const grouped = {};
+    table.questions.forEach(q => {
+      const mainId = Math.floor(parseFloat(q.question_id));
+      if (!grouped[mainId]) {
+        grouped[mainId] = { main: null, subs: [] };
+      }
+      if (q.question_id.includes('.')) {
+        grouped[mainId].subs.push(q);
+      } else {
+        grouped[mainId].main = q;
+      }
+    });
 
+    const sortedMainIds = Object.keys(grouped).sort((a, b) => Number(a) - Number(b));
+
+    let bonusInfo = null;
     const isLocationTable = ['T14', 'T15', 'T16', 'T17', 'T19'].includes(table.id);
-    
-    // 🚀 שימוש ב-pre-calculated bonusInfo
-    const bonusInfo = isLocationTable ? locationTableBonuses[table.id] : null;
+    if (selectedParticipant) {
+      // 🔥 לחישוב בונוס - שלב את הניחושים המקוריים עם העריכות
+      const predForBonus = {};
+      table.questions.forEach(q => {
+          const editedValue = editedPredictions[q.id];
+          predForBonus[q.id] = editedValue !== undefined ? editedValue : (participantPredictions[q.id] || "");
+      });
+      bonusInfo = calculateLocationBonus(table.id, table.questions, predForBonus);
+    }
 
     let teamsBonusPotential = 0;
     let orderBonusPotential = 0;
@@ -1159,157 +1283,178 @@ export default function ViewSubmissions() {
         </CardHeader>
         <CardContent className="p-3">
           <div className="space-y-2">
-            {sortedQuestions.map(q => {
-              const qId = parseFloat(q.question_id);
-              const isCompactQuestion = (qId >= 1 && qId <= 2) || (qId >= 14 && qId <= 17);
-              
-              const originalValue = participantPredictions[q.id] || '';
+            {sortedMainIds.map(mainId => {
+              const { main, subs } = grouped[mainId];
+              if (!main) return null;
 
-              const contentRightSide = (
-                <div className="flex items-center gap-2">
-                  {renderReadOnlySelect(q, originalValue)}
-                </div>
-              );
+              const sortedSubs = [...subs].sort((a, b) => parseFloat(a.question_id) - parseFloat(b.question_id));
+              const mainOriginalValue = participantPredictions[main.id] || '';
 
-              if (isCompactQuestion) {
+              // שאלה ללא תתי-שאלות - 4 עמודות
+              if (sortedSubs.length === 0) {
                 return (
-                  <div key={q.id} className="p-3 rounded-lg border" style={{ 
-                    background: 'rgba(15, 23, 42, 0.6)',
-                    border: '1px solid rgba(6, 182, 212, 0.2)'
-                  }}>
-                    <div className="grid grid-cols-[auto_1fr_auto] gap-4 items-center">
-                      <Badge variant="outline" className="min-w-[40px] justify-center" style={{ borderColor: '#06b6d4', color: '#06b6d4' }}>{q.question_id}</Badge>
-                      <label className="font-medium text-sm text-right" style={{ color: '#f8fafc' }}>{q.question_text}</label>
-                      <div className="justify-self-start">{contentRightSide}</div>
-                    </div>
+                  <div 
+                    key={main.id} 
+                    style={{ 
+                      display: 'grid',
+                      gridTemplateColumns: '50px 1fr 160px 50px',
+                      gap: '8px',
+                      alignItems: 'center',
+                      padding: '8px 12px',
+                      borderRadius: '6px',
+                      background: 'rgba(15, 23, 42, 0.4)',
+                      border: '1px solid rgba(6, 182, 212, 0.1)'
+                    }}
+                  >
+                    <Badge variant="outline" className="justify-center text-xs h-6 w-full" style={{ borderColor: '#06b6d4', color: '#06b6d4' }}>{main.question_id}</Badge>
+                    <span className="text-right font-medium text-sm truncate" style={{ color: '#f8fafc' }}>{main.question_text}</span>
+                    <div className="flex items-center gap-2">{renderReadOnlySelect(main, mainOriginalValue)}</div>
                   </div>
                 );
               }
-              
+
+              // שאלה עם תת-שאלה אחת - 9 עמודות
+              if (sortedSubs.length === 1) {
+                const subOriginalValue = participantPredictions[sortedSubs[0].id] || '';
+                return (
+                  <div 
+                    key={main.id} 
+                    style={{ 
+                      display: 'grid',
+                      gridTemplateColumns: '50px minmax(250px, 2fr) 160px 50px 1fr 50px minmax(180px, 1.5fr) 160px 50px',
+                      gap: '8px',
+                      alignItems: 'center',
+                      padding: '8px 12px',
+                      borderRadius: '6px',
+                      background: 'rgba(15, 23, 42, 0.4)',
+                      border: '1px solid rgba(6, 182, 212, 0.1)'
+                    }}
+                  >
+                    <Badge variant="outline" className="justify-center text-xs h-6 w-full" style={{ borderColor: '#06b6d4', color: '#06b6d4' }}>{main.question_id}</Badge>
+                    <span className="text-right font-medium text-sm text-blue-100">{main.question_text}</span>
+                    <div className="flex items-center gap-2">{renderReadOnlySelect(main, mainOriginalValue)}</div>
+                    
+                    <div></div>
+                    
+                    <Badge variant="outline" className="justify-center text-xs h-6 w-full" style={{ borderColor: '#06b6d4', color: '#06b6d4' }}>{sortedSubs[0].question_id}</Badge>
+                    <span className="text-right font-medium text-sm text-blue-100">{sortedSubs[0].question_text}</span>
+                    <div className="flex items-center gap-2">{renderReadOnlySelect(sortedSubs[0], subOriginalValue)}</div>
+                  </div>
+                );
+              }
+
+              // שאלה עם 2 תתי-שאלות - 12 עמודות
               return (
-                <div key={q.id} className="grid grid-cols-[auto,1fr,auto] items-center gap-3 p-3 rounded-lg border" style={{ 
-                  background: 'rgba(15, 23, 42, 0.6)',
-                  border: '1px solid rgba(6, 182, 212, 0.2)'
-                }}>
-                  <Badge variant="outline" className="min-w-[40px] justify-center" style={{ borderColor: '#06b6d4', color: '#06b6d4' }}>{q.question_id}</Badge>
-                  <label className="font-medium text-sm text-right" style={{ color: '#f8fafc' }}>{q.question_text}</label>
-                  <div>{contentRightSide}</div>
+                <div 
+                  key={main.id} 
+                  style={{ 
+                    display: 'grid',
+                    gridTemplateColumns: '45px 1fr 140px 45px 45px 1fr 140px 45px 45px 1fr 140px 45px',
+                    gap: '6px',
+                    alignItems: 'center',
+                    padding: '8px 12px',
+                    borderRadius: '6px',
+                    background: 'rgba(15, 23, 42, 0.4)',
+                    border: '1px solid rgba(6, 182, 212, 0.1)'
+                  }}
+                >
+                  <Badge variant="outline" className="justify-center text-xs h-6 w-full" style={{ borderColor: '#06b6d4', color: '#06b6d4' }}>{main.question_id}</Badge>
+                  <span className="text-right font-medium text-sm truncate" style={{ color: '#f8fafc' }}>{main.question_text}</span>
+                  <div className="flex items-center gap-2">{renderReadOnlySelect(main, mainOriginalValue)}</div>
+
+                  {sortedSubs.map(sub => {
+                    const subOriginalValue = participantPredictions[sub.id] || '';
+                    return (
+                      <React.Fragment key={sub.id}>
+                        <Badge variant="outline" className="justify-center text-xs h-6 w-full" style={{ borderColor: '#06b6d4', color: '#06b6d4' }}>{sub.question_id}</Badge>
+                        <span className="text-right font-medium text-sm truncate" style={{ color: '#f8fafc' }}>{sub.question_text}</span>
+                        <div className="flex items-center gap-2">{renderReadOnlySelect(sub, subOriginalValue)}</div>
+                      </React.Fragment>
+                    );
+                  })}
                 </div>
               );
             })}
           </div>
 
           {isLocationTable && selectedParticipant && (
-            <>
-              <div className="mt-4 grid grid-cols-2 gap-3">
+            <div className="mt-4 grid grid-cols-2 gap-3">
+              <div className={`p-3 rounded-lg border ${
+                bonusInfo?.allCorrect 
+                  ? 'bg-gradient-to-r from-green-900/40 to-emerald-900/40 border-green-600/50' 
+                  : bonusInfo !== null
+                    ? 'bg-gradient-to-r from-red-900/40 to-red-800/40 border-red-600/50'
+                    : 'bg-gradient-to-r from-slate-800/40 to-slate-700/40 border-slate-600/50'
+              }`}>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Trophy className={`w-5 h-5 ${bonusInfo?.allCorrect ? 'text-green-400' : bonusInfo !== null ? 'text-red-400' : 'text-slate-400'}`} />
+                    <div>
+                      <p className={`font-bold text-sm ${bonusInfo?.allCorrect ? 'text-green-200' : bonusInfo !== null ? 'text-red-200' : 'text-slate-300'}`}>
+                        {bonusInfo?.allCorrect ? '✅' : bonusInfo !== null ? '❌' : '⏳'} בונוס עולות
+                      </p>
+                      <p className={`text-xs ${bonusInfo?.allCorrect ? 'text-green-300' : bonusInfo !== null ? 'text-red-300' : 'text-slate-400'}`}>
+                        {bonusInfo?.allCorrect 
+                          ? 'כל הקבוצות נכונות!' 
+                          : bonusInfo !== null
+                            ? 'לא כל הקבוצות'
+                            : 'ממתין לתוצאות...'}
+                      </p>
+                    </div>
+                  </div>
+                  <Badge className={`text-lg font-bold px-3 py-1 ${
+                    bonusInfo?.allCorrect 
+                      ? 'bg-green-600 text-white' 
+                      : bonusInfo !== null
+                        ? 'bg-red-600 text-white'
+                        : 'bg-slate-600 text-slate-300'
+                  }`}>
+                    {bonusInfo?.allCorrect ? `+${bonusInfo.teamsBonus}` : bonusInfo !== null ? '0' : '?'}/{teamsBonusPotential}
+                  </Badge>
+                </div>
+              </div>
+
+              {table.id !== 'T19' && (
                 <div className={`p-3 rounded-lg border ${
-                  bonusInfo?.allCorrect 
-                    ? 'bg-gradient-to-r from-green-900/40 to-emerald-900/40 border-green-600/50' 
-                    : bonusInfo !== null
+                  bonusInfo?.perfectOrder 
+                    ? 'bg-gradient-to-r from-yellow-900/40 to-orange-900/40 border-yellow-600/50' 
+                    : bonusInfo?.allCorrect && !bonusInfo?.perfectOrder
                       ? 'bg-gradient-to-r from-red-900/40 to-red-800/40 border-red-600/50'
-                      : 'bg-gradient-to-r from-slate-800/40 to-slate-700/40 border-slate-600/50'
+                      : bonusInfo !== null
+                        ? 'bg-gradient-to-r from-red-900/40 to-red-800/40 border-red-600/50'
+                        : 'bg-gradient-to-r from-slate-800/40 to-slate-700/40 border-slate-600/50'
                 }`}>
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <Trophy className={`w-5 h-5 ${bonusInfo?.allCorrect ? 'text-green-400' : bonusInfo !== null ? 'text-red-400' : 'text-slate-400'}`} />
+                      <Trophy className={`w-5 h-5 ${bonusInfo?.perfectOrder ? 'text-yellow-400' : bonusInfo !== null ? 'text-red-400' : 'text-slate-400'}`} />
                       <div>
-                        <p className={`font-bold text-sm ${bonusInfo?.allCorrect ? 'text-green-200' : bonusInfo !== null ? 'text-red-200' : 'text-slate-300'}`}>
-                          {bonusInfo?.allCorrect ? '✅' : bonusInfo !== null ? '❌' : '⏳'} בונוס עולות
+                        <p className={`font-bold text-sm ${bonusInfo?.perfectOrder ? 'text-yellow-200' : bonusInfo !== null ? 'text-red-200' : 'text-slate-300'}`}>
+                          {bonusInfo?.perfectOrder ? '✨' : bonusInfo !== null ? '❌' : '⏳'} בונוס מיקום
                         </p>
-                        <p className={`text-xs ${bonusInfo?.allCorrect ? 'text-green-300' : bonusInfo !== null ? 'text-red-300' : 'text-slate-400'}`}>
-                          {bonusInfo?.allCorrect 
-                            ? 'כל הקבוצות נכונות!' 
-                            : bonusInfo !== null
-                              ? 'לא כל הקבוצות'
-                              : 'ממתין לתוצאות...'}
+                        <p className={`text-xs ${bonusInfo?.perfectOrder ? 'text-yellow-300' : bonusInfo !== null ? 'text-red-300' : 'text-slate-400'}`}>
+                          {bonusInfo?.perfectOrder 
+                            ? 'סדר מושלם!' 
+                            : bonusInfo?.allCorrect
+                              ? 'לא בסדר המדויק'
+                              : bonusInfo !== null
+                                ? 'לא כל הקבוצות'
+                                : 'ממתין לתוצאות...'}
                         </p>
                       </div>
                     </div>
                     <Badge className={`text-lg font-bold px-3 py-1 ${
-                      bonusInfo?.allCorrect 
-                        ? 'bg-green-600 text-white' 
+                      bonusInfo?.perfectOrder 
+                        ? 'bg-yellow-600 text-white' 
                         : bonusInfo !== null
                           ? 'bg-red-600 text-white'
                           : 'bg-slate-600 text-slate-300'
                     }`}>
-                      {bonusInfo?.allCorrect ? `+${bonusInfo.teamsBonus}` : bonusInfo !== null ? '0' : '?'}/{teamsBonusPotential}
+                      {bonusInfo?.perfectOrder ? `+${bonusInfo.orderBonus}` : bonusInfo !== null ? '0' : '?'}/{orderBonusPotential}
                     </Badge>
                   </div>
                 </div>
-
-                {table.id !== 'T19' && (
-                  <div className={`p-3 rounded-lg border ${
-                    bonusInfo?.perfectOrder 
-                      ? 'bg-gradient-to-r from-yellow-900/40 to-orange-900/40 border-yellow-600/50' 
-                      : bonusInfo?.allCorrect && !bonusInfo?.perfectOrder
-                        ? 'bg-gradient-to-r from-red-900/40 to-red-800/40 border-red-600/50'
-                        : bonusInfo !== null
-                          ? 'bg-gradient-to-r from-red-900/40 to-red-800/40 border-red-600/50'
-                          : 'bg-gradient-to-r from-slate-800/40 to-slate-700/40 border-slate-600/50'
-                  }`}>
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <Trophy className={`w-5 h-5 ${bonusInfo?.perfectOrder ? 'text-yellow-400' : bonusInfo !== null ? 'text-red-400' : 'text-slate-400'}`} />
-                        <div>
-                          <p className={`font-bold text-sm ${bonusInfo?.perfectOrder ? 'text-yellow-200' : bonusInfo !== null ? 'text-red-200' : 'text-slate-300'}`}>
-                            {bonusInfo?.perfectOrder ? '✨' : bonusInfo !== null ? '❌' : '⏳'} בונוס מיקום
-                          </p>
-                          <p className={`text-xs ${bonusInfo?.perfectOrder ? 'text-yellow-300' : bonusInfo !== null ? 'text-red-300' : 'text-slate-400'}`}>
-                            {bonusInfo?.perfectOrder 
-                              ? 'סדר מושלם!' 
-                              : bonusInfo?.allCorrect
-                                ? 'לא בסדר המדויק'
-                                : bonusInfo !== null
-                                  ? 'לא כל הקבוצות'
-                                  : 'ממתין לתוצאות...'}
-                          </p>
-                        </div>
-                      </div>
-                      <Badge className={`text-lg font-bold px-3 py-1 ${
-                        bonusInfo?.perfectOrder 
-                          ? 'bg-yellow-600 text-white' 
-                          : bonusInfo !== null
-                            ? 'bg-red-600 text-white'
-                            : 'bg-slate-600 text-slate-300'
-                      }`}>
-                        {bonusInfo?.perfectOrder ? `+${bonusInfo.orderBonus}` : bonusInfo !== null ? '0' : '?'}/{orderBonusPotential}
-                      </Badge>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* 🔥 סה"כ ניקוד לטבלה */}
-              <div className="mt-3 p-4 rounded-lg border-2" style={{
-                background: 'linear-gradient(135deg, rgba(6, 182, 212, 0.2) 0%, rgba(14, 165, 233, 0.2) 100%)',
-                borderColor: '#06b6d4'
-              }}>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Award className="w-6 h-6" style={{ color: '#06b6d4' }} />
-                    <p className="font-bold text-lg" style={{ color: '#06b6d4' }}>
-                      סה"כ ניקוד טבלה
-                    </p>
-                  </div>
-                  <Badge className="text-2xl font-bold px-4 py-2" style={{
-                    background: 'linear-gradient(135deg, #06b6d4 0%, #0ea5e9 100%)',
-                    color: 'white',
-                    boxShadow: '0 0 20px rgba(6, 182, 212, 0.4)'
-                  }}>
-                    {bonusInfo !== null 
-                      ? (bonusInfo.basicScore || 0) + (bonusInfo.teamsBonus || 0) + (bonusInfo.orderBonus || 0)
-                      : '?'}
-                  </Badge>
-                </div>
-                {bonusInfo !== null && (
-                  <div className="mt-2 text-xs flex gap-3" style={{ color: '#94a3b8' }}>
-                    <span>בסיסי: {bonusInfo.basicScore || 0}</span>
-                    <span>עולות: {bonusInfo.teamsBonus || 0}</span>
-                    {table.id !== 'T19' && <span>מיקום: {bonusInfo.orderBonus || 0}</span>}
-                  </div>
-                )}
-              </div>
-            </>
+              )}
+            </div>
           )}
         </CardContent>
       </Card>
@@ -1334,10 +1479,15 @@ export default function ViewSubmissions() {
   const allButtons = [];
 
   if (roundTables.length > 0) {
+    // בדוק אם כל הטבלאות הן בתים
+    const allAreGroups = roundTables.every(table => 
+      table.id.includes('בית') || table.description?.includes('בית')
+    );
+    
     const firstRoundTableId = roundTables[0]?.id || 'T2'; 
-    const description = 'מחזורי המשחקים';
+    const description = allAreGroups ? 'שלב הבתים' : 'מחזורי המשחקים';
     allButtons.push({
-      numericId: parseInt(firstRoundTableId.replace('T', ''), 10),
+      numericId: parseInt(firstRoundTableId.replace('T', '').replace(/\D/g, ''), 10),
       key: 'rounds',
       description: description,
       sectionKey: 'rounds',
@@ -1348,7 +1498,7 @@ export default function ViewSubmissions() {
   specialTables.forEach(table => {
     const description = table.description;
     allButtons.push({
-      numericId: parseInt(table.id.replace('T', ''), 10),
+      numericId: table.questions[0]?.stage_order || parseInt(table.id.replace('T', '').replace(/\D/g, ''), 10),
       key: table.id,
       description: description,
       sectionKey: table.id,
@@ -1368,6 +1518,17 @@ export default function ViewSubmissions() {
     });
   }
 
+  if (israeliTable) {
+    const description = israeliTable.description;
+    allButtons.push({
+      numericId: parseInt(israeliTable.id.replace('T', ''), 10),
+      key: israeliTable.id,
+      description: description,
+      sectionKey: 'israeli',
+      isLongText: description.length > TEXT_LENGTH_THRESHOLD
+    });
+  }
+
   // 🆕 כפתור נפרד ל-T19
   if (playoffWinnersTable) {
     const description = playoffWinnersTable.description;
@@ -1380,18 +1541,13 @@ export default function ViewSubmissions() {
     });
   }
 
-  if (israeliTable) {
-    const description = israeliTable.description;
-    allButtons.push({
-      numericId: parseInt(israeliTable.id.replace('T', ''), 10),
-      key: israeliTable.id,
-      description: description,
-      sectionKey: 'israeli',
-      isLongText: description.length > TEXT_LENGTH_THRESHOLD
-    });
-  }
+  // Sort by numericId - this ensures correct order (rounds first, then by table number)
+  allButtons.sort((a, b) => {
+    if (a.sectionKey === 'rounds' && b.sectionKey !== 'rounds') return -1;
+    if (b.sectionKey === 'rounds' && a.sectionKey !== 'rounds') return 1;
 
-  allButtons.sort((a, b) => a.numericId - b.numericId);
+    return a.numericId - b.numericId;
+  });
 
   return (
     <div className="min-h-screen" dir="rtl" style={{ 
@@ -1401,19 +1557,19 @@ export default function ViewSubmissions() {
         background: 'rgba(15, 23, 42, 0.95)',
         borderBottom: '1px solid rgba(6, 182, 212, 0.2)'
       }}>
-        <div className="p-6 max-w-7xl mx-auto">
-          <div className="flex justify-between items-start mb-4">
+        <div className="p-3 md:p-6 max-w-7xl mx-auto">
+          <div className="flex flex-col md:flex-row justify-between items-start gap-2 md:gap-0 mb-3 md:mb-4">
             <div>
-              <h1 className="text-3xl font-bold mb-2 flex items-center gap-3" style={{ 
+              <h1 className="text-xl md:text-3xl font-bold mb-1 md:mb-2 flex items-center gap-2 md:gap-3" style={{ 
                 color: '#f8fafc',
                 textShadow: '0 0 10px rgba(6, 182, 212, 0.3)'
               }}>
-                <Users className="w-8 h-8" style={{ color: '#06b6d4' }} />
+                <Users className="w-5 h-5 md:w-8 md:h-8" style={{ color: '#06b6d4' }} />
                 צפייה בניחושים
               </h1>
-              <p style={{ color: '#94a3b8' }}>בחר משתתף כדי לראות את הניחושים שלו.</p>
+              <p className="text-xs md:text-base" style={{ color: '#94a3b8' }}>בחר משתתף כדי לראות את הניחושים שלו.</p>
             </div>
-            <div className="flex gap-3">
+            <div className="flex gap-1.5 md:gap-3 flex-wrap w-full md:w-auto">
               {isAdmin && selectedParticipant && !loadingPredictions && (
                 <>
                   {!isEditMode ? (
@@ -1475,22 +1631,47 @@ export default function ViewSubmissions() {
                 </>
               )}
               {isAdmin && (
-                <Button
-                  onClick={() => {
-                    loadParticipantStats();
-                    setShowDeleteDialog(true);
-                  }}
-                  variant="outline"
-                  style={{ 
-                    borderColor: 'rgba(239, 68, 68, 0.5)',
-                    color: '#fca5a5',
-                    background: 'rgba(30, 41, 59, 0.4)'
-                  }}
-                  className="hover:bg-red-500/20"
-                >
-                  <Trash2 className="w-4 h-4 ml-2" />
-                  ניהול משתתפים
-                </Button>
+                <>
+                  <Button
+                    onClick={handleExportData}
+                    disabled={exporting}
+                    variant="outline"
+                    style={{ 
+                      borderColor: 'rgba(34, 197, 94, 0.5)',
+                      color: '#86efac',
+                      background: 'rgba(30, 41, 59, 0.4)'
+                    }}
+                    className="hover:bg-green-500/20"
+                  >
+                    {exporting ? (
+                      <>
+                        <Loader2 className="w-4 h-4 ml-2 animate-spin" />
+                        מייצא...
+                      </>
+                    ) : (
+                      <>
+                        <Download className="w-4 h-4 ml-2" />
+                        ייצוא לקובץ
+                      </>
+                    )}
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      loadParticipantStats();
+                      setShowDeleteDialog(true);
+                    }}
+                    variant="outline"
+                    style={{ 
+                      borderColor: 'rgba(239, 68, 68, 0.5)',
+                      color: '#fca5a5',
+                      background: 'rgba(30, 41, 59, 0.4)'
+                    }}
+                    className="hover:bg-red-500/20"
+                  >
+                    <Trash2 className="w-4 h-4 ml-2" />
+                    ניהול משתתפים
+                  </Button>
+                </>
               )}
             </div>
           </div>
@@ -1540,7 +1721,7 @@ export default function ViewSubmissions() {
               </CardContent>
             </Card>
 
-            {selectedParticipant && participantQuestions.length > 0 && (
+            {selectedParticipant && (
               <Card style={{
                 background: 'rgba(30, 41, 59, 0.6)',
                 border: '1px solid rgba(6, 182, 212, 0.2)',
@@ -1549,21 +1730,11 @@ export default function ViewSubmissions() {
                 <CardHeader className="py-2">
                   <CardTitle className="text-sm flex items-center justify-between" style={{ color: '#06b6d4' }}>
                     <span>פרטי המשתתף</span>
-                    {participantScore !== null && (
-                      <Badge className="text-white text-sm px-3 py-1 flex items-center gap-1" style={{ 
-                        background: 'linear-gradient(135deg, #06b6d4 0%, #0ea5e9 100%)',
-                        boxShadow: '0 0 10px rgba(6, 182, 212, 0.4)'
-                      }}>
-                        <Award className="w-4 h-4" />
-                        {participantScore} נקודות
-                      </Badge>
-                    )}
-                    {participantScore === null && (
-                      <span className="text-xs text-yellow-400">⚠️ לא חושב ניקוד</span>
-                    )}
+                    <ParticipantTotalScore participantName={selectedParticipant} gameId={currentGame?.id} />
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="p-3">
+                  {participantQuestions.length > 0 ? (
                   <div className="grid grid-cols-3 gap-2">
                     {participantQuestions.map(q => {
                       const isNameField = q.question_text?.includes("שם");
@@ -1584,6 +1755,7 @@ export default function ViewSubmissions() {
                       );
                     })}
                   </div>
+                  ) : null}
                 </CardContent>
               </Card>
             )}
@@ -1605,28 +1777,28 @@ export default function ViewSubmissions() {
                <CardHeader className="py-2">
                   <CardTitle className="text-sm" style={{ color: '#06b6d4' }}>בחירת שלב לצפייה</CardTitle>
                </CardHeader>
-               <CardContent className="grid grid-cols-2 md:grid-cols-4 gap-3 p-3">
+               <CardContent className="grid grid-cols-2 md:grid-cols-4 gap-1.5 md:gap-3 p-2 md:p-3">
                   {allButtons.map(button => (
                       <Button 
                         key={button.key} 
                         onClick={() => toggleSection(button.sectionKey)} 
                         variant={openSections[button.sectionKey] ? "default" : "outline"} 
-                        className={`h-20 p-2 flex-col gap-2 whitespace-normal ${
+                        className={`h-12 md:h-20 p-1 md:p-2 flex-col gap-1 md:gap-2 whitespace-normal ${
                           openSections[button.sectionKey] 
                             ? 'bg-cyan-600 hover:bg-cyan-700 text-white' 
                             : 'bg-slate-700/50 hover:bg-cyan-600/20 border-cyan-400 text-cyan-200'
                         }`}
                       >
                           <span 
-                            className="font-medium"
+                            className="font-medium text-center leading-tight"
                             style={{
-                              fontSize: button.isLongText ? '0.65rem' : '0.9rem',
-                              lineHeight: button.isLongText ? '0.9rem' : '1.25rem'
+                              fontSize: button.isLongText ? '0.5rem' : '0.6rem',
+                              lineHeight: button.isLongText ? '0.65rem' : '0.8rem'
                             }}
                           >
                             {button.description}
                           </span>
-                          {openSections[button.sectionKey] ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                          {openSections[button.sectionKey] ? <ChevronUp className="w-2 h-2 md:w-3 md:h-3" /> : <ChevronDown className="w-2 h-2 md:w-3 md:h-3" />}
                       </Button>
                   ))}
                </CardContent>
@@ -1648,7 +1820,7 @@ export default function ViewSubmissions() {
         </div>
       </div>
 
-      <div className="p-6 max-w-7xl mx-auto">
+      <div className="p-3 md:p-6 max-w-7xl mx-auto">
         {selectedParticipant && !loadingPredictions ? (
           <>
             {allButtons.map(button => {
@@ -1674,7 +1846,6 @@ export default function ViewSubmissions() {
                             roundTables={roundTables}
                             teams={data.teams}
                             data={getCombinedPredictionsMap()} // Pass combined predictions
-                            questions={data.questions} // Pass all questions to the StandingsTable
                             type="predictions"
                           />
                         </div>
@@ -1720,64 +1891,159 @@ export default function ViewSubmissions() {
       </div>
 
       {isAdmin && (
-        <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
-          <DialogContent className="max-w-2xl" dir="rtl" style={{
-            background: '#1e293b',
-            border: '1px solid rgba(6, 182, 212, 0.3)'
-          }}>
-            <DialogHeader>
-              <DialogTitle className="2xl font-bold flex items-center gap-2" style={{ color: '#f8fafc' }}>
-                <AlertTriangle className="w-6 h-6" style={{ color: '#ef4444' }} />
-                ניהול משתתפים
-              </DialogTitle>
-              <DialogDescription className="text-slate-300">
-                לחץ על כפתור המחיקה כדי למחוק את כל הניחושים של משתתף.
-                <strong className="text-red-300"> פעולה זו אינה הפיכה!</strong>
-              </DialogDescription>
-            </DialogHeader>
-            
-            <div className="max-h-[60vh] overflow-y-auto">
-              {participantStats.length === 0 ? (
-                <div className="text-center py-8 flex flex-col items-center justify-center">
-                  <Loader2 className="w-8 h-8 animate-spin mb-2" style={{ color: '#94a3b8' }} />
-                  <span style={{ color: '#94a3b8' }}>טוען נתונים...</span>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {participantStats.map(stat => (
-                    <div key={stat.name} className="flex items-center justify-between p-3 rounded-lg border hover:bg-slate-700/50" style={{
-                      background: 'rgba(15, 23, 42, 0.6)',
-                      border: '1px solid rgba(6, 182, 212, 0.2)'
-                    }}>
-                      <div>
-                        <p className="font-medium" style={{ color: '#f8fafc' }}>{stat.name}</p>
-                        <p className="text-sm" style={{ color: '#94a3b8' }}>{stat.predictionsCount} ניחושים</p>
+        <>
+          <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+            <DialogContent className="max-w-2xl" dir="rtl" style={{
+              background: '#1e293b',
+              border: '1px solid rgba(6, 182, 212, 0.3)'
+            }}>
+              <DialogHeader>
+                <DialogTitle className="2xl font-bold flex items-center gap-2" style={{ color: '#f8fafc' }}>
+                  <AlertTriangle className="w-6 h-6" style={{ color: '#ef4444' }} />
+                  ניהול משתתפים
+                </DialogTitle>
+                <DialogDescription className="text-slate-300">
+                  לחץ על כפתור המחיקה כדי למחוק את כל הניחושים של משתתף.
+                  <strong className="text-red-300"> פעולה זו אינה הפיכה!</strong>
+                </DialogDescription>
+              </DialogHeader>
+              
+              <div className="max-h-[60vh] overflow-y-auto">
+                {participantStats.length === 0 ? (
+                  <div className="text-center py-8 flex flex-col items-center justify-center">
+                    <Loader2 className="w-8 h-8 animate-spin mb-2" style={{ color: '#94a3b8' }} />
+                    <span style={{ color: '#94a3b8' }}>טוען נתונים...</span>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {participantStats.map(stat => (
+                      <div key={stat.name} className="flex items-center justify-between p-3 rounded-lg border hover:bg-slate-700/50" style={{
+                        background: 'rgba(15, 23, 42, 0.6)',
+                        border: '1px solid rgba(6, 182, 212, 0.2)'
+                      }}>
+                        <div>
+                          <p className="font-medium" style={{ color: '#f8fafc' }}>{stat.name}</p>
+                          <p className="text-sm" style={{ color: '#94a3b8' }}>{stat.predictionsCount} ניחושים</p>
+                        </div>
+                        <Button
+                          onClick={() => handleDeleteParticipant(stat.name)}
+                          disabled={deletingParticipant === stat.name}
+                          variant="destructive"
+                          size="sm"
+                        >
+                          {deletingParticipant === stat.name ? (
+                            <>
+                              <Loader2 className="w-4 h-4 ml-2" />
+                              מוחק...
+                            </>
+                          ) : (
+                            <>
+                              <Trash2 className="w-4 h-4 ml-2" />
+                              מחק
+                            </>
+                          )}
+                        </Button>
                       </div>
-                      <Button
-                        onClick={() => handleDeleteParticipant(stat.name)}
-                        disabled={deletingParticipant === stat.name}
-                        variant="destructive"
-                        size="sm"
-                      >
-                        {deletingParticipant === stat.name ? (
-                          <>
-                            <Loader2 className="w-4 h-4 ml-2" />
-                            מוחק...
-                          </>
-                        ) : (
-                          <>
-                            <Trash2 className="w-4 h-4 ml-2" />
-                            מחק
-                          </>
-                        )}
-                      </Button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </DialogContent>
+          </Dialog>
+
+          <Dialog open={showMissingReport} onOpenChange={setShowMissingReport}>
+            <DialogContent className="max-w-6xl max-h-[90vh]" dir="rtl" style={{
+              background: '#1e293b',
+              border: '1px solid rgba(6, 182, 212, 0.3)'
+            }}>
+              <DialogHeader>
+                <DialogTitle className="text-2xl font-bold flex items-center gap-2" style={{ color: '#f8fafc' }}>
+                  <AlertTriangle className="w-6 h-6" style={{ color: '#fcd34d' }} />
+                  דוח ניחושים חסרים
+                </DialogTitle>
+                <DialogDescription className="text-slate-300">
+                  שאלות עם ניחושים חסרים, ממוינות לפי סדר השלבים
+                </DialogDescription>
+              </DialogHeader>
+              
+              <div className="overflow-y-auto max-h-[70vh]">
+                {loadingMissing ? (
+                  <div className="text-center py-8 flex flex-col items-center justify-center">
+                    <Loader2 className="w-8 h-8 animate-spin mb-2" style={{ color: '#94a3b8' }} />
+                    <span style={{ color: '#94a3b8' }}>מחשב...</span>
+                  </div>
+                ) : missingPredictions.length === 0 ? (
+                  <div className="text-center py-8" style={{ color: '#10b981' }}>
+                    <CheckCircle className="w-12 h-12 mx-auto mb-3" style={{ color: '#10b981' }} />
+                    <p className="text-lg font-bold">מצוין! כל המשתתפים ענו על כל השאלות!</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="p-3 rounded-lg" style={{
+                      background: 'rgba(251, 191, 36, 0.1)',
+                      border: '1px solid rgba(251, 191, 36, 0.3)'
+                    }}>
+                      <p className="text-sm font-bold" style={{ color: '#fcd34d' }}>
+                        נמצאו {missingPredictions.length} שאלות עם ניחושים חסרים (סה"כ {missingPredictions.reduce((sum, m) => sum + m.missing_count, 0)} ניחושים)
+                      </p>
                     </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </DialogContent>
-        </Dialog>
+                    
+                    <table className="w-full">
+                      <thead style={{ 
+                        position: 'sticky', 
+                        top: 0, 
+                        zIndex: 10,
+                        background: '#1e293b',
+                        borderBottom: '2px solid rgba(6, 182, 212, 0.3)'
+                      }}>
+                        <tr>
+                          <th className="text-center p-2 text-sm" style={{ color: '#94a3b8', width: '80px' }}>טבלה</th>
+                          <th className="text-center p-2 text-sm" style={{ color: '#94a3b8', width: '60px' }}>מס׳</th>
+                          <th className="text-right p-2 text-sm" style={{ color: '#94a3b8' }}>שאלה</th>
+                          <th className="text-center p-2 text-sm" style={{ color: '#94a3b8', width: '80px' }}>חסרים</th>
+                          <th className="text-right p-2 text-sm" style={{ color: '#94a3b8', width: '200px' }}>משתתפים</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {missingPredictions.map((item, idx) => (
+                          <tr key={idx} className="hover:bg-slate-700/50" style={{
+                            borderBottom: '1px solid rgba(6, 182, 212, 0.1)'
+                          }}>
+                            <td className="text-center p-2">
+                              <Badge variant="outline" style={{ borderColor: '#06b6d4', color: '#06b6d4' }}>
+                                {item.table_id}
+                              </Badge>
+                            </td>
+                            <td className="text-center p-2">
+                              <Badge variant="outline" style={{ borderColor: '#0ea5e9', color: '#0ea5e9' }}>
+                                {item.question_id}
+                              </Badge>
+                            </td>
+                            <td className="text-right p-2 text-sm" style={{ color: '#f8fafc' }}>
+                              {item.question_text}
+                            </td>
+                            <td className="text-center p-2">
+                              <Badge className="text-white font-bold" style={{ 
+                                background: '#ef4444',
+                                boxShadow: '0 0 10px rgba(239, 68, 68, 0.4)'
+                              }}>
+                                {item.missing_count}
+                              </Badge>
+                            </td>
+                            <td className="text-right p-2 text-xs" style={{ color: '#94a3b8' }}>
+                              {item.missing_participants.slice(0, 3).join(', ')}
+                              {item.missing_participants.length > 3 && ` ועוד ${item.missing_participants.length - 3}...`}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </DialogContent>
+          </Dialog>
+        </>
       )}
     </div>
   );

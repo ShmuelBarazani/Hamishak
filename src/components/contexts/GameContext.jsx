@@ -2,17 +2,6 @@ import React, { createContext, useState, useContext, useEffect } from 'react';
 import { supabase } from '@/api/supabaseClient';
 import { Game, GameParticipant } from '@/api/entities';
 
-const ADMIN_EMAILS = ["tropikan1@gmail.com"];
-
-const isAdminUser = (user) => {
-  if (!user) return false;
-  return (
-    user.app_metadata?.role === 'admin' ||
-    user.user_metadata?.role === 'admin' ||
-    ADMIN_EMAILS.includes(user.email)
-  );
-};
-
 const GameContext = createContext();
 
 export const useGame = () => {
@@ -29,6 +18,7 @@ export const GameProvider = ({ children }) => {
   const [currentParticipant, setCurrentParticipant] = useState(null);
 
   useEffect(() => {
+    // קבל משתמש נוכחי מ-Supabase
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session?.user) {
         const u = session.user;
@@ -36,8 +26,7 @@ export const GameProvider = ({ children }) => {
           id: u.id,
           email: u.email,
           full_name: u.user_metadata?.full_name || u.email?.split('@')[0],
-          role: isAdminUser(u) ? 'admin' : (u.user_metadata?.role || 'predictor'),
-          app_metadata: u.app_metadata,
+          role: u.user_metadata?.role || 'predictor',
         });
       }
       loadGames(session?.user || null);
@@ -49,8 +38,7 @@ export const GameProvider = ({ children }) => {
         id: u.id,
         email: u.email,
         full_name: u.user_metadata?.full_name || u.email?.split('@')[0],
-        role: isAdminUser(u) ? 'admin' : (u.user_metadata?.role || 'predictor'),
-        app_metadata: u.app_metadata,
+        role: u.user_metadata?.role || 'predictor',
       } : null;
       setCurrentUser(formatted);
       loadGames(u);
@@ -63,17 +51,21 @@ export const GameProvider = ({ children }) => {
     setLoading(true);
     try {
       const allGames = await Game.filter({}, '-created_at', 100);
-      let visibleGames;
 
-      if (isAdminUser(user)) {
+      let visibleGames;
+      if (user?.user_metadata?.role === 'admin') {
         visibleGames = allGames;
+      } else if (user) {
+        const participations = await GameParticipant.filter({ user_email: user.email, is_active: true }, null, 100);
+        const gameIds = participations.map(p => p.game_id);
+        visibleGames = allGames.filter(g => gameIds.includes(g.id) && ['active', 'locked'].includes(g.status));
       } else {
-        // כל משתמש (מחובר או לא) רואה משחקים פעילים
         visibleGames = allGames.filter(g => ['active', 'locked'].includes(g.status));
       }
 
       setGames(visibleGames);
 
+      // בחר משחק נוכחי
       const savedGameId = localStorage.getItem('currentGameId');
       const selected = visibleGames.find(g => g.id === savedGameId) || visibleGames[0] || null;
       setCurrentGame(selected);
@@ -88,24 +80,14 @@ export const GameProvider = ({ children }) => {
     setLoading(false);
   };
 
+  // טען participant כשמשתנה משחק או משתמש
   useEffect(() => {
     if (!currentUser || !currentGame || currentUser.role === 'admin') {
       setCurrentParticipant(null);
       return;
     }
     GameParticipant.filter({ game_id: currentGame.id, user_email: currentUser.email }, null, 1)
-      .then(results => {
-        if (results[0]) {
-          setCurrentParticipant(results[0]);
-        } else {
-          const fullName = currentUser.full_name;
-          if (fullName) {
-            return GameParticipant.filter({ game_id: currentGame.id, participant_name: fullName }, null, 1)
-              .then(r => setCurrentParticipant(r[0] || null));
-          }
-          setCurrentParticipant(null);
-        }
-      })
+      .then(results => setCurrentParticipant(results[0] || null))
       .catch(() => setCurrentParticipant(null));
   }, [currentUser, currentGame]);
 
@@ -119,22 +101,8 @@ export const GameProvider = ({ children }) => {
     await loadGames(session?.user || null);
   };
 
-  const linkParticipant = async (participantId) => {
-    if (!currentUser || !currentGame) return;
-    try {
-      await GameParticipant.update(participantId, { user_email: currentUser.email });
-      const updated = await GameParticipant.filter({ game_id: currentGame.id, user_email: currentUser.email }, null, 1);
-      setCurrentParticipant(updated[0] || null);
-    } catch (err) {
-      console.error('שגיאה בחיבור משתתף:', err);
-    }
-  };
-
   return (
-    <GameContext.Provider value={{ 
-      currentGame, games, loading, selectGame, refreshGames, 
-      currentUser, currentParticipant, linkParticipant
-    }}>
+    <GameContext.Provider value={{ currentGame, games, loading, selectGame, refreshGames, currentUser, currentParticipant }}>
       {children}
     </GameContext.Provider>
   );

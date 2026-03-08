@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -9,13 +8,13 @@ import { Input } from "@/components/ui/input";
 
 
 import { useToast } from "@/components/ui/use-toast";
-import { Question } from "@/entities/Question";
-import { Prediction } from "@/entities/Prediction";
-import { ValidationList } from "@/entities/ValidationList";
-import { Team } from "@/entities/Team";
-import { Database, Users, FileQuestion, Trophy, List, Table, Loader2, BarChart3, Shield, RefreshCw, CheckCircle, Trash2, AlertTriangle, Edit, GripVertical, UploadIcon } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { supabase } from '@/api/supabaseClient';
+import * as db from '@/api/entities';
+import { Database, Users, FileQuestion, Trophy, List, Table, Loader2, BarChart3, Shield, RefreshCw, CheckCircle, Trash2, AlertTriangle, Edit, GripVertical, UploadIcon, Plus, Upload } from "lucide-react";
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import UploadFilesDialog from "@/components/system/UploadFilesDialog";
+import { useGame } from '@/components/contexts/GameContext'; // New import
 
 export default function SystemOverview() {
   const [loading, setLoading] = useState(true);
@@ -29,6 +28,8 @@ export default function SystemOverview() {
     totalTables: 0,
     tableBreakdown: {},
     participantBreakdown: {},
+    missingPredictionsReport: [],
+    allParticipants: [],
   });
   const [locationDuplicates, setLocationDuplicates] = useState([]);
   const [lastUpdated, setLastUpdated] = useState(null);
@@ -36,18 +37,25 @@ export default function SystemOverview() {
   // States for dialogs
   const [showValidationListsDialog, setShowValidationListsDialog] = useState(false);
   const [showTeamsDialog, setShowTeamsDialog] = useState(false);
-  const [showUploadDialog, setShowUploadDialog] = useState(false); // New state for upload dialog
+  const [showUploadDialog, setShowUploadDialog] = useState(false);
+  const [showUploadMissingDialog, setShowUploadMissingDialog] = useState(false);
+  const [uploadingMissing, setUploadingMissing] = useState(false);
   const [validationLists, setValidationLists] = useState([]);
   const [teams, setTeams] = useState([]);
   const [questions, setQuestions] = useState([]);
+  const [games, setGames] = useState([]); // This will now hold just the current game
 
   // States for editing validation lists
   const [editingListId, setEditingListId] = useState(null);
   const [editedOptions, setEditedOptions] = useState([]);
   const [newOption, setNewOption] = useState("");
+  const [editingOptionIndex, setEditingOptionIndex] = useState(null);
+  const [editingOptionValue, setEditingOptionValue] = useState("");
   
-  // 🔥 הסרנו את state של fixingKarabakh
-  // 🔥 הסרנו את state של karabakhReport (היה קיים כאן ולא בקו 35)
+  // States for creating new validation list
+  const [showCreateListDialog, setShowCreateListDialog] = useState(false);
+  const [newListName, setNewListName] = useState("");
+  const [newListOptions, setNewListOptions] = useState([""]);
 
   const [refreshing, setRefreshing] = useState({
     fullData: false,
@@ -55,11 +63,15 @@ export default function SystemOverview() {
   });
 
   const { toast } = useToast();
+  const navigate = useNavigate();
+  
+  // 🎯 חיבור ל-GameContext
+  const { currentGame } = useGame();
 
   useEffect(() => {
     const loadUser = async () => {
       try {
-        const user = await User.me();
+        const user = await supabase.auth.getUser().then(r => r.data.user);
         setCurrentUser(user);
       } catch (error) {
         console.error("Error loading current user:", error);
@@ -71,21 +83,22 @@ export default function SystemOverview() {
 
   const clearCache = async () => {
     try {
-      const cachedData = await SystemCache.filter({ cache_key: "system_overview_full_data" }, null, 1);
-      const userCacheData = await SystemCache.filter({ cache_key: "user_stats_cache" }, null, 1);
+      // The system_overview_full_data cache is no longer used as data is loaded per game.
+      // const cachedData = await SystemCache.filter({ cache_key: "system_overview_full_data" }, null, 1);
+      const userCacheData = await db.SystemSettings.filter({ cache_key: "user_stats_cache" }, null, 1);
       
       let cacheCleared = false;
-      if (cachedData.length > 0) {
-        await SystemCache.delete(cachedData[0].id);
-        cacheCleared = true;
-      }
+      // if (cachedData.length > 0) {
+      //   await SystemCache.delete(cachedData[0].id);
+      //   cacheCleared = true;
+      // }
       if (userCacheData.length > 0) {
-        await SystemCache.delete(userCacheData[0].id);
+        await db.SystemSettings.delete(userCacheData[0].id);
         cacheCleared = true;
       }
 
       if (cacheCleared) {
-        console.log('🗑️ מטמון נמחק');
+        console.log('🗑️ מטמון משתמשים נמחק'); // Adjusted message
         setStats({
           totalQuestions: 0,
           totalParticipants: 0,
@@ -101,20 +114,20 @@ export default function SystemOverview() {
         setValidationLists([]);
         setTeams([]);
         setQuestions([]);
+        setGames([]); 
         setEditingListId(null);
         setEditedOptions([]);
         setNewOption("");
-        // 🔥 הסרנו את הקריאה ל- setKarabakhReport(null)
 
         toast({
-          title: "מטמון נמחק",
-          description: "לחץ על 'רענן נתונים' כדי לטעון מחדש את כל הנתונים מהשרת",
+          title: "מטמון משתמשים נמחק", // Adjusted message
+          description: "לחץ על 'רענן מטמון משתמשים' כדי לטעון מחדש. נתוני המשחק נטענים אוטומטית בהתאם למשחק הנבחר.", // Adjusted description
           className: "bg-blue-100 text-blue-800"
         });
       } else {
         toast({
           title: "אין מטמון למחיקה",
-          description: "לא נמצא מטמון פעיל למחיקה.",
+          description: "לא נמצא מטמון משתמשים פעיל למחיקה.", // Adjusted description
           className: "bg-gray-100 text-gray-800"
         });
       }
@@ -129,347 +142,78 @@ export default function SystemOverview() {
   };
 
   const loadSystemStats = useCallback(async () => {
+    // 🎯 אם אין משחק נבחר, לא טוענים כלום
+    if (!currentGame) {
+      toast({
+        title: "נא בחר משחק",
+        description: "יש לבחור משחק פעיל כדי לטעון את הסטטיסטיקות שלו.",
+        variant: "default"
+      });
+      return;
+    }
+
     setLoading(true);
     setRefreshing(prev => ({ ...prev, fullData: true }));
 
     try {
-      console.log('📦 מחפש מטמון מלא...');
-      const cachedData = await SystemCache.filter({ cache_key: "system_overview_full_data" }, null, 1);
+      console.log(`📦 טוען נתונים עבור המשחק: ${currentGame.game_name} (ID: ${currentGame.id})`);
 
-      if (cachedData.length > 0) {
-        const cache = cachedData[0];
-        console.log('✅ נמצא מטמון מלא!');
+      // Toast removed - loading is fast now
 
-        const fullData = cache.cache_data;
+      // 🎯 טען שאלות ספציפית למשחק הנוכחי
+      console.log('📥 טוען שאלות למשחק...');
+      const questionsForGame = await db.Question.filter({ game_id: currentGame.id }, null, 10000);
+      setQuestions(questionsForGame);
+      console.log(`✅ ${questionsForGame.length} שאלות למשחק זה`);
 
-        const questions = fullData.questions || [];
-        const allPredictions = fullData.predictions || [];
-        const teams = fullData.teams || [];
-        const validationLists = fullData.validationLists || [];
-
-        // Set state variables from cached data for dialogs
-        setQuestions(questions);
-        setTeams(teams);
-        setValidationLists(validationLists);
-
-        console.log(`📊 מהמטמון: ${questions.length} שאלות, ${allPredictions.length} ניחושים`);
-
-        const uniqueParticipants = new Set(allPredictions.map(p => p.participant_name?.trim()).filter(Boolean));
-
-        const tableBreakdown = {};
-        questions.forEach(q => {
-          if (!q.table_id) return;
-
-          let description = q.table_text || q.table_id; // Using table_text first, then table_id
-          // Special descriptions for specific tables (can be removed if table_text covers it)
-          if (q.table_id === 'T12') {
-            description = 'שלב הליגה - פינת הגאווה הישראלית - 7 בוםםםםםםםםם !!!';
-          } else if (q.table_id === 'T13') {
-            description = 'שלב ראש בראש - "מבול מטאורים של כוכבים (*)"';
-          }
-
-          if (!tableBreakdown[q.table_id]) {
-            tableBreakdown[q.table_id] = {
-              description: description,
-              questionCount: 0,
-              predictionCount: 0
-            };
-          }
-          tableBreakdown[q.table_id].questionCount++;
-        });
-
-        const questionIdToTableMap = new Map();
-        questions.forEach(q => {
-          questionIdToTableMap.set(q.id, q.table_id);
-        });
-
-        allPredictions.forEach(p => {
-          const tableId = questionIdToTableMap.get(p.question_id);
-          if (tableId && tableBreakdown[tableId]) {
-            tableBreakdown[tableId].predictionCount++;
-          }
-        });
-
-        const participantBreakdown = {};
-        allPredictions.forEach(p => {
-          const participantName = p.participant_name?.trim();
-          if (participantName) {
-            if (!participantBreakdown[participantName]) {
-              participantBreakdown[participantName] = 0;
-            }
-            participantBreakdown[participantName]++;
-          }
-        });
-
-        // 🔥 בדיקת כפילויות - הפרדה בין T14-T17 לבין T19
-        const extractTeamName = (fullName) => {
-          if (!fullName) return '';
-          const match = fullName.match(/^([^(]+)/);
-          return match ? match[1].trim() : fullName.trim();
-        };
-
-        // 🔥 פונקציה לנורמליזציה של שמות קבוצות
-        const normalizeTeamName = (name) => {
-          if (!name) return '';
-          return name
-            .replace(/קרבאך/g, 'קרבאח')
-            .replace(/קראבח/g, 'קרבאח')
-            .replace(/קראבך/g, 'קרבאח')
-            .trim();
-        };
-
-        const allPossibleTeams = new Set();
-        validationLists.forEach(vl => {
-          if (vl.list_name?.toLowerCase().includes('קבוצ') && !vl.list_name?.toLowerCase().includes('מוקדמות')) {
-            if (vl.options) {
-              vl.options.forEach(team => {
-                const teamName = extractTeamName(String(team));
-                if (teamName) {
-                  // 🔥 נרמל את השם לפני הוספה
-                  const normalized = normalizeTeamName(teamName);
-                  allPossibleTeams.add(normalized);
-                }
-              });
-            }
-          }
-        });
-
-        console.log(`\n📊 סה"כ ${allPossibleTeams.size} קבוצות אפשריות`);
-        // console.log(`דוגמאות: ${Array.from(allPossibleTeams).slice(0, 5).join(', ')}`); // Removed for brevity
-
-        const duplicatesReport = [];
-        
-        // 🔥 טבלאות מיקומים T14-T17 (36 קבוצות)
-        const mainLocationTableIds = ['T14', 'T15', 'T16', 'T17'];
-        const mainLocationQuestions = questions.filter(q => mainLocationTableIds.includes(q.table_id));
-        const mainLocationQuestionIds = new Set(mainLocationQuestions.map(q => q.id));
-        
-        // 🔥 טבלת פלייאוף T19 (8 קבוצות)
-        const playoffTableIds = ['T19'];
-        const playoffQuestions = questions.filter(q => playoffTableIds.includes(q.table_id));
-        const playoffQuestionIds = new Set(playoffQuestions.map(q => q.id));
-
-        const uniqueParticipantsInLocationTables = new Set(
-          allPredictions
-            .filter(p => mainLocationQuestionIds.has(p.question_id) || playoffQuestionIds.has(p.question_id))
-            .map(p => p.participant_name?.trim())
-            .filter(Boolean)
-        );
-
-        uniqueParticipantsInLocationTables.forEach(participantName => {
-          const participantFullReport = {
-            participant: String(participantName),
-            duplicates: [],
-            missingTeams: []
-          };
-
-          // 🔥 בדיקה 1: T14-T17 (36 קבוצות)
-          const mainLocationPredictions = allPredictions.filter(p =>
-            mainLocationQuestionIds.has(p.question_id) && p.participant_name?.trim() === participantName
-          );
-
-          const mainSelectedTeamsWithPositions = {};
-          const mainSelectedTeamsSet = new Set();
-
-          mainLocationPredictions.forEach(pred => {
-            const question = mainLocationQuestions.find(q => q.id === pred.question_id);
-            if (question && pred.text_prediction && pred.text_prediction.trim()) {
-              const fullTeam = String(pred.text_prediction).trim();
-              const teamName = extractTeamName(fullTeam);
-              // 🔥 נרמל את השם
-              const normalized = normalizeTeamName(teamName);
-
-              mainSelectedTeamsSet.add(normalized);
-
-              const positionText = question.question_text || `מקום ${question.question_id}`;
-
-              if (!mainSelectedTeamsWithPositions[normalized]) {
-                mainSelectedTeamsWithPositions[normalized] = [];
-              }
-              mainSelectedTeamsWithPositions[normalized].push(positionText);
-            }
-          });
-
-          Object.entries(mainSelectedTeamsWithPositions).forEach(([team, positions]) => {
-            if (positions.length > 1) {
-              participantFullReport.duplicates.push({
-                team: String(team),
-                positions: positions.sort(),
-                tableType: 'T14-T17'
-              });
-            }
-          });
-
-          // 🔥 בדיקה 2: T19 (8 קבוצות)
-          const playoffPredictions = allPredictions.filter(p =>
-            playoffQuestionIds.has(p.question_id) && p.participant_name?.trim() === participantName
-          );
-
-          const playoffSelectedTeamsWithPositions = {};
-          const playoffSelectedTeamsSet = new Set(); // Not strictly needed for missingTeams if allPossibleTeams covers it, but good for local context
-
-          playoffPredictions.forEach(pred => {
-            const question = playoffQuestions.find(q => q.id === pred.question_id);
-            if (question && pred.text_prediction && pred.text_prediction.trim()) {
-              const fullTeam = String(pred.text_prediction).trim();
-              const teamName = extractTeamName(fullTeam);
-              // 🔥 נרמל את השם
-              const normalized = normalizeTeamName(teamName);
-
-              playoffSelectedTeamsSet.add(normalized);
-
-              const positionText = question.question_text || `מקום ${question.question_id}`;
-
-              if (!playoffSelectedTeamsWithPositions[normalized]) {
-                playoffSelectedTeamsWithPositions[normalized] = [];
-              }
-              playoffSelectedTeamsWithPositions[normalized].push(positionText);
-            }
-          });
-
-          Object.entries(playoffSelectedTeamsWithPositions).forEach(([team, positions]) => {
-            if (positions.length > 1) {
-              participantFullReport.duplicates.push({
-                team: String(team),
-                positions: positions.sort(),
-                tableType: 'T19'
-              });
-            }
-          });
-
-          // 🔥 אחד את שני הסוגים לדו"ח משתתף אחד
-          if (participantFullReport.duplicates.length > 0) {
-            const allSelectedTeams = new Set([...mainSelectedTeamsSet, ...playoffSelectedTeamsSet]);
-            const missingFromAllPossible = Array.from(allPossibleTeams)
-              .filter(team => !allSelectedTeams.has(team))
-              .sort();
-            participantFullReport.missingTeams = missingFromAllPossible;
-            duplicatesReport.push(participantFullReport);
-          }
-        });
-
-        const uniqueTables = new Set(questions.map(q => q.table_id).filter(Boolean));
-
-        setStats({
-          totalQuestions: questions.length,
-          totalParticipants: uniqueParticipants.size,
-          totalPredictions: allPredictions.length,
-          totalTeams: teams.length,
-          totalValidationLists: validationLists.length,
-          totalTables: uniqueTables.size,
-          tableBreakdown,
-          participantBreakdown,
-        });
-
-        setLocationDuplicates(duplicatesReport);
-        setLastUpdated(cache.last_updated);
-
-        const cacheAge = Date.now() - new Date(cache.last_updated).getTime();
-        const ageInMinutes = Math.floor(cacheAge / (1000 * 60));
-
-        toast({
-          title: "✅ כל הנתונים טעונים מהמטמון",
-          description: `${allPredictions.length} ניחושים, עודכנו לפני ${ageInMinutes} דקות`,
-          className: "bg-green-100 text-green-800"
-        });
-
-        setLoading(false);
-        setRefreshing(prev => ({ ...prev, fullData: false }));
-        return;
-      }
-
-      console.log('⚠️ לא נמצא מטמון - יש לטעון נתונים מהשרת');
-      toast({
-        title: "אין מטמון",
-        description: "לחץ על 'רענן מהשרת' כדי לטעון את כל הנתונים מהשרת ולשמור אותם במטמון (פעם אחת בלבד!)",
-        variant: "destructive"
-      });
-
-    } catch (error) {
-      console.error("שגיאה בטעינת מטמון:", error);
-      toast({
-        title: "שגיאה",
-        description: "לא ניתן לטעון נתונים מהמטמון",
-        variant: "destructive"
-      });
-    }
-
-    setLoading(false);
-    setRefreshing(prev => ({ ...prev, fullData: false }));
-  }, [toast]);
-
-  useEffect(() => {
-    if (currentUser) {
-      loadSystemStats();
-    }
-  }, [currentUser, loadSystemStats]);
-
-  const refreshData = async () => {
-    setLoading(true);
-    setRefreshing(prev => ({ ...prev, fullData: true }));
-
-    try {
-      console.log('🔄 טוען את כל הנתונים מהשרת...');
-
-      toast({
-        title: "⏳ טוען כל הנתונים מהשרת...",
-        description: "זה ייקח זמן, אבל רק פעם אחת!",
-        className: "bg-blue-100 text-blue-800",
-        duration: 10000
-      });
-
-      // טען שאלות, קבוצות, רשימות אימות
-      console.log('📥 טוען שאלות...');
-      const questions = await Question.list(null, 10000);
-      setQuestions(questions); // Update questions state here as well
-      console.log(`✅ ${questions.length} שאלות`);
-
-      console.log('📥 טוען קבוצות...');
-      const teamsArray = await Team.list(null, 5000);
+      // 🎯 טען קבוצות ורשימות אימות מתוך נתוני המשחק עצמו
+      const teamsArray = currentGame.teams_data || [];
       setTeams(teamsArray);
-      console.log(`✅ ${teamsArray.length} קבוצות`);
+      console.log(`✅ ${teamsArray.length} קבוצות למשחק זה`);
 
-      console.log('📥 טוען רשימות אימות...');
-      const validationLists = await ValidationList.list(null, 5000);
-      setValidationLists(validationLists); // Update validationLists state here as well
-      console.log(`✅ ${validationLists.length} רשימות`);
+      const validationListsArray = currentGame.validation_lists || [];
+      setValidationLists(validationListsArray);
+      console.log(`✅ ${validationListsArray.length} רשימות אימות למשחק זה`);
 
-      // 🔥 טען ניחושים בקבוצות קטנות עם retry
-      console.log(`📥 טוען ניחושים לפי שאלות (${questions.length} שאלות)...`);
+      // 🎯 שמור את המשחק הנוכחי כמשחק היחיד ברשימה
+      setGames([currentGame]);
+      console.log(`✅ המשחק ${currentGame.game_name} נטען`);
+
+      // 🎯 טען ניחושים לפי שאלות (כמו במערכת שעובדת)
+      console.log(`📥 טוען ניחושים לפי שאלות (${questionsForGame.length} שאלות)...`);
 
       const allRawPredictions = [];
       const seenIds = new Set();
       let successCount = 0;
       let errorCount = 0;
 
-      for (let i = 0; i < questions.length; i++) {
-        const question = questions[i];
+      for (let i = 0; i < questionsForGame.length; i++) {
+        const question = questionsForGame[i];
 
         if (i % 10 === 0) {
-          console.log(`📦 [${i}/${questions.length}] מעבד שאלות... (הצלחות: ${successCount}, שגיאות: ${errorCount})`);
-          
-          // עדכון toast כל 10 שאלות
+          console.log(`📦 [${i}/${questionsForGame.length}] מעבד שאלות... (הצלחות: ${successCount}, שגיאות: ${errorCount})`);
+
           toast({
-            title: `טוען ניחושים... ${Math.round((i/questions.length)*100)}%`,
-            description: `${i}/${questions.length} שאלות`,
+            title: `טוען ניחושים... ${Math.round((i/questionsForGame.length)*100)}%`,
+            description: `${i}/${questionsForGame.length} שאלות`,
             className: "bg-blue-100 text-blue-800",
             duration: 2000
           });
         }
 
-        // נסה עד 3 פעמים עם המתנה
+        // נסה עד 3 פעמים
         let attempts = 0;
         let success = false;
-        
+
         while (attempts < 3 && !success) {
           try {
-            // Corrected call for Prediction.filter: filters, orderBy, limit, offset
-            const questionPredictions = await Prediction.filter(
+            const questionPredictions = await db.Prediction.filter(
               { question_id: question.id }, 
               '-created_date', 
               500
             );
 
+            // הוסף רק ניחושים חדשים (לא כפולים)
             questionPredictions.forEach(pred => {
               if (!seenIds.has(pred.id)) {
                 seenIds.add(pred.id);
@@ -484,17 +228,14 @@ export default function SystemOverview() {
             attempts++;
             errorCount++;
             console.error(`   ⚠️ ניסיון ${attempts}/3 נכשל בשאלה ${question.question_id}:`, error.message);
-            
+
             if (attempts < 3) {
-              // המתן לפני ניסיון נוסף
               await new Promise(resolve => setTimeout(resolve, 1000 * attempts));
-            } else {
-              console.error(`   ❌ שאלה ${question.question_id} נכשלה לאחר 3 ניסיונות`);
             }
           }
         }
 
-        // המתנה בין שאלות - גדול יותר כל 10 שאלות
+        // המתנה בין שאלות
         if (i % 10 === 0 && i > 0) {
           await new Promise(resolve => setTimeout(resolve, 500));
         } else if (i % 5 === 0 && i > 0) {
@@ -504,9 +245,9 @@ export default function SystemOverview() {
         }
       }
 
-      console.log(`\n✅ נטענו ${allRawPredictions.length} ניחושים (הצלחות: ${successCount}, שגיאות: ${errorCount})`);
+      console.log(`\n✅ נטענו ${allRawPredictions.length} ניחושים גולמיים (הצלחות: ${successCount}, שגיאות: ${errorCount})`);
 
-      // 🔥 סנן מקומית
+      // 🎯 סינון כפילויות - לוקח רק את הניחוש האחרון לכל משתתף+שאלה
       console.log('🔍 מסנן ניחושים לפי משתתף ושאלה...');
 
       const byParticipantAndQuestion = new Map();
@@ -520,6 +261,7 @@ export default function SystemOverview() {
         if (!byParticipantAndQuestion.has(key)) {
           byParticipantAndQuestion.set(key, pred);
         } else {
+          // בדוק אם זה ניחוש חדש יותר
           const existing = byParticipantAndQuestion.get(key);
           if (new Date(pred.created_date) > new Date(existing.created_date)) {
             byParticipantAndQuestion.set(key, pred);
@@ -531,63 +273,229 @@ export default function SystemOverview() {
 
       console.log(`✅ אחרי סינון: ${allPredictions.length} ניחושים ייחודיים`);
 
-      // בדיקה לפי משתתף
-      const predsByParticipant = {};
+      const uniqueParticipants = new Set(allPredictions.map(p => p.participant_name?.trim()).filter(Boolean));
+
+      // קבץ לפי table_text (כי יש table_id שונים עם אותו תיאור)
+      const tableBreakdown = {};
+      const tableIdToTextMap = new Map(); // מיפוי table_id -> table_text
+
+      questionsForGame.forEach(q => {
+        const tableId = String(q.table_id || '').trim();
+        const tableText = String(q.table_text || tableId).trim();
+        if (!tableId) return;
+
+        // שמור את המיפוי
+        tableIdToTextMap.set(tableId, tableText);
+
+        // קבץ לפי table_text (לא table_id!)
+        if (!tableBreakdown[tableText]) {
+          let description = tableText;
+          if (tableId === 'T12') {
+            description = 'שלב הליגה - פינת הגאווה הישראלית - 7 בוםםםםםםםםם !!!';
+          } else if (tableId === 'T13') {
+            description = 'שלב ראש בראש - "מבול מטאורים של כוכבים (*)"';
+          }
+
+          tableBreakdown[tableText] = {
+            description: description,
+            questionCount: 0,
+            predictionCount: 0
+          };
+        }
+        tableBreakdown[tableText].questionCount++;
+      });
+
+      const questionIdToTableTextMap = new Map();
+      questionsForGame.forEach(q => {
+        const tableText = String(q.table_text || q.table_id || '').trim();
+        questionIdToTableTextMap.set(q.id, tableText);
+      });
+
       allPredictions.forEach(p => {
-        const name = p.participant_name?.trim();
-        if (name) {
-          if (!predsByParticipant[name]) predsByParticipant[name] = 0;
-          predsByParticipant[name]++;
+        const tableText = questionIdToTableTextMap.get(p.question_id);
+        if (tableText && tableBreakdown[tableText]) {
+          tableBreakdown[tableText].predictionCount++;
         }
       });
 
-      const uniqueParticipants = Object.keys(predsByParticipant).length;
-      const avgPredictionsPerParticipant = uniqueParticipants > 0 ? Math.round(allPredictions.length / uniqueParticipants) : 0;
-
-      console.log(`\n📊 ${uniqueParticipants} משתתפים, ממוצע ${avgPredictionsPerParticipant} ניחושים למשתתף`);
-      // Removed detailed participant breakdown console log to reduce noise
-      // Object.entries(predsByParticipant)
-      //   .sort((a, b) => a[0].localeCompare(b[0]))
-      //   .forEach(([name, count]) => {
-      //     const status = count === 302 ? '✅' : '⚠️';
-      //     console.log(`   ${status} ${name}: ${count} ניחושים`);
-      //   });
-
-      // שמור במטמון
-      console.log('\n💾 שומר את כל הנתונים במטמון...');
-
-      const now = new Date().toISOString();
-      const fullData = {
-        questions,
-        predictions: allPredictions,
-        teams: teamsArray,
-        validationLists,
-        lastUpdate: now
-      };
-
-      const existingCache = await SystemCache.filter({ cache_key: "system_overview_full_data" }, null, 1);
-      const cacheRecord = {
-        cache_key: "system_overview_full_data",
-        cache_data: fullData,
-        last_updated: now
-      };
-
-      if (existingCache.length > 0) {
-        await SystemCache.update(existingCache[0].id, cacheRecord);
-      } else {
-        await SystemCache.create(cacheRecord);
-      }
-
-      console.log('✅ כל הנתונים נשמרו במטמון!');
-
-      toast({
-        title: "✅ הושלם!",
-        description: `${allPredictions.length} ניחושים נשמרו במטמון! (${errorCount} שגיאות)`,
-        className: "bg-green-100 text-green-800",
-        duration: 5000
+      const participantBreakdown = {};
+      allPredictions.forEach(p => {
+        const participantName = p.participant_name?.trim();
+        if (participantName) {
+          if (!participantBreakdown[participantName]) {
+            participantBreakdown[participantName] = 0;
+          }
+          participantBreakdown[participantName]++;
+        }
       });
 
-      await loadSystemStats();
+      // 🔥 בדיקת כפילויות וקבוצות חסרות (כללי למשחק הנוכחי)
+      const extractTeamName = (fullName) => {
+        if (!fullName) return '';
+        const match = fullName.match(/^([^(]+)/);
+        return match ? match[1].trim() : fullName.trim();
+      };
+
+      const normalizeTeamName = (name) => {
+        if (!name) return '';
+        return name
+          .replace(/קרבאך/g, 'קרבאח')
+          .replace(/קראבח/g, 'קרבאח')
+          .replace(/קראבך/g, 'קרבאח')
+          .trim();
+      };
+
+      const allPossibleTeams = new Set();
+      // Add teams from game's teams_data
+      teamsArray.forEach(team => {
+        if (team.name) {
+          allPossibleTeams.add(normalizeTeamName(extractTeamName(team.name)));
+        }
+      });
+      // Add teams from game's validation_lists options
+      validationListsArray.forEach(vl => {
+        if (vl.options) {
+          vl.options.forEach(team => {
+            allPossibleTeams.add(normalizeTeamName(extractTeamName(String(team))));
+          });
+        }
+      });
+
+      console.log(`\n📊 סה"כ ${allPossibleTeams.size} קבוצות אפשריות למשחק`);
+
+      const duplicatesReport = [];
+      const gameQuestionIds = new Set(questionsForGame.map(q => q.id));
+
+      uniqueParticipants.forEach(participantName => {
+        const participantFullReport = {
+          participant: String(participantName),
+          duplicates: [],
+          missingTeams: []
+        };
+
+        const participantPredictions = allPredictions.filter(p =>
+          gameQuestionIds.has(p.question_id) && p.participant_name?.trim() === participantName
+        );
+
+        const selectedTeamsWithPositions = {};
+        const selectedTeamsSet = new Set();
+
+        participantPredictions.forEach(pred => {
+          const question = questionsForGame.find(q => q.id === pred.question_id);
+          if (question && pred.text_prediction && pred.text_prediction.trim()) {
+            const fullTeam = String(pred.text_prediction).trim();
+            const teamName = extractTeamName(fullTeam);
+            const normalized = normalizeTeamName(teamName);
+
+            selectedTeamsSet.add(normalized);
+
+            const positionText = question.question_text || `שאלה ${question.question_id} (${question.table_id})`;
+
+            if (!selectedTeamsWithPositions[normalized]) {
+              selectedTeamsWithPositions[normalized] = [];
+            }
+            selectedTeamsWithPositions[normalized].push(positionText);
+          }
+        });
+
+        Object.entries(selectedTeamsWithPositions).forEach(([team, positions]) => {
+          if (positions.length > 1) {
+            participantFullReport.duplicates.push({
+              team: String(team),
+              positions: positions.sort(),
+              // tableType: 'כללי למשחק' // Generalizing this
+            });
+          }
+        });
+
+        if (participantFullReport.duplicates.length > 0) {
+          const missingFromAllPossible = Array.from(allPossibleTeams)
+            .filter(team => !selectedTeamsSet.has(team))
+            .sort();
+          participantFullReport.missingTeams = missingFromAllPossible;
+          duplicatesReport.push(participantFullReport);
+        }
+      });
+
+      // 🔍 חישוב ניחושים חסרים
+      const missingPredictionsReport = [];
+      uniqueParticipants.forEach(participantName => {
+        const participantPredictions = allPredictions.filter(p =>
+          gameQuestionIds.has(p.question_id) && p.participant_name?.trim() === participantName
+        );
+
+        const predictedQuestionIds = new Set(participantPredictions.map(p => p.question_id));
+        const missingQuestions = questionsForGame.filter(q => !predictedQuestionIds.has(q.id));
+
+        if (missingQuestions.length > 0) {
+          missingPredictionsReport.push({
+            participant: String(participantName),
+            missing: missingQuestions.map(q => ({
+              table_id: q.table_id,
+              question_id: q.question_id,
+              question_text: q.question_text
+            })).sort((a, b) => {
+              const tableA = parseInt(String(a.table_id).replace('T', '')) || 0;
+              const tableB = parseInt(String(b.table_id).replace('T', '')) || 0;
+              if (tableA !== tableB) return tableA - tableB;
+              return parseFloat(a.question_id) - parseFloat(b.question_id);
+            }),
+            totalMissing: missingQuestions.length
+          });
+        }
+      });
+
+      const uniqueTables = new Set(questionsForGame.map(q => q.table_id).filter(Boolean));
+
+      setStats({
+        totalQuestions: questionsForGame.length,
+        totalParticipants: uniqueParticipants.size,
+        totalPredictions: allPredictions.length,
+        totalTeams: teamsArray.length,
+        totalValidationLists: validationListsArray.length,
+        totalTables: uniqueTables.size,
+        tableBreakdown,
+        participantBreakdown,
+        missingPredictionsReport,
+        allParticipants: Array.from(uniqueParticipants),
+      });
+
+      setLocationDuplicates(duplicatesReport);
+      setLastUpdated(new Date().toISOString()); // Data is fresh from server
+      
+      // 💾 שמור cache
+      const cacheKey = `system_overview_${currentGame.id}`;
+      try {
+        localStorage.setItem(cacheKey, JSON.stringify({
+          stats: {
+            totalQuestions: questionsForGame.length,
+            totalParticipants: uniqueParticipants.size,
+            totalPredictions: allPredictions.length,
+            totalTeams: teamsArray.length,
+            totalValidationLists: validationListsArray.length,
+            totalTables: uniqueTables.size,
+            tableBreakdown,
+            participantBreakdown,
+            missingPredictionsReport,
+            allParticipants: Array.from(uniqueParticipants),
+          },
+          locationDuplicates: duplicatesReport,
+          validationLists: validationListsArray,
+          teams: teamsArray,
+          questions: questionsForGame,
+          games: [currentGame],
+          lastUpdated: new Date().toISOString()
+        }));
+        console.log('💾 נתונים נשמרו ב-cache');
+      } catch (e) {
+        console.log('⚠️ לא ניתן לשמור ב-cache');
+      }
+
+      toast({
+        title: "✅ כל הנתונים נטענו בהצלחה!",
+        description: `${allPredictions.length} ניחושים עבור המשחק ${currentGame.game_name} נטענו.`,
+        className: "bg-green-100 text-green-800"
+      });
 
     } catch (error) {
       console.error("שגיאה בטעינת נתונים:", error);
@@ -600,34 +508,59 @@ export default function SystemOverview() {
 
     setLoading(false);
     setRefreshing(prev => ({ ...prev, fullData: false }));
-  };
+  }, [currentGame, toast]); // Added currentGame to dependencies
+
+  // ✅ טען רק מה-cache בכניסה - ללא טעינה אוטומטית מהשרת
+  useEffect(() => {
+    if (!currentUser || !currentGame) return;
+
+    const cacheKey = `system_overview_${currentGame.id}`;
+    try {
+      const cached = localStorage.getItem(cacheKey);
+      if (cached) {
+        const cachedData = JSON.parse(cached);
+        setStats(cachedData.stats);
+        setLocationDuplicates(cachedData.locationDuplicates || []);
+        setValidationLists(cachedData.validationLists || []);
+        setTeams(cachedData.teams || []);
+        setQuestions(cachedData.questions || []);
+        setGames(cachedData.games || []);
+        setLastUpdated(cachedData.lastUpdated);
+        console.log('✅ נתונים נטענו מה-cache');
+      }
+    } catch (e) {
+      console.log('⚠️ אין cache שמור');
+    }
+    
+    setLoading(false);
+  }, [currentUser, currentGame]);
+
+  // The refreshData function is no longer needed as loadSystemStats always fetches fresh data for the current game.
+  // The 'רענן מהשרת' button will now directly call loadSystemStats.
 
   const refreshUserCache = async () => {
     setRefreshing(prev => ({ ...prev, users: true }));
     try {
       console.log('📊 מתחיל רענון מטמון משתמשים...');
       
-      // טען את כל המשתמשים
-      const users = await User.list(null, 1000);
+      const users = await db.GameParticipant.filter({});
       console.log(`✅ נטענו ${users.length} משתמשים`);
       
-      // הצג דוגמה למשתמש כדי לראות מה יש בו
       if (users.length > 0) {
         console.log('👤 דוגמה למשתמש:', users[0]);
         console.log('📋 כל השדות:', Object.keys(users[0]));
       }
       
-      // שמור במטמון עם כל השדות
       const cacheKey = 'user_stats_cache';
-      const existingCache = await SystemCache.filter({ cache_key: cacheKey }, null, 1);
+      const existingCache = await db.SystemSettings.filter({ cache_key: cacheKey }, null, 1);
       
       if (existingCache.length > 0) {
-        await SystemCache.update(existingCache[0].id, {
+        await db.SystemSettings.update(existingCache[0].id, {
           cache_data: { users },
           last_updated: new Date().toISOString()
         });
       } else {
-        await SystemCache.create({
+        await db.SystemSettings.create({
           cache_key: cacheKey,
           cache_data: { users },
           last_updated: new Date().toISOString()
@@ -653,30 +586,93 @@ export default function SystemOverview() {
     }
   };
 
-  // 🔥 הסרנו לגמרי את פונקציית handleFixKarabakh
+  // Load validation lists for dialog (now uses state already populated by loadSystemStats)
+  const loadValidationLists = () => {
+    // validationLists and questions states are already populated by loadSystemStats
+    setShowValidationListsDialog(true);
+  };
 
-
-  // Load validation lists for dialog
-  const loadValidationLists = async () => {
-    try {
-      const [lists, qs] = await Promise.all([
-        ValidationList.list(null, 1000),
-        Question.list(null, 10000) // Ensure questions are also loaded to check for usage
-      ]);
-      setValidationLists(lists);
-      setQuestions(qs);
-      setShowValidationListsDialog(true);
-    } catch (error) {
-      console.error("Error loading validation lists:", error);
-      toast({ title: "שגיאה", description: "לא ניתן לטעון רשימות אימות", variant: "destructive" });
+  // Create new validation list
+  const createNewValidationList = async () => {
+    if (!newListName.trim()) {
+      toast({
+        title: "שגיאה",
+        description: "נא למלא שם רשימה",
+        variant: "destructive"
+      });
+      return;
     }
+
+    const validOptions = newListOptions.filter(opt => opt.trim());
+    if (validOptions.length === 0) {
+      toast({
+        title: "שגיאה",
+        description: "נא להוסיף לפחות אופציה אחת",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    if (!currentGame) {
+      toast({
+        title: "שגיאה",
+        description: "נא לבחור משחק תחילה",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    try {
+      const newList = { list_name: newListName, options: validOptions };
+      
+      // עדכן את המשחק עם הרשימה החדשה
+      const updatedValidationLists = [...(currentGame.validation_lists || []), newList];
+      await db.Game.update(currentGame.id, {
+        validation_lists: updatedValidationLists
+      });
+
+      // עדכן state
+      setValidationLists(prev => [...prev, newList]);
+
+      toast({
+        title: "נוצר!",
+        description: `רשימת האימות "${newListName}" נוצרה בהצלחה`,
+        className: "bg-green-100 text-green-800"
+      });
+
+      setShowCreateListDialog(false);
+      setNewListName("");
+      setNewListOptions([""]);
+    } catch (error) {
+      console.error("Error creating validation list:", error);
+      toast({
+        title: "שגיאה",
+        description: "לא ניתן ליצור את רשימת האימות",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const addOptionToNewList = () => {
+    setNewListOptions([...newListOptions, ""]);
+  };
+
+  const updateNewListOption = (index, value) => {
+    setNewListOptions(newListOptions.map((opt, i) => i === index ? value : opt));
+  };
+
+  const removeNewListOption = (index) => {
+    if (newListOptions.length === 1) return;
+    setNewListOptions(newListOptions.filter((_, i) => i !== index));
   };
 
   // Start editing a list
   const startEditingList = (list) => {
-    setEditingListId(list.id);
+    setEditingListId(list.list_name);
     setEditedOptions([...list.options]);
     setNewOption("");
+    setEditingOptionIndex(null);
+    setEditingOptionValue("");
   };
 
   // Cancel editing
@@ -684,19 +680,62 @@ export default function SystemOverview() {
     setEditingListId(null);
     setEditedOptions([]);
     setNewOption("");
+    setEditingOptionIndex(null);
+    setEditingOptionValue("");
   };
 
   // Save edited list
-  const saveEditedList = async (listId) => {
-    try {
-      await ValidationList.update(listId, { options: editedOptions });
+  const startEditingOption = (index, value) => {
+    setEditingOptionIndex(index);
+    setEditingOptionValue(value);
+  };
 
-      // Refresh the list
-      const updatedLists = await ValidationList.list(null, 1000);
-      setValidationLists(updatedLists);
+  const saveEditingOption = () => {
+    if (editingOptionValue.trim()) {
+      const newOptions = [...editedOptions];
+      newOptions[editingOptionIndex] = editingOptionValue.trim();
+      setEditedOptions(newOptions);
+    }
+    setEditingOptionIndex(null);
+    setEditingOptionValue("");
+  };
+
+  const cancelEditingOption = () => {
+    setEditingOptionIndex(null);
+    setEditingOptionValue("");
+  };
+
+  const saveEditedList = async (listName) => {
+    try {
+      if (!currentGame) {
+        toast({
+          title: "שגיאה",
+          description: "נא לבחור משחק תחילה",
+          variant: "destructive"
+        });
+        return;
+      }
+
+      // Update the validation list in the game's validation_lists array
+      const updatedValidationLists = (currentGame.validation_lists || []).map(list =>
+        list.list_name === listName ? { ...list, options: editedOptions } : list
+      );
+
+      await db.Game.update(currentGame.id, {
+        validation_lists: updatedValidationLists
+      });
+
+      // Update local state
+      setValidationLists(prevLists =>
+        prevLists.map(list =>
+          list.list_name === listName ? { ...list, options: editedOptions } : list
+        )
+      );
 
       setEditingListId(null);
       setEditedOptions([]);
+      setEditingOptionIndex(null);
+      setEditingOptionValue("");
 
       toast({
         title: "נשמר!",
@@ -727,7 +766,7 @@ export default function SystemOverview() {
   };
 
   // Delete entire list
-  const deleteValidationList = async (listId, listName) => {
+  const deleteValidationList = async (listName) => {
     const questionsUsingList = questions.filter(q => q.validation_list === listName);
 
     if (questionsUsingList.length > 0) {
@@ -744,9 +783,26 @@ export default function SystemOverview() {
     }
 
     try {
-      await ValidationList.delete(listId);
-      const updatedLists = await ValidationList.list(null, 1000);
-      setValidationLists(updatedLists);
+      if (!currentGame) {
+        toast({
+          title: "שגיאה",
+          description: "נא לבחור משחק תחילה",
+          variant: "destructive"
+        });
+        return;
+      }
+
+      // Remove the list from the game's validation_lists array
+      const updatedValidationLists = (currentGame.validation_lists || []).filter(
+        list => list.list_name !== listName
+      );
+
+      await db.Game.update(currentGame.id, {
+        validation_lists: updatedValidationLists
+      });
+
+      // Update state by removing the deleted list
+      setValidationLists(prevLists => prevLists.filter(list => list.list_name !== listName));
 
       toast({
         title: "נמחק!",
@@ -763,20 +819,11 @@ export default function SystemOverview() {
     }
   };
 
-  // Load teams for dialog
-  const loadTeams = async () => {
-    try {
-      const teamsData = await Team.list(null, 5000);
-      setTeams(teamsData);
-      setShowTeamsDialog(true);
-    } catch (error) {
-      console.error("Error loading teams:", error);
-      toast({ title: "שגיאה", description: "לא ניתן לטעון קבוצות", variant: "destructive" });
-    }
+  // Load teams for dialog (now uses state already populated by loadSystemStats)
+  const loadTeams = () => {
+    // teams state is already populated by loadSystemStats
+    setShowTeamsDialog(true);
   };
-
-  // 🔥 הסרנו לגמרי את פונקציית fixKarabakhTeam
-  // 🔥 הסרנו לגמרי את פונקציית cleanTeamDuplicates
 
   if (!currentUser) {
     return (
@@ -808,14 +855,11 @@ export default function SystemOverview() {
     );
   }
 
-  if (loading || refreshing.fullData || refreshing.users) { // 🔥 הסרנו את fixingKarabakh
-    let loadingMessage = "טוען נתונים...";
-    if (refreshing.fullData) {
-      loadingMessage = "טוען נתונים מלאים מהשרת...";
-    } else if (refreshing.users) {
-      loadingMessage = "טוען מטמון משתמשים...";
-    }
-    // 🔥 הסרנו את התנאי עבור fixingKarabakh
+  // הצג loading רק כשבאמת טוענים משהו
+  if (refreshing.fullData || refreshing.users) {
+    let loadingMessage = refreshing.fullData 
+      ? `טוען נתונים עבור ${currentGame?.game_name || 'המשחק הנבחר'}...`
+      : "טוען מטמון משתמשים...";
 
     return (
       <div className="flex items-center justify-center h-screen" style={{
@@ -848,7 +892,7 @@ export default function SystemOverview() {
             textShadow: '0 0 10px rgba(6, 182, 212, 0.3)'
           }}>
             <Database className="w-10 h-10" style={{ color: '#06b6d4' }} />
-            סקירת מערכת
+            סקירת מערכת {currentGame && <span className="text-xl text-cyan-300"> ({currentGame.game_name})</span>}
           </h1>
           <p style={{ color: '#94a3b8' }}>כל הנתונים במערכת - תמיד זמינים</p>
           {lastUpdated && (
@@ -860,9 +904,6 @@ export default function SystemOverview() {
         </div>
 
         <div className="flex gap-3 flex-wrap justify-end">
-          {/* 🔥 כפתור "תקן קרבאך" הוסר מכאן */}
-
-          {/* New Upload Files Button */}
           <Button
             onClick={() => setShowUploadDialog(true)}
             disabled={loading || refreshing.fullData || refreshing.users}
@@ -880,43 +921,8 @@ export default function SystemOverview() {
           </Button>
 
           <Button
-            onClick={refreshUserCache}
-            disabled={refreshing.users || refreshing.fullData || loading}
-            size="lg"
-            variant="outline"
-            style={{
-              borderColor: 'rgba(59, 130, 246, 0.5)',
-              color: '#3b82f6',
-              background: 'rgba(59, 130, 246, 0.1)',
-              boxShadow: '0 0 15px rgba(59, 130, 246, 0.2)'
-            }}
-          >
-            {refreshing.users ? (
-              <Loader2 className="w-5 h-5 ml-2 animate-spin" />
-            ) : (
-              <Users className="w-5 h-5 ml-2" />
-            )}
-            רענן מטמון משתמשים
-          </Button>
-          <Button
-            onClick={clearCache}
-            disabled={loading || refreshing.fullData || refreshing.users}
-            size="lg"
-            variant="outline"
-            style={{
-              borderColor: 'rgba(239, 68, 68, 0.5)',
-              color: '#ef4444',
-              background: 'rgba(239, 68, 68, 0.1)',
-              boxShadow: '0 0 15px rgba(239, 68, 68, 0.2)'
-            }}
-          >
-            <Trash2 className="w-5 h-5 ml-2" />
-            נקה מטמון
-          </Button>
-
-          <Button
-            onClick={refreshData}
-            disabled={loading || refreshing.fullData || refreshing.users}
+            onClick={loadSystemStats}
+            disabled={loading || refreshing.fullData || refreshing.users || !currentGame}
             size="lg"
             style={{
               background: 'linear-gradient(135deg, #06b6d4 0%, #0ea5e9 100%)',
@@ -929,25 +935,32 @@ export default function SystemOverview() {
             ) : (
               <RefreshCw className="w-5 h-5 ml-2" />
             )}
-            רענן מהשרת
+            רענן נתוני משחק
           </Button>
         </div>
       </div>
 
-      {stats.totalQuestions === 0 && (
+      {stats.totalQuestions === 0 && currentGame && ( // Only show if a game is selected but no data loaded
         <Alert className="mb-6" style={{
           background: 'rgba(239, 68, 68, 0.1)',
           border: '1px solid rgba(239, 68, 68, 0.3)'
         }}>
           <AlertDescription style={{ color: '#fca5a5' }}>
-            אין נתונים במטמון. לחץ על "רענן מהשרת" כדי לטעון את כל הנתונים פעם אחת (ואז הם יישארו תמיד!)
+            לא נמצאו נתונים עבור המשחק הנבחר. ייתכן שאין שאלות או ניחושים.
           </AlertDescription>
         </Alert>
       )}
 
-      {/* 🔥 דוח תיקון קרבאך הוסר מכאן */}
-
-      {/* 🔥 הסרנו לגמרי את כרטיס "כלי השוואת שמות קבוצות" */}
+      {!currentGame && (
+        <Alert className="mb-6" style={{
+          background: 'rgba(251, 191, 36, 0.1)',
+          border: '1px solid rgba(251, 191, 36, 0.3)'
+        }}>
+          <AlertDescription style={{ color: '#fbbf24' }}>
+            💡 בחר משחק מהתפריט העליון כדי לטעון נתונים ולהתחיל לנהל.
+          </AlertDescription>
+        </Alert>
+      )}
 
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
         {statCards.map((stat, idx) => (
@@ -984,7 +997,7 @@ export default function SystemOverview() {
         <CardContent>
           {Object.keys(stats.tableBreakdown).length === 0 ? (
             <div style={{ color: '#94a3b8', textAlign: 'center', padding: '20px' }}>
-              אין נתונים - לחץ על "רענן מהשרת"
+              אין נתונים - בחר משחק או רענן
             </div>
           ) : (
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -1000,13 +1013,15 @@ export default function SystemOverview() {
                     border: '1px solid rgba(6, 182, 212, 0.2)'
                   }}>
                     <div className="flex items-center justify-between mb-2">
-                      <Badge style={{
-                        background: 'linear-gradient(135deg, rgba(6, 182, 212, 0.2) 0%, rgba(14, 165, 233, 0.2) 100%)',
-                        color: '#06b6d4',
-                        border: '1px solid rgba(6, 182, 212, 0.3)'
-                      }}>
-                        {tableId}
-                      </Badge>
+                      {tableId.startsWith('T') && tableId.length <= 4 && (
+                        <Badge style={{
+                          background: 'linear-gradient(135deg, rgba(6, 182, 212, 0.2) 0%, rgba(14, 165, 233, 0.2) 100%)',
+                          color: '#06b6d4',
+                          border: '1px solid rgba(6, 182, 212, 0.3)'
+                        }}>
+                          {tableId}
+                        </Badge>
+                      )}
                     </div>
                     <p className="text-sm font-medium mb-2 leading-tight" style={{ color: '#f8fafc' }}>
                       {data.description}
@@ -1055,100 +1070,301 @@ export default function SystemOverview() {
         </CardContent>
       </Card>
 
-      {locationDuplicates.length > 0 && (
-        <Card className="mt-6" style={{
-          background: 'rgba(30, 41, 59, 0.6)',
-          border: '1px solid rgba(239, 68, 68, 0.3)',
-          backdropFilter: 'blur(10px)'
-        }}>
-          <CardHeader>
-            <CardTitle style={{ color: '#ef4444' }}>⚠️ כפילויות וקבוצות חסרות בטבלאות מיקומים</CardTitle>
-            <p className="text-sm" style={{ color: '#fca5a5' }}>
-              משתתפים שבחרו קבוצה פעמיים - T14-T17 (36 קבוצות) בנפרד מ-T19 (8 קבוצות)
-            </p>
-          </CardHeader>
-          <CardContent>
-            <div className="overflow-x-auto">
-              <table className="w-full" style={{ borderCollapse: 'collapse' }}>
-                <thead>
-                  <tr style={{ borderBottom: '2px solid rgba(239, 68, 68, 0.3)' }}>
-                    <th className="p-2 text-right" style={{ color: '#fca5a5', fontWeight: '600' }}>משתתף</th>
-                    <th className="p-2 text-center" style={{ color: '#fca5a5', fontWeight: '600' }}>טבלה</th>
-                    <th className="p-2 text-center" style={{ color: '#fca5a5', fontWeight: '600' }}>מספר כפילויות</th>
-                    <th className="p-2 text-right" style={{ color: '#fca5a5', fontWeight: '600' }}>קבוצה כפולה</th>
-                    <th className="p-2 text-right" style={{ color: '#fca5a5', fontWeight: '600' }}>מיקומים שנבחרו</th>
-                    <th className="p-2 text-right" style={{ color: '#fbbf24', fontWeight: '600' }}>קבוצות שלא נבחרו כלל</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {locationDuplicates.map((report, idx) => {
-                    const totalDuplicatesForParticipant = report.duplicates.length;
-                    return (
-                      <React.Fragment key={idx}>
-                        {report.duplicates.map((dup, dupIdx) => (
-                          <tr key={`${idx}-${dupIdx}`} style={{
-                            borderBottom: '1px solid rgba(6, 182, 212, 0.1)',
-                            background: dupIdx === 0 ? 'rgba(15, 23, 42, 0.4)' : 'transparent'
+      {/* דוח ניחושים חסרים - מטריצה */}
+      {stats.missingPredictionsReport && stats.missingPredictionsReport.length > 0 && stats.allParticipants && stats.allParticipants.length > 0 && (() => {
+        const handleUploadMissing = async (file) => {
+          setUploadingMissing(true);
+          try {
+            const text = await file.text();
+            const lines = text.split(/\r\n|\r|\n/).filter(l => l.trim());
+            console.log(`📄 קובץ נטען: ${lines.length} שורות`);
+            
+            if (lines.length < 2) throw new Error("קובץ ריק או חסר נתונים");
+            
+            const headers = lines[0].split('\t').map(h => h.trim());
+            console.log(`📋 כותרות (${headers.length}):`, headers);
+            
+            const participantColumns = headers.slice(2).filter(h => h.trim());
+            console.log(`👥 ${participantColumns.length} משתתפים בקובץ:`, participantColumns);
+            
+            // 🔥 טען את כל הניחושים הקיימים - skip בלי מיון
+            console.log('📥 טוען ניחושים קיימים למשחק...');
+            let existingPredictions = [];
+            let skipExisting = 0;
+            const loadBatchSize = 5000;
+            let loadBatchNum = 0;
+            
+            while (true) {
+              loadBatchNum++;
+              console.log(`   📦 טוען batch #${loadBatchNum} (skip=${skipExisting})...`);
+              
+              const batch = await db.Prediction.filter(
+                { game_id: currentGame.id },
+                null,
+                loadBatchSize,
+                skipExisting
+              );
+              
+              console.log(`   ← קיבלנו ${batch.length} ניחושים`);
+              
+              if (batch.length === 0) {
+                console.log(`   ✅ Batch ריק - סיימנו טעינה`);
+                break;
+              }
+              
+              existingPredictions = existingPredictions.concat(batch);
+              console.log(`   📊 סה"כ עד כה: ${existingPredictions.length} ניחושים קיימים`);
+              
+              skipExisting += batch.length; // התקדם לפי מה שקיבלנו בפועל
+            }
+            
+            console.log(`✅ סה"כ נטענו ${existingPredictions.length} ניחושים קיימים ב-${loadBatchNum} batches`);
+            
+            // בנה מפת קיימים: question_id|participant_name -> true
+            const existingMap = new Map();
+            existingPredictions.forEach(p => {
+              const key = `${p.question_id}|${p.participant_name?.trim()}`;
+              existingMap.set(key, true);
+            });
+            console.log(`✅ סה"כ ${existingPredictions.length} ניחושים קיימים במערכת`);
+            
+            const predictionsToCreate = [];
+            let skippedExisting = 0;
+            let skippedEmpty = 0;
+            let skippedQuestions = 0;
+            
+            for (let i = 1; i < lines.length; i++) {
+              const cells = lines[i].split('\t').map(c => c?.trim() || '');
+              const tableId = cells[0];
+              const questionId = cells[1];
+              
+              if (!tableId || !questionId) continue;
+              
+              const question = questions.find(q => q.table_id === tableId && q.question_id === questionId);
+              if (!question) {
+                skippedQuestions++;
+                if (i <= 5) console.warn(`❌ שאלה לא נמצאה: ${tableId} - ${questionId}`);
+                continue;
+              }
+              
+              participantColumns.forEach((participantName, colIndex) => {
+                const value = cells[colIndex + 2];
+                
+                // בדוק אם הניחוש כבר קיים
+                const existingKey = `${question.id}|${participantName.trim()}`;
+                const alreadyExists = existingMap.has(existingKey);
+                
+                if (i <= 3 && colIndex === 0) {
+                  console.log(`🔍 ${tableId}-${questionId} | ${participantName}: value="${value || 'ריק'}" | exists=${alreadyExists}`);
+                }
+                
+                if (value && value.trim() !== '') {
+                  if (!alreadyExists) {
+                    predictionsToCreate.push({
+                      game_id: currentGame.id,
+                      question_id: question.id,
+                      participant_name: participantName,
+                      text_prediction: value.trim(),
+                      table_id: tableId
+                    });
+                  } else {
+                    skippedExisting++;
+                  }
+                } else {
+                  skippedEmpty++;
+                }
+              });
+            }
+            
+            console.log(`📊 סיכום:
+✅ ${predictionsToCreate.length} ניחושים חדשים למילוי
+⏭️ ${skippedExisting} ניחושים קיימים במערכת (דילגנו)
+⚪ ${skippedEmpty} תאים ריקים בקובץ
+❌ ${skippedQuestions} שאלות לא נמצאו במערכת`);
+            
+            if (predictionsToCreate.length > 0) {
+              console.log('💾 שומר ניחושים חדשים...');
+              await db.Prediction.bulkCreate(predictionsToCreate);
+              toast({
+                title: "✅ הצלחה!",
+                description: `${predictionsToCreate.length} ניחושים חדשים נטענו. ${skippedExisting} ניחושים כבר היו קיימים.`,
+                className: "bg-green-100 text-green-800"
+              });
+              await loadSystemStats();
+            } else {
+              console.log(`✅ המערכת עדכנית:
+📋 ${skippedExisting} ניחושים כבר קיימים
+⚪ ${skippedEmpty} תאים ריקים (מיועדים לניחושים קיימים)
+❌ ${skippedQuestions} שאלות לא תואמות`);
+              
+              if (skippedExisting > 0) {
+                toast({
+                  title: "✅ המערכת עדכנית",
+                  description: `כל ${skippedExisting} הניחושים מהקובץ כבר קיימים במערכת. אין צורך בעדכון.`,
+                  className: "bg-blue-100 text-blue-800"
+                });
+              } else {
+                toast({
+                  title: "❌ אין ניחושים לטעינה",
+                  description: `${skippedEmpty} תאים ריקים, ${skippedQuestions} שאלות לא נמצאו. בדוק את הקובץ.`,
+                  variant: "destructive"
+                });
+              }
+            }
+            
+          } catch (error) {
+            console.error("שגיאה:", error);
+            toast({
+              title: "שגיאה",
+              description: error.message,
+              variant: "destructive"
+            });
+          }
+          setUploadingMissing(false);
+          setShowUploadMissingDialog(false);
+        };
+
+        // בנה מטריצה של שאלות מול משתתפים
+        const allParticipants = [...stats.allParticipants].sort();
+        const missingMap = new Map();
+        
+        stats.missingPredictionsReport.forEach(report => {
+          report.missing.forEach(q => {
+            const key = `${q.table_id}|${q.question_id}`;
+            if (!missingMap.has(key)) {
+              missingMap.set(key, { 
+                table_id: q.table_id, 
+                question_id: q.question_id,
+                question_text: q.question_text,
+                participants: new Set()
+              });
+            }
+            missingMap.get(key).participants.add(report.participant);
+          });
+        });
+        
+        const sortedQuestions = Array.from(missingMap.values()).sort((a, b) => {
+          const tableA = parseInt(String(a.table_id).replace('T', '')) || 0;
+          const tableB = parseInt(String(b.table_id).replace('T', '')) || 0;
+          if (tableA !== tableB) return tableA - tableB;
+          return parseFloat(a.question_id) - parseFloat(b.question_id);
+        });
+        
+        return (
+          <Card className="mb-6" style={{
+            background: 'rgba(30, 41, 59, 0.6)',
+            border: '1px solid rgba(6, 182, 212, 0.2)',
+            backdropFilter: 'blur(10px)'
+          }}>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle style={{ color: '#06b6d4' }}>
+                    מטריצת ניחושים חסרים
+                  </CardTitle>
+                  <p className="text-sm" style={{ color: '#94a3b8' }}>
+                    X = ניחוש חסר | {sortedQuestions.length} שאלות עם ניחושים חסרים
+                  </p>
+                </div>
+                <Button
+                  onClick={() => setShowUploadMissingDialog(true)}
+                  disabled={uploadingMissing}
+                  style={{
+                    background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                    color: 'white'
+                  }}
+                >
+                  {uploadingMissing ? (
+                    <Loader2 className="w-4 h-4 ml-2 animate-spin" />
+                  ) : (
+                    <Upload className="w-4 h-4 ml-2" />
+                  )}
+                  טען ניחושים
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div style={{ overflow: 'auto', maxHeight: '600px' }}>
+                <table className="w-full text-xs" style={{ borderCollapse: 'collapse' }}>
+                  <thead style={{ position: 'sticky', top: 0, background: '#0f172a', zIndex: 10 }}>
+                    <tr style={{ borderBottom: '2px solid rgba(6, 182, 212, 0.3)' }}>
+                      <th className="p-2 text-right" style={{ 
+                        color: '#94a3b8',
+                        position: 'sticky',
+                        right: 0,
+                        background: '#0f172a',
+                        zIndex: 11
+                      }}>טבלה</th>
+                      <th className="p-2 text-right" style={{ 
+                        color: '#94a3b8',
+                        position: 'sticky',
+                        right: '60px',
+                        background: '#0f172a',
+                        zIndex: 11
+                      }}>שאלה</th>
+                      {allParticipants.map(p => (
+                        <th key={p} className="p-1 text-center" style={{ 
+                          color: '#94a3b8',
+                          minWidth: '40px',
+                          writingMode: 'vertical-rl',
+                          textOrientation: 'mixed'
+                        }}>
+                          {p}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sortedQuestions.map((q, idx) => (
+                      <tr key={idx} style={{ borderBottom: '1px solid rgba(6, 182, 212, 0.1)' }}>
+                        <td className="p-2" style={{
+                          position: 'sticky',
+                          right: 0,
+                          background: '#1e293b',
+                          zIndex: 1
+                        }}>
+                          <Badge style={{
+                            background: 'rgba(6, 182, 212, 0.1)',
+                            color: '#06b6d4',
+                            border: '1px solid rgba(6, 182, 212, 0.3)',
+                            fontSize: '10px'
                           }}>
-                            {dupIdx === 0 && (
-                              <>
-                                <td className="p-2 font-bold" rowSpan={totalDuplicatesForParticipant} style={{
-                                  color: '#f8fafc',
-                                  borderLeft: '3px solid #ef4444'
-                                }}>
-                                  {report.participant}
-                                </td>
-                              </>
+                            {q.table_id}
+                          </Badge>
+                        </td>
+                        <td className="p-2" style={{
+                          position: 'sticky',
+                          right: '60px',
+                          background: '#1e293b',
+                          zIndex: 1
+                        }}>
+                          <Badge style={{
+                            background: 'rgba(14, 165, 233, 0.1)',
+                            color: '#0ea5e9',
+                            border: '1px solid rgba(14, 165, 233, 0.3)',
+                            fontSize: '10px'
+                          }}>
+                            {q.question_id}
+                          </Badge>
+                        </td>
+                        {allParticipants.map(p => (
+                          <td key={p} className="p-1 text-center" style={{
+                            background: q.participants.has(p) ? 'rgba(239, 68, 68, 0.2)' : 'transparent'
+                          }}>
+                            {q.participants.has(p) && (
+                              <span style={{ color: '#ef4444', fontWeight: 'bold' }}>X</span>
                             )}
-                            <td className="p-2 text-center">
-                              <Badge style={{
-                                background: dup.tableType === 'T19' ? '#8b5cf6' : '#0ea5e9',
-                                color: 'white'
-                              }}>
-                                {dup.tableType}
-                              </Badge>
-                            </td>
-                            {dupIdx === 0 && (
-                              <td className="p-2 text-center" rowSpan={totalDuplicatesForParticipant}>
-                                <Badge style={{ background: '#ef4444', color: 'white' }}>
-                                  {totalDuplicatesForParticipant}
-                                </Badge>
-                              </td>
-                            )}
-                            <td className="p-2" style={{ color: '#fca5a5', fontWeight: '600' }}>
-                              🔴 {dup.team}
-                            </td>
-                            <td className="p-2" style={{ color: '#94a3b8' }}>
-                              {dup.positions.map((posText, i) => (
-                                <span key={i} style={{
-                                  display: 'inline-block',
-                                  margin: '2px',
-                                  padding: '2px 6px',
-                                  borderRadius: '4px',
-                                  background: 'rgba(251, 191, 36, 0.2)',
-                                  color: '#fbbf24',
-                                  fontSize: '0.75rem'
-                                }}>
-                                  {posText}
-                                </span>
-                              ))}
-                            </td>
-                            {dupIdx === 0 && (
-                              <td className="p-2" rowSpan={totalDuplicatesForParticipant} style={{ color: '#fbbf24', fontSize: '0.85rem' }}>
-                                {report.missingTeams.length > 0 ? report.missingTeams.slice(0, 10).join(', ') + (report.missingTeams.length > 10 ? '...' : '') : 'אין'}
-                              </td>
-                            )}
-                          </tr>
+                          </td>
                         ))}
-                      </React.Fragment>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+        );
+      })()}
 
       {/* Dialog for Validation Lists */}
       <Dialog open={showValidationListsDialog} onOpenChange={setShowValidationListsDialog}>
@@ -1157,12 +1373,27 @@ export default function SystemOverview() {
           border: '1px solid rgba(6, 182, 212, 0.3)'
         }} dir="rtl">
           <DialogHeader>
-            <DialogTitle style={{ color: '#06b6d4', fontSize: '24px' }}>
-              רשימות אימות במערכת ({validationLists.length})
-            </DialogTitle>
-            <p className="text-sm" style={{ color: '#94a3b8' }}>
-              💡 גרור שאלות בין רשימות כדי לשנות את רשימת האימות שלהן
-            </p>
+            <div className="flex items-center justify-between">
+              <div>
+                <DialogTitle style={{ color: '#06b6d4', fontSize: '24px' }}>
+                  רשימות אימות במערכת ({validationLists.length})
+                </DialogTitle>
+                <p className="text-sm" style={{ color: '#94a3b8' }}>
+                  💡 גרור שאלות בין רשימות כדי לשנות את רשימת האימות שלהן
+                </p>
+              </div>
+              <Button
+                onClick={() => setShowCreateListDialog(true)}
+                size="sm"
+                style={{
+                  background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                  color: 'white'
+                }}
+              >
+                <Plus className="w-4 h-4 ml-1" />
+                רשימה חדשה
+              </Button>
+            </div>
           </DialogHeader>
 
           {(() => {
@@ -1172,13 +1403,8 @@ export default function SystemOverview() {
               if (q.away_team) allTeamsInQuestions.add(q.away_team.trim());
             });
 
-            const teamValidationLists = validationLists.filter(list =>
-              list.list_name?.toLowerCase().includes('קבוצ') &&
-              !list.list_name?.toLowerCase().includes('מוקדמות')
-            );
-
             // Filter for only relevant lists (with issues)
-            const listsWithIssues = teamValidationLists.map(list => {
+            const listsWithIssues = validationLists.map(list => { // Use validationLists from state
               const cleanTeamName = (opt) => String(opt).split('(')[0].trim();
 
               const missingTeams = Array.from(allTeamsInQuestions).filter(team => {
@@ -1201,7 +1427,7 @@ export default function SystemOverview() {
             if (listsWithIssues.length === 0) return null; // If no issues, don't render this section
 
             return listsWithIssues.map(list => (
-              <Alert key={list.id} className="mb-4" style={{
+              <Alert key={list.list_name} className="mb-4" style={{
                 background: list.missingTeams.length > 0 ? 'rgba(239, 68, 68, 0.1)' : 'rgba(251, 191, 36, 0.1)',
                 border: `1px solid ${list.missingTeams.length > 0 ? 'rgba(239, 68, 68, 0.3)' : 'rgba(251, 191, 36, 0.3)'}`
               }}>
@@ -1270,10 +1496,12 @@ export default function SystemOverview() {
             const questionId = result.draggableId;
 
             try {
-              await Question.update(questionId, { validation_list: destListName === 'null' ? null : destListName });
+              await db.Question.update(questionId, { validation_list: destListName === 'null' ? null : destListName });
 
-              const updatedQuestions = await Question.list(null, 10000);
-              setQuestions(updatedQuestions);
+              // Update questions state directly for immediate UI feedback
+              setQuestions(prevQuestions => prevQuestions.map(q =>
+                q.id === questionId ? { ...q, validation_list: destListName === 'null' ? null : destListName } : q
+              ));
 
               toast({
                 title: "שאלה הועברה!",
@@ -1290,18 +1518,23 @@ export default function SystemOverview() {
             }
           }}>
             <div className="space-y-6">
-              {validationLists
+              {validationLists // Use validationLists from state
                 .sort((a, b) => a.list_name.localeCompare(b.list_name, 'he'))
-                .map(list => {
+                .map((list, listIndex) => {
                   const questionsUsingThisList = questions.filter(q => q.validation_list === list.list_name);
-                  const isEditing = editingListId === list.id;
+                  const isEditing = editingListId === list.list_name;
                   const displayOptions = isEditing ? editedOptions : list.options;
 
                   return (
-                    <Card key={list.id} className="bg-slate-800/50 border-cyan-500/30">
+                    <Card key={list.list_name} className="bg-slate-800/50 border-cyan-500/30">
                       <CardHeader className="pb-3">
                         <div className="flex items-center justify-between">
-                          <CardTitle className="text-cyan-300 text-xl">{list.list_name}</CardTitle>
+                          <div className="flex items-center gap-2">
+                            <Badge style={{ background: '#06b6d4', color: 'white', fontSize: '12px' }}>
+                              {listIndex + 1}
+                            </Badge>
+                            <CardTitle className="text-cyan-300 text-xl">{list.list_name}</CardTitle>
+                          </div>
                           <div className="flex items-center gap-3">
                             <Badge className="text-white" style={{ background: '#0ea5e9' }}>
                               {displayOptions.length} אופציות
@@ -1326,7 +1559,7 @@ export default function SystemOverview() {
                                 <Button
                                   size="sm"
                                   variant="destructive"
-                                  onClick={() => deleteValidationList(list.id, list.list_name)}
+                                  onClick={() => deleteValidationList(list.list_name)}
                                   disabled={questionsUsingThisList.length > 0}
                                 >
                                   <Trash2 className="w-4 h-4" />
@@ -1336,7 +1569,7 @@ export default function SystemOverview() {
                               <>
                                 <Button
                                   size="sm"
-                                  onClick={() => saveEditedList(list.id)}
+                                  onClick={() => saveEditedList(list.list_name)}
                                   style={{
                                     background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
                                     color: 'white'
@@ -1363,27 +1596,81 @@ export default function SystemOverview() {
                           <h4 className="text-sm font-bold mb-2 text-slate-300">אופציות ברשימה:</h4>
                           <div className="grid grid-cols-2 md:grid-cols-3 gap-2 max-h-60 overflow-y-auto">
                             {(() => {
-                              // 🎯 מיין רק אם זו רשימת קבוצות
                               const isTeamsList = list.list_name?.toLowerCase().includes('קבוצ');
                               const optionsToDisplay = isTeamsList
                                 ? [...displayOptions].sort((a, b) => String(a).localeCompare(String(b), 'he'))
                                 : displayOptions;
 
-                              return optionsToDisplay.map((opt, idx) => (
-                                <div key={idx} className="p-2 bg-slate-700/50 rounded border border-cyan-500/20 text-sm text-white flex items-center justify-between">
-                                  <span>{idx + 1}. {opt}</span>
-                                  {isEditing && (
-                                    <Button
-                                      size="sm"
-                                      variant="ghost"
-                                      onClick={() => removeOption(displayOptions.indexOf(opt))}
-                                      className="h-6 w-6 p-0 hover:bg-red-500/20"
-                                    >
-                                      <Trash2 className="w-3 h-3 text-red-400" />
-                                    </Button>
-                                  )}
-                                </div>
-                              ));
+                              return optionsToDisplay.map((opt, idx) => {
+                                const actualIndex = displayOptions.indexOf(opt);
+                                const isEditingThisOption = isEditing && editingOptionIndex === actualIndex;
+
+                                return (
+                                  <div key={idx} className="p-2 bg-slate-700/50 rounded border border-cyan-500/20 text-sm text-white flex items-center justify-between gap-2">
+                                    {isEditingThisOption ? (
+                                      <>
+                                        <Input
+                                          value={editingOptionValue}
+                                          onChange={(e) => setEditingOptionValue(e.target.value)}
+                                          onKeyPress={(e) => {
+                                            if (e.key === 'Enter') saveEditingOption();
+                                            if (e.key === 'Escape') cancelEditingOption();
+                                          }}
+                                          autoFocus
+                                          className="flex-1 h-6 text-xs"
+                                          style={{
+                                            background: '#0f172a',
+                                            border: '1px solid rgba(6, 182, 212, 0.3)',
+                                            color: '#f8fafc'
+                                          }}
+                                        />
+                                        <div className="flex gap-1">
+                                          <Button
+                                            size="sm"
+                                            variant="ghost"
+                                            onClick={saveEditingOption}
+                                            className="h-6 w-6 p-0 hover:bg-green-500/20"
+                                          >
+                                            <CheckCircle className="w-3 h-3 text-green-400" />
+                                          </Button>
+                                          <Button
+                                            size="sm"
+                                            variant="ghost"
+                                            onClick={cancelEditingOption}
+                                            className="h-6 w-6 p-0 hover:bg-gray-500/20"
+                                          >
+                                            <span className="text-xs text-gray-400">✕</span>
+                                          </Button>
+                                        </div>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <span className="flex-1">{idx + 1}. {opt}</span>
+                                        {isEditing && (
+                                          <div className="flex gap-1">
+                                            <Button
+                                              size="sm"
+                                              variant="ghost"
+                                              onClick={() => startEditingOption(actualIndex, opt)}
+                                              className="h-6 w-6 p-0 hover:bg-cyan-500/20"
+                                            >
+                                              <Edit className="w-3 h-3 text-cyan-400" />
+                                            </Button>
+                                            <Button
+                                              size="sm"
+                                              variant="ghost"
+                                              onClick={() => removeOption(actualIndex)}
+                                              className="h-6 w-6 p-0 hover:bg-red-500/20"
+                                            >
+                                              <Trash2 className="w-3 h-3 text-red-400" />
+                                            </Button>
+                                          </div>
+                                        )}
+                                      </>
+                                    )}
+                                  </div>
+                                );
+                              });
                             })()}
                           </div>
 
@@ -1470,7 +1757,7 @@ export default function SystemOverview() {
                                               <GripVertical className="w-4 h-4" style={{ color: '#06b6d4' }} />
                                             </div>
                                             <Badge variant="outline" style={{ borderColor: '#06b6d4', color: '#06b6d4' }}>
-                                              {q.table_id}
+                                              {q.stage_name || q.table_text || q.table_id}
                                             </Badge>
                                             <Badge variant="outline" style={{ borderColor: '#0ea5e9', color: '#0ea5e9' }}>
                                               שאלה {q.question_id}
@@ -1581,7 +1868,7 @@ export default function SystemOverview() {
                                     <GripVertical className="w-4 h-4" style={{ color: '#06b6d4' }} />
                                   </div>
                                   <Badge variant="outline" style={{ borderColor: '#06b6d4', color: '#06b6d4' }}>
-                                    {q.table_id}
+                                    {q.stage_name || q.table_text || q.table_id}
                                   </Badge>
                                   <Badge variant="outline" style={{ borderColor: '#0ea5e9', color: '#0ea5e9' }}>
                                     שאלה {q.question_id}
@@ -1663,6 +1950,294 @@ export default function SystemOverview() {
         open={showUploadDialog} 
         onOpenChange={setShowUploadDialog}
       />
+
+      {/* Dialog להעלאת ניחושים חסרים */}
+      <Dialog open={showUploadMissingDialog} onOpenChange={setShowUploadMissingDialog}>
+        <DialogContent style={{
+          background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)',
+          border: '1px solid rgba(6, 182, 212, 0.3)',
+          maxWidth: '650px'
+        }} dir="rtl">
+          <DialogHeader>
+            <DialogTitle style={{ color: '#06b6d4', fontSize: '20px' }}>
+              העלאת ניחושים - משלים את החסרים
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <Alert style={{
+              background: 'rgba(16, 185, 129, 0.1)',
+              border: '1px solid rgba(16, 185, 129, 0.3)'
+            }}>
+              <AlertDescription>
+                <p className="font-semibold mb-2" style={{ color: '#10b981' }}>✅ פשוט מאוד!</p>
+                <ol className="list-decimal list-inside space-y-1 text-sm" style={{ color: '#94a3b8' }}>
+                  <li>פתח את קובץ האקסל המלא שלך</li>
+                  <li>בחר הכל והעתק (Ctrl+C)</li>
+                  <li>שמור כ-CSV (UTF-8)</li>
+                  <li>טען כאן - <strong style={{ color: '#10b981' }}>המערכת תשלים רק את החסרים!</strong></li>
+                </ol>
+                <p className="text-xs mt-2" style={{ color: '#06b6d4' }}>
+                  💡 אין צורך למחוק כלום - המערכת מזהה מה כבר קיים ומשלימה רק את החסר
+                </p>
+              </AlertDescription>
+            </Alert>
+
+            <Alert style={{
+              background: 'rgba(6, 182, 212, 0.1)',
+              border: '1px solid rgba(6, 182, 212, 0.3)'
+            }}>
+              <AlertDescription>
+                <p className="font-semibold mb-2" style={{ color: '#06b6d4' }}>📋 פורמט הקובץ:</p>
+                <ul className="list-disc list-inside space-y-1 text-sm" style={{ color: '#94a3b8' }}>
+                  <li>עמודה 1: מזהה טבלה (T12, T13...)</li>
+                  <li>עמודה 2: מספר שאלה (1, 2, 3...)</li>
+                  <li>עמודות 3+: שמות משתתפים</li>
+                  <li>תאים: ניחושים (ריקים = כבר קיימים במערכת)</li>
+                </ul>
+              </AlertDescription>
+            </Alert>
+
+            <input
+              type="file"
+              accept=".csv,.txt,.tsv"
+              onChange={(e) => {
+                const file = e.target.files[0];
+                if (file) {
+                  const handler = async (uploadFile) => {
+                    setUploadingMissing(true);
+                    try {
+                      const text = await uploadFile.text();
+                      const lines = text.split(/\r\n|\r|\n/).filter(l => l.trim());
+                      console.log(`📄 קובץ נטען: ${lines.length} שורות`);
+                      
+                      if (lines.length < 2) throw new Error("קובץ ריק או חסר נתונים");
+                      
+                      const headers = lines[0].split('\t').map(h => h.trim());
+                      console.log(`📋 כותרות: ${headers.length}`, headers);
+                      
+                      const participantColumns = headers.slice(2);
+                      console.log(`👥 ${participantColumns.length} משתתפים בקובץ:`, participantColumns);
+                      
+                      // 🔍 הצג דוגמאות שאלות קיימות
+                      console.log(`🗂️ סה"כ ${questions.length} שאלות במערכת`);
+                      console.log('📋 5 דוגמאות שאלות:', questions.slice(0, 5).map(q => ({
+                        table_id: q.table_id,
+                        question_id: q.question_id,
+                        id: q.id
+                      })));
+                      
+                      const predictionsToCreate = [];
+                      let skippedQuestions = [];
+                      let emptyCells = 0;
+                      let skippedExisting = 0;
+                      
+                      for (let i = 1; i < lines.length; i++) {
+                        const cells = lines[i].split('\t').map(c => c?.trim() || '');
+                        const tableId = cells[0];
+                        const questionId = cells[1];
+                        
+                        console.log(`🔍 שורה ${i+1}: table="${tableId}" question="${questionId}" cells=${cells.length}`);
+                        
+                        if (!tableId || !questionId) {
+                          console.warn(`⚠️ שורה ${i+1}: חסר table_id או question_id`);
+                          continue;
+                        }
+                        
+                        // 🔍 נסה למצוא את השאלה עם נורמליזציה
+                        const question = questions.find(q => {
+                          const qTableId = String(q.table_id || '').trim();
+                          const qQuestionId = String(q.question_id || '').trim();
+                          const fileTableId = String(tableId || '').trim();
+                          const fileQuestionId = String(questionId || '').trim();
+                          
+                          return qTableId === fileTableId && qQuestionId === fileQuestionId;
+                        });
+                        
+                        if (!question) {
+                          skippedQuestions.push(`${tableId}-${questionId}`);
+                          console.warn(`❌ שורה ${i+1}: לא נמצאה: table="${tableId}" question="${questionId}"`);
+                          // הצג אילו שאלות יש באותה טבלה
+                          const sameTable = questions.filter(q => String(q.table_id).trim() === String(tableId).trim());
+                          if (sameTable.length > 0) {
+                            console.log(`   ✅ יש ${sameTable.length} שאלות ב-${tableId}:`, sameTable.map(q => q.question_id));
+                          }
+                          continue;
+                        }
+                        
+                        participantColumns.forEach((participantName, colIndex) => {
+                          const value = cells[colIndex + 2];
+                          if (value && value.trim() !== '') {
+                            predictionsToCreate.push({
+                              game_id: currentGame.id,
+                              question_id: question.id,
+                              participant_name: participantName,
+                              text_prediction: value,
+                              table_id: tableId
+                            });
+                          } else {
+                            emptyCells++;
+                          }
+                        });
+                      }
+                      
+                      console.log(`📊 סיכום:
+- ${predictionsToCreate.length} ניחושים למילוי
+- ${emptyCells} תאים ריקים (דילגנו)
+- ${skippedQuestions.length} שאלות לא נמצאו`);
+                      
+                      if (skippedQuestions.length > 0) {
+                        console.warn('⚠️ שאלות שלא נמצאו:', skippedQuestions);
+                      }
+                      
+                      if (predictionsToCreate.length > 0) {
+                        console.log('💾 שומר ניחושים...');
+                        await db.Prediction.bulkCreate(predictionsToCreate);
+                        toast({
+                          title: "✅ הצלחה!",
+                          description: `${predictionsToCreate.length} ניחושים נטענו (${emptyCells} תאים ריקים)`,
+                          className: "bg-green-100 text-green-800"
+                        });
+                        await loadSystemStats();
+                      } else {
+                        console.error('❌ לא נמצאו ניחושים לטעינה');
+                        toast({
+                          title: "לא נמצאו נתונים",
+                          description: skippedQuestions.length > 0 
+                            ? `${skippedQuestions.length} שאלות לא תואמות למערכת. בדוק console לפרטים.`
+                            : "לא נמצאו תאים עם ניחושים בקובץ",
+                          variant: "destructive"
+                        });
+                      }
+                      
+                    } catch (error) {
+                      console.error("💥 שגיאה בטעינה:", error);
+                      toast({
+                        title: "שגיאה",
+                        description: error.message,
+                        variant: "destructive"
+                      });
+                    }
+                    setUploadingMissing(false);
+                    setShowUploadMissingDialog(false);
+                  };
+                  handler(file);
+                }
+              }}
+              className="hidden"
+              id="upload-missing"
+            />
+            <label
+              htmlFor="upload-missing"
+              className="flex items-center justify-center gap-2 w-full p-4 border rounded-lg cursor-pointer transition-colors"
+              style={{
+                background: 'rgba(30, 41, 59, 0.6)',
+                border: '1px solid rgba(6, 182, 212, 0.3)',
+                color: '#06b6d4'
+              }}
+            >
+              <Upload className="w-5 h-5" />
+              בחר קובץ CSV
+            </label>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog for creating new validation list */}
+      <Dialog open={showCreateListDialog} onOpenChange={setShowCreateListDialog}>
+        <DialogContent style={{
+          background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)',
+          border: '1px solid rgba(6, 182, 212, 0.3)',
+          maxWidth: '600px'
+        }} dir="rtl">
+          <DialogHeader>
+            <DialogTitle style={{ color: '#06b6d4', fontSize: '20px' }}>
+              יצירת רשימת אימות חדשה
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <Input
+              placeholder="שם הרשימה (למשל: מחזורים, קבוצות)"
+              value={newListName}
+              onChange={(e) => setNewListName(e.target.value)}
+              style={{
+                background: 'rgba(15, 23, 42, 0.6)',
+                border: '1px solid rgba(6, 182, 212, 0.2)',
+                color: '#f8fafc'
+              }}
+            />
+
+            <div className="space-y-2">
+              <h4 className="text-sm font-medium" style={{ color: '#94a3b8' }}>אופציות:</h4>
+              {newListOptions.map((option, index) => (
+                <div key={index} className="flex gap-2">
+                  <Input
+                    value={option}
+                    onChange={(e) => updateNewListOption(index, e.target.value)}
+                    placeholder={`אפשרות ${index + 1}...`}
+                    style={{
+                      background: 'rgba(15, 23, 42, 0.6)',
+                      border: '1px solid rgba(6, 182, 212, 0.2)',
+                      color: '#f8fafc'
+                    }}
+                  />
+                  {newListOptions.length > 1 && (
+                    <Button
+                      onClick={() => removeNewListOption(index)}
+                      variant="ghost"
+                      size="sm"
+                      className="text-red-400"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            <Button
+              onClick={addOptionToNewList}
+              variant="outline"
+              size="sm"
+              style={{
+                borderColor: 'rgba(6, 182, 212, 0.3)',
+                color: '#06b6d4'
+              }}
+            >
+              <Plus className="w-4 h-4 ml-1" />
+              הוסף אפשרות
+            </Button>
+
+            <div className="flex justify-end gap-3 pt-4">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowCreateListDialog(false);
+                  setNewListName("");
+                  setNewListOptions([""]);
+                }}
+                style={{
+                  borderColor: 'rgba(6, 182, 212, 0.3)',
+                  color: '#94a3b8'
+                }}
+              >
+                ביטול
+              </Button>
+              <Button
+                onClick={createNewValidationList}
+                style={{
+                  background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                  color: 'white'
+                }}
+              >
+                <CheckCircle className="w-5 h-5 ml-2" />
+                צור רשימה
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
