@@ -87,7 +87,31 @@ export default function LeaderboardNew() {
     try {
       console.log('🔄 טוען דירוג עבור משחק:', currentGame.id, currentGame.game_name);
 
-      // 1️⃣ טען שאלות
+      // קרא ישירות מטבלת rankings
+      const rankingsData = await db.Ranking.filter({ game_id: currentGame.id }, '-current_score', 1000);
+      
+      if (rankingsData && rankingsData.length > 0) {
+        console.log(`✅ ${rankingsData.length} משתתפים בדירוג מהטבלה`);
+        let position = 1;
+        for (let i = 0; i < rankingsData.length; i++) {
+          if (i > 0 && rankingsData[i].current_score !== rankingsData[i-1].current_score) position = i + 1;
+          rankingsData[i].current_position = position;
+        }
+        setRankings(rankingsData);
+        const scores = rankingsData.map(r => r.current_score);
+        setAvgScore(scores.reduce((a,b) => a+b, 0) / scores.length);
+        setMaxScore(Math.max(...scores));
+        setMinScore(Math.min(...scores));
+        setLoading(false);
+        return;
+      }
+
+      // fallback אם הטבלה ריקה
+      console.log('⚠️ טבלת rankings ריקה');
+      setLoading(false);
+      return;
+
+      // 1️⃣ טען שאלות (fallback code - not reached)
       let allQuestions = [];
       let questionSkip = 0;
       const BATCH = 5000;
