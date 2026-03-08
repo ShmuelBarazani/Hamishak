@@ -355,7 +355,7 @@ export default function ManageGameParticipants() {
                 </thead>
                 <tbody>
                   {participants.map((participant) => {
-                    const user = allUsers.find(u => u.email === participant.user_email);
+                    const user = allUsers.find(u => u.user_email === participant.user_email);
                     
                     return (
                       <tr 
@@ -367,7 +367,7 @@ export default function ManageGameParticipants() {
                           <div className="flex items-center gap-2">
                             <UserIcon className="w-4 h-4" style={{ color: '#06b6d4' }} />
                             <span style={{ color: '#f8fafc', fontWeight: '500' }}>
-                              {user?.participant_name || user?.user_email || 'לא ידוע'}
+                              {participant.participant_name || participant.user_email || 'לא ידוע'}
                             </span>
                           </div>
                         </td>
@@ -537,7 +537,7 @@ export default function ManageGameParticipants() {
                   border: '1px solid rgba(239, 68, 68, 0.3)'
                 }}>
                   <AlertDescription style={{ color: '#fca5a5' }}>
-                    האם להסיר את {allUsers.find(u => u.email === participantToDelete.user_email)?.participant_name || participantToDelete?.user_email} מהמשחק?
+                    האם להסיר את {participantToDelete?.participant_name || participantToDelete?.user_email} מהמשחק?
                   </AlertDescription>
                 </Alert>
 

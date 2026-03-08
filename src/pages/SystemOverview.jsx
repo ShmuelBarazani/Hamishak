@@ -1665,99 +1665,50 @@ export default function SystemOverview() {
                         {questionsUsingThisList.length > 0 ? (
                           <div>
                             <h4 className="text-sm font-bold mb-2 text-slate-300">
-                              שאלות שמשתמשות ברשימה (גרור להעברה):
+                              שאלות שמשתמשות ברשימה:
                             </h4>
-                            <div><div
-                                  ref={provided.innerRef}
-                                  {...provided.droppableProps}
-                                  className="space-y-1 min-h-[60px] p-2 rounded"
-                                  style={{
-                                    background: snapshot.isDraggingOver
-                                      ? 'rgba(6, 182, 212, 0.1)'
-                                      : 'transparent',
-                                    border: snapshot.isDraggingOver
-                                      ? '2px dashed rgba(6, 182, 212, 0.5)'
-                                      : '2px dashed transparent',
-                                    transition: 'all 0.2s'
-                                  }}
-                                >
-                                  {questionsUsingThisList
-                                    .sort((a, b) => {
-                                      const tableA = parseInt(a.table_id?.replace('T', '')) || 0;
-                                      const tableB = parseInt(b.table_id?.replace('T', '')) || 0;
-                                      if (tableA !== tableB) return tableA - tableB;
-                                      return parseFloat(a.question_id) - parseFloat(b.question_id);
-                                    })
-                                    .map((q, index) => (
-                                      <div><div
-                                            ref={provided.innerRef}
-                                            {...provided.draggableProps}
-                                            className="flex items-center gap-2 p-2 rounded text-sm transition-all"
-                                            style={{
-                                              ...provided.draggableProps.style,
-                                              background: snapshot.isDragging
-                                                ? 'rgba(6, 182, 212, 0.2)'
-                                                : '#1e293b',
-                                              border: snapshot.isDragging
-                                                ? '2px solid rgba(6, 182, 212, 0.5)'
-                                                : '1px solid rgba(6, 182, 212, 0.2)',
-                                              cursor: 'grab',
-                                              zIndex: snapshot.isDragging ? 9999 : 'auto'
-                                            }}
-                                          >
-                                            <div {...provided.dragHandleProps}>
-                                              <GripVertical className="w-4 h-4" style={{ color: '#06b6d4' }} />
-                                            </div>
-                                            <Badge variant="outline" style={{ borderColor: '#06b6d4', color: '#06b6d4' }}>
-                                              {q.stage_name || q.table_text || q.table_id}
-                                            </Badge>
-                                            <Badge variant="outline" style={{ borderColor: '#0ea5e9', color: '#0ea5e9' }}>
-                                              שאלה {q.question_id}
-                                            </Badge>
-                                            <span className="text-slate-300 flex-1">{q.question_text}</span>
-                                          </div>
-                                        )}
-                                      </div>
-                                    ))}
-                                  {provided.placeholder}
-                                </div>
-                              )}
+                            <div className="space-y-1">
+                              {questionsUsingThisList
+                                .sort((a, b) => {
+                                  const tableA = parseInt(a.table_id?.replace('T', '')) || 0;
+                                  const tableB = parseInt(b.table_id?.replace('T', '')) || 0;
+                                  if (tableA !== tableB) return tableA - tableB;
+                                  return parseFloat(a.question_id) - parseFloat(b.question_id);
+                                })
+                                .map((q) => (
+                                  <div key={q.id} className="flex items-center gap-2 p-2 rounded text-sm" style={{
+                                    background: '#1e293b',
+                                    border: '1px solid rgba(6, 182, 212, 0.2)'
+                                  }}>
+                                    <Badge variant="outline" style={{ borderColor: '#06b6d4', color: '#06b6d4' }}>
+                                      {q.stage_name || q.table_id}
+                                    </Badge>
+                                    <Badge variant="outline" style={{ borderColor: '#0ea5e9', color: '#0ea5e9' }}>
+                                      שאלה {q.question_id}
+                                    </Badge>
+                                    <span className="text-slate-300 flex-1">{q.question_text}</span>
+                                  </div>
+                                ))}
                             </div>
                           </div>
                         ) : (
-                          <div><div
-                                ref={provided.innerRef}
-                                {...provided.droppableProps}
-                                className="min-h-[60px] p-4 rounded flex items-center justify-center"
-                                style={{
-                                  background: snapshot.isDraggingOver
-                                    ? 'rgba(6, 182, 212, 0.1)'
-                                    : 'rgba(251, 191, 36, 0.05)',
-                                  border: snapshot.isDraggingOver
-                                    ? '2px dashed rgba(6, 182, 212, 0.5)'
-                                    : '2px dashed rgba(251, 191, 36, 0.3)',
-                                  transition: 'all 0.2s'
-                                }}
-                              >
-                                <div className="text-center">
-                                  <AlertTriangle className="w-6 h-6 mx-auto mb-2" style={{ color: '#fbbf24' }} />
-                                  <p className="text-sm" style={{ color: '#fbbf24' }}>
-                                    {snapshot.isDraggingOver
-                                      ? 'שחרר כאן להעביר שאלה לרשימה זו'
-                                      : 'אף שאלה לא משתמשת ברשימה זו - גרור שאלות לכאן'}
-                                  </p>
-                                </div>
-                                {provided.placeholder}
-                              </div>
-                            )}
+                          <div className="min-h-[60px] p-4 rounded flex items-center justify-center" style={{
+                            background: 'rgba(251, 191, 36, 0.05)',
+                            border: '2px dashed rgba(251, 191, 36, 0.3)'
+                          }}>
+                            <div className="text-center">
+                              <AlertTriangle className="w-6 h-6 mx-auto mb-2" style={{ color: '#fbbf24' }} />
+                              <p className="text-sm" style={{ color: '#fbbf24' }}>
+                                אף שאלה לא משתמשת ברשימה זו
+                              </p>
+                            </div>
                           </div>
                         )}
-                      </CardContent>
                     </Card>
                   );
                 })}
 
-              {/* Special Droppable for questions with no validation list */}
+              {/* שאלות ללא רשימת אימות */}
               <Card className="bg-slate-800/50 border-cyan-500/30">
                 <CardHeader className="pb-3">
                   <div className="flex items-center justify-between">
@@ -1768,78 +1719,40 @@ export default function SystemOverview() {
                   </div>
                 </CardHeader>
                 <CardContent>
-                  <div>
-                    {(provided, snapshot) => (
-                      <div
-                        ref={provided.innerRef}
-                        {...provided.droppableProps}
-                        className="space-y-1 min-h-[60px] p-2 rounded"
-                        style={{
-                          background: snapshot.isDraggingOver
-                            ? 'rgba(6, 182, 212, 0.1)'
-                            : 'rgba(251, 191, 36, 0.05)',
-                          border: snapshot.isDraggingOver
-                            ? '2px dashed rgba(6, 182, 212, 0.5)'
-                            : '2px dashed rgba(251, 191, 36, 0.3)',
-                          transition: 'all 0.2s'
-                        }}
-                      >
-                        {questions.filter(q => !q.validation_list)
-                          .sort((a, b) => {
-                            const tableA = parseInt(a.table_id?.replace('T', '')) || 0;
-                            const tableB = parseInt(b.table_id?.replace('T', '')) || 0;
-                            if (tableA !== tableB) return tableA - tableB;
-                            return parseFloat(a.question_id) - parseFloat(b.question_id);
-                          })
-                          .map((q, index) => (
-                            <div><div
-                                  ref={provided.innerRef}
-                                  {...provided.draggableProps}
-                                  className="flex items-center gap-2 p-2 rounded text-sm transition-all"
-                                  style={{
-                                    ...provided.draggableProps.style,
-                                    background: snapshot.isDragging
-                                      ? 'rgba(6, 182, 212, 0.2)'
-                                      : '#1e293b',
-                                    border: snapshot.isDragging
-                                      ? '2px solid rgba(6, 182, 212, 0.5)'
-                                      : '1px solid rgba(6, 182, 212, 0.2)',
-                                    cursor: 'grab',
-                                    zIndex: snapshot.isDragging ? 9999 : 'auto'
-                                  }}
-                                >
-                                  <div {...provided.dragHandleProps}>
-                                    <GripVertical className="w-4 h-4" style={{ color: '#06b6d4' }} />
-                                  </div>
-                                  <Badge variant="outline" style={{ borderColor: '#06b6d4', color: '#06b6d4' }}>
-                                    {q.stage_name || q.table_text || q.table_id}
-                                  </Badge>
-                                  <Badge variant="outline" style={{ borderColor: '#0ea5e9', color: '#0ea5e9' }}>
-                                    שאלה {q.question_id}
-                                  </Badge>
-                                  <span className="text-slate-300 flex-1">{q.question_text}</span>
-                                </div>
-                              )}
-                            </div>
-                          ))}
-                        {provided.placeholder}
-                        {questions.filter(q => !q.validation_list).length === 0 && !snapshot.isDraggingOver && (
-                          <div className="text-center p-4 text-sm" style={{ color: '#fbbf24' }}>
-                            <AlertTriangle className="w-6 h-6 mx-auto mb-2" />
-                            אין שאלות ללא רשימת אימות. גרור לכאן כדי להסיר רשימה.
-                          </div>
-                        )}
-                        {snapshot.isDraggingOver && questions.filter(q => !q.validation_list).length === 0 && (
-                          <div className="text-center p-4 text-sm" style={{ color: '#06b6d4' }}>
-                            שחרר כאן כדי להגדיר שאלה ללא רשימת אימות.
-                          </div>
-                        )}
+                  <div className="space-y-1 min-h-[60px] p-2 rounded" style={{
+                    background: 'rgba(251, 191, 36, 0.05)',
+                    border: '2px dashed rgba(251, 191, 36, 0.3)'
+                  }}>
+                    {questions.filter(q => !q.validation_list)
+                      .sort((a, b) => {
+                        const tableA = parseInt(a.table_id?.replace('T', '')) || 0;
+                        const tableB = parseInt(b.table_id?.replace('T', '')) || 0;
+                        if (tableA !== tableB) return tableA - tableB;
+                        return parseFloat(a.question_id) - parseFloat(b.question_id);
+                      })
+                      .map((q) => (
+                        <div key={q.id} className="flex items-center gap-2 p-2 rounded text-sm" style={{
+                          background: '#1e293b',
+                          border: '1px solid rgba(6, 182, 212, 0.2)'
+                        }}>
+                          <Badge variant="outline" style={{ borderColor: '#06b6d4', color: '#06b6d4' }}>
+                            {q.stage_name || q.table_id}
+                          </Badge>
+                          <Badge variant="outline" style={{ borderColor: '#0ea5e9', color: '#0ea5e9' }}>
+                            שאלה {q.question_id}
+                          </Badge>
+                          <span className="text-slate-300 flex-1">{q.question_text}</span>
+                        </div>
+                      ))}
+                    {questions.filter(q => !q.validation_list).length === 0 && (
+                      <div className="text-center p-4 text-sm" style={{ color: '#fbbf24' }}>
+                        <AlertTriangle className="w-6 h-6 mx-auto mb-2" />
+                        אין שאלות ללא רשימת אימות.
                       </div>
                     )}
                   </div>
                 </CardContent>
               </Card>
-            </div>
           </div>
         </DialogContent>
       </Dialog>

@@ -231,8 +231,8 @@ ${appUrl}
     }
 
     try {
-      const newRole = user.role === 'admin' ? 'predictor' : 'admin';
-      await db.GameParticipant.update(user.id, { role: newRole });
+      const newRole = user.role_in_game === 'admin' ? 'predictor' : 'admin';
+      await db.GameParticipant.update(user.id, { role_in_game: newRole });
 
       toast({
         title: "עודכן!",
@@ -386,7 +386,7 @@ ${appUrl}
                           </div>
                         </td>
                         <td className="text-center p-4">
-                          {user.role === 'admin' ? (
+                          {user.role_in_game === 'admin' ? (
                             <Badge className="text-white" style={{ 
                               background: 'linear-gradient(135deg, #06b6d4 0%, #0ea5e9 100%)',
                               boxShadow: '0 0 10px rgba(6, 182, 212, 0.4)'
@@ -458,14 +458,14 @@ ${appUrl}
                               size="sm"
                               variant="outline"
                               style={{ 
-                                borderColor: user.role === 'admin' ? '#ef4444' : '#06b6d4',
-                                color: user.role === 'admin' ? '#fca5a5' : '#06b6d4',
+                                borderColor: user.role_in_game === 'admin' ? '#ef4444' : '#06b6d4',
+                                color: user.role_in_game === 'admin' ? '#fca5a5' : '#06b6d4',
                                 background: 'rgba(30, 41, 59, 0.4)'
                               }}
-                              className={user.role === 'admin' ? 'hover:bg-red-500/20' : 'hover:bg-cyan-500/20'}
+                              className={user.role_in_game === 'admin' ? 'hover:bg-red-500/20' : 'hover:bg-cyan-500/20'}
                             >
                               <Shield className="w-4 h-4 ml-1" />
-                              {user.role === 'admin' ? 'הסר מנהל' : 'הפוך למנהל'}
+                              {user.role_in_game === 'admin' ? 'הסר מנהל' : 'הפוך למנהל'}
                             </Button>
                             
                             <Button
