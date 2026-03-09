@@ -88,11 +88,8 @@ export default function UserManagement() {
         }
       });
 
-      // שלב: משתמשים עם אימייל + משתמשים ללא אימייל (אם שמם לא מופיע כבר ע"י מישהו עם אימייל)
-      const emailNames = new Set(Object.values(uniqueByEmail).map(u => u.participant_name).filter(Boolean));
-      const noEmailUsers = Object.values(uniqueByName).filter(u => !emailNames.has(u.participant_name));
-
-      const uniqueUsers = [...Object.values(uniqueByEmail), ...noEmailUsers]
+      // שלב: כל המשתמשים — עם אימייל + ללא אימייל (כולם, ללא סינון לפי שם)
+      const uniqueUsers = [...Object.values(uniqueByEmail), ...Object.values(uniqueByName)]
         .sort((a, b) => (a.participant_name || '').localeCompare(b.participant_name || '', 'he'));
       setUsers(uniqueUsers);
       
@@ -390,7 +387,7 @@ ${appUrl}
                 </thead>
                 <tbody>
                   {users.map((user) => {
-                    const games = userGames[user.email] || [];
+                    const games = userGames[user.user_email] || [];
                     
                     return (
                       <tr 
@@ -417,7 +414,7 @@ ${appUrl}
                         <td className="p-4">
                           <div className="flex items-center gap-2">
                             <Mail className="w-4 h-4" style={{ color: '#94a3b8' }} />
-                            <span style={{ color: '#94a3b8' }}>{user.email}</span>
+                            <span style={{ color: '#94a3b8' }}>{user.user_email || '—'}</span>
                           </div>
                         </td>
                         <td className="text-center p-4">
