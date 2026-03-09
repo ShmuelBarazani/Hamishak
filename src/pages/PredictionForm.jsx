@@ -19,7 +19,7 @@ export default function PredictionForm() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
-  const [isFormLocked, setIsFormLocked] = useState(true);
+  // isFormLocked is now derived from currentGame.status
   const [teams, setTeams] = useState({});
   const [validationLists, setValidationLists] = useState({});
   const [predictions, setPredictions] = useState({});
@@ -133,16 +133,6 @@ export default function PredictionForm() {
         setLoading(false);
         return;
       }
-
-      // טען סטטוס נעילה
-      const settings = await db.SystemSettings.filter({ setting_key: "prediction_form_status" }, null, 1);
-      if (settings.length > 0) {
-        setIsFormLocked(settings[0].setting_value === "locked");
-      } else {
-        // Default to open if setting not found
-        setIsFormLocked(false);
-      }
-
       // Changed: filter questions by game_id
       const loadedQuestions = await db.Question.filter({ game_id: currentGame.id }, "-created_at", 5000);
       
@@ -474,22 +464,9 @@ export default function PredictionForm() {
 
   const toggleFormLock = async () => {
     try {
-      const settings = await db.SystemSettings.filter({ setting_key: "prediction_form_status" }, null, 1);
-          const newStatus = isFormLocked ? "open" : "locked";
-
-          if (settings.length > 0) {
-            await db.SystemSettings.update(settings[0].id, {
-              setting_value: newStatus
-            });
-          } else {
-            await db.SystemSettings.create({
-              setting_key: "prediction_form_status",
-              setting_value: newStatus,
-              description: "סטטוס טופס מילוי ניחושים"
-            });
-          }
-      
-      setIsFormLocked(!isFormLocked);
+      const newStatus = isFormLocked ? "active" : "locked";
+      await db.Game.update(currentGame.id, { status: newStatus });
+      setCurrentGame(prev => ({ ...prev, status: newStatus }));
       toast({
         title: isFormLocked ? "הטופס נפתח!" : "הטופס ננעל!",
         description: isFormLocked ? "משתתפים יכולים למלא ניחושים" : "הטופס נעול למילוי"
@@ -1255,6 +1232,7 @@ export default function PredictionForm() {
 
   const isAdmin = currentUser?.user_metadata?.role === 'admin';
   const isGameLocked = currentGame?.status === 'locked';
+  const isFormLocked = isGameLocked; // derived from game status
 
   // אם הטופס נעול והמשתמש לא מנהל - הצג הודעה ברורה
   if ((isFormLocked || isGameLocked) && !isAdmin) {
