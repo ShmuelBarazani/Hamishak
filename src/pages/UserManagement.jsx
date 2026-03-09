@@ -215,7 +215,11 @@ ${appUrl}
         await Prediction.delete(pred.id);
       }
 
-      await db.GameParticipant.delete(userToDelete.id);
+      // 🔥 מחק את כל הרשומות של המשתמש בכל המשחקים
+      const allRecords = await db.GameParticipant.filter({ user_email: userToDelete.user_email }, null, 1000);
+      for (const rec of allRecords) {
+        await db.GameParticipant.delete(rec.id);
+      }
 
       toast({
         title: "נמחק בהצלחה!",
