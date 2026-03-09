@@ -77,9 +77,26 @@ export default function PredictionForm() {
         user = await supabase.auth.getUser().then(r => r.data.user);
         setCurrentUser(user);
         
-        // 🔍 מנהלים כלליים תמיד מקבלים גישה
+        // 🔍 מנהלים גם טוענים פרטים מ-game_participants
         if (user.user_metadata?.role === 'admin') {
           console.log('✅ משתמש מנהל - גישה מלאה');
+          const adminParticipants = await db.GameParticipant.filter({
+            game_id: currentGame.id,
+            user_email: user.email
+          }, null, 1);
+          if (adminParticipants.length > 0) {
+            const p = adminParticipants[0];
+            setParticipantRecord(p);
+            if (p.participant_name) setParticipantName(p.participant_name);
+            setParticipantDetails(prev => ({
+              ...prev,
+              'temp_name':       p.participant_name || prev['temp_name'] || user.user_metadata?.full_name || user.email || '',
+              'temp_email':      p.user_email       || prev['temp_email'] || user.email || '',
+              'temp_phone':      p.phone            || prev['temp_phone'] || '',
+              'temp_profession': p.profession       || prev['temp_profession'] || '',
+              'temp_age':        p.age              || prev['temp_age'] || '',
+            }));
+          }
         } else {
           // 🆕 בדוק אם המשתמש שייך למשחק
           const gameParticipants = await db.GameParticipant.filter({
@@ -110,13 +127,28 @@ export default function PredictionForm() {
           setParticipantRecord(participant);
           // 🔥 Pre-fill participant details from game_participants record
           if (participant.participant_name) setParticipantName(participant.participant_name);
+          
+          // 🔄 Cross-game fallback: if current game lacks details, check other games
+          let phone = participant.phone, profession = participant.profession, age = participant.age;
+          if (!phone && !profession && !age) {
+            try {
+              const otherRecords = await db.GameParticipant.filter({ user_email: user.email }, '-created_at', 10);
+              const withDetails = otherRecords.find(r => r.id !== participant.id && (r.phone || r.profession || r.age));
+              if (withDetails) {
+                phone = withDetails.phone;
+                profession = withDetails.profession;
+                age = withDetails.age;
+              }
+            } catch (_) {}
+          }
+          
           setParticipantDetails(prev => ({
             ...prev,
             'temp_name':       participant.participant_name || prev['temp_name'] || '',
             'temp_email':      participant.user_email      || prev['temp_email'] || '',
-            'temp_phone':      participant.phone           || prev['temp_phone'] || '',
-            'temp_profession': participant.profession      || prev['temp_profession'] || '',
-            'temp_age':        participant.age             || prev['temp_age'] || '',
+            'temp_phone':      phone            || prev['temp_phone'] || '',
+            'temp_profession': profession       || prev['temp_profession'] || '',
+            'temp_age':        age              || prev['temp_age'] || '',
           }));
           
           // רק צופים לא יכולים למלא ניחושים
@@ -209,6 +241,7 @@ export default function PredictionForm() {
       filteredQuestions.forEach(q => {
         if (!q.table_id) return;
         
+        // Parse T20 (Israeli track) home/away teams from question_text
         if (q.table_id === 'T20' && q.question_text) {
           let teams = null;
           if (q.question_text.includes(' נגד ')) {
@@ -216,17 +249,25 @@ export default function PredictionForm() {
           } else if (q.question_text.includes(' - ')) {
             teams = q.question_text.split(' - ').map(t => t.trim());
           }
-          
           if (teams && teams.length === 2) {
             q.home_team = teams[0];
             q.away_team = teams[1];
           }
         }
+        
+        // Parse T3 (שמינית הגמר) home/away teams from question_text
+        if (q.table_id === 'T3' && q.question_text && !q.home_team) {
+          const parts = q.question_text.split(' - ');
+          if (parts.length === 2) {
+            q.home_team = parts[0].trim();
+            q.away_team = parts[1].trim();
+          }
+        }
 
-        // Route to rTables ONLY for group stages (בית), not by home/away presence
-        // This prevents knockout match questions from being split into "מחזורי המשחקים"
+        // Route to rTables for group stages (בית) OR שמינית הגמר match questions
         const isGroupStage = q.stage_name?.includes('בית') || q.table_description?.includes('בית');
-        const tableCollection = isGroupStage ? rTables : sTables;
+        const isKnockoutMatch = q.table_id === 'T3' && q.home_team && q.away_team;
+        const tableCollection = (isGroupStage || isKnockoutMatch) ? rTables : sTables;
         
         // 🎯 שימוש ב-stage_name בתור מזהה ייחודי לבתים
         let tableId = q.table_id; // Default to q.table_id
@@ -705,15 +746,14 @@ export default function PredictionForm() {
             <SelectValue placeholder="בחר...">
               {cleanValue && cleanValue !== "__CLEAR__" ? (
                 <div className="flex items-center gap-2">
-                  {(isTeamsList || isNationalTeams) && teams[cleanValue]?.logo_url && (
-                    <img 
-                      src={teams[cleanValue].logo_url} 
-                      alt={cleanValue} 
-                      className="w-5 h-5 rounded-full inline-block" 
-                      onError={(e) => e.target.style.display = 'none'}
-                    />
-                  )}
-                  <span>{cleanValue}</span>
+                  {(() => {
+                    const displayName = cleanValue.replace(/\s*\([^)]+\)\s*$/, '').trim();
+                    const logo = (isTeamsList || isNationalTeams) ? (teams[displayName]?.logo_url || teams[cleanValue]?.logo_url) : null;
+                    return (<>
+                      {logo && <img src={logo} alt={displayName} className="w-5 h-5 rounded-full inline-block" onError={(e) => e.target.style.display='none'} />}
+                      <span>{displayName}</span>
+                    </>);
+                  })()}
                 </div>
               ) : 'בחר...'}
             </SelectValue>
@@ -728,7 +768,9 @@ export default function PredictionForm() {
               &nbsp;
             </SelectItem>
             {options.map(opt => {
-              const team = (isTeamsList || isNationalTeams) ? teams[opt] : null;
+              // Strip country suffix "(Israel)" etc. for logo lookup and display
+              const cleanOptName = opt.replace(/\s*\([^)]+\)\s*$/, '').trim();
+              const team = (isTeamsList || isNationalTeams) ? (teams[cleanOptName] || teams[opt]) : null;
               
               let isAlreadySelected = false;
               let isDisabled = false;
@@ -802,7 +844,7 @@ export default function PredictionForm() {
                         style={{ opacity: (isAlreadySelected || isDisabled) ? 0.4 : 1 }}
                       />
                     )}
-                    <span style={{ color: (isAlreadySelected || isDisabled) ? '#64748b' : '#f8fafc' }}>{opt}</span>
+                    <span style={{ color: (isAlreadySelected || isDisabled) ? '#64748b' : '#f8fafc' }}>{cleanOptName}</span>
                   </div>
                 </SelectItem>
               );
