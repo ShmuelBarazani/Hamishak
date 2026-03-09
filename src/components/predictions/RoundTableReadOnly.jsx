@@ -7,6 +7,11 @@ import { calculateQuestionScore } from "@/components/scoring/ScoreService";
 
 const scoreOptions = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10'];
 
+const stripCountry = (name) => {
+  if (!name) return name;
+  return name.replace(/\s*\([^)]+\)\s*$/, '').trim();
+};
+
 const normalizeTeamName = (name) => {
   if (!name) return name;
   return name
@@ -82,9 +87,11 @@ export default function RoundTableReadOnly({ table, teams, predictions, isEditMo
                             {sortedQuestions.map((q) => {
                                 const normalizedHome = normalizeTeamName(q.home_team);
                                 const normalizedAway = normalizeTeamName(q.away_team);
+                                const displayHome = stripCountry(normalizedHome);
+                                const displayAway = stripCountry(normalizedAway);
                                 
-                                const homeTeam = teams[normalizedHome];
-                                const awayTeam = teams[normalizedAway];
+                                const homeTeam = teams[displayHome] || teams[normalizedHome];
+                                const awayTeam = teams[displayAway] || teams[normalizedAway];
                                 const prediction = predictions[q.id] || "";
                                 const score = calculateQuestionScore(q, prediction);
 
@@ -138,12 +145,12 @@ export default function RoundTableReadOnly({ table, teams, predictions, isEditMo
                                                 {homeTeam?.logo_url && (
                                                     <img 
                                                         src={homeTeam.logo_url} 
-                                                        alt={normalizedHome} 
+                                                        alt={displayHome} 
                                                         className="w-4 h-4 md:w-6 md:h-6 rounded-full" 
                                                         onError={(e) => e.target.style.display = 'none'}
                                                     />
                                                 )}
-                                                <span className="text-slate-200 text-[8px] md:text-xs truncate max-w-[40px] md:max-w-none">{normalizedHome}</span>
+                                                <span className="text-slate-200 text-[8px] md:text-xs truncate max-w-[40px] md:max-w-none">{displayHome}</span>
                                             </div>
                                         </TableCell>
                                         <TableCell className="text-center py-1 md:py-2 px-1 md:px-2 w-14 md:w-20">
@@ -212,12 +219,12 @@ export default function RoundTableReadOnly({ table, teams, predictions, isEditMo
                                                 {awayTeam?.logo_url && (
                                                     <img 
                                                         src={awayTeam.logo_url} 
-                                                        alt={normalizedAway} 
+                                                        alt={displayAway} 
                                                         className="w-4 h-4 md:w-6 md:h-6 rounded-full" 
                                                         onError={(e) => e.target.style.display = 'none'}
                                                     />
                                                 )}
-                                                <span className="text-slate-200 text-[8px] md:text-xs truncate max-w-[40px] md:max-w-none">{normalizedAway}</span>
+                                                <span className="text-slate-200 text-[8px] md:text-xs truncate max-w-[40px] md:max-w-none">{displayAway}</span>
                                             </div>
                                         </TableCell>
                                         <TableCell className="hidden md:table-cell text-center py-1 md:py-2 px-1 md:px-2 w-20">
