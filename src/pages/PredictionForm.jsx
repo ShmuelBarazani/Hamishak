@@ -211,7 +211,10 @@ export default function PredictionForm() {
           }
         }
 
-        const tableCollection = (q.home_team && q.away_team) ? rTables : sTables;
+        // Route to rTables ONLY for group stages (בית), not by home/away presence
+        // This prevents knockout match questions from being split into "מחזורי המשחקים"
+        const isGroupStage = q.stage_name?.includes('בית') || q.table_description?.includes('בית');
+        const tableCollection = isGroupStage ? rTables : sTables;
         
         // 🎯 שימוש ב-stage_name בתור מזהה ייחודי לבתים
         let tableId = q.table_id; // Default to q.table_id
@@ -1286,17 +1289,13 @@ export default function PredictionForm() {
   const allButtons = [];
 
   if (roundTables.length > 0) {
-    // בדוק אם כל הטבלאות הן בתים
-    const allAreGroups = roundTables.every(table => 
-      table.id.includes('בית') || table.description?.includes('בית')
-    );
-    
-    const firstRoundTableId = roundTables[0]?.id || 'T2'; 
-    allButtons.push({
-      numericId: parseInt(firstRoundTableId.replace('T', '').replace(/\D/g, ''), 10),
-      key: 'rounds',
-      description: allAreGroups ? 'שלב הבתים' : 'מחזורי המשחקים',
-      sectionKey: 'rounds'
+    roundTables.forEach(table => {
+      allButtons.push({
+        numericId: table.questions[0]?.stage_order || parseInt((table.id || '').replace('T', '').replace(/\D/g, ''), 10) || 0,
+        key: `round_${table.id}`,
+        description: table.description || table.id,
+        sectionKey: `round_${table.id}`
+      });
     });
   }
 
@@ -1339,12 +1338,7 @@ export default function PredictionForm() {
   }
 
   // Sort by numericId - this ensures correct order (rounds first, then by table number)
-  allButtons.sort((a, b) => {
-    if (a.sectionKey === 'rounds' && b.sectionKey !== 'rounds') return -1;
-    if (b.sectionKey === 'rounds' && a.sectionKey !== 'rounds') return 1;
-
-    return a.numericId - b.numericId;
-  });
+  allButtons.sort((a, b) => a.numericId - b.numericId);
 
   return (
     <div className="p-6 max-w-7xl mx-auto" dir="rtl" style={{ 
@@ -1478,47 +1472,39 @@ export default function PredictionForm() {
           {allButtons.map(button => {
               if (!openSections[button.sectionKey]) return null;
 
-              if (button.sectionKey === 'rounds') {
+              if (button.sectionKey.startsWith('round_')) {
+                  const tableId = button.sectionKey.replace('round_', '');
+                  const table = roundTables.find(t => t.id === tableId);
+                  if (!table) return null;
                   return (
-                      <div key="rounds-section" className="mb-6 space-y-6">
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                              {roundTables.map(table => (
-                                  <RoundTable
-                                      key={table.id}
-                                      table={table}
-                                      teams={teams}
-                                      predictions={predictions}
-                                      onPredictionChange={handlePredictionChange}
-                                      cardStyle={{
-                                        background: 'rgba(30, 41, 59, 0.6)',
-                                        border: '1px solid rgba(6, 182, 212, 0.2)',
-                                        backdropFilter: 'blur(10px)'
-                                      }}
-                                      titleStyle={{ color: '#06b6d4' }}
-                                      questionRowStyle={{
-                                        background: 'rgba(15, 23, 42, 0.4)',
-                                        border: '1px solid rgba(6, 182, 212, 0.1)',
-                                        transition: 'all 0.2s ease-in-out'
-                                      }}
-                                      questionRowHoverClass="hover:bg-cyan-900/20 hover:border-cyan-700/50"
-                                      badgeStyle={{
-                                        borderColor: 'rgba(6, 182, 212, 0.5)',
-                                        color: '#06b6d4'
-                                      }}
-                                      questionTextStyle={{ color: '#94a3b8' }}
-                                      inputStyle={{
-                                        background: 'rgba(15, 23, 42, 0.6)',
-                                        border: '1px solid rgba(6, 182, 212, 0.2)',
-                                        color: '#f8fafc'
-                                      }}
-                                  />
-                              ))}
-                          </div>
-                          <StandingsTable 
-                            roundTables={roundTables}
-                            teams={teams}
-                            data={predictions}
-                            type="predictions"
+                      <div key={button.key} className="mb-6">
+                          <RoundTable
+                              table={table}
+                              teams={teams}
+                              predictions={predictions}
+                              onPredictionChange={handlePredictionChange}
+                              cardStyle={{
+                                background: 'rgba(30, 41, 59, 0.6)',
+                                border: '1px solid rgba(6, 182, 212, 0.2)',
+                                backdropFilter: 'blur(10px)'
+                              }}
+                              titleStyle={{ color: '#06b6d4' }}
+                              questionRowStyle={{
+                                background: 'rgba(15, 23, 42, 0.4)',
+                                border: '1px solid rgba(6, 182, 212, 0.1)',
+                                transition: 'all 0.2s ease-in-out'
+                              }}
+                              questionRowHoverClass="hover:bg-cyan-900/20 hover:border-cyan-700/50"
+                              badgeStyle={{
+                                borderColor: 'rgba(6, 182, 212, 0.5)',
+                                color: '#06b6d4'
+                              }}
+                              questionTextStyle={{ color: '#94a3b8' }}
+                              inputStyle={{
+                                background: 'rgba(15, 23, 42, 0.6)',
+                                border: '1px solid rgba(6, 182, 212, 0.2)',
+                                color: '#f8fafc'
+                              }}
                           />
                       </div>
                   );
