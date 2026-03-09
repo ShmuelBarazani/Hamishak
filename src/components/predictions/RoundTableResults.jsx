@@ -120,9 +120,12 @@ export default function RoundTableResults({ table, teams, results, onResultChang
                             
                             const normalizedHome = normalizeTeamName(homeTeamName);
                             const normalizedAway = normalizeTeamName(awayTeamName);
+                            const displayHome = stripCountry(normalizedHome);
+                            const displayAway = stripCountry(normalizedAway);
                             
-                            const homeTeam = teams[displayHome] || teams[normalizedHome];
-                            const awayTeam = teams[displayAway] || teams[normalizedAway];
+                            // lookup: full name first (includes country), fallback stripped
+                            const homeTeam = teams[normalizedHome] || teams[displayHome];
+                            const awayTeam = teams[normalizedAway] || teams[displayAway];
                             const currentScores = gameScores[q.id] || { home: '', away: '' };
 
                             const hasActualResult = q.actual_result && 
