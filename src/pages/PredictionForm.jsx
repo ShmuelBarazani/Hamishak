@@ -255,11 +255,11 @@ export default function PredictionForm() {
           }
         }
         
-        // Parse T3 (שמינית הגמר) home/away teams from question_text
+        // Parse T3 (שמינית הגמר) home/away teams from question_text — keep full name for logo lookup
         if (q.table_id === 'T3' && q.question_text && !q.home_team) {
           const parts = q.question_text.split(' - ');
           if (parts.length === 2) {
-            q.home_team = parts[0].trim();
+            q.home_team = parts[0].trim(); // e.g. "גלאטסראיי (טורקיה)" — full name for teams map
             q.away_team = parts[1].trim();
           }
         }
@@ -748,7 +748,7 @@ export default function PredictionForm() {
                 <div className="flex items-center gap-2">
                   {(() => {
                     const displayName = cleanValue.replace(/\s*\([^)]+\)\s*$/, '').trim();
-                    const logo = (isTeamsList || isNationalTeams) ? (teams[displayName]?.logo_url || teams[cleanValue]?.logo_url) : null;
+                    const logo = (isTeamsList || isNationalTeams) ? (teams[cleanValue]?.logo_url || teams[displayName]?.logo_url) : null;
                     return (<>
                       {logo && <img src={logo} alt={displayName} className="w-5 h-5 rounded-full inline-block" onError={(e) => e.target.style.display='none'} />}
                       <span>{displayName}</span>
