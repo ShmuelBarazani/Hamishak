@@ -16,6 +16,12 @@ const normalizeTeamName = (name) => {
     .trim();
 };
 
+// Strip country suffix "(ספרד)" etc. for clean display and logo lookup
+const stripCountry = (name) => {
+  if (!name) return name;
+  return name.replace(/\s*\([^)]+\)\s*$/, '').trim();
+};
+
 export default function RoundTable({ table, teams, predictions, onPredictionChange }) {
     const [gameScores, setGameScores] = useState({});
 
@@ -103,18 +109,20 @@ export default function RoundTable({ table, teams, predictions, onPredictionChan
                             if (!homeTeamName && !awayTeamName && q.question_text?.includes('נגד')) {
                                 const teamNames = q.question_text.split('נגד').map(t => t.trim());
                                 if (teamNames.length === 2) {
-                                    homeTeamName = teamNames[0];
+                                    homeTeamName = teamNames[0]; // keep full name e.g. "גלאטסראיי (טורקיה)"
                                     awayTeamName = teamNames[1];
                                 }
                             }
                             
-                            // נרמל את שמות הקבוצות
-                            const normalizedHome = normalizeTeamName(homeTeamName);
-                            const normalizedAway = normalizeTeamName(awayTeamName);
+                            // שם מלא (כולל מדינה) לחיפוש לוגו, שם נקי לתצוגה
+                            const fullHome = normalizeTeamName(homeTeamName);
+                            const fullAway = normalizeTeamName(awayTeamName);
+                            const displayHome = stripCountry(fullHome);
+                            const displayAway = stripCountry(fullAway);
                             
-                            // 🔍 חיפוש הקבוצות ב-teams מה-game
-                            const homeTeam = teams[normalizedHome];
-                            const awayTeam = teams[normalizedAway];
+                            // 🔍 חיפוש קבוצה: קודם שם מלא (עם מדינה), גיבוי שם נקי
+                            const homeTeam = teams[fullHome] || teams[displayHome];
+                            const awayTeam = teams[fullAway] || teams[displayAway];
                             
                             // 🔍 DEBUG - הדפס אם לא נמצאה קבוצה
                             if (!homeTeam) {
@@ -138,7 +146,7 @@ export default function RoundTable({ table, teams, predictions, onPredictionChan
                                     </TableCell>
                                     <TableCell className="p-2 text-right font-medium align-middle min-w-[140px]">
                                         <div className="flex items-center justify-end gap-2">
-                                            <span style={{ color: '#f8fafc' }} className="text-sm truncate">{normalizedHome}</span>
+                                            <span style={{ color: '#f8fafc' }} className="text-sm truncate">{displayHome}</span>
                                             {homeTeam?.logo_url && (
                                                 <img 
                                                     src={homeTeam.logo_url} 
@@ -210,7 +218,7 @@ export default function RoundTable({ table, teams, predictions, onPredictionChan
                                                     }}
                                                 />
                                             )}
-                                            <span style={{ color: '#f8fafc' }} className="text-sm truncate">{normalizedAway}</span>
+                                            <span style={{ color: '#f8fafc' }} className="text-sm truncate">{displayAway}</span>
                                         </div>
                                     </TableCell>
                                     <TableCell className="p-1 text-center align-middle w-12">
