@@ -83,6 +83,14 @@ export default function AdminResults() {
         if (!q.table_id) return;
         
         // טיפול ב-T20
+        // Parse T3 (שמינית הגמר) home/away from question_text — keep full name for logo lookup
+        if (q.table_id === 'T3' && q.question_text && !q.home_team) {
+          const parts = q.question_text.split(' - ');
+          if (parts.length === 2) {
+            q.home_team = parts[0].trim(); // keep "גלאטסראיי (טורקיה)" for teams map
+            q.away_team = parts[1].trim();
+          }
+        }
         if (q.table_id === 'T20' && q.question_text && !q.home_team) {
           const teams = q.question_text.includes(' נגד ') 
             ? q.question_text.split(' נגד ').map(t => t.trim())
@@ -95,7 +103,9 @@ export default function AdminResults() {
           }
         }
 
-        const tableCollection = (q.home_team && q.away_team) ? rTables : sTables;
+        const isGroupStage = q.stage_name?.includes('בית') || q.table_description?.includes('בית');
+        const isKnockoutMatch = q.table_id === 'T3' && q.home_team && q.away_team;
+        const tableCollection = (isGroupStage || isKnockoutMatch || (q.home_team && q.away_team)) ? rTables : sTables;
         let tableId = q.table_id;
         let tableDesc = q.table_description;
         
@@ -366,7 +376,7 @@ export default function AdminResults() {
                 {(isTeamsList || isNationalTeams) && findTeam(value)?.logo_url && (
                   <img src={findTeam(value).logo_url} alt={value} className="w-5 h-5 rounded-full" onError={(e) => e.target.style.display = 'none'} />
                 )}
-                <span>{value}</span>
+                <span>{value.replace(/\s*\([^)]+\)\s*$/, '').trim()}</span>
               </div>
             )}
           </SelectValue>
@@ -434,7 +444,7 @@ export default function AdminResults() {
                       style={{ opacity: isAlreadySelected ? 0.4 : 1 }}
                     />
                   )}
-                  <span style={{ color: isAlreadySelected ? '#64748b' : '#f8fafc' }}>{opt}</span>
+                  <span style={{ color: isAlreadySelected ? '#64748b' : '#f8fafc' }}>{opt.replace(/\s*\([^)]+\)\s*$/, '').trim()}</span>
                 </div>
               </SelectItem>
             );
