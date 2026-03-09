@@ -90,8 +90,9 @@ export default function RoundTableReadOnly({ table, teams, predictions, isEditMo
                                 const displayHome = stripCountry(normalizedHome);
                                 const displayAway = stripCountry(normalizedAway);
                                 
-                                const homeTeam = teams[displayHome] || teams[normalizedHome];
-                                const awayTeam = teams[displayAway] || teams[normalizedAway];
+                                // lookup: full name (with country suffix) first, fallback stripped
+                                const homeTeam = teams[normalizedHome] || teams[displayHome];
+                                const awayTeam = teams[normalizedAway] || teams[displayAway];
                                 const prediction = predictions[q.id] || "";
                                 const score = calculateQuestionScore(q, prediction);
 
