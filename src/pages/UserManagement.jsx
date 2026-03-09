@@ -101,9 +101,14 @@ export default function UserManagement() {
       
       setAllGames(games);
       
-      // מיפוי משחקים לפי משתמש
+      // מיפוי משחקים לפי משתמש — dedup לפי game_id (מניעת כפילויות)
       const gamesMap = {};
+      const seenGameKeys = new Set(); // "user_email|game_id"
       participants.forEach(p => {
+        if (!p.user_email) return;
+        const key = `${p.user_email}|${p.game_id}`;
+        if (seenGameKeys.has(key)) return; // כבר נוסף — דלג
+        seenGameKeys.add(key);
         if (!gamesMap[p.user_email]) {
           gamesMap[p.user_email] = [];
         }
