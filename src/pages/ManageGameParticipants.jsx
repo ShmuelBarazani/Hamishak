@@ -288,10 +288,15 @@ export default function ManageGameParticipants() {
     );
   }
 
-  // משתמשים שעדיין לא הצטרפו
-  const availableUsers = allUsers.filter(u => 
-    !participants.some(p => p.user_email === u.email)
-  );
+  // משתמשים שעדיין לא הצטרפו — ייחודיים לפי user_email
+  const seenEmails = new Set();
+  const availableUsers = allUsers.filter(u => {
+    if (!u.user_email) return false;
+    if (participants.some(p => p.user_email === u.user_email)) return false;
+    if (seenEmails.has(u.user_email)) return false;
+    seenEmails.add(u.user_email);
+    return true;
+  });
 
   return (
     <div className="min-h-screen p-6" dir="rtl" style={{ 
@@ -522,8 +527,8 @@ export default function ManageGameParticipants() {
                 }}>
                   {availableUsers.map(user => (
                     <SelectItem 
-                      key={user.email} 
-                      value={user.email} 
+                      key={user.user_email} 
+                      value={user.user_email} 
                       style={{ color: '#f8fafc' }}
                       className="hover:bg-cyan-500/20 focus:bg-cyan-500/30"
                     >
