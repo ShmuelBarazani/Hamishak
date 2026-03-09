@@ -630,7 +630,7 @@ export default function ViewSubmissions() {
             table_id: q.table_id,
             table_description: q.table_description || q.stage_name || '',
             question_id: q.question_id,
-            question_text: q.question_text || `${q.home_team || ''} נגד ${q.away_team || ''}`,
+            question_text: q.question_text || `${(q.home_team || '').replace(/\s*\([^)]+\)\s*$/, '').trim()} נגד ${(q.away_team || '').replace(/\s*\([^)]+\)\s*$/, '').trim()}`,
             stage_order: q.stage_order || 0,
             missing_count: missingParticipants.length,
             missing_participants: missingParticipants.sort((a, b) => a.localeCompare(b, 'he'))
@@ -774,6 +774,8 @@ export default function ViewSubmissions() {
   };
 
   // 🔥 פונקציה חדשה - מחפשת את השם המתאים ברשימת האימות
+  const stripCountry = (name) => name ? name.replace(/\s*\([^)]+\)\s*$/, '').trim() : name;
+  
   const findMatchedTeamName = useCallback((predictionName) => {
     if (!predictionName || teamValidationList.length === 0) return predictionName;
     
@@ -911,19 +913,20 @@ export default function ViewSubmissions() {
                 -
               </SelectItem>
               {options.map(opt => {
-                const optTeam = isTeamsList ? data.teams[opt] : null;
+                const cleanOpt = opt.replace(/\s*\([^)]+\)\s*$/, '').trim();
+                const optTeam = isTeamsList ? (data.teams[opt] || data.teams[cleanOpt]) : null;
                 return (
                   <SelectItem key={opt} value={opt} className="hover:bg-cyan-700/20" style={{ color: '#f8fafc' }}>
                     <div className="flex items-center gap-2">
                       {optTeam?.logo_url && (
                         <img 
                           src={optTeam.logo_url} 
-                          alt={opt} 
+                          alt={cleanOpt} 
                           className="w-4 h-4 rounded-full" 
                           onError={(e) => e.target.style.display = 'none'}
                         />
                       )}
-                      <span>{opt}</span>
+                      <span>{cleanOpt}</span>
                     </div>
                   </SelectItem>
                 );
