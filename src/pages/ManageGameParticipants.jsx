@@ -90,9 +90,16 @@ export default function ManageGameParticipants() {
         return;
       }
 
+      // 🔥 מצא פרטי משתתף מרשומות קיימות של אותו אימייל
+      const existingRecord = allUsers.find(u => u.user_email === selectedUser);
+      
       await db.GameParticipant.create({
         game_id: currentGame.id,
         user_email: selectedUser,
+        participant_name: existingRecord?.participant_name || null,
+        phone:            existingRecord?.phone            || null,
+        profession:       existingRecord?.profession       || null,
+        age:              existingRecord?.age              || null,
         role_in_game: "predictor",
         is_active: true
       });
@@ -193,7 +200,11 @@ export default function ManageGameParticipants() {
     try {
       const newParticipants = availableUsers.map(user => ({
         game_id: currentGame.id,
-        user_email: user.email,
+        user_email: user.user_email,
+        participant_name: user.participant_name || null,
+        phone:            user.phone            || null,
+        profession:       user.profession       || null,
+        age:              user.age              || null,
         role_in_game: "predictor",
         is_active: true
       }));
@@ -234,16 +245,26 @@ export default function ManageGameParticipants() {
     if (!editingParticipant) return;
     setSavingEdit(true);
     try {
-      await db.GameParticipant.update(editingParticipant.id, {
+      const updatedFields = {
         participant_name: editingParticipant.participant_name.trim() || null,
         phone:      editingParticipant.phone.trim()      || null,
         profession: editingParticipant.profession.trim() || null,
         age:        editingParticipant.age.trim()        || null,
-      });
+      };
+      
+      // 🔥 עדכן בכל המשחקים של אותו משתמש
+      const currentParticipant = participants.find(p => p.id === editingParticipant.id);
+      if (currentParticipant?.user_email) {
+        const allRecordsForUser = allUsers.filter(u => u.user_email === currentParticipant.user_email);
+        await Promise.all(allRecordsForUser.map(r => db.GameParticipant.update(r.id, updatedFields)));
+      } else {
+        await db.GameParticipant.update(editingParticipant.id, updatedFields);
+      }
+      
       setParticipants(prev => prev.map(p =>
-        p.id === editingParticipant.id ? { ...p, ...editingParticipant } : p
+        p.id === editingParticipant.id ? { ...p, ...updatedFields } : p
       ));
-      toast({ title: "עודכן!", description: "פרטי המשתתף עודכנו בהצלחה", className: "bg-green-100 text-green-800" });
+      toast({ title: "עודכן!", description: "פרטי המשתתף עודכנו בכל המשחקים", className: "bg-green-100 text-green-800" });
       setShowEditDialog(false);
       setEditingParticipant(null);
     } catch (err) {
