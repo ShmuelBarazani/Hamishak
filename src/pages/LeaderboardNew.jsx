@@ -679,8 +679,10 @@ export default function LeaderboardNew() {
           away_team: question.away_team,
           actual_result: formatScore(question.actual_result || ''),
           prediction: formatScore(pred?.text_prediction || ''),
-          home_team_logo: question.home_team ? teamsMap[question.home_team]?.logo_url : null,
-          away_team_logo: question.away_team ? teamsMap[question.away_team]?.logo_url : null,
+          home_team_display: question.home_team ? question.home_team.replace(/\s*\([^)]+\)\s*$/, '').trim() : null,
+          away_team_display: question.away_team ? question.away_team.replace(/\s*\([^)]+\)\s*$/, '').trim() : null,
+          home_team_logo: question.home_team ? (teamsMap[question.home_team]?.logo_url || teamsMap[question.home_team.replace(/\s*\([^)]+\)\s*$/, '').trim()]?.logo_url) : null,
+          away_team_logo: question.away_team ? (teamsMap[question.away_team]?.logo_url || teamsMap[question.away_team.replace(/\s*\([^)]+\)\s*$/, '').trim()]?.logo_url) : null,
           isBonus: item.isBonus || false
         };
       }).filter(s => s !== null);
@@ -1098,7 +1100,7 @@ export default function LeaderboardNew() {
                         <td className="text-right p-1.5">
                           {s.home_team && s.away_team ? (
                             <div className="flex items-center justify-start gap-1 text-xs" style={{ color: '#f8fafc' }}>
-                              <span>{s.home_team}</span>
+                              <span>{s.home_team_display || s.home_team}</span>
                               {s.home_team_logo && (
                                 <img 
                                   src={s.home_team_logo} 
@@ -1116,7 +1118,7 @@ export default function LeaderboardNew() {
                                   onError={(e) => e.target.style.display = 'none'}
                                 />
                               )}
-                              <span>{s.away_team}</span>
+                              <span>{s.away_team_display || s.away_team}</span>
                             </div>
                           ) : (
                             <span className="text-xs" style={{ color: '#f8fafc' }}>{displayText}</span>
