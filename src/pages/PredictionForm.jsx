@@ -57,6 +57,7 @@ export default function PredictionForm() {
     try {
       // 🔐 בדיקת משתמש מחובר - חובה!
       let user = null;
+      let gpDetails = {}; // 🔥 פרטי game_participants — עדיפות על temp_ ישנים
       try {
         const isAuth = await supabase.auth.getSession().then(r => !!r.data.session);
         if (!isAuth) {
