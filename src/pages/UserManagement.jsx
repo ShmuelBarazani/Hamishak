@@ -102,19 +102,21 @@ export default function UserManagement() {
       setAllGames(games);
       
       // מיפוי משחקים לפי משתמש — dedup לפי game_id (מניעת כפילויות)
+      // עם-אימייל: מפתח = user_email | ללא-אימייל: מפתח = "__name__:participant_name"
       const gamesMap = {};
-      const seenGameKeys = new Set(); // "user_email|game_id"
+      const seenGameKeys = new Set(); // "key|game_id"
       participants.forEach(p => {
-        if (!p.user_email) return;
-        const key = `${p.user_email}|${p.game_id}`;
-        if (seenGameKeys.has(key)) return; // כבר נוסף — דלג
-        seenGameKeys.add(key);
-        if (!gamesMap[p.user_email]) {
-          gamesMap[p.user_email] = [];
+        const mapKey = p.user_email || (p.participant_name ? `__name__:${p.participant_name}` : null);
+        if (!mapKey) return;
+        const dedupeKey = `${mapKey}|${p.game_id}`;
+        if (seenGameKeys.has(dedupeKey)) return;
+        seenGameKeys.add(dedupeKey);
+        if (!gamesMap[mapKey]) {
+          gamesMap[mapKey] = [];
         }
         const game = games.find(g => g.id === p.game_id);
         if (game) {
-          gamesMap[p.user_email].push({
+          gamesMap[mapKey].push({
             ...game,
             participant: p
           });
@@ -392,7 +394,8 @@ ${appUrl}
                 </thead>
                 <tbody>
                   {users.map((user) => {
-                    const games = userGames[user.user_email] || [];
+                    const games = userGames[user.user_email] || 
+                           userGames[`__name__:${user.participant_name}`] || [];
                     
                     return (
                       <tr 
