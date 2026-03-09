@@ -126,10 +126,10 @@ export default function RoundTable({ table, teams, predictions, onPredictionChan
                             
                             // 🔍 DEBUG - הדפס אם לא נמצאה קבוצה
                             if (!homeTeam) {
-                              console.log(`⚠️ לא נמצאה קבוצת בית: "${normalizedHome}" במשחק ${q.question_id}`);
+                              console.log(`⚠️ לא נמצאה קבוצת בית: "${fullHome}" במשחק ${q.question_id}`);
                             }
                             if (!awayTeam) {
-                              console.log(`⚠️ לא נמצאה קבוצת חוץ: "${normalizedAway}" במשחק ${q.question_id}`);
+                              console.log(`⚠️ לא נמצאה קבוצת חוץ: "${fullAway}" במשחק ${q.question_id}`);
                             }
                             
                             const currentScores = gameScores[q.id] || { home: '', away: '' };
@@ -150,7 +150,7 @@ export default function RoundTable({ table, teams, predictions, onPredictionChan
                                             {homeTeam?.logo_url && (
                                                 <img 
                                                     src={homeTeam.logo_url} 
-                                                    alt={normalizedHome} 
+                                                    alt={displayHome} 
                                                     className="w-6 h-6 rounded-full object-cover flex-shrink-0" 
                                                     style={{ border: '1px solid rgba(6, 182, 212, 0.3)' }}
                                                     onError={(e) => {
@@ -209,7 +209,7 @@ export default function RoundTable({ table, teams, predictions, onPredictionChan
                                             {awayTeam?.logo_url && (
                                                 <img 
                                                     src={awayTeam.logo_url} 
-                                                    alt={normalizedAway} 
+                                                    alt={displayAway} 
                                                     className="w-6 h-6 rounded-full object-cover flex-shrink-0" 
                                                     style={{ border: '1px solid rgba(6, 182, 212, 0.3)' }}
                                                     onError={(e) => {
