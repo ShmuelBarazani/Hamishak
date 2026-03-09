@@ -88,14 +88,14 @@ export default function PredictionForm() {
             const p = adminParticipants[0];
             setParticipantRecord(p);
             if (p.participant_name) setParticipantName(p.participant_name);
-            setParticipantDetails(prev => ({
-              ...prev,
-              'temp_name':       p.participant_name || prev['temp_name'] || user.user_metadata?.full_name || user.email || '',
-              'temp_email':      p.user_email       || prev['temp_email'] || user.email || '',
-              'temp_phone':      p.phone            || prev['temp_phone'] || '',
-              'temp_profession': p.profession       || prev['temp_profession'] || '',
-              'temp_age':        p.age              || prev['temp_age'] || '',
-            }));
+            // 🔥 שמור בmutables locals כדי שישמשו אחרי טעינת ניחושים
+            gpDetails = {
+              'temp_name':       p.participant_name || user.user_metadata?.full_name || user.email || '',
+              'temp_email':      p.user_email       || user.email || '',
+              'temp_phone':      p.phone            || '',
+              'temp_profession': p.profession       || '',
+              'temp_age':        p.age              || '',
+            };
           }
         } else {
           // 🆕 בדוק אם המשתמש שייך למשחק
@@ -142,14 +142,14 @@ export default function PredictionForm() {
             } catch (_) {}
           }
           
-          setParticipantDetails(prev => ({
-            ...prev,
-            'temp_name':       participant.participant_name || prev['temp_name'] || '',
-            'temp_email':      participant.user_email      || prev['temp_email'] || '',
-            'temp_phone':      phone            || prev['temp_phone'] || '',
-            'temp_profession': profession       || prev['temp_profession'] || '',
-            'temp_age':        age              || prev['temp_age'] || '',
-          }));
+          // 🔥 שמור בlocals — ישמשו לאחר טעינת ניחושים (עם עדיפות על temp_ ישנים)
+          gpDetails = {
+            'temp_name':       participant.participant_name || '',
+            'temp_email':      participant.user_email       || '',
+            'temp_phone':      phone            || '',
+            'temp_profession': profession       || '',
+            'temp_age':        age              || '',
+          };
           
           // רק צופים לא יכולים למלא ניחושים
           if (participant.role_in_game === 'viewer') {
@@ -185,11 +185,21 @@ export default function PredictionForm() {
       console.log(`📋 סוננו ${loadedQuestions.length - filteredQuestions.length} שאלות T1`);
       setAllQuestions(filteredQuestions);
 
-      // 🔥 טען ניחושים קיימים של המשתמש
-      const userPredictions = await db.Prediction.filter({
-        game_id: currentGame.id,
-        participant_name: user.user_metadata?.full_name || user.email
-      }, '-created_at', 5000);
+      // 🔥 טען ניחושים קיימים — חפש לפי כל שמות אפשריים של המשתמש
+      const fullName = gpDetails['temp_name'] || user.user_metadata?.full_name || '';
+      const emailUser = user.email?.split('@')[0] || ''; // e.g. "tropikan1"
+      const searchNames = [...new Set([fullName, user.email, emailUser].filter(Boolean))];
+      
+      const allPredResults = await Promise.all(
+        searchNames.map(name => db.Prediction.filter({ game_id: currentGame.id, participant_name: name }, '-created_at', 5000))
+      );
+      // מיזוג — ללא כפילויות
+      const seenPredIds = new Set();
+      const userPredictions = allPredResults.flat().filter(p => {
+        if (seenPredIds.has(p.id)) return false;
+        seenPredIds.add(p.id);
+        return true;
+      });
 
       console.log('📥 נטענו ניחושים קיימים:', userPredictions.length);
 
@@ -225,7 +235,15 @@ export default function PredictionForm() {
 
       console.log('✅ הועלו ניחושים:', Object.keys(loadedPredictions).length);
       setPredictions(loadedPredictions);
-      setParticipantDetails(loadedDetails);
+      // 🔥 מיזוג: פרטי game_participants גוברים על temp_ ישנים שנשמרו בניחושים
+      setParticipantDetails({
+        ...loadedDetails,
+        ...(gpDetails['temp_name']       ? { 'temp_name':       gpDetails['temp_name']       } : {}),
+        ...(gpDetails['temp_email']      ? { 'temp_email':      gpDetails['temp_email']      } : {}),
+        ...(gpDetails['temp_phone']      ? { 'temp_phone':      gpDetails['temp_phone']      } : {}),
+        ...(gpDetails['temp_profession'] ? { 'temp_profession': gpDetails['temp_profession'] } : {}),
+        ...(gpDetails['temp_age']        ? { 'temp_age':        gpDetails['temp_age']        } : {}),
+      });
       
       // New: Load teams and validation lists from currentGame
       const teamsData = currentGame.teams_data || [];
