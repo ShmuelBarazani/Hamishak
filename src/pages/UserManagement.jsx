@@ -63,24 +63,36 @@ export default function UserManagement() {
         return;
       }
 
-      // 🔥 Dedup by user_email — הצג כל משתמש פעם אחת (עדיף רשומה עם participant_name)
-      const uniqueUsersMap = {};
+      // 🔥 Dedup: עדיפות לרשומה עם אימייל; משתמשים ללא אימייל מקובצים לפי שם
+      const uniqueByEmail = {};   // email → record
+      const uniqueByName  = {};   // participant_name (no email) → record
+      
       allUsers.forEach(u => {
-        const key = u.user_email;
-        if (!key) return;
-        if (!uniqueUsersMap[key]) {
-          uniqueUsersMap[key] = u;
-        } else {
-          // העדף רשומה עם שם מלא / role_in_game=admin
-          const existing = uniqueUsersMap[key];
-          const existingHasName = !!(existing.participant_name && existing.participant_name !== existing.user_email);
-          const newHasName = !!(u.participant_name && u.participant_name !== u.user_email);
-          if ((!existingHasName && newHasName) || u.role_in_game === 'admin') {
-            uniqueUsersMap[key] = u;
+        if (u.user_email) {
+          // יש אימייל — dedup לפי אימייל
+          if (!uniqueByEmail[u.user_email]) {
+            uniqueByEmail[u.user_email] = u;
+          } else {
+            const existing = uniqueByEmail[u.user_email];
+            const existingHasName = !!(existing.participant_name && existing.participant_name !== existing.user_email);
+            const newHasName = !!(u.participant_name && u.participant_name !== u.user_email);
+            if ((!existingHasName && newHasName) || u.role_in_game === 'admin') {
+              uniqueByEmail[u.user_email] = u;
+            }
+          }
+        } else if (u.participant_name) {
+          // אין אימייל — dedup לפי שם (משתתפים ממיגרציה)
+          if (!uniqueByName[u.participant_name]) {
+            uniqueByName[u.participant_name] = u;
           }
         }
       });
-      const uniqueUsers = Object.values(uniqueUsersMap)
+
+      // שלב: משתמשים עם אימייל + משתמשים ללא אימייל (אם שמם לא מופיע כבר ע"י מישהו עם אימייל)
+      const emailNames = new Set(Object.values(uniqueByEmail).map(u => u.participant_name).filter(Boolean));
+      const noEmailUsers = Object.values(uniqueByName).filter(u => !emailNames.has(u.participant_name));
+
+      const uniqueUsers = [...Object.values(uniqueByEmail), ...noEmailUsers]
         .sort((a, b) => (a.participant_name || '').localeCompare(b.participant_name || '', 'he'));
       setUsers(uniqueUsers);
       
