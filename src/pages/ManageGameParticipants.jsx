@@ -78,9 +78,12 @@ export default function ManageGameParticipants() {
 
     setAdding(true);
     try {
-      // בדוק אם כבר קיים
-      const existing = participants.find(p => p.user_email === selectedUser);
-      if (existing) {
+      // בדוק אם כבר קיים — גם ב-DB ישירות למניעת כפילויות
+      const existingInDB = await db.GameParticipant.filter({
+        game_id: currentGame.id,
+        user_email: selectedUser
+      }, null, 1);
+      if (existingInDB.length > 0) {
         toast({
           title: "כבר קיים",
           description: "המשתמש כבר משתתף במשחק זה",
@@ -357,7 +360,11 @@ export default function ManageGameParticipants() {
               </Button>
 
               <Button
-                onClick={handleAddAllUsers}
+                onClick={() => {
+                  if (window.confirm(`⚠️ האם אתה בטוח שברצונך להוסיף את כל ${availableUsers.length} המשתמשים למשחק זה?\nפעולה זו תוסיף את כולם בבת אחת!`)) {
+                    handleAddAllUsers();
+                  }
+                }}
                 disabled={addingAll || availableUsers.length === 0}
                 variant="outline"
                 style={{
