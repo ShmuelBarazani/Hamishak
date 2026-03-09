@@ -6,6 +6,11 @@ import { Badge } from "@/components/ui/badge";
 
 const scoreOptions = ['__EMPTY__', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10'];
 
+const stripCountry = (name) => {
+  if (!name) return name;
+  return name.replace(/\s*\([^)]+\)\s*$/, '').trim();
+};
+
 const normalizeTeamName = (name) => {
   if (!name) return name;
   return name
@@ -116,8 +121,8 @@ export default function RoundTableResults({ table, teams, results, onResultChang
                             const normalizedHome = normalizeTeamName(homeTeamName);
                             const normalizedAway = normalizeTeamName(awayTeamName);
                             
-                            const homeTeam = teams[normalizedHome];
-                            const awayTeam = teams[normalizedAway];
+                            const homeTeam = teams[displayHome] || teams[normalizedHome];
+                            const awayTeam = teams[displayAway] || teams[normalizedAway];
                             const currentScores = gameScores[q.id] || { home: '', away: '' };
 
                             const hasActualResult = q.actual_result && 
@@ -158,16 +163,16 @@ export default function RoundTableResults({ table, teams, results, onResultChang
                                             {homeTeam?.logo_url && (
                                                 <img 
                                                     src={homeTeam.logo_url} 
-                                                    alt={normalizedHome} 
+                                                    alt={displayHome} 
                                                     className="w-5 h-5 md:w-8 md:h-8 rounded-full object-cover flex-shrink-0" 
                                                     style={{ border: '1px solid rgba(6, 182, 212, 0.3)' }}
                                                     onError={(e) => {
-                                                        console.log(`❌ שגיאה בטעינת לוגו של ${normalizedHome}: ${homeTeam.logo_url}`);
+                                                        console.log(`❌ שגיאה בטעינת לוגו של ${displayHome}: ${homeTeam.logo_url}`);
                                                         e.target.style.display = 'none';
                                                     }}
                                                 />
                                             )}
-                                            <span className="text-slate-200 text-[8px] md:text-xs text-center truncate max-w-[50px] md:max-w-none">{normalizedHome}</span>
+                                            <span className="text-slate-200 text-[8px] md:text-xs text-center truncate max-w-[50px] md:max-w-none">{displayHome}</span>
                                         </div>
                                     </TableCell>
                                     <TableCell className="p-0.5 md:p-1 w-10 md:w-16">
@@ -236,16 +241,16 @@ export default function RoundTableResults({ table, teams, results, onResultChang
                                             {awayTeam?.logo_url && (
                                                 <img 
                                                     src={awayTeam.logo_url} 
-                                                    alt={normalizedAway} 
+                                                    alt={displayAway} 
                                                     className="w-5 h-5 md:w-8 md:h-8 rounded-full object-cover flex-shrink-0" 
                                                     style={{ border: '1px solid rgba(6, 182, 212, 0.3)' }}
                                                     onError={(e) => {
-                                                        console.log(`❌ שגיאה בטעינת לוגו של ${normalizedAway}: ${awayTeam.logo_url}`);
+                                                        console.log(`❌ שגיאה בטעינת לוגו של ${displayAway}: ${awayTeam.logo_url}`);
                                                         e.target.style.display = 'none';
                                                     }}
                                                 />
                                             )}
-                                            <span className="text-slate-200 text-[8px] md:text-xs text-center truncate max-w-[50px] md:max-w-none">{normalizedAway}</span>
+                                            <span className="text-slate-200 text-[8px] md:text-xs text-center truncate max-w-[50px] md:max-w-none">{displayAway}</span>
                                         </div>
                                     </TableCell>
                                     <TableCell className="hidden md:table-cell p-1 text-center align-middle w-12">
