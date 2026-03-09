@@ -88,8 +88,8 @@ export default function JoinGame() {
       await db.GameParticipant.create({
         game_id: gameId,
         user_email: currentUser.email,
+        participant_name: currentUser.user_metadata?.full_name || currentUser.email,
         role_in_game: "predictor",
-        joined_date: new Date().toISOString(),
         is_active: true
       });
 
@@ -305,7 +305,7 @@ export default function JoinGame() {
             border: '1px solid rgba(6, 182, 212, 0.1)'
           }}>
             <p className="text-sm mb-2" style={{ color: '#94a3b8' }}>מחובר כ:</p>
-            <p className="font-bold" style={{ color: '#f8fafc' }}>{currentUser.full_name}</p>
+            <p className="font-bold" style={{ color: '#f8fafc' }}>{currentUser.user_metadata?.full_name || currentUser.email}</p>
             <p className="text-sm" style={{ color: '#06b6d4' }}>{currentUser.email}</p>
           </div>
 

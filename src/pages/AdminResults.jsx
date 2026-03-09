@@ -316,6 +316,15 @@ export default function AdminResults() {
   };
 
   // רינדור Select עם לוגו
+  // Helper: match team by name, stripping "(country)" suffix from validation lists
+  const findTeam = (name) => {
+    if (!name) return null;
+    if (teams[name]) return teams[name];
+    // Strip country in parentheses e.g. "ריאל מדריד (ספרד)" → "ריאל מדריד"
+    const base = name.replace(/\s*\([^)]*\)\s*$/, '').trim();
+    return teams[base] || null;
+  };
+
   const renderSelectWithLogos = (question, value, onChange, selectClassName = "w-[200px]") => {
     const options = validationLists[question.validation_list] || [];
     const isTeamsList = question.validation_list?.toLowerCase().includes('קבוצ');
@@ -354,8 +363,8 @@ export default function AdminResults() {
           <SelectValue placeholder="בחר...">
             {!hasResult ? 'בחר...' : (
               <div className="flex items-center gap-2">
-                {(isTeamsList || isNationalTeams) && teams[value]?.logo_url && (
-                  <img src={teams[value].logo_url} alt={value} className="w-5 h-5 rounded-full" onError={(e) => e.target.style.display = 'none'} />
+                {(isTeamsList || isNationalTeams) && findTeam(value)?.logo_url && (
+                  <img src={findTeam(value).logo_url} alt={value} className="w-5 h-5 rounded-full" onError={(e) => e.target.style.display = 'none'} />
                 )}
                 <span>{value}</span>
               </div>
@@ -365,7 +374,7 @@ export default function AdminResults() {
         <SelectContent className="bg-slate-800 border-cyan-600 text-slate-200">
           <SelectItem value="__CLEAR__" className="hover:bg-cyan-700/20 text-blue-300">בחר...</SelectItem>
           {options.map(opt => {
-            const team = (isTeamsList || isNationalTeams) ? teams[opt] : null;
+            const team = (isTeamsList || isNationalTeams) ? findTeam(opt) : null;
 
             // 🔥 בדיקה אם הנבחרת כבר נבחרה - לפי תיאור השלב (בדיוק כמו ב-PredictionForm)
             let isAlreadySelected = false;
@@ -440,12 +449,13 @@ export default function AdminResults() {
     const questions = table.questions;
     const grouped = {};
     
-    questions.forEach(q => {
-      const mainId = Math.floor(parseFloat(q.question_id));
+    questions.forEach((q, idx) => {
+      const qId = q.question_id != null ? String(q.question_id) : String(q.stage_order || idx);
+      const mainId = Math.floor(parseFloat(qId)) || (q.stage_order || idx);
       if (!grouped[mainId]) {
         grouped[mainId] = { main: null, subs: [] };
       }
-      if (q.question_id.includes('.')) {
+      if (qId.includes('.')) {
         grouped[mainId].subs.push(q);
       } else {
         grouped[mainId].main = q;
@@ -465,7 +475,7 @@ export default function AdminResults() {
               const { main, subs } = grouped[mainId];
               if (!main) return null;
 
-              const sortedSubs = [...subs].sort((a, b) => parseFloat(a.question_id) - parseFloat(b.question_id));
+              const sortedSubs = [...subs].sort((a, b) => parseFloat(a.question_id || a.stage_order) - parseFloat(b.question_id || b.stage_order));
 
               // שאלה ללא תתי-שאלות - 4 עמודות
               if (sortedSubs.length === 0) {
@@ -564,12 +574,13 @@ export default function AdminResults() {
 
     // קיבוץ שאלות עם תת-שאלות
     const grouped = {};
-    table.questions.forEach(q => {
-      const mainId = Math.floor(parseFloat(q.question_id));
+    table.questions.forEach((q, idx) => {
+      const qId = q.question_id != null ? String(q.question_id) : String(q.stage_order || idx);
+      const mainId = Math.floor(parseFloat(qId)) || (q.stage_order || idx);
       if (!grouped[mainId]) {
         grouped[mainId] = { main: null, subs: [] };
       }
-      if (q.question_id.includes('.')) {
+      if (qId.includes('.')) {
         grouped[mainId].subs.push(q);
       } else {
         grouped[mainId].main = q;
@@ -589,7 +600,7 @@ export default function AdminResults() {
               const { main, subs } = grouped[mainId];
               if (!main) return null;
 
-              const sortedSubs = [...subs].sort((a, b) => parseFloat(a.question_id) - parseFloat(b.question_id));
+              const sortedSubs = [...subs].sort((a, b) => parseFloat(a.question_id || a.stage_order) - parseFloat(b.question_id || b.stage_order));
 
               // שאלה ללא תתי-שאלות - 4 עמודות
               if (sortedSubs.length === 0) {
@@ -693,12 +704,13 @@ export default function AdminResults() {
   const allButtons = [];
 
   if (roundTables.length > 0) {
-    const allAreGroups = roundTables.every(t => t.id.includes('בית') || t.description?.includes('בית'));
-    allButtons.push({
-      numericId: parseInt(roundTables[0]?.id.replace('T', '').replace(/\D/g, ''), 10) || 0,
-      key: 'rounds',
-      description: allAreGroups ? 'שלב הבתים' : 'מחזורי המשחקים',
-      sectionKey: 'rounds'
+    roundTables.forEach(table => {
+      allButtons.push({
+        numericId: table.stage_order || parseInt(table.id.replace('T', '').replace(/\D/g, ''), 10) || 0,
+        key: `round_${table.id}`,
+        description: table.description || table.id,
+        sectionKey: `round_${table.id}`
+      });
     });
   }
 
@@ -738,11 +750,7 @@ export default function AdminResults() {
     });
   }
 
-  allButtons.sort((a, b) => {
-    if (a.sectionKey === 'rounds' && b.sectionKey !== 'rounds') return -1;
-    if (b.sectionKey === 'rounds' && a.sectionKey !== 'rounds') return 1;
-    return a.numericId - b.numericId;
-  });
+  allButtons.sort((a, b) => a.numericId - b.numericId);
 
   return (
     <div className="p-3 md:p-6 max-w-7xl mx-auto" dir="rtl" style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%)', minHeight: '100vh' }}>
@@ -801,22 +809,19 @@ export default function AdminResults() {
           {allButtons.map(button => {
             if (!openSections[button.sectionKey]) return null;
 
-            if (button.sectionKey === 'rounds') {
+            if (button.sectionKey.startsWith('round_')) {
+              const tableId = button.sectionKey.replace('round_', '');
+              const table = roundTables.find(t => t.id === tableId);
+              if (!table) return null;
               return (
-                <div key="rounds-section" className="mb-4 space-y-3">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    {roundTables.map(table => (
-                      <RoundTableResults
-                        key={table.id}
-                        table={table}
-                        teams={teams}
-                        results={results}
-                        onResultChange={handleResultChange}
-                        isAdmin={isAdmin}
-                      />
-                    ))}
-                  </div>
-                  <StandingsTable roundTables={roundTables} teams={teams} data={results} type="results" />
+                <div key={button.key} className="mb-4 space-y-3">
+                  <RoundTableResults
+                    table={table}
+                    teams={teams}
+                    results={results}
+                    onResultChange={handleResultChange}
+                    isAdmin={isAdmin}
+                  />
                 </div>
               );
             }
