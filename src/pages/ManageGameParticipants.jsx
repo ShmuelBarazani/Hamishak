@@ -3,9 +3,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Users, Trash2, Shield, Loader2, Mail, User as UserIcon, AlertTriangle, Plus, Crown, Copy } from "lucide-react";
+import { Users, Trash2, Shield, Loader2, Mail, User as UserIcon, AlertTriangle, Plus, Crown, Copy, Pencil, Phone, Briefcase } from "lucide-react";
 import { supabase } from '@/api/supabaseClient';
 import * as db from '@/api/entities';
 import { useToast } from "@/components/ui/use-toast";
@@ -23,6 +24,9 @@ export default function ManageGameParticipants() {
   const [adding, setAdding] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [addingAll, setAddingAll] = useState(false);
+  const [editingParticipant, setEditingParticipant] = useState(null);
+  const [showEditDialog, setShowEditDialog] = useState(false);
+  const [savingEdit, setSavingEdit] = useState(false);
   
   const { toast } = useToast();
   const { currentGame } = useGame();
@@ -215,7 +219,40 @@ export default function ManageGameParticipants() {
   };
 
   if (loading) {
-    return (
+    const handleEditParticipant = (participant) => {
+    setEditingParticipant({
+      id: participant.id,
+      participant_name: participant.participant_name || '',
+      phone:      participant.phone      || '',
+      profession: participant.profession || '',
+      age:        participant.age        || '',
+    });
+    setShowEditDialog(true);
+  };
+
+  const handleSaveParticipantEdit = async () => {
+    if (!editingParticipant) return;
+    setSavingEdit(true);
+    try {
+      await db.GameParticipant.update(editingParticipant.id, {
+        participant_name: editingParticipant.participant_name.trim() || null,
+        phone:      editingParticipant.phone.trim()      || null,
+        profession: editingParticipant.profession.trim() || null,
+        age:        editingParticipant.age.trim()        || null,
+      });
+      setParticipants(prev => prev.map(p =>
+        p.id === editingParticipant.id ? { ...p, ...editingParticipant } : p
+      ));
+      toast({ title: "עודכן!", description: "פרטי המשתתף עודכנו בהצלחה", className: "bg-green-100 text-green-800" });
+      setShowEditDialog(false);
+      setEditingParticipant(null);
+    } catch (err) {
+      toast({ title: "שגיאה", description: "עדכון הפרטים נכשל", variant: "destructive" });
+    }
+    setSavingEdit(false);
+  };
+
+  return (
       <div className="flex items-center justify-center h-screen" style={{ 
         background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%)'
       }}>
@@ -349,6 +386,8 @@ export default function ManageGameParticipants() {
                     <th className="text-right p-4" style={{ color: '#94a3b8' }}>שם</th>
                     <th className="text-right p-4" style={{ color: '#94a3b8' }}>אימייל</th>
                     <th className="text-center p-4" style={{ color: '#94a3b8' }}>תפקיד במשחק</th>
+                    <th className="text-right p-4" style={{ color: '#94a3b8' }}>טלפון</th>
+                    <th className="text-right p-4" style={{ color: '#94a3b8' }}>מקצוע</th>
                     <th className="text-center p-4" style={{ color: '#94a3b8' }}>תאריך הצטרפות</th>
                     <th className="text-center p-4" style={{ color: '#94a3b8' }}>פעולות</th>
                   </tr>
@@ -397,11 +436,23 @@ export default function ManageGameParticipants() {
                             </Badge>
                           )}
                         </td>
+                        <td className="p-4" style={{ color: '#94a3b8' }}>{participant.phone || '—'}</td>
+                        <td className="p-4" style={{ color: '#94a3b8' }}>{participant.profession || '—'}</td>
                         <td className="text-center p-4" style={{ color: '#94a3b8' }}>
                           {participant.created_at ? new Date(participant.created_at).toLocaleDateString('he-IL') : '—'}
                         </td>
                         <td className="p-4">
                           <div className="flex items-center justify-center gap-2">
+                            <Button
+                              onClick={() => handleEditParticipant(participant)}
+                              size="sm"
+                              variant="outline"
+                              style={{ borderColor: '#10b981', color: '#10b981', background: 'rgba(30, 41, 59, 0.4)' }}
+                              className="hover:bg-green-500/20"
+                            >
+                              <Pencil className="w-4 h-4 ml-1" />
+                              ערוך
+                            </Button>
                             <Button
                               onClick={() => handleToggleRole(participant)}
                               size="sm"
@@ -521,6 +572,46 @@ export default function ManageGameParticipants() {
         </Dialog>
 
         {/* דיאלוג מחיקה */}
+        {/* Edit Participant Dialog */}
+        <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
+          <DialogContent style={{ background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)', border: '1px solid rgba(16, 185, 129, 0.3)', maxWidth: '450px' }} dir="rtl">
+            <DialogHeader>
+              <DialogTitle style={{ color: '#10b981' }}>עריכת פרטי משתתף</DialogTitle>
+            </DialogHeader>
+            {editingParticipant && (
+              <div className="space-y-4 py-2">
+                <div>
+                  <label className="text-xs font-medium mb-1 block" style={{ color: '#94a3b8' }}>שם מלא</label>
+                  <Input value={editingParticipant.participant_name} onChange={e => setEditingParticipant(p => ({...p, participant_name: e.target.value}))}
+                    style={{ background: 'rgba(15,23,42,0.6)', border: '1px solid rgba(16,185,129,0.3)', color: '#f8fafc' }} />
+                </div>
+                <div>
+                  <label className="text-xs font-medium mb-1 block" style={{ color: '#94a3b8' }}>טלפון</label>
+                  <Input value={editingParticipant.phone} onChange={e => setEditingParticipant(p => ({...p, phone: e.target.value}))}
+                    style={{ background: 'rgba(15,23,42,0.6)', border: '1px solid rgba(16,185,129,0.3)', color: '#f8fafc' }} />
+                </div>
+                <div>
+                  <label className="text-xs font-medium mb-1 block" style={{ color: '#94a3b8' }}>מקצוע</label>
+                  <Input value={editingParticipant.profession} onChange={e => setEditingParticipant(p => ({...p, profession: e.target.value}))}
+                    style={{ background: 'rgba(15,23,42,0.6)', border: '1px solid rgba(16,185,129,0.3)', color: '#f8fafc' }} />
+                </div>
+                <div>
+                  <label className="text-xs font-medium mb-1 block" style={{ color: '#94a3b8' }}>גיל</label>
+                  <Input value={editingParticipant.age} onChange={e => setEditingParticipant(p => ({...p, age: e.target.value}))}
+                    style={{ background: 'rgba(15,23,42,0.6)', border: '1px solid rgba(16,185,129,0.3)', color: '#f8fafc' }} />
+                </div>
+                <div className="flex justify-end gap-3 pt-2">
+                  <Button variant="outline" onClick={() => { setShowEditDialog(false); setEditingParticipant(null); }} style={{ borderColor: 'rgba(16,185,129,0.3)', color: '#94a3b8' }}>ביטול</Button>
+                  <Button onClick={handleSaveParticipantEdit} disabled={savingEdit} style={{ background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', color: 'white' }}>
+                    {savingEdit ? <Loader2 className="w-4 h-4 animate-spin ml-2" /> : null}
+                    שמור שינויים
+                  </Button>
+                </div>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
+
         <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
           <DialogContent style={{
             background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)',
