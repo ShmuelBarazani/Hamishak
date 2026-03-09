@@ -33,6 +33,7 @@ export default function PredictionForm() {
   const [playoffWinnersTable, setPlayoffWinnersTable] = useState(null);
 
   const [participantName, setParticipantName] = useState("");
+  const [participantRecord, setParticipantRecord] = useState(null); // game_participants row
   const [openSections, setOpenSections] = useState({});
   const { toast } = useToast();
   const { currentGame } = useGame();
@@ -106,6 +107,17 @@ export default function PredictionForm() {
           // בדוק תפקיד במשחק
           const participant = gameParticipants[0];
           console.log('👤 תפקיד במשחק:', participant.role_in_game);
+          setParticipantRecord(participant);
+          // 🔥 Pre-fill participant details from game_participants record
+          if (participant.participant_name) setParticipantName(participant.participant_name);
+          setParticipantDetails(prev => ({
+            ...prev,
+            'temp_name':       participant.participant_name || prev['temp_name'] || '',
+            'temp_email':      participant.user_email      || prev['temp_email'] || '',
+            'temp_phone':      participant.phone           || prev['temp_phone'] || '',
+            'temp_profession': participant.profession      || prev['temp_profession'] || '',
+            'temp_age':        participant.age             || prev['temp_age'] || '',
+          }));
           
           // רק צופים לא יכולים למלא ניחושים
           if (participant.role_in_game === 'viewer') {
@@ -311,9 +323,15 @@ export default function PredictionForm() {
       
       setSpecialTables(allSpecialTables);
 
-      if (user && (user.user_metadata?.full_name || user.email)) {
-        setParticipantName(user.user_metadata?.full_name || user.email);
-        setParticipantDetails(prev => ({ ...prev, 'temp_name': user.user_metadata?.full_name || user.email }));
+      // Fallback: if no game_participants data was loaded (admin user), use user_metadata
+      if (user && !participantRecord) {
+        const fallbackName = user.user_metadata?.full_name || user.email;
+        setParticipantName(prev => prev || fallbackName);
+        setParticipantDetails(prev => ({ 
+          ...prev,
+          'temp_name':  prev['temp_name']  || fallbackName,
+          'temp_email': prev['temp_email'] || user.email || '',
+        }));
       }
       
     } catch (error) {
@@ -598,6 +616,26 @@ export default function PredictionForm() {
       }
       
       const totalChanges = allPredictionsToSave.length + predictionsToDelete.length;
+
+      // 🔥 Sync participant details back to game_participants
+      try {
+        const gpRecords = await db.GameParticipant.filter({
+          game_id: currentGame.id,
+          user_email: currentUser?.email
+        }, null, 1);
+        if (gpRecords.length > 0) {
+          const gpId = gpRecords[0].id;
+          await db.GameParticipant.update(gpId, {
+            participant_name: (participantDetails['temp_name']?.trim() || participantName.trim()) || gpRecords[0].participant_name,
+            phone:      participantDetails['temp_phone']?.trim()      || null,
+            profession: participantDetails['temp_profession']?.trim() || null,
+            age:        participantDetails['temp_age']?.trim()        || null,
+          });
+        }
+      } catch (syncErr) {
+        console.warn('Sync to game_participants failed (non-critical):', syncErr);
+      }
+
       if (totalChanges > 0) {
         toast({
           title: "נשמר בהצלחה!",
