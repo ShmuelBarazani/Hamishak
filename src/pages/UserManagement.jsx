@@ -63,7 +63,26 @@ export default function UserManagement() {
         return;
       }
 
-      setUsers(allUsers.sort((a, b) => (a.participant_name || '').localeCompare(b.participant_name || '', 'he')));
+      // 🔥 Dedup by user_email — הצג כל משתמש פעם אחת (עדיף רשומה עם participant_name)
+      const uniqueUsersMap = {};
+      allUsers.forEach(u => {
+        const key = u.user_email;
+        if (!key) return;
+        if (!uniqueUsersMap[key]) {
+          uniqueUsersMap[key] = u;
+        } else {
+          // העדף רשומה עם שם מלא / role_in_game=admin
+          const existing = uniqueUsersMap[key];
+          const existingHasName = !!(existing.participant_name && existing.participant_name !== existing.user_email);
+          const newHasName = !!(u.participant_name && u.participant_name !== u.user_email);
+          if ((!existingHasName && newHasName) || u.role_in_game === 'admin') {
+            uniqueUsersMap[key] = u;
+          }
+        }
+      });
+      const uniqueUsers = Object.values(uniqueUsersMap)
+        .sort((a, b) => (a.participant_name || '').localeCompare(b.participant_name || '', 'he'));
+      setUsers(uniqueUsers);
       
       // 🆕 טען את כל המשחקים והמשתתפים
       const [games, participants] = await Promise.all([
