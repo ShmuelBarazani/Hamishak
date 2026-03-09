@@ -163,7 +163,8 @@ export default function ViewSubmissions() {
         questions.forEach(q => {
           if (!q.table_id) return;
           
-          if (q.table_id === 'T20' && q.question_text) {
+          // Parse T20 (גמר) and T3 (שמינית הגמר) home/away from question_text when not in DB columns
+          if ((q.table_id === 'T20' || q.table_id === 'T3') && q.question_text && !q.home_team) {
             let teams = null;
             if (q.question_text.includes(' נגד ')) {
               teams = q.question_text.split(' נגד ').map(t => t.trim());
@@ -171,7 +172,7 @@ export default function ViewSubmissions() {
               teams = q.question_text.split(' - ').map(t => t.trim());
             }
             if (teams && teams.length === 2) {
-              q.home_team = teams[0];
+              q.home_team = teams[0]; // keep full name e.g. "ברצלונה (ספרד)" for logo lookup
               q.away_team = teams[1];
             }
           }
