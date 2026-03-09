@@ -263,7 +263,6 @@ export default function FormBuilder() {
             questionsToCreate.push({
               game_id: game.id,
               table_id: stageTableIds[stageIdx], // 🔥 table_id אחיד לכל השאלות באותו שלב
-              table_text: q.table_text,
               table_description: q.table_description,
               question_id: q.question_id,
               question_text: q.question_text,
@@ -423,7 +422,6 @@ export default function FormBuilder() {
             const question = {
               game_id: game.id,
               table_id: tableId, // ייחודי לבית!
-              table_text: houseName,
               table_description: houseName,
               question_id: `${idx + 1}`, // question_id for specific match within a stage
               question_text: `${match.homeTeam} נגד ${match.awayTeam}`,
@@ -450,7 +448,6 @@ export default function FormBuilder() {
           return {
             game_id: game.id,
             table_id: tableId,
-            table_text: stageName,
             table_description: `${stageName} - ${selectedTypeDescription}`,
             question_id: `${idx + 1}`, // question_id for specific match within a stage
             question_text: `${match.homeTeam} נגד ${match.awayTeam}`,
@@ -591,7 +588,6 @@ export default function FormBuilder() {
       const questionsToCreate = customQuestions.map((q, index) => ({
         game_id: game.id,
         table_id: tableId,
-        table_text: stageName,
         table_description: `${stageName} - שאלות מיוחדות`,
         question_id: q.question_number,
         question_text: q.question_text,
@@ -786,9 +782,8 @@ export default function FormBuilder() {
       // Update all questions belonging to this stage
       const updates = editingStage.questions.map(q => db.Question.update(q.id, {
         stage_name: editingStage.name,
-        table_text: editingStage.name,
         table_description: newTableDescription,
-        stage_order: stageOrderNum // 🆕 עדכון הסדר
+        stage_order: stageOrderNum
       }));
       await Promise.all(updates);
 
