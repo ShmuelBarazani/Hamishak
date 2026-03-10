@@ -1626,6 +1626,11 @@ export default function PredictionForm() {
                                 color: '#f8fafc'
                               }}
                           />
+                          {table.specialQuestions && table.specialQuestions.length > 0 && (
+                            <div className="mt-4">
+                              {renderSpecialQuestions({ ...table, questions: table.specialQuestions })}
+                            </div>
+                          )}
                       </div>
                   );
               } else if (button.sectionKey === 'israeli' && israeliTable) {
