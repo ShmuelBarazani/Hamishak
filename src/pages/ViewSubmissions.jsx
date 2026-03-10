@@ -85,6 +85,7 @@ export default function ViewSubmissions() {
   const [specialTables, setSpecialTables] = useState([]);
   const [locationTables, setLocationTables] = useState([]);
   const [playoffWinnersTable, setPlayoffWinnersTable] = useState(null);
+  const [qualifiersTables, setQualifiersTables] = useState([]);
   const [allParticipants, setAllParticipants] = useState([]);
 
   // 🆕 מצב עריכה למנהלים
@@ -260,16 +261,26 @@ export default function ViewSubmissions() {
         const allSpecialTables = Object.values(sTables).filter(table => {
             const desc = table.description?.trim();
             const isGroup = table.id.includes('בית') || desc?.includes('בית');
-            return desc && !/^\d+$/.test(desc) && !locationTableIds.includes(table.id) && table.id !== 'T19' && !isGroup;
+            const stageType = table.questions[0]?.stage_type;
+            return desc && !/^\d+$/.test(desc) && !locationTableIds.includes(table.id) && table.id !== 'T19' && !isGroup && stageType !== 'qualifiers';
         }).sort((a,b) => {
-            // מיון לפי stage_order
             const orderA = a.questions[0]?.stage_order || 999;
             const orderB = b.questions[0]?.stage_order || 999;
             if (orderA !== orderB) return orderA - orderB;
             return (parseInt(a.id.replace('T','')) || 0) - (parseInt(b.id.replace('T','')) || 0);
         });
-
         setSpecialTables(allSpecialTables);
+
+        // 📋 רשימות עולות (qualifiers)
+        const allQualifiersTables = Object.values(sTables).filter(table => {
+            const stageType = table.questions[0]?.stage_type;
+            return stageType === 'qualifiers';
+        }).sort((a,b) => {
+            const orderA = a.questions[0]?.stage_order || 999;
+            const orderB = b.questions[0]?.stage_order || 999;
+            return orderA - orderB;
+        });
+        setQualifiersTables(allQualifiersTables);
 
         setData(prev => ({ ...prev, questions, teams: teamsMap, validationLists: listsMap }));
       } catch (error) {
@@ -1213,6 +1224,62 @@ export default function ViewSubmissions() {
     );
   };
 
+  // 📋 תצוגת רשימת עולות (qualifiers)
+  const renderQualifiersTable = (table) => {
+    const questions = table.questions || [];
+    return (
+      <div style={{
+        background: 'rgba(30, 41, 59, 0.6)',
+        border: '1px solid rgba(249, 115, 22, 0.3)',
+        borderRadius: '12px',
+        padding: '16px',
+        backdropFilter: 'blur(10px)'
+      }}>
+        <h3 className="text-right font-bold text-base mb-4" style={{ color: '#f97316' }}>
+          📋 {table.description}
+        </h3>
+        <div className="grid grid-cols-1 gap-2">
+          {questions.map(q => {
+            const pred = getCombinedPredictionsMap()[q.id] || '';
+            const hasResult = q.actual_result && q.actual_result !== '__CLEAR__';
+            const isCorrect = hasResult && pred && pred.trim() === q.actual_result?.trim();
+            const isWrong = hasResult && pred && pred.trim() !== q.actual_result?.trim();
+            return (
+              <div key={q.id} style={{
+                display: 'grid',
+                gridTemplateColumns: '1fr auto',
+                gap: '8px',
+                alignItems: 'center',
+                padding: '8px 12px',
+                borderRadius: '6px',
+                background: isCorrect ? 'rgba(16, 185, 129, 0.1)' : isWrong ? 'rgba(239, 68, 68, 0.1)' : 'rgba(15, 23, 42, 0.4)',
+                border: `1px solid ${isCorrect ? 'rgba(16, 185, 129, 0.3)' : isWrong ? 'rgba(239, 68, 68, 0.3)' : 'rgba(249, 115, 22, 0.15)'}`
+              }}>
+                <span className="text-right text-sm" style={{ color: '#f8fafc' }}>{q.question_text}</span>
+                <div className="flex items-center gap-2">
+                  {pred ? (
+                    <span className="text-sm font-medium px-2 py-1 rounded" style={{
+                      background: 'rgba(249, 115, 22, 0.15)',
+                      color: '#f97316',
+                      border: '1px solid rgba(249, 115, 22, 0.3)'
+                    }}>{pred}</span>
+                  ) : (
+                    <span className="text-sm" style={{ color: '#64748b' }}>—</span>
+                  )}
+                  {hasResult && (
+                    <span className="text-sm font-bold" style={{ color: isCorrect ? '#10b981' : '#ef4444' }}>
+                      {isCorrect ? '✓' : '✗'}
+                    </span>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
   const renderSpecialQuestions = (table) => {
     const isT10 = table.description.includes('T10') || table.id === 'T10' || table.id.includes('custom_order');
     
@@ -1524,6 +1591,17 @@ export default function ViewSubmissions() {
     });
   }
 
+  qualifiersTables.forEach(table => {
+    const description = table.description || table.id;
+    allButtons.push({
+      numericId: table.questions[0]?.stage_order || parseInt(table.id.replace('T','')) || 0,
+      key: `qual_${table.id}`,
+      description: description,
+      sectionKey: `qual_${table.id}`,
+      isLongText: description.length > TEXT_LENGTH_THRESHOLD
+    });
+  });
+
   if (israeliTable) {
     const description = israeliTable.description;
     allButtons.push({
@@ -1773,7 +1851,7 @@ export default function ViewSubmissions() {
             </div>
           )}
 
-          {selectedParticipant && !loadingPredictions && (specialTables.length > 0 || roundTables.length > 0 || locationTables.length > 0 || israeliTable || playoffWinnersTable) && (
+          {selectedParticipant && !loadingPredictions && (specialTables.length > 0 || roundTables.length > 0 || locationTables.length > 0 || israeliTable || playoffWinnersTable || qualifiersTables.length > 0) && (
             <Card className="mt-4" style={{
               background: 'rgba(30, 41, 59, 0.6)',
               border: '1px solid rgba(6, 182, 212, 0.2)',
@@ -1870,6 +1948,17 @@ export default function ViewSubmissions() {
                                     isEditMode={isEditMode && isAdmin}
                                     handlePredictionEdit={handlePredictionEdit}
                                 />
+                            </div>
+                        );
+                    }
+                } else if (button.sectionKey.startsWith('qual_')) {
+                    // 📋 רשימת עולות
+                    const tableId = button.sectionKey.replace('qual_', '');
+                    const table = qualifiersTables.find(t => t.id === tableId);
+                    if (table) {
+                        return (
+                            <div key={button.sectionKey} className="mb-6">
+                                {renderQualifiersTable(table)}
                             </div>
                         );
                     }
