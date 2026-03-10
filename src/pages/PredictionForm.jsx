@@ -284,10 +284,11 @@ export default function PredictionForm() {
           }
         }
 
-        // Route to rTables for group stages (בית) OR שמינית הגמר match questions
+        // Route to rTables: קבוצות בית, כל שאלת playoff/league/groups עם home_team
         const isGroupStage = q.stage_name?.includes('בית') || q.table_description?.includes('בית');
-        const isKnockoutMatch = q.table_id === 'T3' && q.home_team && q.away_team;
-        const tableCollection = (isGroupStage || isKnockoutMatch) ? rTables : sTables;
+        const isMatchQuestion = q.home_team && q.away_team && 
+          ['playoff','league','groups'].includes(q.stage_type);
+        const tableCollection = (isGroupStage || isMatchQuestion) ? rTables : sTables;
         
         // 🎯 שימוש ב-stage_name בתור מזהה ייחודי לבתים
         let tableId = q.table_id; // Default to q.table_id
@@ -1423,7 +1424,7 @@ export default function PredictionForm() {
       key: `qual_${table.id}`,
       description: description,
       sectionKey: `qual_${table.id}`,
-      isLongText: description.length > TEXT_LENGTH_THRESHOLD
+      isLongText: description.length > 18
     });
   });
 
