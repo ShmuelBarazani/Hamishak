@@ -27,7 +27,8 @@ import {
   ArrowLeft,
   CheckCircle,
   Pencil,
-  ChevronDown
+  ChevronDown,
+  Users
 } from "lucide-react";
 import { supabase } from '@/api/supabaseClient';
 import * as db from '@/api/entities';
@@ -129,10 +130,14 @@ export default function FormBuilder() {
           stages[stageKey] = {
             name: q.stage_name || stageKey,
             order: q.stage_order || 999,
-            type: q.table_description?.includes('שאלות מיוחדות') ? 'custom' : 
-                  (q.table_description?.includes('מחזורים') ? 'league' : 
-                  (q.table_description?.includes('בתים') ? 'groups' : 
-                  (q.table_description?.includes('פלייאוף') ? 'playoff' : 'unknown'))),
+            type: q.stage_type || (
+                  q.table_description?.includes('שאלות מיוחדות') ? 'special' :
+                  q.table_description?.includes('רשימת עולות') ? 'qualifiers' :
+                  q.table_description?.includes('מחזורים') ? 'league' :
+                  q.table_description?.includes('בתים') ? 'groups' :
+                  q.table_description?.includes('פלייאוף') ? 'playoff' :
+                  q.table_description?.includes('custom') ? 'special' :
+                  'unknown'),
             questions: []
           };
         }
@@ -186,10 +191,14 @@ export default function FormBuilder() {
           stages[stageKey] = {
             name: q.stage_name || stageKey,
             order: q.stage_order || 999,
-            type: q.table_description?.includes('שאלות מיוחדות') ? 'custom' : 
-                  (q.table_description?.includes('מחזורים') ? 'league' : 
-                  (q.table_description?.includes('בתים') ? 'groups' : 
-                  (q.table_description?.includes('פלייאוף') ? 'playoff' : 'unknown'))),
+            type: q.stage_type || (
+                  q.table_description?.includes('שאלות מיוחדות') ? 'special' :
+                  q.table_description?.includes('רשימת עולות') ? 'qualifiers' :
+                  q.table_description?.includes('מחזורים') ? 'league' :
+                  q.table_description?.includes('בתים') ? 'groups' :
+                  q.table_description?.includes('פלייאוף') ? 'playoff' :
+                  q.table_description?.includes('custom') ? 'special' :
+                  'unknown'),
             questions: [],
             table_id: q.table_id,
             table_description: q.table_description
@@ -673,10 +682,14 @@ export default function FormBuilder() {
             stages[stageKey] = {
               name: q.stage_name || stageKey,
               order: q.stage_order || 999,
-              type: q.table_description?.includes('שאלות מיוחדות') ? 'custom' : 
-                    (q.table_description?.includes('מחזורים') ? 'league' : 
-                    (q.table_description?.includes('בתים') ? 'groups' : 
-                    (q.table_description?.includes('פלייאוף') ? 'playoff' : 'unknown'))),
+              type: q.stage_type || (
+                  q.table_description?.includes('שאלות מיוחדות') ? 'special' :
+                  q.table_description?.includes('רשימת עולות') ? 'qualifiers' :
+                  q.table_description?.includes('מחזורים') ? 'league' :
+                  q.table_description?.includes('בתים') ? 'groups' :
+                  q.table_description?.includes('פלייאוף') ? 'playoff' :
+                  q.table_description?.includes('custom') ? 'special' :
+                  'unknown'),
               questions: []
             };
           }
@@ -783,7 +796,8 @@ export default function FormBuilder() {
       const updates = editingStage.questions.map(q => db.Question.update(q.id, {
         stage_name: editingStage.name,
         table_description: newTableDescription,
-        stage_order: stageOrderNum
+        stage_order: stageOrderNum,
+        stage_type: editingStage.type || null
       }));
       await Promise.all(updates);
 
@@ -862,27 +876,53 @@ export default function FormBuilder() {
       title: 'ליגה',
       description: 'מחזורים עם משחקי הליגה',
       icon: Trophy,
+      color: '#818cf8',
+      emoji: '⚽',
       format: 'מחזור | תאריך | קבוצה בית | קבוצה חוץ'
     },
     {
       id: 'groups',
       title: 'בתים',
-      description: 'שלב הבתים',
+      description: 'שלב הבתים עם טבלת דירוג',
       icon: FileText,
+      color: '#10b981',
+      emoji: '🏠',
       format: 'בית | תאריך | קבוצה בית | קבוצה חוץ'
     },
     {
       id: 'playoff',
       title: 'פלייאוף',
-      description: 'שלבי הפלייאוף',
+      description: 'שלבי נוקאאוט (שמינית, רבע, חצי, גמר)',
       icon: Trophy,
+      color: '#eab308',
+      emoji: '🏆',
       format: 'שלב | תאריך | קבוצה בית | קבוצה חוץ'
     },
     {
-      id: 'custom',
+      id: 'special',
       title: 'שאלות מיוחדות',
-      description: 'הוסף שאלות ידנית, כגון בונוסים או שאלות כלליות',
+      description: 'שאלות בונוס וניחושים כלליים',
       icon: Sparkles,
+      color: '#06b6d4',
+      emoji: '✨',
+      format: 'יצירה ידנית של שאלות'
+    },
+    {
+      id: 'qualifiers',
+      title: 'רשימת עולות',
+      description: 'ניחוש אילו קבוצות יעלו לשלב הבא',
+      icon: Users,
+      color: '#f97316',
+      emoji: '📋',
+      format: 'יצירה ידנית של שאלות'
+    },
+    {
+      id: 'custom',
+      title: 'מיוחד (ישן)',
+      description: 'תאימות לאחור',
+      icon: Sparkles,
+      color: '#06b6d4',
+      emoji: '✨',
       format: 'יצירה ידנית של שאלות'
     }
   ];
@@ -957,11 +997,37 @@ export default function FormBuilder() {
                           #{stage.order}
                         </Badge>
                       )}
-                      {stage.type === 'league' && <Trophy className="w-5 h-5" style={{ color: '#06b6d4' }} />}
-                      {stage.type === 'groups' && <FileText className="w-5 h-5" style={{ color: '#06b6d4' }} />}
-                      {stage.type === 'playoff' && <Trophy className="w-5 h-5" style={{ color: '#06b6d4' }} />}
-                      {stage.type === 'custom' && <Sparkles className="w-5 h-5" style={{ color: '#06b6d4' }} />}
+                      {(() => {
+                        const st = stageTypes.find(t => t.id === stage.type);
+                        if (!st) return <Trophy className="w-5 h-5" style={{ color: '#06b6d4' }} />;
+                        const Icon = st.icon;
+                        return <Icon className="w-5 h-5" style={{ color: st.color }} />;
+                      })()}
                       <h3 className="font-bold text-lg" style={{ color: '#f8fafc' }}>{stage.name}</h3>
+                      {/* תגית סוג שלב */}
+                      {stage.type && (
+                        <Badge style={{
+                          background: stage.type === 'playoff' ? 'rgba(234, 179, 8, 0.15)' :
+                                      stage.type === 'groups'  ? 'rgba(16, 185, 129, 0.15)' :
+                                      stage.type === 'league'  ? 'rgba(99, 102, 241, 0.15)' :
+                                                                 'rgba(168, 85, 247, 0.15)',
+                          borderColor: stage.type === 'playoff' ? 'rgba(234, 179, 8, 0.5)' :
+                                       stage.type === 'groups'  ? 'rgba(16, 185, 129, 0.5)' :
+                                       stage.type === 'league'  ? 'rgba(99, 102, 241, 0.5)' :
+                                                                  'rgba(168, 85, 247, 0.5)',
+                          color: stage.type === 'playoff' ? '#eab308' :
+                                 stage.type === 'groups'  ? '#10b981' :
+                                 stage.type === 'league'  ? '#818cf8' :
+                                                            '#a855f7',
+                          fontSize: '11px',
+                          padding: '2px 8px'
+                        }}>
+                          {stage.type === 'playoff' ? '🏆 פלייאוף' :
+                           stage.type === 'groups'  ? '🏠 בתים' :
+                           stage.type === 'league'  ? '⚽ ליגה' :
+                                                      '✨ שאלות מיוחדות'}
+                        </Badge>
+                      )}
                       <Badge style={{ borderColor: 'rgba(6, 182, 212, 0.5)', color: '#06b6d4' }}>
                         {stage.questions.length} שאלות
                       </Badge>
@@ -988,7 +1054,7 @@ export default function FormBuilder() {
                           <th className="text-right p-2" style={{ color: '#06b6d4', fontSize: '11px' }}>מס'</th>
                           <th className="text-right p-2" style={{ color: '#06b6d4', fontSize: '11px' }}>שאלה</th>
                           <th className="text-center p-2" style={{ color: '#06b6d4', fontSize: '11px' }}>רשימת אימות</th>
-                          {stage.type !== 'custom' && stage.table_id !== 'T_TOP_FINISHERS' && (
+                          {stage.type !== 'custom' && stage.type !== 'special' && stage.type !== 'qualifiers' && stage.table_id !== 'T_TOP_FINISHERS' && (
                             <th className="text-center p-2" style={{ color: '#06b6d4', fontSize: '11px' }}>תאריך</th>
                           )}
                           <th className="text-center p-2" style={{ color: '#06b6d4', fontSize: '11px' }}>נק'</th>
@@ -1009,7 +1075,7 @@ export default function FormBuilder() {
                             <td className="text-center p-2 text-xs" style={{ color: '#8b5cf6' }}>
                               {q.validation_list || '-'}
                             </td>
-                            {stage.type !== 'custom' && q.table_id !== 'T_TOP_FINISHERS' && (
+                            {stage.type !== 'custom' && stage.type !== 'special' && stage.type !== 'qualifiers' && q.table_id !== 'T_TOP_FINISHERS' && (
                               <td className="text-center p-2 text-xs" style={{ color: '#64748b' }}>
                                 {q.game_date || '-'}
                               </td>
