@@ -157,17 +157,26 @@ export default function AdminResults() {
         const isGroup = (t.id.includes('בית') || desc?.includes('בית')) && !t.questions[0]?.stage_order;
         const isParticipantTable = t.id === 'T1';
         const isT9 = t.id === 'T9';
-        // 🔥 סנן T1, T19, T9 וטבלאות מיקומים וטבלאות בתים רגילות
+        // T10 יאוחד עם roundTables - לא יופיע בנפרד
+        if (t.id === 'T10') return false;
         return desc && !/^\d+$/.test(desc) && !locationTableIds.includes(t.id) && t.id !== 'T19' && !isGroup && !isParticipantTable && !isT9;
       }).sort((a,b) => {
-        // 🔥 מיון לפי stage_order קודם כל
         if (a.stage_order !== b.stage_order) {
           return (a.stage_order || 0) - (b.stage_order || 0);
         }
-        // אם אין stage_order או שווה - מיין לפי מספר טבלה
         return parseInt(a.id.replace('T','').replace(/\D/g,'')) - parseInt(b.id.replace('T','').replace(/\D/g,''));
       });
       setSpecialTables(allSpecialTables);
+
+      // 🔀 אחד T10: הוסף שאלות מיוחדות של T10 לתוך roundTable T10
+      const t10Special = sTables['T10'];
+      if (t10Special) {
+        const sortedRTs = Object.values(rTables);
+        const t10Round = sortedRTs.find(t => t.id === 'T10');
+        if (t10Round) {
+          t10Round.specialQuestions = t10Special.questions;
+        }
+      }
 
       // תוצאות נוכחיות - וודא שאף ערך לא יהיה null או undefined
       const initialResults = questions.reduce((acc, q) => {
@@ -832,6 +841,11 @@ export default function AdminResults() {
                     onResultChange={handleResultChange}
                     isAdmin={isAdmin}
                   />
+                  {table.specialQuestions && table.specialQuestions.length > 0 && (
+                    <div className="mt-4">
+                      {renderSpecialQuestions({ ...table, questions: table.specialQuestions })}
+                    </div>
+                  )}
                 </div>
               );
             }
