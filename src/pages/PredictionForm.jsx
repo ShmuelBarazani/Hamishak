@@ -1406,6 +1406,71 @@ export default function PredictionForm() {
     );
   }
 
+
+  // 🎨 רינדור כפתורי שלבים כ-chips
+  const renderStageChips = (allButtonsList, openSectionsMap, toggleSectionFn) => {
+    const groupMap = {
+      playoff:    { label: '⚽ משחקי פלייאוף',  color: '#3b82f6', bg: 'rgba(59,130,246,0.12)',  border: 'rgba(59,130,246,0.35)' },
+      league:     { label: '⚽ משחקי ליגה',      color: '#3b82f6', bg: 'rgba(59,130,246,0.12)',  border: 'rgba(59,130,246,0.35)' },
+      groups:     { label: '🏠 שלב הבתים',       color: '#06b6d4', bg: 'rgba(6,182,212,0.12)',   border: 'rgba(6,182,212,0.35)' },
+      special:    { label: '✨ שאלות מיוחדות',  color: '#8b5cf6', bg: 'rgba(139,92,246,0.12)', border: 'rgba(139,92,246,0.35)' },
+      qualifiers: { label: '📋 רשימות עולות',   color: '#f97316', bg: 'rgba(249,115,22,0.12)',  border: 'rgba(249,115,22,0.35)' },
+      rounds:     { label: '⚽ מחזורים',          color: '#06b6d4', bg: 'rgba(6,182,212,0.12)',   border: 'rgba(6,182,212,0.35)' },
+      other:      { label: '📌 נוסף',             color: '#64748b', bg: 'rgba(100,116,139,0.1)', border: 'rgba(100,116,139,0.25)' },
+    };
+    const grouped = {};
+    allButtonsList.forEach(btn => {
+      let type = btn.stageType;
+      if (!type) {
+        if (btn.sectionKey === 'rounds') type = 'rounds';
+        else if (btn.sectionKey.startsWith('round_')) type = 'playoff';
+        else if (btn.sectionKey.startsWith('qual_') || btn.sectionKey === 'playoffWinners') type = 'qualifiers';
+        else type = 'special';
+      }
+      if (!grouped[type]) grouped[type] = [];
+      grouped[type].push(btn);
+    });
+    const order = ['rounds','league','groups','playoff','special','qualifiers','other'];
+    const sortedGroups = order.filter(t => grouped[t]);
+    return (
+      <div style={{ padding: '14px 12px', background: 'rgba(17,24,39,0.7)', borderRadius: '12px', border: '1px solid rgba(56,189,248,0.12)', marginBottom: '16px' }}>
+        <div style={{ fontSize: '0.6rem', fontWeight: '700', letterSpacing: '0.12em', textTransform: 'uppercase', color: '#475569', marginBottom: '10px' }}>
+          בחירת שלב
+        </div>
+        {sortedGroups.map(type => {
+          const info = groupMap[type] || groupMap.other;
+          return (
+            <div key={type} style={{ marginBottom: '10px' }}>
+              <div style={{ fontSize: '0.58rem', fontWeight: '700', letterSpacing: '0.1em', textTransform: 'uppercase', color: info.color, marginBottom: '5px' }}>
+                {info.label}
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px' }}>
+                {grouped[type].map(button => {
+                  const active = openSectionsMap[button.sectionKey];
+                  return (
+                    <button key={button.key} onClick={() => toggleSectionFn(button.sectionKey)} style={{
+                      display: 'inline-flex', alignItems: 'center',
+                      padding: '5px 12px', borderRadius: '999px',
+                      fontSize: '0.78rem', fontWeight: active ? '700' : '400',
+                      color: active ? 'white' : info.color,
+                      background: active ? info.color : info.bg,
+                      border: `1px solid ${active ? info.color : info.border}`,
+                      cursor: 'pointer', transition: 'all 0.15s',
+                      boxShadow: active ? `0 0 10px ${info.color}66` : 'none',
+                      fontFamily: 'Rubik, Heebo, sans-serif', whiteSpace: 'nowrap',
+                    }}>
+                      {button.description}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
   const allButtons = [];
 
   if (roundTables.length > 0) {
@@ -1413,6 +1478,7 @@ export default function PredictionForm() {
       allButtons.push({
         numericId: table.questions[0]?.stage_order || parseInt((table.id || '').replace('T', '').replace(/\D/g, ''), 10) || 0,
         key: `round_${table.id}`,
+        stageType: table.questions[0]?.stage_type || 'playoff',
         description: table.description || table.id,
         sectionKey: `round_${table.id}`
       });
@@ -1423,6 +1489,7 @@ export default function PredictionForm() {
     allButtons.push({
       numericId: table.questions[0]?.stage_order || parseInt(table.id.replace('T', ''), 10), // 🔥 שימוש ב-stage_order
       key: table.id,
+      stageType: table.questions[0]?.stage_type || 'special',
       description: table.description,
       sectionKey: table.id
     });
@@ -1434,6 +1501,7 @@ export default function PredictionForm() {
       numericId: table.questions[0]?.stage_order || parseInt(table.id.replace('T','')) || 0,
       key: `qual_${table.id}`,
       description: description,
+      stageType: 'qualifiers',
       sectionKey: `qual_${table.id}`,
       isLongText: description.length > 18
     });
@@ -1444,6 +1512,7 @@ export default function PredictionForm() {
     allButtons.push({
       numericId: parseInt(firstLocationTableId.replace('T', ''), 10),
       key: 'locations',
+      stageType: 'other',
       description: 'מיקומים בתום שלב הבתים',
       sectionKey: 'locations'
     });
@@ -1454,6 +1523,7 @@ export default function PredictionForm() {
       numericId: parseInt(israeliTable.id.replace('T', ''), 10),
       key: israeliTable.id,
       description: israeliTable.description,
+      stageType: 'special',
       sectionKey: 'israeli'
     });
   }
@@ -1464,6 +1534,7 @@ export default function PredictionForm() {
       numericId: parseInt(playoffWinnersTable.id.replace('T', ''), 10),
       key: playoffWinnersTable.id,
       description: playoffWinnersTable.description,
+      stageType: 'qualifiers',
       sectionKey: 'playoffWinners' 
     });
   }
@@ -1531,38 +1602,7 @@ export default function PredictionForm() {
       ) : (
         <>
           {participantQuestions.length > 0 && (
-            <Card className="mb-4" style={{
-              background: 'rgba(30, 41, 59, 0.6)',
-              border: '1px solid rgba(6, 182, 212, 0.2)',
-              backdropFilter: 'blur(10px)'
-            }}>
-              <CardHeader className="py-2">
-                <CardTitle style={{ color: '#06b6d4' }}>פרטי המשתתף</CardTitle>
-              </CardHeader>
-              <CardContent className="p-3">
-                <div className="grid md:grid-cols-3 gap-3">
-                  {participantQuestions.map(q => (
-                    <div key={q.id}>
-                      <label htmlFor={`participant-detail-${q.id}`} className="text-xs font-medium mb-1 block" style={{ color: '#94a3b8' }}>
-                        {q.question_text}
-                      </label>
-                      <Input
-                        id={`participant-detail-${q.id}`}
-                        placeholder={q.question_text}
-                        value={participantDetails[q.id] || ""}
-                        onChange={(e) => handleDetailsChange(q.id, e.target.value)}
-                        className="h-8"
-                        style={{
-                          background: 'rgba(15, 23, 42, 0.6)',
-                          border: '1px solid rgba(6, 182, 212, 0.2)',
-                          color: '#f8fafc'
-                        }}
-                      />
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
+            {renderStageChips(allButtons, openSections, toggleSection)}
           )}
 
           {(specialTables.length > 0 || roundTables.length > 0 || locationTables.length > 0 || israeliTable || playoffWinnersTable || qualifiersTables.length > 0) && (
