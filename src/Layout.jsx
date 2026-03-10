@@ -12,8 +12,11 @@ import {
   LogOut,
   User as UserIcon,
   Shield,
+  Edit,
+  Menu,
+  X,
   ChevronDown,
-  Edit
+  Layers
 } from "lucide-react";
 import { supabase } from "@/api/supabaseClient";
 import * as db from "@/api/entities";
@@ -32,46 +35,49 @@ import { GameProvider, useGame } from '@/components/contexts/GameContext';
 import UploadStatusIndicator from '@/components/layout/UploadStatusIndicator';
 import { useToast } from "@/components/ui/use-toast";
 
-// קומפוננטת הניווט הפנימית שמשתמשת ב-GameContext
 function LayoutContent({ children, currentPageName }) {
   const location = useLocation();
   const [currentUser, setCurrentUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showAdminDialog, setShowAdminDialog] = useState(false);
   const [adminPassword, setAdminPassword] = useState("");
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const { toast } = useToast();
-  
+
   const { currentGame, games, selectGame, loading: gamesLoading, currentParticipant, currentUser: gameContextUser } = useGame();
 
-  // פריטי ניווט למשתמשים לא מחוברים (אורחים)
   const guestNavigationItems = [
+    {
+      title: "טבלת דירוג",
+      url: createPageUrl("LeaderboardNew") + (currentGame ? `?gameId=${currentGame.id}` : ''),
+      icon: Award,
+      roles: ["guest"],
+      disabled: !currentGame,
+      group: "main"
+    },
     {
       title: "צפייה בניחושים",
       url: createPageUrl("ViewSubmissions") + (currentGame ? `?gameId=${currentGame.id}` : ''),
       icon: Users,
       roles: ["guest"],
-      disabled: !currentGame
+      disabled: !currentGame,
+      group: "main"
     },
     {
       title: "תוצאות אמת",
       url: createPageUrl("AdminResults") + (currentGame ? `?gameId=${currentGame.id}` : ''),
       icon: BarChart3,
       roles: ["guest"],
-      disabled: !currentGame
-    },
-    {
-      title: "טבלת דירוג",
-      url: createPageUrl("LeaderboardNew") + (currentGame ? `?gameId=${currentGame.id}` : ''),
-      icon: Award,
-      roles: ["guest"],
-      disabled: !currentGame
+      disabled: !currentGame,
+      group: "main"
     },
     {
       title: "סטטיסטיקות",
       url: createPageUrl("Statistics") + (currentGame ? `?gameId=${currentGame.id}` : ''),
       icon: PieChart,
       roles: ["guest"],
-      disabled: !currentGame
+      disabled: !currentGame,
+      group: "main"
     },
     {
       title: "מילוי ניחושים",
@@ -79,74 +85,82 @@ function LayoutContent({ children, currentPageName }) {
       icon: FileText,
       roles: ["guest"],
       disabled: !currentGame,
-      requireAuth: true // סימון שזה דורש התחברות
+      requireAuth: true,
+      group: "main"
     }
   ];
 
   const allNavigationItems = [
     {
-      title: "סקירת מערכת",
-      url: createPageUrl("SystemOverview"),
-      icon: Database,
-      roles: ["admin"],
-    },
-    // The "יצירת / עריכת משחק" item is now a dedicated button in the header,
-    // so it's removed from the main navigation items array to prevent duplication.
-    {
-      title: "בניית שאלון",
-      url: createPageUrl("FormBuilder") + (currentGame ? `?gameId=${currentGame.id}` : ''),
-      icon: FileText,
-      roles: ["admin"],
-      disabled: !currentGame
+      title: "טבלת דירוג",
+      url: createPageUrl("LeaderboardNew") + (currentGame ? `?gameId=${currentGame.id}` : ''),
+      icon: Award,
+      roles: ["admin", "predictor", "viewer"],
+      disabled: !currentGame,
+      group: "main"
     },
     {
       title: "מילוי ניחושים",
       url: createPageUrl("PredictionForm") + (currentGame ? `?gameId=${currentGame.id}` : ''),
       icon: FileText,
       roles: ["admin", "predictor"],
-      disabled: !currentGame
+      disabled: !currentGame,
+      group: "main"
     },
     {
       title: "צפייה בניחושים",
       url: createPageUrl("ViewSubmissions") + (currentGame ? `?gameId=${currentGame.id}` : ''),
       icon: Users,
       roles: ["admin", "predictor", "viewer"],
-      disabled: !currentGame
+      disabled: !currentGame,
+      group: "main"
     },
     {
       title: "תוצאות אמת",
       url: createPageUrl("AdminResults") + (currentGame ? `?gameId=${currentGame.id}` : ''),
       icon: BarChart3,
       roles: ["admin", "predictor", "viewer"],
-      disabled: !currentGame
-    },
-    {
-      title: "טבלת דירוג",
-      url: createPageUrl("LeaderboardNew") + (currentGame ? `?gameId=${currentGame.id}` : ''),
-      icon: Award,
-      roles: ["admin", "predictor", "viewer"],
-      disabled: !currentGame
+      disabled: !currentGame,
+      group: "main"
     },
     {
       title: "סטטיסטיקות",
       url: createPageUrl("Statistics") + (currentGame ? `?gameId=${currentGame.id}` : ''),
       icon: PieChart,
       roles: ["admin", "predictor", "viewer"],
-      disabled: !currentGame
+      disabled: !currentGame,
+      group: "main"
     },
     {
       title: "ניהול משתתפים",
       url: createPageUrl("ManageGameParticipants"),
       icon: Users,
       roles: ["admin"],
-      disabled: !currentGame
+      disabled: !currentGame,
+      group: "admin"
     },
     {
       title: "ניהול משתמשים",
       url: createPageUrl("UserManagement"),
       icon: Shield,
       roles: ["admin"],
-    }
+      group: "admin"
+    },
+    {
+      title: "בניית שאלון",
+      url: createPageUrl("FormBuilder") + (currentGame ? `?gameId=${currentGame.id}` : ''),
+      icon: FileText,
+      roles: ["admin"],
+      disabled: !currentGame,
+      group: "admin"
+    },
+    {
+      title: "סקירת מערכת",
+      url: createPageUrl("SystemOverview"),
+      icon: Database,
+      roles: ["admin"],
+      group: "admin"
+    },
   ];
 
   useEffect(() => {
@@ -167,8 +181,7 @@ function LayoutContent({ children, currentPageName }) {
     try {
       await supabase.auth.signOut();
       setCurrentUser(null);
-      // Redirect to a default page after logout, possibly the leaderboard without a specific game
-      window.location.href = createPageUrl("LeaderboardNew"); 
+      window.location.href = createPageUrl("LeaderboardNew");
     } catch (error) {
       console.error("Logout error:", error);
     }
@@ -178,419 +191,322 @@ function LayoutContent({ children, currentPageName }) {
     if (adminPassword === "champ11") {
       try {
         if (!currentUser) {
-          // If no current user, prompt for login first then update role
-          // This path should ideally not be taken if the "connect as admin" button
-          // is only shown to logged-in non-admin users.
           window.location.href = '/login';
           return;
         }
-
         await supabase.auth.updateUser({ role: "admin" });
         const updatedUser = await supabase.auth.getUser().then(r => r.data.user);
         setCurrentUser(updatedUser);
-
         setShowAdminDialog(false);
         setAdminPassword("");
-        toast({
-          title: "התחברת כמנהל!",
-          description: "כעת יש לך גישה מלאה למערכת",
-          className: "bg-green-100 text-green-800",
-          duration: 2000
-        });
+        toast({ title: "התחברת כמנהל!", description: "כעת יש לך גישה מלאה למערכת", className: "bg-green-100 text-green-800", duration: 2000 });
       } catch (error) {
-        console.error("Admin login error:", error);
-        toast({
-          title: "שגיאה",
-          description: "לא ניתן לעדכן הרשאות",
-          variant: "destructive",
-          duration: 2000
-        });
+        toast({ title: "שגיאה", description: "לא ניתן לעדכן הרשאות", variant: "destructive", duration: 2000 });
       }
     } else {
-      toast({
-        title: "סיסמה שגויה",
-        description: "אנא נסה שוב",
-        variant: "destructive",
-        duration: 2000
-      });
+      toast({ title: "סיסמה שגויה", description: "אנא נסה שוב", variant: "destructive", duration: 2000 });
       setAdminPassword("");
     }
   };
 
-  // בחירת פריטי ניווט לפי סטטוס משתמש
-  // הרול נמצא ב-user_metadata של Supabase
-  // השתמש במשתמש מ-GameContext שכבר מכיל role נכון
   const effectiveUser = gameContextUser || currentUser;
   const supabaseRole = effectiveUser?.role || effectiveUser?.user_metadata?.role || null;
   let userRole = supabaseRole || (effectiveUser ? "predictor" : "guest");
-  
-  // אם זה לא מנהל כללי ויש participant - השתמש בתפקיד מהמשחק
   if (effectiveUser && supabaseRole !== "admin" && currentParticipant) {
     userRole = currentParticipant.role_in_game;
   }
-  
-  console.log('📋 Final userRole:', userRole);
-  
   const isAdmin = supabaseRole === "admin";
-  const navigationItems = effectiveUser 
+  const navigationItems = effectiveUser
     ? allNavigationItems.filter(item => item.roles.includes(userRole))
     : guestNavigationItems;
-    
-  console.log('📋 Navigation items count:', navigationItems.length);
+
+  const mainItems = navigationItems.filter(i => i.group === "main");
+  const adminItems = navigationItems.filter(i => i.group === "admin");
+
+  const isActive = (url) => {
+    const path = url.split('?')[0];
+    return window.location.pathname.includes(path);
+  };
+
+  const NavItem = ({ item, onClick }) => {
+    const active = isActive(item.url);
+    return (
+      <Link
+        to={item.disabled ? '#' : item.url}
+        onClick={(e) => {
+          if (item.disabled) {
+            e.preventDefault();
+            toast({ title: "בחר משחק", description: "נא לבחור משחק תחילה", variant: "destructive", duration: 2000 });
+          } else if (item.requireAuth && !currentUser) {
+            e.preventDefault();
+            window.location.href = '/login';
+          }
+          if (onClick) onClick();
+        }}
+        className="nav-item"
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '10px',
+          padding: '9px 12px',
+          borderRadius: '10px',
+          fontSize: '0.875rem',
+          fontWeight: active ? '600' : '400',
+          color: item.disabled ? '#475569' : active ? '#38bdf8' : '#94a3b8',
+          background: active ? 'rgba(56,189,248,0.1)' : 'transparent',
+          borderRight: active ? '3px solid #38bdf8' : '3px solid transparent',
+          textDecoration: 'none',
+          transition: 'all 0.15s',
+          cursor: item.disabled ? 'not-allowed' : 'pointer',
+          opacity: item.disabled ? 0.5 : 1,
+          marginBottom: '2px',
+        }}
+      >
+        <item.icon style={{ width: '16px', height: '16px', flexShrink: 0 }} />
+        <span style={{ flex: 1 }}>{item.title}</span>
+      </Link>
+    );
+  };
+
+  const SidebarContent = ({ onItemClick }) => (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      {/* Logo */}
+      <div style={{ padding: '16px', borderBottom: '1px solid rgba(56,189,248,0.15)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <img
+            src={currentGame?.game_icon || "https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/6909e559d350b14a5fc224bb/755e92965_2025-11-06120813.png"}
+            alt="logo"
+            style={{ width: '40px', height: '40px', objectFit: 'contain', borderRadius: '8px' }}
+          />
+          <div>
+            <div style={{ fontSize: '0.8rem', fontWeight: '800', color: '#f1f5f9', lineHeight: 1.2 }}>
+              טוטו ל"א
+            </div>
+            <div style={{ fontSize: '0.65rem', color: '#38bdf8' }}>2025-2026</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Game selector */}
+      <div style={{ padding: '10px 12px', borderBottom: '1px solid rgba(56,189,248,0.1)', background: 'rgba(56,189,248,0.04)' }}>
+        <div style={{ fontSize: '0.6rem', fontWeight: '700', letterSpacing: '0.1em', textTransform: 'uppercase', color: '#38bdf8', marginBottom: '6px' }}>
+          🎮 משחק פעיל
+        </div>
+        <Select
+          value={currentGame?.id || ''}
+          onValueChange={(gameId) => {
+            const game = games.find(g => g.id === gameId);
+            if (game) selectGame(game);
+          }}
+          disabled={gamesLoading || games.length === 0}
+        >
+          <SelectTrigger style={{
+            background: 'rgba(15,23,42,0.6)',
+            border: '1px solid rgba(56,189,248,0.2)',
+            color: '#f1f5f9',
+            fontSize: '0.8rem',
+            fontWeight: '600',
+            height: '34px',
+            borderRadius: '8px',
+          }}>
+            <SelectValue placeholder="בחר משחק">
+              {currentGame ? currentGame.game_name : "בחר משחק"}
+            </SelectValue>
+          </SelectTrigger>
+          <SelectContent style={{ background: '#1e293b', border: '1px solid rgba(56,189,248,0.3)', color: '#f1f5f9', zIndex: 9999 }}>
+            {games.map(game => (
+              <SelectItem key={game.id} value={game.id} style={{ color: '#f1f5f9' }}>
+                <div>
+                  <div style={{ fontWeight: '700', fontSize: '0.82rem' }}>{game.game_name}</div>
+                  {game.game_subtitle && <div style={{ fontSize: '0.65rem', color: '#38bdf8' }}>{game.game_subtitle}</div>}
+                </div>
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {isAdmin && currentGame && (
+          <Link to={createPageUrl("CreateGame")} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', marginTop: '6px', fontSize: '0.65rem', color: '#64748b', textDecoration: 'none' }}>
+            <Edit style={{ width: '10px', height: '10px' }} /> ערוך משחק
+          </Link>
+        )}
+      </div>
+
+      {/* Nav items */}
+      <div style={{ flex: 1, overflowY: 'auto', padding: '12px 8px' }}>
+        {mainItems.length > 0 && (
+          <>
+            <div style={{ fontSize: '0.6rem', fontWeight: '700', letterSpacing: '0.12em', textTransform: 'uppercase', color: '#475569', padding: '0 8px', marginBottom: '6px' }}>
+              ראשי
+            </div>
+            {mainItems.map(item => <NavItem key={item.title} item={item} onClick={onItemClick} />)}
+          </>
+        )}
+        {adminItems.length > 0 && (
+          <>
+            <div style={{ fontSize: '0.6rem', fontWeight: '700', letterSpacing: '0.12em', textTransform: 'uppercase', color: '#475569', padding: '0 8px', marginTop: '16px', marginBottom: '6px' }}>
+              ניהול
+            </div>
+            {adminItems.map(item => <NavItem key={item.title} item={item} onClick={onItemClick} />)}
+          </>
+        )}
+      </div>
+
+      {/* User */}
+      <div style={{ padding: '12px 16px', borderTop: '1px solid rgba(56,189,248,0.15)' }}>
+        {effectiveUser ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div style={{
+              width: '34px', height: '34px', borderRadius: '50%', flexShrink: 0,
+              background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: '0.75rem', fontWeight: '800', color: 'white'
+            }}>
+              {(effectiveUser.user_metadata?.full_name || effectiveUser.email || '?')[0]}
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: '0.8rem', fontWeight: '600', color: '#f1f5f9', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {effectiveUser.user_metadata?.full_name || effectiveUser.email}
+              </div>
+              <div style={{ fontSize: '0.65rem', color: isAdmin ? '#38bdf8' : '#64748b' }}>
+                {isAdmin ? '👑 מנהל' : 'משתתף'}
+              </div>
+            </div>
+            <button onClick={handleLogout} title="התנתק" style={{
+              background: 'transparent', border: 'none', cursor: 'pointer',
+              color: '#475569', padding: '4px', borderRadius: '6px'
+            }}>
+              <LogOut style={{ width: '14px', height: '14px' }} />
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={() => window.location.href = '/login'}
+            style={{
+              width: '100%', padding: '8px 12px', borderRadius: '8px',
+              background: 'rgba(56,189,248,0.1)', border: '1px solid rgba(56,189,248,0.3)',
+              color: '#38bdf8', fontSize: '0.8rem', fontWeight: '600',
+              cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+              fontFamily: 'inherit'
+            }}
+          >
+            <Shield style={{ width: '14px', height: '14px' }} />
+            התחבר / הירשם
+          </button>
+        )}
+      </div>
+    </div>
+  );
 
   if (loading || gamesLoading) {
-    return <div className="flex items-center justify-center h-screen">טוען...</div>;
+    return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', color: '#94a3b8', fontFamily: 'Rubik, Heebo, sans-serif' }}>טוען...</div>;
   }
 
   return (
-    <div className="app-container w-full min-h-screen" style={{ 
-      background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%)'
-    }} dir="rtl">
-      <header className="app-header" style={{ 
-        background: 'rgba(15, 23, 42, 0.95)', 
-        backdropFilter: 'blur(12px)',
-        borderBottom: '1px solid rgba(6, 182, 212, 0.2)',
-        boxShadow: '0 4px 24px 0 rgba(6, 182, 212, 0.1)',
+    <div dir="rtl" style={{ display: 'flex', minHeight: '100vh', background: 'linear-gradient(135deg, #0a0f1e 0%, #111827 50%, #0a0f1e 100%)', fontFamily: "'Rubik', 'Heebo', sans-serif" }}>
+
+      {/* ===== DESKTOP SIDEBAR ===== */}
+      <div style={{
+        width: '220px',
+        flexShrink: 0,
+        background: 'rgba(17, 24, 39, 0.98)',
+        borderLeft: '1px solid rgba(56,189,248,0.15)',
         position: 'sticky',
         top: 0,
-        zIndex: 100
-      }}>
-        <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center py-2 sm:py-3">
-            {/* שם המערכת + בחירת משחק + כפתור עריכה */}
-            <div className="flex items-center gap-2 sm:gap-3 mr-0">
-              <div className="w-12 h-12 sm:w-16 sm:h-16 flex items-center justify-center flex-shrink-0">
-                <img 
-                  src={currentGame?.game_icon || "https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/6909e559d350b14a5fc224bb/755e92965_2025-11-06120813.png"}
-                  alt="Tournament Logo"
-                  className="w-full h-full object-contain"
-                />
-              </div>
-              <div className="flex flex-col items-start">
-                {/* רק שורה אחת - dropdown לבחירת משחק */}
-                <div className="flex items-center gap-2">
-                  <Select 
-                    value={currentGame?.id || ''} 
-                    onValueChange={(gameId) => {
-                      const game = games.find(g => g.id === gameId);
-                      if (game) selectGame(game);
-                    }}
-                    disabled={gamesLoading || games.length === 0}
-                  >
-                    <SelectTrigger 
-                      className="border-0 bg-transparent text-base sm:text-xl font-bold p-0 h-auto"
-                      style={{ 
-                        color: '#f8fafc',
-                        textShadow: '0 0 10px rgba(6, 182, 212, 0.3)',
-                        minWidth: '250px'
-                      }}
-                    >
-                      <SelectValue placeholder={games.length === 0 ? "אין משחקים" : "בחר משחק"}>
-                        {currentGame ? currentGame.game_name : "בחר משחק"}
-                      </SelectValue>
-                    </SelectTrigger>
-                    <SelectContent className="bg-slate-800 border-cyan-600 [&>div]:bg-slate-800" style={{
-                      background: '#1e293b !important',
-                      border: '1px solid rgba(6, 182, 212, 0.3)',
-                      color: '#f8fafc',
-                      zIndex: 9999,
-                      backgroundColor: '#1e293b'
-                    }}>
-                      {games.map(game => (
-                        <SelectItem key={game.id} value={game.id} className="text-slate-200 hover:bg-cyan-700/20 focus:bg-cyan-700/20" style={{ 
-                          color: '#f8fafc',
-                          backgroundColor: 'transparent'
-                        }}>
-                          <div className="flex flex-col">
-                            <span className="font-bold">{game.game_name}</span>
-                            {game.game_subtitle && (
-                              <span className="text-xs" style={{ color: '#06b6d4' }}>{game.game_subtitle}</span>
-                            )}
-                          </div>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  
-                  {/* כפתור עריכת משחק */}
-                  {isAdmin && currentGame && (
-                    <Link to={createPageUrl("CreateGame")}>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="h-6 w-6 p-0"
-                        style={{ color: '#06b6d4' }}
-                      >
-                        <Edit className="w-4 h-4" />
-                      </Button>
-                    </Link>
-                  )}
-                </div>
-                
-                {/* שורה שנייה - subtitle בלבד */}
-                {currentGame?.game_subtitle && (
-                  <span className="text-xs sm:text-sm" style={{ color: '#06b6d4' }}>
-                    {currentGame.game_subtitle}
-                  </span>
-                )}
-              </div>
-            </div>
+        height: '100vh',
+        overflowY: 'auto',
+        display: 'flex',
+        flexDirection: 'column',
+        zIndex: 40,
+      }} className="desktop-sidebar">
+        <SidebarContent onItemClick={null} />
+      </div>
 
-            <div className="hidden md:flex items-center gap-3">
-              <nav className="flex items-center space-x-reverse space-x-3">
-                {navigationItems.map((item) => {
-                   const isActive = window.location.pathname.includes(item.url.split('?')[0]);
-                   return (
-                     <Link
-                       key={item.title}
-                       to={item.disabled ? '#' : item.url}
-                       className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 ${
-                         item.disabled ? 'opacity-50 cursor-not-allowed' : 
-                         isActive ? 'text-white' : 'hover:text-white'
-                       }`}
-                       style={item.disabled ? { color: '#64748b' } : isActive ? {
-                         background: 'linear-gradient(135deg, rgba(6, 182, 212, 0.3) 0%, rgba(14, 165, 233, 0.3) 100%)',
-                         borderLeft: '2px solid #06b6d4',
-                         color: '#06b6d4',
-                         boxShadow: '0 0 20px rgba(6, 182, 212, 0.3)'
-                       } : {
-                         color: '#94a3b8'
-                       }}
-                        onClick={(e) => {
-                          if (item.disabled) {
-                            e.preventDefault();
-                            toast({
-                              title: "בחר משחק",
-                              description: "נא לבחור משחק כדי להשתמש באפשרות זו",
-                              variant: "destructive"
-                            });
-                          } else if (item.requireAuth && !currentUser) {
-                            e.preventDefault();
-                            window.location.href = '/login';
-                          }
-                        }}
-                      >
-                        <item.icon className="w-3.5 h-3.5" />
-                        <span className="text-xs">{item.title}</span>
-                      </Link>
-                    );
-                  })}
-              </nav>
-              
-              <div className="flex flex-col items-center gap-1 pr-3" style={{ 
-                borderRight: '1px solid rgba(6, 182, 212, 0.2)' 
-              }}>
-                {currentUser ? (
-                  <>
-                    <div className="flex items-center gap-1.5" style={{ color: '#94a3b8' }}>
-                      <UserIcon className="w-3 h-3" />
-                      <span className="text-xs">{currentUser.full_name}</span>
-                      {currentUser.role === 'admin' && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded-full" style={{ 
-                          background: 'linear-gradient(135deg, rgba(6, 182, 212, 0.2) 0%, rgba(14, 165, 233, 0.2) 100%)',
-                          color: '#06b6d4',
-                          border: '1px solid rgba(6, 182, 212, 0.3)'
-                        }}>
-                          מנהל
-                        </span>
-                      )}
-                    </div>
-                    <Button 
-                      onClick={handleLogout} 
-                      variant="outline" 
-                      size="sm"
-                      className="h-6 px-2 text-xs hover:bg-cyan-500/10 hover:border-cyan-500"
-                      style={{ 
-                        borderColor: 'rgba(6, 182, 212, 0.3)',
-                        color: '#94a3b8',
-                        background: 'transparent'
-                      }}
-                    >
-                      <LogOut className="w-3 h-3 ml-1" />
-                      התנתק
-                    </Button>
-                  </>
-                ) : (
-                  <Button 
-                    onClick={() => window.location.href = '/login'}
-                    size="sm"
-                    className="h-7 px-3 text-xs hover:bg-cyan-500/20"
-                    style={{
-                      background: 'linear-gradient(135deg, rgba(6, 182, 212, 0.1) 0%, rgba(14, 165, 233, 0.1) 100%)',
-                      borderColor: 'rgba(6, 182, 212, 0.3)',
-                      color: '#06b6d4'
-                    }}
-                  >
-                    <Shield className="w-3.5 h-3.5 ml-1.5" />
-                    התחבר / הירשם
-                  </Button>
-                )}
-              </div>
-            </div>
-          </div>
+      {/* ===== MOBILE OVERLAY ===== */}
+      {sidebarOpen && (
+        <div
+          onClick={() => setSidebarOpen(false)}
+          style={{
+            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)',
+            zIndex: 49, backdropFilter: 'blur(2px)'
+          }}
+        />
+      )}
+
+      {/* ===== MOBILE SIDEBAR ===== */}
+      <div style={{
+        position: 'fixed',
+        top: 0,
+        right: sidebarOpen ? 0 : '-240px',
+        width: '240px',
+        height: '100vh',
+        background: 'rgba(17, 24, 39, 0.99)',
+        borderLeft: '1px solid rgba(56,189,248,0.2)',
+        zIndex: 50,
+        transition: 'right 0.25s ease',
+        overflowY: 'auto',
+        display: 'flex',
+        flexDirection: 'column',
+      }} className="mobile-sidebar">
+        <div style={{ display: 'flex', justifyContent: 'flex-start', padding: '12px 12px 0' }}>
+          <button onClick={() => setSidebarOpen(false)} style={{ background: 'transparent', border: 'none', color: '#64748b', cursor: 'pointer', padding: '4px' }}>
+            <X style={{ width: '18px', height: '18px' }} />
+          </button>
         </div>
+        <SidebarContent onItemClick={() => setSidebarOpen(false)} />
+      </div>
 
-        <div className="md:hidden" style={{ 
-          borderTop: '1px solid rgba(6, 182, 212, 0.2)',
+      {/* ===== MAIN CONTENT ===== */}
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+
+        {/* Mobile topbar */}
+        <div style={{
+          display: 'none',
+          padding: '10px 16px',
+          background: 'rgba(17,24,39,0.98)',
+          borderBottom: '1px solid rgba(56,189,248,0.15)',
+          alignItems: 'center',
+          justifyContent: 'space-between',
           position: 'sticky',
           top: 0,
-          zIndex: 50,
-          backgroundColor: 'rgba(15, 23, 42, 0.95)',
-          backdropFilter: 'blur(12px)'
-        }}>
-          <div className="max-w-7xl mx-auto px-2 py-1.5">
-            <div className="grid grid-cols-2 gap-1.5">
-              {navigationItems.map((item) => {
-                const isActive = window.location.pathname.includes(item.url.split('?')[0]);
-                return (
-                  <Link
-                    key={item.title}
-                    to={item.disabled ? '#' : item.url}
-                    className={`flex flex-col items-center justify-center gap-0.5 px-1.5 py-1.5 rounded-lg text-xs font-medium transition-all duration-200 ${
-                      item.disabled ? 'opacity-50 cursor-not-allowed' : ''
-                    }`}
-                    style={item.disabled ? { color: '#64748b', background: 'rgba(30, 41, 59, 0.4)' } : 
-                      isActive ? {
-                      background: 'linear-gradient(135deg, rgba(6, 182, 212, 0.3) 0%, rgba(14, 165, 233, 0.3) 100%)',
-                      color: '#06b6d4',
-                      boxShadow: '0 0 15px rgba(6, 182, 212, 0.3)'
-                    } : {
-                      color: '#94a3b8',
-                      background: 'rgba(30, 41, 59, 0.4)'
-                    }}
-                    onClick={(e) => {
-                      if (item.disabled) {
-                        e.preventDefault();
-                        toast({
-                          title: "בחר משחק",
-                          description: "נא לבחור משחק תחילה",
-                          variant: "destructive",
-                          duration: 2000
-                        });
-                      } else if (item.requireAuth && !currentUser) {
-                        e.preventDefault();
-                        window.location.href = '/login';
-                      }
-                    }}
-                  >
-                    <item.icon className="w-3.5 h-3.5" />
-                    <span className="text-[9px] text-center leading-tight">{item.title}</span>
-                  </Link>
-                );
-              })}
-            </div>
-            <div className="mt-1.5 flex justify-center">
-              {currentUser ? (
-                <div className="flex items-center gap-1.5 text-[10px]" style={{ color: '#94a3b8' }}>
-                  <span>{currentUser.full_name}</span>
-                  {currentUser.role === 'admin' && (
-                    <span className="text-[9px] px-1 py-0.5 rounded-full" style={{ 
-                      background: 'rgba(6, 182, 212, 0.2)',
-                      color: '#06b6d4',
-                      border: '1px solid rgba(6, 182, 212, 0.3)'
-                    }}>מנהל</span>
-                  )}
-                  <Button 
-                    onClick={handleLogout} 
-                    variant="ghost"
-                    size="sm"
-                    className="h-5 px-1.5 text-[9px]"
-                    style={{ color: '#94a3b8' }}
-                  >
-                    <LogOut className="w-2.5 h-2.5" />
-                  </Button>
-                </div>
-              ) : (
-                <Button 
-                  onClick={() => window.location.href = '/login'}
-                  size="sm"
-                  className="h-5 px-2 text-[9px]"
-                  style={{
-                    background: 'rgba(6, 182, 212, 0.1)',
-                    borderColor: 'rgba(6, 182, 212, 0.3)',
-                    color: '#06b6d4'
-                  }}
-                >
-                  <Shield className="w-2.5 h-2.5 ml-0.5" />
-                  התחבר / הירשם
-                </Button>
-              )}
-            </div>
+          zIndex: 30,
+        }} className="mobile-topbar">
+          <button onClick={() => setSidebarOpen(true)} style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: '4px' }}>
+            <Menu style={{ width: '22px', height: '22px' }} />
+          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <img
+              src={currentGame?.game_icon || "https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/6909e559d350b14a5fc224bb/755e92965_2025-11-06120813.png"}
+              alt="logo"
+              style={{ width: '28px', height: '28px', objectFit: 'contain' }}
+            />
+            <span style={{ fontSize: '0.85rem', fontWeight: '800', color: '#f1f5f9' }}>
+              {currentGame?.game_name || 'טוטו ל"א'}
+            </span>
           </div>
+          <div style={{ width: '30px' }} />
         </div>
-      </header>
 
-      <main className="app-main">
-        {children}
-      </main>
+        {/* Page content */}
+        <main style={{ flex: 1 }}>
+          {children}
+        </main>
+      </div>
 
       <UploadStatusIndicator />
 
       <Dialog open={showAdminDialog} onOpenChange={setShowAdminDialog}>
-        <DialogContent style={{ 
-          background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)',
-          border: '1px solid rgba(6, 182, 212, 0.3)',
-          boxShadow: '0 0 40px rgba(6, 182, 212, 0.2)'
-        }} dir="rtl">
+        <DialogContent style={{ background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)', border: '1px solid rgba(6,182,212,0.3)' }} dir="rtl">
           <DialogHeader>
-            <DialogTitle className="text-2xl font-bold flex items-center gap-2" style={{ 
-              color: '#06b6d4',
-              textShadow: '0 0 10px rgba(6, 182, 212, 0.5)'
-            }}>
-              <Shield className="w-6 h-6" />
-              התחברות מנהל
+            <DialogTitle style={{ color: '#06b6d4', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Shield style={{ width: '20px', height: '20px' }} /> התחברות מנהל
             </DialogTitle>
-            <DialogDescription style={{ color: '#94a3b8' }}>
-              הזן את סיסמת המנהל כדי לקבל הרשאות מלאות
-            </DialogDescription>
+            <DialogDescription style={{ color: '#94a3b8' }}>הזן את סיסמת המנהל</DialogDescription>
           </DialogHeader>
-          
-          <div className="space-y-4">
-            <div>
-              <label className="text-sm font-medium mb-2 block" style={{ color: '#94a3b8' }}>סיסמה</label>
-              <Input
-                type="password"
-                value={adminPassword}
-                onChange={(e) => setAdminPassword(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && handleAdminLogin()}
-                placeholder="הזן סיסמת מנהל..."
-                style={{
-                  background: '#0f172a',
-                  borderColor: 'rgba(6, 182, 212, 0.3)',
-                  color: '#f8fafc'
-                }}
-                className="focus:border-cyan-500 focus:ring-cyan-500"
-              />
-            </div>
-            
-            <div className="flex gap-3 justify-end">
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setShowAdminDialog(false);
-                  setAdminPassword("");
-                }}
-                style={{ 
-                  borderColor: 'rgba(6, 182, 212, 0.3)', 
-                  color: '#94a3b8',
-                  background: 'transparent'
-                }}
-                className="hover:bg-cyan-500/10"
-              >
-                ביטול
-              </Button>
-              <Button
-                onClick={handleAdminLogin}
-                style={{
-                  background: 'linear-gradient(135deg, #06b6d4 0%, #0ea5e9 100%)',
-                  color: 'white',
-                  boxShadow: '0 0 20px rgba(6, 182, 212, 0.4)'
-                }}
-                className="hover:shadow-[0_0_30px_rgba(6,182,212,0.6)]"
-              >
-                <Shield className="w-4 h-4 ml-2" />
-                התחבר כמנהל
-              </Button>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <Input type="password" value={adminPassword} onChange={(e) => setAdminPassword(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && handleAdminLogin()} placeholder="סיסמה..." style={{ background: '#0f172a', borderColor: 'rgba(6,182,212,0.3)', color: '#f8fafc' }} />
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+              <Button variant="outline" onClick={() => { setShowAdminDialog(false); setAdminPassword(""); }} style={{ borderColor: 'rgba(6,182,212,0.3)', color: '#94a3b8', background: 'transparent' }}>ביטול</Button>
+              <Button onClick={handleAdminLogin} style={{ background: 'linear-gradient(135deg, #06b6d4, #0ea5e9)', color: 'white' }}>התחבר כמנהל</Button>
             </div>
           </div>
         </DialogContent>
@@ -599,117 +515,60 @@ function LayoutContent({ children, currentPageName }) {
   );
 }
 
-// הקומפוננטה הראשית עם כל ה-Providers
 export default function Layout({ children, currentPageName }) {
   return (
     <UploadStatusProvider>
       <GameProvider>
         <style>{`
-          :root {
-            --primary-bg: #0f172a;
-            --secondary-bg: #1e293b;
-            --card-bg: #1e293b;
-            --text-primary: #f8fafc;
-            --text-secondary: #94a3b8;
-            --accent-cyan: #06b6d4;
-            --accent-blue: #0ea5e9;
-            --accent-purple: #8b5cf6;
-            --border-color: rgba(6, 182, 212, 0.2);
-            --glow-cyan: rgba(6, 182, 212, 0.4);
-          }
-          
-          html, body {
-            margin: 0;
-            padding: 0;
-            width: 100%;
-            min-height: 100vh;
-            background: #0f172a;
-            color: var(--text-primary);
-          }
-          
-          #root {
-            width: 100%;
-            min-height: 100vh;
-          }
-          
-          @supports (padding: env(safe-area-inset-top)) {
-            .app-header {
-              padding-top: env(safe-area-inset-top);
-            }
-            .app-main {
-              padding-bottom: env(safe-area-inset-bottom);
-            }
-          }
-          
-          .neon-border {
-            border: 1px solid rgba(6, 182, 212, 0.3);
-            box-shadow: 0 0 10px rgba(6, 182, 212, 0.2);
-          }
-          
-          .neon-glow {
-            box-shadow: 0 0 20px rgba(6, 182, 212, 0.3);
-          }
-          
-          .crypto-card {
-            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
-            border: 1px solid rgba(6, 182, 212, 0.2);
-            border-radius: 8px;
-          }
-          
-          ::-webkit-scrollbar {
-            width: 10px;
-            height: 10px;
-          }
-          
-          ::-webkit-scrollbar-track {
-            background: #1e293b;
-          }
-          
-          ::-webkit-scrollbar-thumb {
-            background: linear-gradient(180deg, #06b6d4 0%, #0ea5e9 100%);
-            border-radius: 5px;
-          }
-          
-          ::-webkit-scrollbar-thumb:hover {
-            background: linear-gradient(180deg, #0ea5e9 0%, #06b6d4 100%);
+          @import url('https://fonts.googleapis.com/css2?family=Rubik:wght@300;400;500;600;700;800;900&family=Heebo:wght@300;400;500;700;900&display=swap');
+
+          *, *::before, *::after {
+            font-family: 'Rubik', 'Heebo', sans-serif !important;
           }
 
+          :root {
+            --primary-bg: #0a0f1e;
+            --secondary-bg: #111827;
+            --card-bg: #1a2236;
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --accent-cyan: #38bdf8;
+            --accent-blue: #3b82f6;
+            --accent-purple: #8b5cf6;
+            --border-color: rgba(56,189,248,0.15);
+          }
+
+          html, body {
+            margin: 0; padding: 0; width: 100%; min-height: 100vh;
+            background: #0a0f1e; color: var(--text-primary);
+          }
+
+          #root { width: 100%; min-height: 100vh; }
+
+          /* Scrollbar */
+          ::-webkit-scrollbar { width: 6px; height: 6px; }
+          ::-webkit-scrollbar-track { background: #111827; }
+          ::-webkit-scrollbar-thumb { background: linear-gradient(180deg, #38bdf8, #3b82f6); border-radius: 3px; }
+          ::-webkit-scrollbar-thumb:hover { background: #38bdf8; }
+
+          /* Sidebar responsive */
           @media (max-width: 768px) {
-            body {
-              overflow-y: auto;
-              overflow-x: hidden;
-            }
-            
-            .app-container {
-              min-height: 100vh;
-              display: flex;
-              flex-direction: column;
-            }
-            
-            .app-header {
-              position: sticky;
-              top: 0;
-              z-index: 50;
-            }
-            
-            .app-main {
-              flex: 1;
-              overflow-y: auto;
-              -webkit-overflow-scrolling: touch;
-            }
+            .desktop-sidebar { display: none !important; }
+            .mobile-topbar { display: flex !important; }
           }
-          
-          @media (max-width: 768px) and (orientation: landscape) {
-            .app-header {
-              position: sticky;
-              top: 0;
-            }
-            
-            .app-header .py-2 {
-              padding-top: 0.25rem;
-              padding-bottom: 0.25rem;
-            }
+          @media (min-width: 769px) {
+            .mobile-sidebar { display: none !important; }
+            .mobile-topbar { display: none !important; }
           }
+
+          /* Nav item hover */
+          .nav-item:hover {
+            background: rgba(56,189,248,0.07) !important;
+            color: #e2e8f0 !important;
+          }
+
+          .neon-border { border: 1px solid rgba(56,189,248,0.3); box-shadow: 0 0 10px rgba(56,189,248,0.15); }
+          .crypto-card { background: linear-gradient(135deg, #1a2236 0%, #0a0f1e 100%); border: 1px solid rgba(56,189,248,0.15); border-radius: 8px; }
         `}</style>
         <LayoutContent currentPageName={currentPageName}>
           {children}
