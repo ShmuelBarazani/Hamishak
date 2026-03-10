@@ -854,18 +854,19 @@ export default function ViewSubmissions() {
   const getMaxPossibleScore = (question) => {
     const isIsraeliTableMatchQuestion = question.table_id === 'T20' && question.home_team && question.away_team;
     if (isIsraeliTableMatchQuestion) {
-      return 6; // Israeli League matches have 6 potential points for correct score
+      return 6;
     }
     if (question.possible_points != null && question.possible_points > 0) {
       return question.possible_points;
     }
-    // If actual_result is present, it's scorable. If possible_points is missing/0,
-    // we should assume a default for display based on typical special question points.
-    // This heuristic ensures correct max score display for questions that are scorable but lack explicit possible_points.
     if (question.actual_result != null && question.actual_result !== '') {
       return 10; 
     }
-    // Fallback for non-scorable or truly 0-point questions
+    // 🔥 שאלות T10 special (stage_type='special') — ברירת מחדל 10 נקודות
+    // גם לפני קביעת תוצאה, כדי שיוצג ניקוד אפשרי
+    if (question.table_id === 'T10' && question.stage_type === 'special') {
+      return 10;
+    }
     return 0;
   };
 
@@ -1141,7 +1142,9 @@ export default function ViewSubmissions() {
               const sortedSubs = [...subs].sort((a, b) => parseFloat(a.question_id) - parseFloat(b.question_id));
               const mainNumericId = parseFloat(main.question_id);
               const isGroup1 = (mainNumericId >= 1 && mainNumericId <= 2) || (mainNumericId >= 14 && mainNumericId <= 26);
-              const isTeamQuestion = (mainNumericId >= 5 && mainNumericId <= 10) || (mainNumericId >= 12 && mainNumericId <= 13);
+              // 🔥 בדוק לפי נוכחות home_team/away_team — לא לפי מספר שאלה
+              // שאלות 4,5 תוקנו ב-DB עם home_team=NULL, ולכן לא יהיו team questions
+              const isTeamQuestion = !!(main.home_team && main.away_team);
 
               // 🔑 לוגיקת תת-שאלה 1.1: מוצגת רק כשבשאלה 1 נבחר "אחר"
               const mainValue = participantPredictions[main.id] || '';
