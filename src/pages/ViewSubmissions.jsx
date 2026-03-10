@@ -1113,6 +1113,14 @@ export default function ViewSubmissions() {
               const isGroup1 = (mainNumericId >= 1 && mainNumericId <= 2) || (mainNumericId >= 14 && mainNumericId <= 26);
               const isTeamQuestion = (mainNumericId >= 5 && mainNumericId <= 10) || (mainNumericId >= 12 && mainNumericId <= 13);
 
+              // 🔑 לוגיקת תת-שאלה 1.1: מוצגת רק כשבשאלה 1 נבחר "אחר"
+              const mainValue = participantPredictions[main.id] || '';
+              const getSubValue = (sub) => {
+                const subVal = participantPredictions[sub.id] || '';
+                if (sub.question_id === '1.1' && mainValue !== 'אחר') return '';
+                return subVal;
+              };
+
               // שאלה ללא תתי-שאלות - 4 עמודות
               if (sortedSubs.length === 0) {
                 return (
@@ -1161,7 +1169,7 @@ export default function ViewSubmissions() {
                     <Badge variant="outline" className="border-cyan-400 text-cyan-200 justify-center text-xs h-6 w-full">{sortedSubs[0].question_id}</Badge>
                     <span className="text-right font-medium text-sm text-blue-100">{sortedSubs[0].question_text}</span>
                     <div className="contents">
-                      {isTeamQuestion ? renderTeamPrediction(sortedSubs[0].id, participantPredictions[sortedSubs[0].id] || "") : renderReadOnlySelect(sortedSubs[0], participantPredictions[sortedSubs[0].id] || "")}
+                      {isTeamQuestion ? renderTeamPrediction(sortedSubs[0].id, getSubValue(sortedSubs[0])) : renderReadOnlySelect(sortedSubs[0], getSubValue(sortedSubs[0]))}
                     </div>
                   </div>
                 );
@@ -1192,7 +1200,7 @@ export default function ViewSubmissions() {
                       <Badge variant="outline" className="border-cyan-400 text-cyan-200 justify-center text-xs h-6 w-full">{sub.question_id}</Badge>
                       <span className="text-right font-medium text-sm text-blue-100 truncate">{sub.question_text}</span>
                       <div className="contents">
-                        {isTeamQuestion ? renderTeamPrediction(sub.id, participantPredictions[sub.id] || "") : renderReadOnlySelect(sub, participantPredictions[sub.id] || "")}
+                        {isTeamQuestion ? renderTeamPrediction(sub.id, getSubValue(sub)) : renderReadOnlySelect(sub, getSubValue(sub))}
                       </div>
                     </React.Fragment>
                   ))}
@@ -1467,15 +1475,30 @@ export default function ViewSubmissions() {
       table.id.includes('בית') || table.description?.includes('בית')
     );
     
-    const firstRoundTableId = roundTables[0]?.id || 'T2'; 
-    const description = allAreGroups ? 'שלב הבתים' : 'מחזורי המשחקים';
-    allButtons.push({
-      numericId: parseInt(firstRoundTableId.replace('T', '').replace(/\D/g, ''), 10),
-      key: 'rounds',
-      description: description,
-      sectionKey: 'rounds',
-      isLongText: description.length > TEXT_LENGTH_THRESHOLD
-    });
+    if (allAreGroups) {
+      // שלב הבתים: כפתור אחד לכל הבתים
+      const firstRoundTableId = roundTables[0]?.id || 'T2'; 
+      const description = 'שלב הבתים';
+      allButtons.push({
+        numericId: parseInt(firstRoundTableId.replace('T', '').replace(/\D/g, ''), 10),
+        key: 'rounds',
+        description: description,
+        sectionKey: 'rounds',
+        isLongText: description.length > TEXT_LENGTH_THRESHOLD
+      });
+    } else {
+      // נוקאאוט: כל טבלה מקבלת כפתור נפרד עם שם השלב
+      roundTables.forEach(table => {
+        const description = table.description || table.id;
+        allButtons.push({
+          numericId: parseInt(table.id.replace('T', '').replace(/\D/g, ''), 10) || 0,
+          key: `round_${table.id}`,
+          description: description,
+          sectionKey: `round_${table.id}`,
+          isLongText: description.length > TEXT_LENGTH_THRESHOLD
+        });
+      });
+    }
   }
 
   specialTables.forEach(table => {
@@ -1524,11 +1547,10 @@ export default function ViewSubmissions() {
     });
   }
 
-  // Sort by numericId - this ensures correct order (rounds first, then by table number)
+  // Sort by numericId - rounds first (group stage), then by table number
   allButtons.sort((a, b) => {
     if (a.sectionKey === 'rounds' && b.sectionKey !== 'rounds') return -1;
     if (b.sectionKey === 'rounds' && a.sectionKey !== 'rounds') return 1;
-
     return a.numericId - b.numericId;
   });
 
@@ -1810,29 +1832,47 @@ export default function ViewSubmissions() {
                 if (!openSections[button.sectionKey]) return null;
 
                 if (button.sectionKey === 'rounds') {
+                    // שלב בתים: כל הטבלאות + טבלת ניקוד
                     return (
-                        <div key="rounds-section" className="mb-6 space-y-6"> {/* Added space-y-6 for spacing between tables */}
+                        <div key="rounds-section" className="mb-6 space-y-6">
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                             {roundTables.map(table => (
                                 <RoundTableReadOnly
                                     key={table.id}
                                     table={table}
                                     teams={data.teams}
-                                    predictions={getCombinedPredictionsMap()} // This will use the current/edited predictions for display
+                                    predictions={getCombinedPredictionsMap()}
                                     isEditMode={isEditMode && isAdmin}
                                     handlePredictionEdit={handlePredictionEdit}
                                 />
                             ))}
                           </div>
-                          {/* Added StandingsTable component */}
                           <StandingsTable 
                             roundTables={roundTables}
                             teams={data.teams}
-                            data={getCombinedPredictionsMap()} // Pass combined predictions
+                            data={getCombinedPredictionsMap()}
                             type="predictions"
                           />
                         </div>
                     );
+                } else if (button.sectionKey.startsWith('round_')) {
+                    // נוקאאוט: כל שלב בנפרד, ללא טבלת ניקוד
+                    const tableId = button.sectionKey.replace('round_', '');
+                    const table = roundTables.find(t => t.id === tableId);
+                    if (table) {
+                        return (
+                            <div key={button.sectionKey} className="mb-6">
+                                <RoundTableReadOnly
+                                    key={table.id}
+                                    table={table}
+                                    teams={data.teams}
+                                    predictions={getCombinedPredictionsMap()}
+                                    isEditMode={isEditMode && isAdmin}
+                                    handlePredictionEdit={handlePredictionEdit}
+                                />
+                            </div>
+                        );
+                    }
                 } else if (button.sectionKey === 'israeli' && israeliTable) {
                     return (
                         <div key="israeli-section" className="mb-6">
