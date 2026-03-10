@@ -1602,7 +1602,7 @@ export default function PredictionForm() {
       ) : (
         <>
           {participantQuestions.length > 0 && (
-            {renderStageChips(allButtons, openSections, toggleSection)}
+            renderStageChips(allButtons, openSections, toggleSection)
           )}
 
           {(specialTables.length > 0 || roundTables.length > 0 || locationTables.length > 0 || israeliTable || playoffWinnersTable || qualifiersTables.length > 0) && (
