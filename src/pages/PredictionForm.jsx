@@ -374,6 +374,8 @@ export default function PredictionForm() {
           const isParticipantTable = table.id === 'T1';
           const isT9 = table.id === 'T9';
           const stageType = table.questions[0]?.stage_type;
+          // T10 יאוחד עם roundTables - לא יופיע בנפרד
+          if (table.id === 'T10') return false;
           return desc && !/^\d+$/.test(desc) && !locationTableIds.includes(table.id) && table.id !== 'T19' && !isGroupTable && !isParticipantTable && !isT9 && stageType !== 'qualifiers';
       }).sort((a,b) => {
         const orderA = a.questions[0]?.stage_order || 999;
@@ -382,6 +384,15 @@ export default function PredictionForm() {
         return (parseInt(a.id.replace('T','')) || 0) - (parseInt(b.id.replace('T','')) || 0);
       });
       setSpecialTables(allSpecialTables);
+
+      // 🔀 אחד T10: הוסף שאלות מיוחדות לתוך roundTable T10
+      const t10Special = sTables['T10'];
+      if (t10Special) {
+        const t10Round = Object.values(rTables).find(t => t.id === 'T10');
+        if (t10Round) {
+          t10Round.specialQuestions = t10Special.questions;
+        }
+      }
 
       // 📋 רשימות עולות
       const allQualifiersTables = Object.values(sTables).filter(table => {
