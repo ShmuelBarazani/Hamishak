@@ -1994,7 +1994,37 @@ export default function FormBuilder() {
                 />
               </div>
 
-              {/* 🆕 שדה מספר שלב */}
+              {/* סוג השלב */}
+              <div>
+                <label className="text-xs font-medium mb-1 block" style={{ color: '#94a3b8' }}>סוג השלב</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {stageTypes.map(type => (
+                    <button
+                      key={type.id}
+                      onClick={() => setEditingStage({...editingStage, type: type.id})}
+                      style={{
+                        background: editingStage.type === type.id
+                          ? 'rgba(6, 182, 212, 0.2)'
+                          : 'rgba(15, 23, 42, 0.6)',
+                        border: editingStage.type === type.id
+                          ? '1px solid rgba(6, 182, 212, 0.8)'
+                          : '1px solid rgba(6, 182, 212, 0.2)',
+                        color: editingStage.type === type.id ? '#06b6d4' : '#94a3b8',
+                        borderRadius: '6px',
+                        padding: '8px 12px',
+                        cursor: 'pointer',
+                        textAlign: 'right',
+                        fontSize: '13px',
+                        fontWeight: editingStage.type === type.id ? '600' : 'normal'
+                      }}
+                    >
+                      {type.title}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* מספר שלב */}
               <div>
                 <label className="text-xs font-medium mb-1 block" style={{ color: '#94a3b8' }}>מספר שלב (לסדר תצוגה)</label>
                 <Input
