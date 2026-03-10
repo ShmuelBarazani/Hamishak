@@ -720,12 +720,78 @@ export default function AdminResults() {
   }
 
   // בניית כפתורי ניווט
+
+  // 🎨 רינדור כפתורי שלבים כ-chips
+  const renderStageChips = (allButtonsList, openSectionsMap, toggleSectionFn) => {
+    const groupMap = {
+      playoff:    { label: '⚽ משחקי פלייאוף',  color: '#3b82f6', bg: 'rgba(59,130,246,0.12)',  border: 'rgba(59,130,246,0.35)' },
+      league:     { label: '⚽ משחקי ליגה',      color: '#3b82f6', bg: 'rgba(59,130,246,0.12)',  border: 'rgba(59,130,246,0.35)' },
+      groups:     { label: '🏠 שלב הבתים',       color: '#06b6d4', bg: 'rgba(6,182,212,0.12)',   border: 'rgba(6,182,212,0.35)' },
+      special:    { label: '✨ שאלות מיוחדות',  color: '#8b5cf6', bg: 'rgba(139,92,246,0.12)', border: 'rgba(139,92,246,0.35)' },
+      qualifiers: { label: '📋 רשימות עולות',   color: '#f97316', bg: 'rgba(249,115,22,0.12)',  border: 'rgba(249,115,22,0.35)' },
+      rounds:     { label: '⚽ מחזורים',          color: '#06b6d4', bg: 'rgba(6,182,212,0.12)',   border: 'rgba(6,182,212,0.35)' },
+      other:      { label: '📌 נוסף',             color: '#64748b', bg: 'rgba(100,116,139,0.1)', border: 'rgba(100,116,139,0.25)' },
+    };
+    const grouped = {};
+    allButtonsList.forEach(btn => {
+      let type = btn.stageType;
+      if (!type) {
+        if (btn.sectionKey === 'rounds') type = 'rounds';
+        else if (btn.sectionKey.startsWith('round_')) type = 'playoff';
+        else if (btn.sectionKey.startsWith('qual_') || btn.sectionKey === 'playoffWinners') type = 'qualifiers';
+        else type = 'special';
+      }
+      if (!grouped[type]) grouped[type] = [];
+      grouped[type].push(btn);
+    });
+    const order = ['rounds','league','groups','playoff','special','qualifiers','other'];
+    const sortedGroups = order.filter(t => grouped[t]);
+    return (
+      <div style={{ padding: '14px 12px', background: 'rgba(17,24,39,0.7)', borderRadius: '12px', border: '1px solid rgba(56,189,248,0.12)', marginBottom: '16px' }}>
+        <div style={{ fontSize: '0.6rem', fontWeight: '700', letterSpacing: '0.12em', textTransform: 'uppercase', color: '#475569', marginBottom: '10px' }}>
+          בחירת שלב
+        </div>
+        {sortedGroups.map(type => {
+          const info = groupMap[type] || groupMap.other;
+          return (
+            <div key={type} style={{ marginBottom: '10px' }}>
+              <div style={{ fontSize: '0.58rem', fontWeight: '700', letterSpacing: '0.1em', textTransform: 'uppercase', color: info.color, marginBottom: '5px' }}>
+                {info.label}
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px' }}>
+                {grouped[type].map(button => {
+                  const active = openSectionsMap[button.sectionKey];
+                  return (
+                    <button key={button.key} onClick={() => toggleSectionFn(button.sectionKey)} style={{
+                      display: 'inline-flex', alignItems: 'center',
+                      padding: '5px 12px', borderRadius: '999px',
+                      fontSize: '0.78rem', fontWeight: active ? '700' : '400',
+                      color: active ? 'white' : info.color,
+                      background: active ? info.color : info.bg,
+                      border: `1px solid ${active ? info.color : info.border}`,
+                      cursor: 'pointer', transition: 'all 0.15s',
+                      boxShadow: active ? `0 0 10px ${info.color}66` : 'none',
+                      fontFamily: 'Rubik, Heebo, sans-serif', whiteSpace: 'nowrap',
+                    }}>
+                      {button.description}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
   const allButtons = [];
 
   if (roundTables.length > 0) {
     roundTables.forEach(table => {
       allButtons.push({
         numericId: table.stage_order || parseInt(table.id.replace('T', '').replace(/\D/g, ''), 10) || 0,
+        stageType: table.stage_type || 'playoff',
         key: `round_${table.id}`,
         description: table.description || table.id,
         sectionKey: `round_${table.id}`
@@ -736,6 +802,7 @@ export default function AdminResults() {
   specialTables.forEach(table => {
     allButtons.push({
       numericId: table.stage_order || parseInt(table.id.replace('T', '').replace(/\D/g, ''), 10),
+      stageType: table.stage_type || 'special',
       key: table.id,
       description: table.description,
       sectionKey: table.id
@@ -745,6 +812,7 @@ export default function AdminResults() {
   if (locationTables.length > 0) {
     allButtons.push({
       numericId: parseInt(locationTables[0]?.id.replace('T', ''), 10),
+      stageType: 'other',
       key: 'locations',
       description: 'מיקומים בתום שלב הבתים',
       sectionKey: 'locations'
@@ -754,6 +822,7 @@ export default function AdminResults() {
   if (israeliTable) {
     allButtons.push({
       numericId: parseInt(israeliTable.id.replace('T', ''), 10),
+      stageType: 'special',
       key: israeliTable.id,
       description: israeliTable.description,
       sectionKey: 'israeli'
@@ -763,6 +832,7 @@ export default function AdminResults() {
   if (playoffWinnersTable) {
     allButtons.push({
       numericId: parseInt(playoffWinnersTable.id.replace('T', ''), 10),
+      stageType: 'qualifiers',
       key: playoffWinnersTable.id,
       description: playoffWinnersTable.description,
       sectionKey: 'playoffWinners'
@@ -802,28 +872,7 @@ export default function AdminResults() {
         </Alert>
       ) : (
         <>
-          <Card className="mb-4 bg-slate-800/40 border-cyan-700">
-            <CardHeader className="py-2">
-              <CardTitle className="text-sm md:text-lg text-cyan-400">בחירת שלב</CardTitle>
-            </CardHeader>
-            <CardContent className="grid grid-cols-2 md:grid-cols-4 gap-2 p-2">
-              {allButtons.map(button => (
-                <Button 
-                  key={button.key}
-                  onClick={() => toggleSection(button.sectionKey)}
-                  variant={openSections[button.sectionKey] ? "default" : "outline"}
-                  className={`h-14 md:h-20 p-1.5 flex-col gap-1 whitespace-normal ${
-                    openSections[button.sectionKey] 
-                      ? 'bg-gradient-to-r from-cyan-600 to-blue-600 text-white' 
-                      : 'bg-slate-700/50 border-cyan-500 text-cyan-300'
-                  }`}
-                >
-                  <span className="text-[9px] md:text-sm font-medium leading-tight text-center">{button.description}</span>
-                  {openSections[button.sectionKey] ? <ChevronUp className="w-2.5 h-2.5" /> : <ChevronDown className="w-2.5 h-2.5" />}
-                </Button>
-              ))}
-            </CardContent>
-          </Card>
+          {renderStageChips(allButtons, openSections, toggleSection)}
 
           {allButtons.map(button => {
             if (!openSections[button.sectionKey]) return null;
