@@ -30,6 +30,7 @@ export default function PredictionForm() {
   const [israeliTable, setIsraeliTable] = useState(null);
   const [specialTables, setSpecialTables] = useState([]);
   const [locationTables, setLocationTables] = useState([]);
+  const [qualifiersTables, setQualifiersTables] = useState([]);
   const [playoffWinnersTable, setPlayoffWinnersTable] = useState(null);
 
   const [participantName, setParticipantName] = useState("");
@@ -368,20 +369,28 @@ export default function PredictionForm() {
 
       const allSpecialTables = Object.values(sTables).filter(table => {
           const desc = table.description?.trim();
-          // 🔥 סינון T1, T19, T9 וטבלאות בתים - אבל לא אם יש stage_order גבוה (שלבים מיוחדים)
-          const isGroupTable = (table.id.includes('בית') || desc?.includes('בית')) && !table.questions[0]?.stage_order; // רק אם אין stage_order
+          const isGroupTable = (table.id.includes('בית') || desc?.includes('בית')) && !table.questions[0]?.stage_order;
           const isParticipantTable = table.id === 'T1';
-          const isT9 = table.id === 'T9'; // T9 היא טבלת מיקומים
-          return desc && !/^\d+$/.test(desc) && !locationTableIds.includes(table.id) && table.id !== 'T19' && !isGroupTable && !isParticipantTable && !isT9;
+          const isT9 = table.id === 'T9';
+          const stageType = table.questions[0]?.stage_type;
+          return desc && !/^\d+$/.test(desc) && !locationTableIds.includes(table.id) && table.id !== 'T19' && !isGroupTable && !isParticipantTable && !isT9 && stageType !== 'qualifiers';
       }).sort((a,b) => {
-        // 🔥 מיון לפי stage_order ראשית, ואז לפי מספר שלב
         const orderA = a.questions[0]?.stage_order || 999;
         const orderB = b.questions[0]?.stage_order || 999;
         if (orderA !== orderB) return orderA - orderB;
         return (parseInt(a.id.replace('T','')) || 0) - (parseInt(b.id.replace('T','')) || 0);
       });
-      
       setSpecialTables(allSpecialTables);
+
+      // 📋 רשימות עולות
+      const allQualifiersTables = Object.values(sTables).filter(table => {
+        return table.questions[0]?.stage_type === 'qualifiers';
+      }).sort((a,b) => {
+        const orderA = a.questions[0]?.stage_order || 999;
+        const orderB = b.questions[0]?.stage_order || 999;
+        return orderA - orderB;
+      });
+      setQualifiersTables(allQualifiersTables);
 
       // Fallback: if no game_participants data was loaded (admin user), use user_metadata
       if (user && !participantRecord) {
@@ -1407,6 +1416,17 @@ export default function PredictionForm() {
     });
   });
 
+  qualifiersTables.forEach(table => {
+    const description = table.description || table.id;
+    allButtons.push({
+      numericId: table.questions[0]?.stage_order || parseInt(table.id.replace('T','')) || 0,
+      key: `qual_${table.id}`,
+      description: description,
+      sectionKey: `qual_${table.id}`,
+      isLongText: description.length > TEXT_LENGTH_THRESHOLD
+    });
+  });
+
   if (locationTables.length > 0) {
     const firstLocationTableId = locationTables[0]?.id || 'T14';
     allButtons.push({
@@ -1533,7 +1553,7 @@ export default function PredictionForm() {
             </Card>
           )}
 
-          {(specialTables.length > 0 || roundTables.length > 0 || locationTables.length > 0 || israeliTable || playoffWinnersTable) && (
+          {(specialTables.length > 0 || roundTables.length > 0 || locationTables.length > 0 || israeliTable || playoffWinnersTable || qualifiersTables.length > 0) && (
             <Card className="mb-4" style={{
               background: 'rgba(30, 41, 59, 0.6)',
               border: '1px solid rgba(6, 182, 212, 0.2)',
