@@ -262,6 +262,8 @@ export default function ViewSubmissions() {
             const desc = table.description?.trim();
             const isGroup = table.id.includes('בית') || desc?.includes('בית');
             const stageType = table.questions[0]?.stage_type;
+            // T10 יאוחד עם roundTables - לא יופיע כשאלות מיוחדות נפרדות
+            if (table.id === 'T10') return false;
             return desc && !/^\d+$/.test(desc) && !locationTableIds.includes(table.id) && table.id !== 'T19' && !isGroup && stageType !== 'qualifiers';
         }).sort((a,b) => {
             const orderA = a.questions[0]?.stage_order || 999;
@@ -270,6 +272,15 @@ export default function ViewSubmissions() {
             return (parseInt(a.id.replace('T','')) || 0) - (parseInt(b.id.replace('T','')) || 0);
         });
         setSpecialTables(allSpecialTables);
+
+        // 🔀 אחד T10: הוסף שאלות מיוחדות של T10 לתוך roundTable T10
+        const t10Special = sTables['T10'];
+        if (t10Special) {
+          const t10Round = Object.values(rTables).find(t => t.id === 'T10');
+          if (t10Round) {
+            t10Round.specialQuestions = t10Special.questions;
+          }
+        }
 
         // 📋 רשימות עולות (qualifiers)
         const allQualifiersTables = Object.values(sTables).filter(table => {
@@ -1948,6 +1959,12 @@ export default function ViewSubmissions() {
                                     isEditMode={isEditMode && isAdmin}
                                     handlePredictionEdit={handlePredictionEdit}
                                 />
+                                {/* שאלות מיוחדות שמשויכות לאותו שלב (למשל T10) */}
+                                {table.specialQuestions && table.specialQuestions.length > 0 && (
+                                    <div className="mt-4">
+                                        {renderSpecialQuestions({ ...table, questions: table.specialQuestions })}
+                                    </div>
+                                )}
                             </div>
                         );
                     }
