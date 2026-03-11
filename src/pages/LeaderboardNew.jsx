@@ -53,47 +53,54 @@ export default function LeaderboardNew() {
     return score;
   };
 
-  // ── Helper: load all rankings with pagination ──────────────────────────────
+  // ── Helper: load all rankings (supabase direct) ───────────────────────────
   const loadAllRankings = async (gameId, orderBy = '-current_score') => {
-    let all = [];
-    let skip = 0;
-    const PAGE = 500;
+    let all = [], from = 0;
+    const PAGE = 1000;
     while (true) {
-      const batch = await db.Ranking.filter({ game_id: gameId }, orderBy, PAGE, skip);
-      all = [...all, ...batch];
-      if (batch.length < PAGE) break;
-      skip += PAGE;
+      let query = supabase.from('rankings').select('*').eq('game_id', gameId).range(from, from + PAGE - 1);
+      if (orderBy === '-current_score') query = query.order('current_score', { ascending: false });
+      else if (orderBy) query = query.order(orderBy.replace('-',''), { ascending: !orderBy.startsWith('-') });
+      const { data, error } = await query;
+      if (error) { console.error('rankings fetch error:', error); break; }
+      if (!data || data.length === 0) break;
+      all = [...all, ...data];
+      if (data.length < PAGE) break;
+      from += PAGE;
     }
     return all;
   };
 
-  // ── Helper: load all questions with pagination ─────────────────────────────
+  // ── Helper: load all questions (supabase direct) ──────────────────────────
   const loadAllQuestions = async (gameId) => {
-    let all = [];
-    let skip = 0;
-    const PAGE = 5000;
+    let all = [], from = 0;
+    const PAGE = 1000;
     while (true) {
-      const batch = await db.Question.filter({ game_id: gameId }, null, PAGE, skip);
-      all = [...all, ...batch];
-      if (batch.length < PAGE) break;
-      skip += PAGE;
+      const { data, error } = await supabase
+        .from('questions').select('*').eq('game_id', gameId).range(from, from + PAGE - 1);
+      if (error) { console.error('questions fetch error:', error); break; }
+      if (!data || data.length === 0) break;
+      all = [...all, ...data];
+      if (data.length < PAGE) break;
+      from += PAGE;
     }
     return all.filter(q => q.table_id && q.table_id !== 'T1');
   };
 
-  // ── Helper: load all predictions with pagination ───────────────────────────
+  // ── Helper: load all predictions (supabase direct) ────────────────────────
   const loadAllPredictions = async (gameId, participantName = null) => {
-    let all = [];
-    let skip = 0;
-    const PAGE = 5000;
-    const filter = participantName
-      ? { game_id: gameId, participant_name: participantName }
-      : { game_id: gameId };
+    let all = [], from = 0;
+    const PAGE = 1000;
     while (true) {
-      const batch = await db.Prediction.filter(filter, null, PAGE, skip);
-      all = [...all, ...batch];
-      if (batch.length < PAGE) break;
-      skip += PAGE;
+      let query = supabase.from('predictions').select('*').eq('game_id', gameId).range(from, from + PAGE - 1);
+      if (participantName) query = query.eq('participant_name', participantName);
+      const { data, error } = await query;
+      if (error) { console.error('predictions fetch error:', error); break; }
+      if (!data || data.length === 0) break;
+      all = [...all, ...data];
+      console.log('   ניחושים סה"כ:', all.length);
+      if (data.length < PAGE) break;
+      from += PAGE;
     }
     return all;
   };
