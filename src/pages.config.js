@@ -9,6 +9,7 @@ import UserManagement from './pages/UserManagement';
 import JoinGame from './pages/JoinGame';
 import ManageGameParticipants from './pages/ManageGameParticipants';
 import AdminResults from './pages/AdminResults';
+import AdminImport from './pages/AdminImport';
 import ExportData from './pages/ExportData';
 import ImportData from './pages/ImportData';
 import CleanScoreTable from './pages/CleanScoreTable';
@@ -21,6 +22,7 @@ export const PAGES = {
   ViewSubmissions,
   Statistics,
   AdminResults,
+  AdminImport,
   FormBuilder,
   CreateGame,
   SystemOverview,
