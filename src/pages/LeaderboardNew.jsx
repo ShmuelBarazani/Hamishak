@@ -794,7 +794,7 @@ export default function LeaderboardNew() {
     );
   }
 
-  const isAdmin = currentUser?.role === 'admin';
+  const isAdmin = currentUser?.role === 'admin' || currentUser?.user_metadata?.role === 'admin';
   const sortedRankings = getSortedRankings();
 
   // 🔍 DEBUG: בדוק מה בטבלה
