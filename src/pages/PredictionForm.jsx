@@ -300,7 +300,7 @@ export default function PredictionForm() {
           tableDescription = q.stage_name;
         }
         // 🔥 אם זה שלב מיוחד עם stage_order - קבץ לפי stage_order
-        else if (q.table_description?.includes('שאלות מיוחדות') && q.stage_order) {
+        else if (q.table_description?.includes('שאלות מיוחדות') && q.stage_order && q.table_id !== 'T10') {
           tableId = `custom_order_${q.stage_order}`;
           tableDescription = q.stage_name || q.table_description;
         }
@@ -1451,7 +1451,7 @@ export default function PredictionForm() {
                     <button key={button.key} onClick={() => toggleSectionFn(button.sectionKey)} style={{
                       display: 'inline-flex', alignItems: 'center',
                       padding: '5px 12px', borderRadius: '999px',
-                      fontSize: '0.78rem', fontWeight: active ? '700' : '400',
+                      fontSize: '0.9rem', fontWeight: active ? '700' : '400',
                       color: active ? 'white' : info.color,
                       background: active ? info.color : info.bg,
                       border: `1px solid ${active ? info.color : info.border}`,
@@ -1603,41 +1603,6 @@ export default function PredictionForm() {
         <>
           {participantQuestions.length > 0 && (
             renderStageChips(allButtons, openSections, toggleSection)
-          )}
-
-          {(specialTables.length > 0 || roundTables.length > 0 || locationTables.length > 0 || israeliTable || playoffWinnersTable || qualifiersTables.length > 0) && (
-            <Card className="mb-4" style={{
-              background: 'rgba(30, 41, 59, 0.6)',
-              border: '1px solid rgba(6, 182, 212, 0.2)',
-              backdropFilter: 'blur(10px)'
-            }}>
-               <CardHeader className="py-2">
-                  <CardTitle style={{ color: '#06b6d4' }}>בחירת שלב לניחוש</CardTitle>
-               </CardHeader>
-               <CardContent className="grid grid-cols-4 gap-3 p-3">
-                  {allButtons.map(button => (
-                      <Button 
-                        key={button.key} 
-                        onClick={() => toggleSection(button.sectionKey)} 
-                        variant={openSections[button.sectionKey] ? "default" : "outline"} 
-                        className={`h-20 p-2 flex-col gap-2 whitespace-normal`}
-                        style={openSections[button.sectionKey] ? {
-                          background: 'linear-gradient(135deg, rgba(6, 182, 212, 0.3) 0%, rgba(14, 165, 233, 0.3) 100%)',
-                          border: '1px solid rgba(6, 182, 212, 0.5)',
-                          color: '#06b6d4',
-                          boxShadow: '0 0 15px rgba(6, 182, 212, 0.3)'
-                        } : {
-                          background: 'rgba(30, 41, 59, 0.4)',
-                          border: '1px solid rgba(6, 182, 212, 0.2)',
-                          color: '#94a3b8'
-                        }}
-                      >
-                          <span className="text-sm font-medium">{button.description}</span>
-                          {openSections[button.sectionKey] ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-                      </Button>
-                  ))}
-               </CardContent>
-            </Card>
           )}
 
           {allButtons.map(button => {
