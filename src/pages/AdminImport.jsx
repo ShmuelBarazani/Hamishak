@@ -5,126 +5,240 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
 import { Upload, Loader2, ChevronDown, ChevronUp } from "lucide-react";
 
-// ─── text helpers ─────────────────────────────────────────────────────────────
+// ─── CSV Parser (handles multi-line quoted fields) ───────────────────────────
+function parseCSV(text) {
+  const rows = [];
+  let cur = [], field = '', inQ = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQ) {
+      if (c === '"') {
+        if (text[i+1] === '"') { field += '"'; i++; }           // "" = escaped quote
+        else { inQ = false; }                                    // closing quote
+      } else { field += c; }
+    } else {
+      if (c === '"') { inQ = true; }
+      else if (c === ',') { cur.push(field.trim()); field = ''; }
+      else if (c === '\n') {
+        cur.push(field.trim()); rows.push(cur);
+        cur = []; field = '';
+      } else if (c !== '\r') { field += c; }
+    }
+  }
+  if (field || cur.length) { cur.push(field.trim()); rows.push(cur); }
+  return rows;
+}
+
+// ─── Text helpers ─────────────────────────────────────────────────────────────
 function cleanText(s) {
-  if (!s) return '';
-  return s
-    .replace(/\(\*+\)/g, '')          // remove (*)  (**) (***) (****)
-    .replace(/["'"״'']/g, '')          // remove quotes
-    .replace(/\s+/g, ' ')
-    .trim();
+  return (s || '').replace(/\(\*+\)/g, '').replace(/["'"״'']/g, '').replace(/\s+/g, ' ').trim();
 }
 function normalizeTeam(s) {
-  if (!s) return '';
-  return s.replace(/\s*\([^)]*\)\s*$/, '').replace(/\s+/g, ' ').trim();
+  return (s || '').replace(/\s*\([^)]*\)\s*$/, '').replace(/\s+/g, ' ').trim();
 }
 function wordOverlap(a, b) {
-  const stop = new Set(['את','של','עם','אם','או','על','בין','ב','ל','מ','כ','הכי','ביותר','אחד','אחת','כל','כולל','לא','שלב','שיובקע']);
+  const stop = new Set(['את','של','עם','אם','או','על','בין','ב','ל','מ','כ','הכי','ביותר','אחד','אחת','כל','כולל','לא','שלב','שיובקע','שיובקעו']);
   const wa = new Set(cleanText(a).split(' ').filter(w => w.length > 1 && !stop.has(w)));
   const wb = new Set(cleanText(b).split(' ').filter(w => w.length > 1 && !stop.has(w)));
   if (!wa.size || !wb.size) return 0;
-  let common = 0;
-  for (const w of wa) if (wb.has(w)) common++;
+  let common = 0; for (const w of wa) if (wb.has(w)) common++;
   return common / Math.max(wa.size, wb.size);
 }
 
-// ─── CSV parser ───────────────────────────────────────────────────────────────
-function parseCSVText(text) {
-  const lines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
-  return lines.map(line => {
-    const cols = []; let cur = '', inQ = false;
-    for (let i = 0; i < line.length; i++) {
-      const c = line[i];
-      if (c === '"') {
-        // Only toggle if at start/end of field (next/prev char is comma or EOL)
-        const prev = i === 0 ? ',' : line[i-1];
-        const next = i === line.length-1 ? ',' : line[i+1];
-        if (!inQ && prev === ',') { inQ = true; }
-        else if (inQ && (next === ',' || i === line.length-1)) { inQ = false; }
-        else { cur += c; }  // embedded quote — treat as literal
-      } else if (c === ',' && !inQ) { cols.push(cur.trim()); cur = ''; }
-      else { cur += c; }
-    }
-    cols.push(cur.trim()); return cols;
-  });
-}
-
 // ─── Extract predictions ──────────────────────────────────────────────────────
+// Uses content-scanning instead of fixed row indices to be offset-independent.
 function extractPredictions(rows) {
   const safe = (r, c) => (rows[r]?.[c] || '').trim();
   const name = safe(2, 4);
   const preds = [];
 
-  // T2 Q1 main + sub
-  if (safe(13,3)) preds.push({ label:'T2 (1) שחקן',    csvText:safe(13,1), value:safe(13,3),  section:'T2' });
-  if (safe(13,8)) preds.push({ label:'T2 (1) שערים',   csvText:safe(13,7), value:safe(13,8),  section:'T2', subOf:'Q1', parentCsvText:safe(13,1) });
-  // T2 Q2 main + sub
-  if (safe(15,4)) preds.push({ label:'T2 (2) קבוצה',   csvText:safe(15,1), value:safe(15,4),  section:'T2' });
-  if (safe(15,7)) preds.push({ label:'T2 (2) שערים',   csvText:safe(15,6), value:safe(15,7),  section:'T2', subOf:'Q2', parentCsvText:safe(15,1) });
-  // T2 Q3 main + sub
-  if (safe(17,4)) preds.push({ label:'T2 (3) קבוצה',   csvText:safe(17,1), value:safe(17,4),  section:'T2' });
-  if (safe(17,7)) preds.push({ label:'T2 (3) פנדלים',  csvText:safe(17,6), value:safe(17,7),  section:'T2', subOf:'Q3', parentCsvText:safe(17,1) });
-  // T2 Q4–Q33 (col6)
-  for (let i = 19; i < 79; i += 2) {
-    const num = safe(i,0); if (!num.startsWith('(')) continue;
-    const v = safe(i,6); if (v) preds.push({ label:`T2 ${num}`, csvText:safe(i,1), value:v, section:'T2' });
+  // Find rows by scanning col0 for question numbers
+  // Build index maps
+  const byNum = {};   // '(1' → row index
+  const byNumSection = {};  // section+num → row index
+
+  // First pass: map all (N rows
+  for (let i = 0; i < rows.length; i++) {
+    const n = safe(i, 0);
+    if (/^\(\d+$/.test(n)) {
+      if (!byNum[n]) byNum[n] = [];
+      byNum[n].push(i);
+    }
   }
 
-  // T3 matches
-  for (let i = 83; i < 101; i++) {
+  // ── Identify section boundaries ──────────────────────────────────────────
+  // Find start of each section by looking for section headers in col2/col3
+  let t2Start=-1, t3Start=-1, t4Start=-1, t5Start=-1;
+  let t6Start=-1, t7Start=-1, t8Start=-1, t9Start=-1, t10Start=-1;
+
+  for (let i = 0; i < rows.length; i++) {
+    const c1 = safe(i,1), c2 = safe(i,2), c3 = safe(i,3);
+    if (c1.includes('שלב הנוקאאוט') && c1.includes('מיוחד')) t2Start = i;
+    if (c1.includes('שמינית הגמר') && !c1.includes('מיוחד') && t3Start < 0) t3Start = i;
+    if (c3.includes('שמינית') && c3.includes('רשימת')) t4Start = i;
+    if (c1.includes('שמינית') && /^\(1$/.test(safe(i,0)) && t5Start < 0 && t4Start > 0) t5Start = i;
+    if (c3.includes('חצי גמר') && c3.includes('רשימת') && t4Start > 0 && t6Start < 0) t6Start = i;
+    if (/^\(1$/.test(safe(i,0)) && t6Start > 0 && t7Start < 0 && i > t6Start) t7Start = i;
+    if (c3.includes('גמר') && c3.includes('רשימת') && t6Start > 0 && t8Start < 0) t8Start = i;
+    if (/^\(1$/.test(safe(i,0)) && t8Start > 0 && t9Start < 0 && i > t8Start) t9Start = i;
+    if ((c1.includes('גמר') || c2.includes('גמר')) && t9Start > 0 && t10Start < 0) t10Start = i;
+  }
+
+  // Fallback section detection by match content
+  if (t3Start < 0) {
+    for (let i = 0; i < rows.length; i++) {
+      const h = safe(i,3); const a = safe(i,5);
+      if (h && a && /^\d+$/.test(safe(i,6)) && /^\d+$/.test(safe(i,8))) {
+        t3Start = i - 5; break;
+      }
+    }
+  }
+
+  // ── T2: General knockout special (Q1-Q3 hardcoded, Q4+ scanned) ───────────
+  // Find Q1,Q2,Q3 by their question number in the early part of file
+  const q1Rows = (byNum['(1'] || []).filter(i => i < 30);
+  const q2Rows = (byNum['(2'] || []).filter(i => i < 30);
+  const q3Rows = (byNum['(3'] || []).filter(i => i < 30);
+
+  if (q1Rows.length) {
+    const i = q1Rows[0];
+    if (safe(i,3)) preds.push({ label:'T2 (1) שחקן',   csvText:safe(i,1), value:safe(i,3), section:'T2' });
+    if (safe(i,8)) preds.push({ label:'T2 (1) שערים', csvText:safe(i,7), value:safe(i,8), section:'T2', subOf:'Q1', parentCsvText:safe(i,1) });
+    // fallback: col4+col7
+    else if (safe(i,4) && !safe(i,3)) {
+      if (safe(i,4)) preds.push({ label:'T2 (1) שחקן', csvText:safe(i,1), value:safe(i,4), section:'T2' });
+      if (safe(i,7)) preds.push({ label:'T2 (1) שערים', csvText:safe(i,6), value:safe(i,7), section:'T2', subOf:'Q1', parentCsvText:safe(i,1) });
+    }
+  }
+  if (q2Rows.length) {
+    const i = q2Rows[0];
+    const val = safe(i,4) || safe(i,3);
+    const sub = safe(i,7) || safe(i,6);
+    const subText = safe(i,6) || safe(i,5);
+    if (val) preds.push({ label:'T2 (2) קבוצה', csvText:safe(i,1), value:val, section:'T2' });
+    if (sub) preds.push({ label:'T2 (2) שערים', csvText:subText, value:sub, section:'T2', subOf:'Q2', parentCsvText:safe(i,1) });
+  }
+  if (q3Rows.length) {
+    const i = q3Rows[0];
+    const val = safe(i,4) || safe(i,3);
+    const sub = safe(i,7) || safe(i,6);
+    const subText = safe(i,6) || safe(i,5);
+    if (val) preds.push({ label:'T2 (3) קבוצה', csvText:safe(i,1), value:val, section:'T2' });
+    if (sub) preds.push({ label:'T2 (3) פנדלים', csvText:subText, value:sub, section:'T2', subOf:'Q3', parentCsvText:safe(i,1) });
+  }
+
+  // Q4+ : scan all rows with (N num, col6 = value, in range up to first T3 match row
+  const t2End = t3Start > 0 ? t3Start : 90;
+  for (let i = 0; i < t2End; i++) {
+    const n = safe(i,0);
+    if (!/^\(\d+$/.test(n) || ['(1','(2','(3'].includes(n)) continue;
+    const v = safe(i,6);
+    if (v) preds.push({ label:`T2 ${n}`, csvText:safe(i,1), value:v, section:'T2' });
+  }
+
+  // ── T3: Matches ────────────────────────────────────────────────────────────
+  for (let i = 0; i < rows.length; i++) {
     const home=safe(i,3), away=safe(i,5), hs=safe(i,6), as_=safe(i,8);
-    if (home && away && /^\d+$/.test(hs) && /^\d+$/.test(as_))
-      preds.push({ label:`T3: ${normalizeTeam(home)}-${normalizeTeam(away)}`,
+    if (home && away && /^\d+$/.test(hs) && /^\d+$/.test(as_) && normalizeTeam(home) && normalizeTeam(away))
+      preds.push({ label:`T3:${normalizeTeam(home)}-${normalizeTeam(away)}`,
         type:'match', home:normalizeTeam(home), away:normalizeTeam(away),
         value:`${hs}-${as_}`, section:'T3' });
   }
 
-  // T4 שמינית qualifiers (value = team name)
-  for (let i = 102; i < 115; i++) {
-    const slot=safe(i,2), team=safe(i,3);
-    if (/^\d+$/.test(slot) && team && !team.includes('שם'))
+  // ── T4: שמינית qualifiers ─────────────────────────────────────────────────
+  // Scan for rows with col2=digit, col3=team, col4=non-digit header (האם העפילה)
+  // They appear in a block, find that block
+  let inT4 = false, t4Count = 0;
+  for (let i = 0; i < rows.length; i++) {
+    const slot=safe(i,2), team=safe(i,3), check=safe(i,4);
+    if (team.includes('שמינית') && team.includes('רשימת')) { inT4 = true; t4Count = 0; continue; }
+    if (team.includes('חצי') && team.includes('רשימת') && inT4) { inT4 = false; continue; }
+    if (inT4 && /^\d+$/.test(slot) && team && !team.includes('שם') && !team.includes('בונוס')) {
       preds.push({ label:`T4 מקום ${slot}`, type:'qualifier',
         slot:parseInt(slot), team:normalizeTeam(team), value:normalizeTeam(team), section:'T4' });
+      t4Count++;
+    }
+    if (t4Count >= 8) inT4 = false;
   }
 
-  // T5 שמינית special (col7)
-  for (let i = 115; i < 136; i += 2) {
-    const num=safe(i,0); if (!num.startsWith('(')) continue;
-    const v=safe(i,7); if (v) preds.push({ label:`T5 ${num}`, csvText:safe(i,1), value:v, section:'T5' });
+  // ── T5: שמינית special ────────────────────────────────────────────────────
+  // Find (1..(10 rows between T4 end and T6 start
+  let inT5 = false;
+  for (let i = 0; i < rows.length; i++) {
+    const n=safe(i,0), col1=safe(i,1);
+    if (col1.includes('שמינית') && /^\(1$/.test(n)) inT5 = true;
+    if (inT5 && /^\(\d+$/.test(n)) {
+      const v = safe(i,7);
+      if (v) preds.push({ label:`T5 ${n}`, csvText:col1, value:v, section:'T5' });
+      if (n === '(10') { inT5 = false; }
+    }
+    // Stop at T6 start
+    if (inT5 && safe(i,3).includes('חצי') && safe(i,3).includes('רשימת')) inT5 = false;
   }
 
-  // T6 רבע qualifiers
-  for (let i = 140; i < 152; i++) {
+  // ── T6: רבע qualifiers ────────────────────────────────────────────────────
+  let inT6 = false, t6Count = 0;
+  for (let i = 0; i < rows.length; i++) {
     const slot=safe(i,2), team=safe(i,3);
-    if (/^\d+$/.test(slot) && team && !team.includes('שם'))
+    if (team.includes('חצי') && team.includes('רשימת')) { inT6 = true; t6Count = 0; continue; }
+    if (team.includes('גמר') && team.includes('רשימת') && inT6) { inT6 = false; continue; }
+    if (inT6 && /^\d+$/.test(slot) && team && !team.includes('שם') && !team.includes('בונוס')) {
       preds.push({ label:`T6 מקום ${slot}`, type:'qualifier',
         slot:parseInt(slot), team:normalizeTeam(team), value:normalizeTeam(team), section:'T6' });
+      t6Count++;
+    }
+    if (t6Count >= 4) inT6 = false;
   }
 
-  // T7 רבע special (col7)
-  for (let i = 149; i < 170; i += 2) {
-    const num=safe(i,0); if (!num.startsWith('(')) continue;
-    const v=safe(i,7); if (v) preds.push({ label:`T7 ${num}`, csvText:safe(i,1), value:v, section:'T7' });
+  // ── T7: רבע special ───────────────────────────────────────────────────────
+  let inT7 = false;
+  for (let i = 0; i < rows.length; i++) {
+    const n=safe(i,0), col1=safe(i,1);
+    if (col1.includes('רבע') && /^\(1$/.test(n)) inT7 = true;
+    if (inT7 && /^\(\d+$/.test(n)) {
+      const v = safe(i,7);
+      if (v) preds.push({ label:`T7 ${n}`, csvText:col1, value:v, section:'T7' });
+      if (n === '(10') { inT7 = false; }
+    }
+    if (inT7 && safe(i,3).includes('גמר') && safe(i,3).includes('רשימת')) inT7 = false;
   }
 
-  // T8 חצי qualifiers
-  for (let i = 174; i < 184; i++) {
+  // ── T8: חצי qualifiers ────────────────────────────────────────────────────
+  let inT8 = false, t8Count = 0;
+  for (let i = 0; i < rows.length; i++) {
     const slot=safe(i,2), team=safe(i,3);
-    if (/^\d+$/.test(slot) && team && !team.includes('שם'))
+    if (team.includes('גמר') && team.includes('רשימת') && !team.includes('ליגת') && t6Count > 0) {
+      inT8 = true; t8Count = 0; continue;
+    }
+    if (inT8 && /^\d+$/.test(slot) && team && !team.includes('שם') && !team.includes('בונוס')) {
       preds.push({ label:`T8 מקום ${slot}`, type:'qualifier',
         slot:parseInt(slot), team:normalizeTeam(team), value:normalizeTeam(team), section:'T8' });
+      t8Count++;
+    }
+    if (t8Count >= 2) inT8 = false;
   }
 
-  // T9 חצי special (col7)
-  for (let i = 181; i < 202; i += 2) {
-    const num=safe(i,0); if (!num.startsWith('(')) continue;
-    const v=safe(i,7); if (v) preds.push({ label:`T9 ${num}`, csvText:safe(i,1), value:v, section:'T9' });
+  // ── T9: חצי special ───────────────────────────────────────────────────────
+  let inT9 = false;
+  for (let i = 0; i < rows.length; i++) {
+    const n=safe(i,0), col1=safe(i,1);
+    if (col1.includes('חצי') && /^\(1$/.test(n)) inT9 = true;
+    if (inT9 && /^\(\d+$/.test(n)) {
+      const v = safe(i,7);
+      if (v) preds.push({ label:`T9 ${n}`, csvText:col1, value:v, section:'T9' });
+      if (n === '(10') { inT9 = false; }
+    }
   }
 
-  // T10 גמר special (col7)
-  for (let i = 207; i < 245; i += 2) {
-    const num=safe(i,0); if (!num.startsWith('(')) continue;
-    const v=safe(i,7); if (v) preds.push({ label:`T10 ${num}`, csvText:safe(i,1), value:v, section:'T10' });
+  // ── T10: גמר special ──────────────────────────────────────────────────────
+  let inT10 = false;
+  for (let i = 0; i < rows.length; i++) {
+    const n=safe(i,0), col1=safe(i,1);
+    if ((safe(i,1).includes('גמר') || safe(i,2).includes('גמר')) && /^\(1$/.test(n) && !inT9) inT10 = true;
+    if (inT10 && /^\(\d+$/.test(n)) {
+      const v = safe(i,7);
+      if (v) preds.push({ label:`T10 ${n}`, csvText:col1, value:v, section:'T10' });
+    }
   }
 
   return { name, preds };
@@ -146,10 +260,8 @@ function buildSubMap(questions) {
 
 function bestFuzzy(csvText, pool, threshold) {
   const norm = cleanText(csvText || '');
-  // exact first
   const exact = pool.find(q => cleanText(q.question_text || '') === norm);
   if (exact) return exact;
-  // fuzzy
   let best = null, bestScore = 0;
   for (const q of pool) {
     if (!q.question_text) continue;
@@ -162,21 +274,16 @@ function bestFuzzy(csvText, pool, threshold) {
 function matchPred(pred, questions, subMap) {
   const sectionPool = questions.filter(q => q.table_id === pred.section);
 
-  // Match
   if (pred.type === 'match') {
     const m = sectionPool.find(q =>
-      normalizeTeam(q.home_team || '') === pred.home &&
-      normalizeTeam(q.away_team || '') === pred.away);
+      normalizeTeam(q.home_team || '') === pred.home && normalizeTeam(q.away_team || '') === pred.away);
     if (m) return m;
-    // reversed
     const rev = sectionPool.find(q =>
-      normalizeTeam(q.home_team || '') === pred.away &&
-      normalizeTeam(q.away_team || '') === pred.home);
+      normalizeTeam(q.home_team || '') === pred.away && normalizeTeam(q.away_team || '') === pred.home);
     if (rev) return { ...rev, _reversed: true };
     return null;
   }
 
-  // Qualifier: sort by question_id within section, pick by slot
   if (pred.type === 'qualifier') {
     const qPool = sectionPool
       .filter(q => !q.home_team)
@@ -184,10 +291,8 @@ function matchPred(pred, questions, subMap) {
     return qPool[pred.slot - 1] || null;
   }
 
-  // Sub-question: find parent first, then its sub
   if (pred.subOf) {
-    const parentQ = bestFuzzy(pred.parentCsvText, sectionPool, 0.65)
-                 || bestFuzzy(pred.parentCsvText, questions, 0.70);
+    const parentQ = bestFuzzy(pred.parentCsvText, sectionPool, 0.65) || bestFuzzy(pred.parentCsvText, questions, 0.70);
     if (parentQ) {
       const parentId = String(parentQ.question_id || '').replace(/\.0$/, '');
       const subs = (subMap[parentId] || []);
@@ -203,9 +308,7 @@ function matchPred(pred, questions, subMap) {
     }
   }
 
-  // Regular text: try section first (threshold 0.65), then all questions (0.72)
-  return bestFuzzy(pred.csvText, sectionPool, 0.65)
-      || bestFuzzy(pred.csvText, questions, 0.72);
+  return bestFuzzy(pred.csvText, sectionPool, 0.65) || bestFuzzy(pred.csvText, questions, 0.72);
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -245,7 +348,7 @@ export default function AdminImport() {
   }, [currentGame]);
 
   const processFile = (text, qs, sm) => {
-    const rows = parseCSVText(text);
+    const rows = parseCSV(text);
     const { name, preds } = extractPredictions(rows);
     const matched = [], unmatched = [];
     for (const pred of preds) {
@@ -253,7 +356,7 @@ export default function AdminImport() {
       if (q) matched.push({ pred, question: q });
       else    unmatched.push(pred);
     }
-    return { name, matched, unmatched };
+    return { name, matched, unmatched, totalExtracted: preds.length };
   };
 
   const handleSingleFile = async (e) => {
@@ -339,7 +442,7 @@ export default function AdminImport() {
           </div>
         </div>
 
-        {/* Step 1: single file test */}
+        {/* Step 1: single file */}
         {questions.length > 0 && step === 'init' && (
           <div style={{ background:'#1e293b', borderRadius:10, padding:14, marginBottom:14, border:'2px solid #0284c7' }}>
             <h2 style={{ color:'#38bdf8', fontSize:14, marginBottom:4 }}>שלב 1 — בדיקה עם קובץ בודד</h2>
@@ -348,22 +451,21 @@ export default function AdminImport() {
           </div>
         )}
 
-        {/* Single file preview */}
+        {/* Single preview */}
         {step === 'preview' && parsed?.single && (
           <div style={{ background:'#1e293b', borderRadius:10, padding:16, marginBottom:14, border:'1px solid #334155' }}>
             <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12 }}>
               <h2 style={{ color:'#06b6d4', fontSize:15 }}>תוצאות: {parsed.name}</h2>
-              <div style={{ display:'flex', gap:10 }}>
+              <div style={{ display:'flex', gap:10, alignItems:'center' }}>
+                <span style={{ color:'#64748b', fontSize:11 }}>חולצו: {parsed.totalExtracted}</span>
                 <span style={{ background:'#064e3b', color:'#6ee7b7', padding:'3px 10px', borderRadius:4, fontSize:12 }}>✓ {parsed.matched.length} זוהו</span>
                 <span style={{ background:parsed.unmatched.length>0?'#450a0a':'#064e3b',
-                  color:parsed.unmatched.length>0?'#fca5a5':'#6ee7b7',
-                  padding:'3px 10px', borderRadius:4, fontSize:12 }}>
+                  color:parsed.unmatched.length>0?'#fca5a5':'#6ee7b7', padding:'3px 10px', borderRadius:4, fontSize:12 }}>
                   {parsed.unmatched.length > 0 ? `✗ ${parsed.unmatched.length} לא זוהו` : '✓ 0 שגיאות'}
                 </span>
               </div>
             </div>
 
-            {/* Unmatched */}
             {parsed.unmatched.length > 0 && (
               <div style={{ background:'#1a0808', border:'2px solid #dc2626', borderRadius:8, padding:12, marginBottom:14 }}>
                 <h3 style={{ color:'#f87171', fontSize:13, marginBottom:8 }}>⚠️ {parsed.unmatched.length} ניחושים שלא זוהו</h3>
@@ -393,7 +495,6 @@ export default function AdminImport() {
               </div>
             )}
 
-            {/* Matched table */}
             <button onClick={() => setShowMatched(!showMatched)}
               style={{ background:'none', border:'none', color:'#94a3b8', cursor:'pointer', fontSize:12,
                 display:'flex', alignItems:'center', gap:4, marginBottom:8 }}>
@@ -415,8 +516,7 @@ export default function AdminImport() {
                         <td style={{ padding:'4px 10px', color:'#64748b' }}>{i+1}</td>
                         <td style={{ padding:'4px 10px' }}>
                           <span style={{ background:(TC[question.table_id]||'#94a3b8')+'22',
-                            color:TC[question.table_id]||'#94a3b8',
-                            padding:'1px 5px', borderRadius:3, fontSize:11 }}>{question.table_id}</span>
+                            color:TC[question.table_id]||'#94a3b8', padding:'1px 5px', borderRadius:3, fontSize:11 }}>{question.table_id}</span>
                         </td>
                         <td style={{ padding:'4px 10px', color:'#64748b', whiteSpace:'nowrap' }}>{question.question_id}</td>
                         <td style={{ padding:'4px 10px', color:'#e2e8f0' }}>
@@ -432,8 +532,7 @@ export default function AdminImport() {
               </div>
             )}
 
-            {/* Action */}
-            {parsed.unmatched.length === 0 ? (
+            {parsed.unmatched.length === 0 && parsed.totalExtracted >= 100 ? (
               <div style={{ padding:12, background:'#0f2718', borderRadius:8, border:'1px solid #059669' }}>
                 <p style={{ color:'#6ee7b7', fontSize:13, marginBottom:10 }}>✅ זיהוי מושלם! טען את כל הקבצים.</p>
                 <label style={{ display:'inline-block', padding:'8px 16px',
@@ -443,10 +542,14 @@ export default function AdminImport() {
                   <input type="file" accept=".csv" multiple onChange={handleAllFiles} style={{ display:'none' }}/>
                 </label>
               </div>
+            ) : parsed.unmatched.length === 0 && parsed.totalExtracted < 100 ? (
+              <div style={{ padding:12, background:'#2d1a00', borderRadius:8, border:'1px solid #f59e0b' }}>
+                <p style={{ color:'#fbbf24', fontSize:13 }}>
+                  ⚠️ חולצו רק {parsed.totalExtracted} ניחושים (צפוי ~115). ייתכן בעיה בקריאת הקובץ.
+                </p>
+              </div>
             ) : (
-              <p style={{ color:'#f87171', fontSize:12, marginTop:10 }}>
-                ⛔ תקן את {parsed.unmatched.length} השגיאות לפני הייבוא.
-              </p>
+              <p style={{ color:'#f87171', fontSize:12, marginTop:10 }}>⛔ תקן את {parsed.unmatched.length} השגיאות לפני הייבוא.</p>
             )}
           </div>
         )}
@@ -460,16 +563,18 @@ export default function AdminImport() {
                 ? <span style={{ color:'#6ee7b7', fontSize:13 }}>✅ כל {parsed.totalMatched} ניחושים זוהו!</span>
                 : <span style={{ color:'#fca5a5', fontSize:13 }}>⚠️ {parsed.totalUnmatched} לא זוהו</span>}
             </div>
-            <div style={{ maxHeight:380, overflowY:'auto', marginBottom:12 }}>
+            <div style={{ maxHeight:400, overflowY:'auto', marginBottom:12 }}>
               <table style={{ width:'100%', borderCollapse:'collapse', fontSize:12 }}>
                 <thead style={{ position:'sticky', top:0, background:'#0f172a' }}>
-                  <tr>{['שם','זוהו','לא זוהו'].map(h =>
+                  <tr>{['שם','חולצו','זוהו','לא זוהו'].map(h =>
                     <th key={h} style={{ padding:'4px 10px', color:'#64748b', textAlign:'right', borderBottom:'1px solid #334155' }}>{h}</th>)}</tr>
                 </thead>
                 <tbody>
                   {parsed.results.map((r,i) => (
-                    <tr key={i} style={{ borderBottom:'1px solid #1e293b' }}>
+                    <tr key={i} style={{ borderBottom:'1px solid #1e293b',
+                      background: r.totalExtracted < 100 ? '#2d1a00' : 'transparent' }}>
                       <td style={{ padding:'4px 10px', color:'#f1f5f9' }}>{r.name}</td>
+                      <td style={{ padding:'4px 10px', color:r.totalExtracted<100?'#fbbf24':'#64748b' }}>{r.totalExtracted}</td>
                       <td style={{ padding:'4px 10px', color:'#6ee7b7' }}>{r.matched.length}</td>
                       <td style={{ padding:'4px 10px', color:r.unmatched.length>0?'#fca5a5':'#6ee7b7' }}>{r.unmatched.length}</td>
                     </tr>
@@ -485,7 +590,7 @@ export default function AdminImport() {
                   : <><Upload className="w-5 h-5 ml-2"/>ייבא {parsed.totalMatched} ניחושים ל-{parsed.results.length} משתתפים</>}
               </Button>
             ) : (
-              <p style={{ color:'#f87171', fontSize:12 }}>⛔ יש {parsed.totalUnmatched} שגיאות — חזור לשלב 1 לתיקון</p>
+              <p style={{ color:'#f87171', fontSize:12 }}>⛔ יש {parsed.totalUnmatched} שגיאות — חזור לשלב 1</p>
             )}
           </div>
         )}
@@ -500,12 +605,10 @@ export default function AdminImport() {
             </p>
             <div style={{ maxHeight:350, overflowY:'auto' }}>
               <table style={{ width:'100%', borderCollapse:'collapse', fontSize:12 }}>
-                <thead>
-                  <tr style={{ background:'#065f46' }}>
-                    {['משתתף','ניחושים','שגיאות'].map(h =>
-                      <th key={h} style={{ padding:'4px 10px', color:'#6ee7b7', textAlign:'right' }}>{h}</th>)}
-                  </tr>
-                </thead>
+                <thead><tr style={{ background:'#065f46' }}>
+                  {['משתתף','ניחושים','שגיאות'].map(h =>
+                    <th key={h} style={{ padding:'4px 10px', color:'#6ee7b7', textAlign:'right' }}>{h}</th>)}
+                </tr></thead>
                 <tbody>
                   {importResults.perParticipant.map((p,i) => (
                     <tr key={i} style={{ borderBottom:'1px solid #065f46' }}>
