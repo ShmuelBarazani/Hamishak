@@ -16,7 +16,8 @@ import {
   Menu,
   X,
   ChevronDown,
-  Layers
+  Layers,
+  Upload
 } from "lucide-react";
 import { supabase } from "@/api/supabaseClient";
 import * as db from "@/api/entities";
@@ -135,6 +136,14 @@ function LayoutContent({ children, currentPageName }) {
       title: "ניהול משתתפים",
       url: createPageUrl("ManageGameParticipants"),
       icon: Users,
+      roles: ["admin"],
+      disabled: !currentGame,
+      group: "admin"
+    },
+    {
+      title: "ייבוא ניחושים",
+      url: createPageUrl("AdminImport"),
+      icon: Upload,
       roles: ["admin"],
       disabled: !currentGame,
       group: "admin"
