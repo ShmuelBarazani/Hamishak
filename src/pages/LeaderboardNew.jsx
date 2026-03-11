@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Trophy, RefreshCw, Loader2, Crown, TrendingUp, TrendingDown, Minus, Users, Target, CheckCircle, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
+import { Trophy, Loader2, Crown, TrendingUp, TrendingDown, Minus, Users, Target, CheckCircle, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
 import { supabase } from '@/api/supabaseClient';
 import * as db from '@/api/entities';
 import { useToast } from "@/components/ui/use-toast";
@@ -61,7 +61,7 @@ export default function LeaderboardNew() {
     const tempPreds = {};
     predictions.forEach(pred => {
       const existing = tempPreds[pred.question_id];
-      if (!existing || new Date(pred.created_at) > new Date(existing.created_date)) {
+      if (!existing || new Date(pred.created_at) > new Date(existing.created_at)) {
         tempPreds[pred.question_id] = pred;
       }
     });
@@ -304,7 +304,7 @@ export default function LeaderboardNew() {
       const tempPredictions = {};
       participantPredictions.forEach((pred) => {
         const existing = tempPredictions[pred.question_id];
-        if (!existing || new Date(pred.created_at) > new Date(existing.created_date)) {
+        if (!existing || new Date(pred.created_at) > new Date(existing.created_at)) {
           tempPredictions[pred.question_id] = pred;
         }
       });
@@ -849,27 +849,6 @@ export default function LeaderboardNew() {
                 )}
               </Button>
 
-              <Button 
-                onClick={handleRecalculateScores} 
-                disabled={recalculating || settingBaseline}
-                style={{
-                  background: 'linear-gradient(135deg, #06b6d4 0%, #0ea5e9 100%)',
-                  boxShadow: '0 0 20px rgba(6, 182, 212, 0.4)'
-                }}
-                className="text-white hover:shadow-[0_0_30px_rgba(6,182,212,0.6)] flex-1 md:flex-none h-8 md:h-10 text-[10px] md:text-sm"
-              >
-                {recalculating ? (
-                  <>
-                    <Loader2 className="w-3 h-3 md:w-5 md:h-5 animate-spin ml-1 md:ml-2" />
-                    מחשב...
-                  </>
-                ) : (
-                  <>
-                    <RefreshCw className="w-3 h-3 md:w-5 md:h-5 ml-1 md:ml-2" />
-                    חשב ניקוד
-                  </>
-                )}
-              </Button>
             </div>
           )}
         </div>
