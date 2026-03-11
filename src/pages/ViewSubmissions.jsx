@@ -178,7 +178,7 @@ export default function ViewSubmissions() {
             }
           }
 
-          const tableCollection = (q.home_team && q.away_team) ? rTables : sTables;
+          const tableCollection = (q.home_team && q.away_team || q.table_id === 'T10') ? rTables : sTables;
           
           // 🎯 קביעת מזהה ותיאור טבלה
           let tableId = q.table_id;
