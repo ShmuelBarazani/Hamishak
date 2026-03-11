@@ -384,14 +384,14 @@ export default function AdminResults() {
           if (base) await db.Ranking.update(base.id, data);
           else await db.Ranking.create(data);
         } catch (err) {
-          console.error(\`שגיאה בדירוג \${s.participant_name}:\`, err);
+          console.error('שגיאה בדירוג ' + s.participant_name, err);
         }
         if ((i + 1) % 5 === 0) await new Promise(r => setTimeout(r, 200));
       }
 
       toast({
         title: "דירוג עודכן!",
-        description: \`חושב ניקוד עבור \${scores.length} משתתפים\`,
+        description: `חושב ניקוד עבור ${scores.length} משתתפים`,
         className: "bg-green-900/30 border-green-500 text-green-200",
         duration: 3000
       });
