@@ -190,7 +190,7 @@ export default function ViewSubmissions() {
             tableDescription = q.stage_name;
           }
           // 🔥 אם זה שלב מיוחד עם stage_order - קבץ לפי stage_order
-          else if (q.table_description?.includes('שאלות מיוחדות') && q.stage_order) {
+          else if (q.table_description?.includes('שאלות מיוחדות') && q.stage_order && q.table_id !== 'T10') {
             tableId = `custom_order_${q.stage_order}`;
             tableDescription = q.stage_name || q.table_description;
           }
@@ -864,8 +864,8 @@ export default function ViewSubmissions() {
     }
     // 🔥 שאלות T10 special (stage_type='special') — ברירת מחדל 10 נקודות
     // גם לפני קביעת תוצאה, כדי שיוצג ניקוד אפשרי
-    if (question.table_id === 'T10' && question.stage_type === 'special') {
-      return 10;
+    if (question.table_id === 'T10') {
+      return question.possible_points || 10;
     }
     return 0;
   };
