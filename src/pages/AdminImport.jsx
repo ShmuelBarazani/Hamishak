@@ -3,9 +3,9 @@ import * as db from "@/api/entities";
 import { useGame } from "@/components/contexts/GameContext";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
-import { Upload, Trash2, Loader2, AlertTriangle, CheckCircle } from "lucide-react";
+import { Upload, Trash2, Loader2, ChevronDown, ChevronUp } from "lucide-react";
 
-// ─── text helpers ────────────────────────────────────────────────────────────
+// ─── helpers ────────────────────────────────────────────────────────────────
 
 function normalizeTeam(s) {
   if (!s) return '';
@@ -14,19 +14,14 @@ function normalizeTeam(s) {
 
 function normalizeText(s) {
   if (!s) return '';
-  return s
-    .replace(/["'"״'']/g, '')
-    .replace(/\s*\([^)]*\)\s*/g, ' ')
-    .replace(/[-–—]/g, ' ')
-    .replace(/[?!.,]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
+  return s.replace(/["'"״'']/g, '').replace(/\s+/g, ' ').trim();
 }
 
 function wordOverlap(a, b) {
-  const wa = new Set(normalizeText(a).split(' ').filter(w => w.length > 1));
-  const wb = new Set(normalizeText(b).split(' ').filter(w => w.length > 1));
-  if (wa.size === 0 || wb.size === 0) return 0;
+  const stop = new Set(['את','של','עם','אם','או','על','בין','לפחות','יותר','ב','ל','מ','כ','הכי','ביותר']);
+  const wa = new Set(normalizeText(a).split(' ').filter(w => w.length > 1 && !stop.has(w)));
+  const wb = new Set(normalizeText(b).split(' ').filter(w => w.length > 1 && !stop.has(w)));
+  if (!wa.size || !wb.size) return 0;
   let common = 0;
   for (const w of wa) if (wb.has(w)) common++;
   return common / Math.max(wa.size, wb.size);
@@ -42,7 +37,7 @@ function parseCSVText(text) {
       const c = line[i];
       if (c === '"') { inQ = !inQ; }
       else if (c === ',' && !inQ) { cols.push(cur.trim()); cur = ''; }
-      else { cur += c; }
+      else cur += c;
     }
     cols.push(cur.trim());
     return cols;
@@ -50,90 +45,164 @@ function parseCSVText(text) {
 }
 
 function extractPredictions(rows) {
-  const preds = [];
-  const safe = (row, col) => (rows[row]?.[col] || '').trim();
+  const safe = (r, c) => (rows[r]?.[c] || '').trim();
   const name = safe(2, 4);
+  const preds = [];
 
-  // Q1: player + goal count sub-question
-  if (safe(13,3)) preds.push({ csvNum:'1א', qtext: safe(13,1), value: safe(13,3), section:'T2' });
-  if (safe(13,8)) preds.push({ csvNum:'1ב', qtext: safe(13,7), value: safe(13,8), section:'T2', isSubQ:true, parentText:safe(13,1) });
-  // Q2: team + goals
-  if (safe(15,4)) preds.push({ csvNum:'2א', qtext: safe(15,1), value: safe(15,4), section:'T2' });
-  if (safe(15,7)) preds.push({ csvNum:'2ב', qtext: safe(15,6), value: safe(15,7), section:'T2', isSubQ:true, parentText:safe(15,1) });
-  // Q3: team + penalties
-  if (safe(17,4)) preds.push({ csvNum:'3א', qtext: safe(17,1), value: safe(17,4), section:'T2' });
-  if (safe(17,7)) preds.push({ csvNum:'3ב', qtext: safe(17,6), value: safe(17,7), section:'T2', isSubQ:true, parentText:safe(17,1) });
+  // ── Q1: player (match by text) + sub goals (match by question_id=1.X) ──
+  if (safe(13,3)) preds.push({
+    label: 'Q1 - מלך השערים - שחקן',
+    csvText: safe(13,1), value: safe(13,3), section: 'T2'
+  });
+  if (safe(13,8)) preds.push({
+    label: 'Q1 - מלך השערים - מס\' שערים',
+    csvText: safe(13,7), value: safe(13,8), section: 'T2',
+    subOf: 'Q1',   // will match question_id starting with "1."
+    parentCsvText: safe(13,1)
+  });
 
-  // Q4-Q33
+  // ── Q2: team + sub goals ──
+  if (safe(15,4)) preds.push({
+    label: 'Q2 - קבוצה הכי שערים',
+    csvText: safe(15,1), value: safe(15,4), section: 'T2'
+  });
+  if (safe(15,7)) preds.push({
+    label: 'Q2 - מס\' שערים שתבקיע',
+    csvText: safe(15,6), value: safe(15,7), section: 'T2',
+    subOf: 'Q2',
+    parentCsvText: safe(15,1)
+  });
+
+  // ── Q3: team + sub penalties ──
+  if (safe(17,4)) preds.push({
+    label: 'Q3 - קבוצה הכי פנדלים',
+    csvText: safe(17,1), value: safe(17,4), section: 'T2'
+  });
+  if (safe(17,7)) preds.push({
+    label: 'Q3 - מס\' פנדלים שיישרקו',
+    csvText: safe(17,6), value: safe(17,7), section: 'T2',
+    subOf: 'Q3',
+    parentCsvText: safe(17,1)
+  });
+
+  // ── Q4-Q33 (rows 20-78, step 2, col 6) ──
   for (let i = 19; i < 79; i += 2) {
-    const qnum = safe(i,0);
-    if (!qnum.startsWith('(')) continue;
+    const num = safe(i,0);
+    if (!num.startsWith('(')) continue;
     const v = safe(i,6);
-    if (v) preds.push({ csvNum: qnum.replace('(',''), qtext: safe(i,1), value: v, section:'T2' });
+    if (v) preds.push({ label: `${num} כללי`, csvText: safe(i,1), value: v, section: 'T2' });
   }
 
-  // שמינית matches
+  // ── שמינית matches (rows 84-99) ──
   for (let i = 83; i < 101; i++) {
     const home = safe(i,3), away = safe(i,5), hs = safe(i,6), as_ = safe(i,8);
     if (home && away && /^\d+$/.test(hs) && /^\d+$/.test(as_))
-      preds.push({ csvNum:`שמ${i-82}`, type:'match', home:normalizeTeam(home), away:normalizeTeam(away), value:`${hs}-${as_}`, section:'T3' });
+      preds.push({ label: `שמינית: ${normalizeTeam(home)}-${normalizeTeam(away)}`,
+        type: 'match', home: normalizeTeam(home), away: normalizeTeam(away),
+        value: `${hs}-${as_}`, section: 'T3' });
   }
 
-  // שמינית qualifiers
+  // ── שמינית qualifiers (rows 103-113) ──
+  // value = team name stored as text_prediction
   for (let i = 102; i < 115; i++) {
     const slot = safe(i,2), team = safe(i,3);
-    if (/^\d+$/.test(slot) && team && !team.includes('שם הנבחרת'))
-      preds.push({ csvNum:`רשמ${slot}`, type:'qualifier', stage:'שמינית', slot:parseInt(slot), team:normalizeTeam(team), section:'T4' });
+    if (/^\d+$/.test(slot) && team && !team.includes('שם'))
+      preds.push({ label: `שמינית עולה ${slot}`, type: 'qualifier',
+        stage: 'שמינית', slot: parseInt(slot),
+        team: normalizeTeam(team), value: normalizeTeam(team), section: 'T4' });
   }
 
-  // שמינית special
+  // ── שמינית special (rows 116-134, step 2, col 7) ──
   for (let i = 115; i < 136; i += 2) {
-    if (!safe(i,0).startsWith('(')) continue;
+    const num = safe(i,0);
+    if (!num.startsWith('(')) continue;
     const v = safe(i,7);
-    if (v) preds.push({ csvNum:`שמס${safe(i,0).replace('(','').replace(')','')}`, qtext:safe(i,1), value:v, section:'T5' });
+    if (v) preds.push({ label: `שמינית מיוחד ${num}`, csvText: safe(i,1), value: v, section: 'T5' });
   }
 
-  // רבע qualifiers
+  // ── רבע qualifiers (rows 143-146) ──
   for (let i = 140; i < 152; i++) {
     const slot = safe(i,2), team = safe(i,3);
-    if (/^\d+$/.test(slot) && team && !team.includes('שם הנבחרת'))
-      preds.push({ csvNum:`רסר${slot}`, type:'qualifier', stage:'רבע', slot:parseInt(slot), team:normalizeTeam(team), section:'T6' });
+    if (/^\d+$/.test(slot) && team && !team.includes('שם'))
+      preds.push({ label: `רבע עולה ${slot}`, type: 'qualifier',
+        stage: 'רבע', slot: parseInt(slot),
+        team: normalizeTeam(team), value: normalizeTeam(team), section: 'T6' });
   }
 
-  // רבע special
+  // ── רבע special (rows 150-168, step 2, col 7) ──
   for (let i = 149; i < 170; i += 2) {
-    if (!safe(i,0).startsWith('(')) continue;
+    const num = safe(i,0);
+    if (!num.startsWith('(')) continue;
     const v = safe(i,7);
-    if (v) preds.push({ csvNum:`רבע${safe(i,0).replace('(','').replace(')','')}`, qtext:safe(i,1), value:v, section:'T7' });
+    if (v) preds.push({ label: `רבע מיוחד ${num}`, csvText: safe(i,1), value: v, section: 'T7' });
   }
 
-  // חצי qualifiers
+  // ── חצי qualifiers (rows 177-178) ──
   for (let i = 174; i < 184; i++) {
     const slot = safe(i,2), team = safe(i,3);
-    if (/^\d+$/.test(slot) && team && !team.includes('שם הנבחרת'))
-      preds.push({ csvNum:`חצר${slot}`, type:'qualifier', stage:'חצי', slot:parseInt(slot), team:normalizeTeam(team), section:'T8' });
+    if (/^\d+$/.test(slot) && team && !team.includes('שם'))
+      preds.push({ label: `חצי עולה ${slot}`, type: 'qualifier',
+        stage: 'חצי', slot: parseInt(slot),
+        team: normalizeTeam(team), value: normalizeTeam(team), section: 'T8' });
   }
 
-  // חצי special
+  // ── חצי special (rows 182-200, step 2, col 7) ──
   for (let i = 181; i < 202; i += 2) {
-    if (!safe(i,0).startsWith('(')) continue;
+    const num = safe(i,0);
+    if (!num.startsWith('(')) continue;
     const v = safe(i,7);
-    if (v) preds.push({ csvNum:`חצס${safe(i,0).replace('(','').replace(')','')}`  , qtext:safe(i,1), value:v, section:'T9' });
+    if (v) preds.push({ label: `חצי מיוחד ${num}`, csvText: safe(i,1), value: v, section: 'T9' });
   }
 
-  // גמר special
+  // ── גמר special (rows 208-244, step 2, col 7) ──
   for (let i = 207; i < 245; i += 2) {
-    if (!safe(i,0).startsWith('(')) continue;
+    const num = safe(i,0);
+    if (!num.startsWith('(')) continue;
     const v = safe(i,7);
-    if (v) preds.push({ csvNum:`גמר${safe(i,0).replace('(','').replace(')','')}`, qtext:safe(i,1), value:v, section:'T10' });
+    if (v) preds.push({ label: `גמר ${num}`, csvText: safe(i,1), value: v, section: 'T10' });
   }
 
   return { name, preds };
 }
 
-// ─── matcher ─────────────────────────────────────────────────────────────────
+// ─── Question matcher ────────────────────────────────────────────────────────
 
-function matchPred(pred, questions) {
+// Pre-build parent ID map: questions that are "sub" of another (e.g. question_id="1.1")
+function buildSubMap(questions) {
+  // subMap: parentIntId -> [subQuestion, ...]
+  const subMap = {};
+  for (const q of questions) {
+    const qid = String(q.question_id || '');
+    if (qid.includes('.')) {
+      const parentInt = qid.split('.')[0];
+      if (!subMap[parentInt]) subMap[parentInt] = [];
+      subMap[parentInt].push(q);
+    }
+  }
+  return subMap;
+}
+
+// Find main question by csvText (exact or fuzzy)
+function findMainQ(csvText, questions, sectionFilter) {
+  const normPred = normalizeText(csvText || '');
+  const pool = sectionFilter ? questions.filter(q => q.table_id === sectionFilter) : questions;
+
+  // Exact
+  const exact = pool.find(q => normalizeText(q.question_text || '') === normPred);
+  if (exact) return exact;
+
+  // Fuzzy ≥0.65
+  let best = null, bestScore = 0;
+  for (const q of pool) {
+    if (!q.question_text) continue;
+    const score = wordOverlap(normPred, normalizeText(q.question_text));
+    if (score > bestScore) { bestScore = score; best = q; }
+  }
+  return bestScore >= 0.65 ? best : null;
+}
+
+function matchPred(pred, questions, subMap) {
+  // ── Match type ──────────────────────────────────────────
   if (pred.type === 'match') {
     return questions.find(q =>
       q.home_team && q.away_team &&
@@ -141,54 +210,70 @@ function matchPred(pred, questions) {
       normalizeTeam(q.away_team) === pred.away
     ) || null;
   }
+
   if (pred.type === 'qualifier') {
-    const stageQs = questions.filter(q =>
-      q.stage_type === 'qualifiers' &&
-      (q.table_description?.includes(pred.stage) || q.stage_name?.includes(pred.stage))
-    ).sort((a,b) =>
-      (a.stage_order||0)-(b.stage_order||0) ||
-      (parseInt(a.question_id?.split('.')[1])||0)-(parseInt(b.question_id?.split('.')[1])||0)
-    );
-    return stageQs[pred.slot-1] || null;
-  }
-  // exact
-  const normPred = normalizeText(pred.qtext || '');
-  const exact = questions.find(q => normalizeText(q.question_text||'') === normPred);
-  if (exact) return exact;
-
-  // sub-question: search by short label contained in DB text
-  if (pred.isSubQ) {
-    const label = normalizeText(pred.qtext||'');
-    const found = questions.find(q => {
-      const qt = normalizeText(q.question_text||'');
-      return qt.includes(label) || (label.length > 4 && label.includes(qt));
-    });
-    if (found) return found;
+    // Find qualifier questions for this stage, sorted by question_id
+    const stageQs = questions
+      .filter(q =>
+        q.stage_type === 'qualifiers' &&
+        (q.table_description?.includes(pred.stage) || q.stage_name?.includes(pred.stage))
+      )
+      .sort((a, b) => {
+        const na = parseFloat(a.question_id) || 0;
+        const nb = parseFloat(b.question_id) || 0;
+        return na - nb;
+      });
+    return stageQs[pred.slot - 1] || null;
   }
 
-  // fuzzy word-overlap >= 0.65
-  let best = null, bestScore = 0;
-  for (const q of questions) {
-    if (!q.question_text) continue;
-    const s = wordOverlap(normPred, normalizeText(q.question_text));
-    if (s > bestScore) { bestScore = s; best = q; }
+  // ── Sub-question: match by parent question_id + ".X" ──
+  if (pred.subOf) {
+    // Find the parent question first
+    const parentQ = findMainQ(pred.parentCsvText, questions, pred.section);
+    if (parentQ) {
+      const parentId = String(parentQ.question_id || '').replace('.0','');
+      const subs = subMap[parentId] || [];
+      if (subs.length === 1) return subs[0]; // only one sub → must be it
+      if (subs.length > 1) {
+        // Multiple subs: pick the one with best text overlap
+        let best = null, bestScore = 0;
+        const normPred = normalizeText(pred.csvText || '');
+        for (const s of subs) {
+          const score = wordOverlap(normPred, normalizeText(s.question_text || ''));
+          if (score > bestScore) { bestScore = score; best = s; }
+        }
+        return best;
+      }
+    }
+    // Fallback: direct text search
+    return findMainQ(pred.csvText, questions, pred.section);
   }
-  return bestScore >= 0.65 ? best : null;
+
+  // ── Regular text question ──
+  return findMainQ(pred.csvText, questions, pred.section);
 }
 
-// ─── Component ───────────────────────────────────────────────────────────────
+// ─── Component ──────────────────────────────────────────────────────────────
+
+const TABLE_COLORS = {
+  T2:'#a78bfa', T3:'#34d399', T4:'#34d399', T5:'#fbbf24',
+  T6:'#fbbf24', T7:'#f87171', T8:'#60a5fa', T9:'#60a5fa', T10:'#f472b6'
+};
 
 export default function AdminImport() {
   const { currentGame } = useGame();
   const { toast } = useToast();
-
   const [questions, setQuestions] = useState([]);
+  const [subMap, setSubMap] = useState({});
   const [loadingQs, setLoadingQs] = useState(false);
-  const [deletingTest, setDeletingTest] = useState(false);
-  const [parsed, setParsed] = useState(null);   // { name, matched, unmatched }
+  const [parsed, setParsed] = useState(null);
   const [importing, setImporting] = useState(false);
+  const [deletingTest, setDeletingTest] = useState(false);
   const [importResults, setImportResults] = useState(null);
-  const TEST_NAMES = ['בדיקה_אחד','בדיקה_שתיים','בדיקה_שלוש'];
+  const [step, setStep] = useState('init');
+  const [showMatched, setShowMatched] = useState(false);
+
+  const TEST_NAMES = ['בדיקה_אחד', 'בדיקה_שתיים', 'בדיקה_שלוש'];
 
   const loadQuestions = useCallback(async () => {
     if (!currentGame) return [];
@@ -197,15 +282,20 @@ export default function AdminImport() {
       let qs = [], skip = 0;
       while (true) {
         const batch = await db.Question.filter({ game_id: currentGame.id }, null, 5000, skip);
-        qs = [...qs, ...batch]; if (batch.length < 5000) break; skip += 5000;
+        qs = [...qs, ...batch];
+        if (batch.length < 5000) break;
+        skip += 5000;
       }
       qs = qs.filter(q => q.table_id !== 'T1');
+      const sm = buildSubMap(qs);
       setQuestions(qs);
-      toast({ title: `✅ ${qs.length} שאלות נטענו`, duration: 3000 });
-      return qs;
-    } catch(err) {
-      toast({ title:'שגיאה', description:err.message, variant:'destructive', duration:4000 });
-      return [];
+      setSubMap(sm);
+      const subCount = Object.values(sm).reduce((s, v) => s + v.length, 0);
+      toast({ title: `✅ ${qs.length} שאלות (${subCount} תת-שאלות)`, duration: 3000 });
+      return { qs, sm };
+    } catch (err) {
+      toast({ title: 'שגיאה', description: err.message, variant: 'destructive', duration: 4000 });
+      return null;
     } finally { setLoadingQs(false); }
   }, [currentGame]);
 
@@ -214,234 +304,318 @@ export default function AdminImport() {
     try {
       let total = 0;
       for (const name of TEST_NAMES) {
-        const preds = await db.Prediction.filter({ game_id:currentGame.id, participant_name:name }, null, 9999);
+        const preds = await db.Prediction.filter({ game_id: currentGame.id, participant_name: name }, null, 9999);
         for (const p of preds) { await db.Prediction.delete(p.id); total++; }
-        const ranks = await db.Ranking.filter({ game_id:currentGame.id, participant_name:name }, null, 100);
+        const ranks = await db.Ranking.filter({ game_id: currentGame.id, participant_name: name }, null, 100);
         for (const r of ranks) await db.Ranking.delete(r.id);
-        const gps = await db.GameParticipant.filter({ game_id:currentGame.id, participant_name:name }, null, 100);
+        const gps = await db.GameParticipant.filter({ game_id: currentGame.id, participant_name: name }, null, 100);
         for (const gp of gps) await db.GameParticipant.delete(gp.id);
       }
-      toast({ title:`🗑️ נמחקו (${total} ניחושים)`, duration:4000 });
-    } catch(err) { toast({ title:'שגיאה', description:err.message, variant:'destructive', duration:4000 }); }
-    finally { setDeletingTest(false); }
+      toast({ title: `🗑️ נמחקו (${total} ניחושים)`, duration: 4000 });
+    } catch (err) {
+      toast({ title: 'שגיאה', description: err.message, variant: 'destructive', duration: 4000 });
+    } finally { setDeletingTest(false); }
   };
 
-  const handleFile = async (e) => {
-    const file = e.target.files[0]; if (!file) return;
-    const qs = questions.length ? questions : await loadQuestions();
-    if (!qs.length) return;
-    const rows = parseCSVText(await file.text());
+  const processFile = (text, qs, sm) => {
+    const rows = parseCSVText(text);
     const { name, preds } = extractPredictions(rows);
     const matched = [], unmatched = [];
     for (const pred of preds) {
-      const q = matchPred(pred, qs);
+      const q = matchPred(pred, qs, sm);
       if (q) matched.push({ pred, question: q });
       else    unmatched.push(pred);
     }
-    setParsed({ name, matched, unmatched });
-    setImportResults(null);
+    return { name, matched, unmatched };
   };
 
-  const doImport = async (allFiles) => {
-    if (!currentGame) return;
+  const handleSingleFile = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    let qs = questions, sm = subMap;
+    if (!qs.length) {
+      const res = await loadQuestions();
+      if (!res) return;
+      qs = res.qs; sm = res.sm;
+    }
+    const text = await file.text();
+    const result = processFile(text, qs, sm);
+    setParsed({ single: true, fileName: file.name, ...result });
+    setStep('preview');
+    setShowMatched(false);
+  };
+
+  const handleAllFiles = async (e) => {
+    const files = Array.from(e.target.files);
+    if (!files.length) return;
+    let qs = questions, sm = subMap;
+    if (!qs.length) {
+      const res = await loadQuestions();
+      if (!res) return;
+      qs = res.qs; sm = res.sm;
+    }
+    const results = [];
+    for (const file of files) {
+      const text = await file.text();
+      results.push({ fileName: file.name, ...processFile(text, qs, sm) });
+    }
+    const totalMatched = results.reduce((s, r) => s + r.matched.length, 0);
+    const totalUnmatched = results.reduce((s, r) => s + r.unmatched.length, 0);
+    setParsed({ bulk: true, results, totalMatched, totalUnmatched });
+    setStep('bulk_preview');
+  };
+
+  const runImport = async (participants) => {
     setImporting(true);
     let totalInserted = 0, totalErrors = 0;
     const perParticipant = [];
-    const qs = questions.length ? questions : await loadQuestions();
     try {
-      for (const file of allFiles) {
-        const rows = parseCSVText(await file.text());
-        const { name, preds } = extractPredictions(rows);
-        const matched = [];
-        for (const pred of preds) {
-          const q = matchPred(pred, qs);
-          if (q) matched.push({ pred, question: q });
-        }
-        if (!matched.length) continue;
-        // delete existing
-        const existing = await db.Prediction.filter({ game_id:currentGame.id, participant_name:name }, null, 9999);
+      for (const participant of participants) {
+        if (!participant.matched.length) continue;
+        // Delete existing
+        const existing = await db.Prediction.filter({ game_id: currentGame.id, participant_name: participant.name }, null, 9999);
         for (const p of existing) await db.Prediction.delete(p.id);
-        // insert
         let inserted = 0, errors = 0;
-        for (let i = 0; i < matched.length; i++) {
-          const { pred, question } = matched[i];
+        for (let i = 0; i < participant.matched.length; i++) {
+          const { pred, question } = participant.matched[i];
           try {
-            const data = { game_id:currentGame.id, question_id:question.id, participant_name:name, text_prediction:pred.value, created_at:new Date().toISOString() };
-            if (pred.type==='match') { const p=pred.value.split('-'); if(p.length===2){data.home_prediction=parseInt(p[0]); data.away_prediction=parseInt(p[1]);} }
-            await db.Prediction.create(data); inserted++;
+            const data = {
+              game_id: currentGame.id,
+              question_id: question.id,
+              participant_name: participant.name,
+              text_prediction: pred.value,   // for qualifiers, value=team name
+              created_at: new Date().toISOString()
+            };
+            if (pred.type === 'match') {
+              const pts = pred.value.split('-');
+              if (pts.length === 2) {
+                data.home_prediction = parseInt(pts[0]);
+                data.away_prediction = parseInt(pts[1]);
+              }
+            }
+            await db.Prediction.create(data);
+            inserted++;
           } catch { errors++; }
-          if ((i+1)%10===0) await new Promise(r=>setTimeout(r,50));
+          if ((i + 1) % 10 === 0) await new Promise(r => setTimeout(r, 50));
         }
+        // Ensure GameParticipant
         try {
-          const gps = await db.GameParticipant.filter({ game_id:currentGame.id, participant_name:name }, null, 1);
-          if (!gps.length) await db.GameParticipant.create({ game_id:currentGame.id, participant_name:name, is_active:true });
+          const gps = await db.GameParticipant.filter({ game_id: currentGame.id, participant_name: participant.name }, null, 1);
+          if (!gps.length) await db.GameParticipant.create({ game_id: currentGame.id, participant_name: participant.name, is_active: true });
         } catch {}
-        totalInserted+=inserted; totalErrors+=errors;
-        perParticipant.push({ name, inserted, errors });
+        totalInserted += inserted; totalErrors += errors;
+        perParticipant.push({ name: participant.name, inserted, errors });
       }
       setImportResults({ totalInserted, totalErrors, perParticipant });
-      toast({ title:`✅ יובאו ${totalInserted} ניחושים ל-${perParticipant.length} משתתפים`, duration:5000 });
-    } catch(err) { toast({ title:'שגיאה', description:err.message, variant:'destructive', duration:5000 }); }
-    finally { setImporting(false); }
+      setStep('done');
+      toast({ title: `✅ יובאו ${totalInserted} ניחושים`, duration: 5000 });
+    } catch (err) {
+      toast({ title: 'שגיאה', description: err.message, variant: 'destructive', duration: 5000 });
+    } finally { setImporting(false); }
   };
 
-  const [allFiles, setAllFiles] = useState([]);
-  const handleAllFiles = (e) => setAllFiles(Array.from(e.target.files));
+  const box = (bg, border, children) => (
+    <div style={{ background: bg, borderRadius: 10, padding: 16, marginBottom: 16, border: `1px solid ${border}` }}>
+      {children}
+    </div>
+  );
 
-  const cell = { padding:'6px 10px', borderBottom:'1px solid #1e293b', fontSize:13, verticalAlign:'top' };
-  const hdr = { padding:'6px 10px', color:'#64748b', textAlign:'right', borderBottom:'2px solid #334155', fontSize:12, background:'#0f172a', position:'sticky', top:0 };
+  const UnmatchedTable = ({ items }) => (
+    <div style={{ background: '#1a0808', border: '2px solid #dc2626', borderRadius: 8, padding: 12, marginBottom: 14 }}>
+      <h3 style={{ color: '#f87171', fontSize: 13, marginBottom: 8 }}>
+        ⚠️ {items.length} ניחושים שלא זוהו — יש לתקן לפני הייבוא
+      </h3>
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+        <thead>
+          <tr style={{ background: '#450a0a' }}>
+            {['#', 'קטגוריה', 'שאלה מה-CSV', 'ניחוש'].map(h =>
+              <th key={h} style={{ padding: '4px 8px', color: '#fca5a5', textAlign: 'right' }}>{h}</th>)}
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((u, i) => (
+            <tr key={i} style={{ borderBottom: '1px solid #450a0a' }}>
+              <td style={{ padding: '4px 8px', color: '#64748b' }}>{i + 1}</td>
+              <td style={{ padding: '4px 8px', color: '#fbbf24', whiteSpace: 'nowrap' }}>{u.label}</td>
+              <td style={{ padding: '4px 8px', color: '#fca5a5' }}>
+                {u.type === 'match' ? `${u.home} - ${u.away}` :
+                 u.type === 'qualifier' ? `${u.stage} מקום ${u.slot}: ${u.team}` :
+                 (u.csvText || '').slice(0, 90)}
+              </td>
+              <td style={{ padding: '4px 8px', color: '#f1f5f9', fontWeight: 'bold' }}>"{u.value}"</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p style={{ color: '#64748b', fontSize: 11, marginTop: 8 }}>
+        📩 שלח לי צילום מסך של שורות אלו ואני אתקן את הקוד
+      </p>
+    </div>
+  );
 
-  const sectionLabel = (s) => ({
-    'T2':'נוקאאוט כללי','T3':'שמינית-גמר','T4':'רשימת שמינית','T5':'שמינית מיוחד',
-    'T6':'רשימת רבע','T7':'רבע מיוחד','T8':'רשימת חצי','T9':'חצי מיוחד','T10':'גמר'
-  }[s] || s);
+  const MatchedTable = ({ items, name }) => (
+    <div>
+      <button onClick={() => setShowMatched(!showMatched)}
+        style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: 12, display: 'flex', alignItems: 'center', gap: 4, marginBottom: 8 }}>
+        {showMatched ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+        {showMatched ? 'הסתר' : 'הצג'} ניחושים שזוהו ({items.length} שורות) — בדוק שהתשובות נכונות
+      </button>
+      {showMatched && (
+        <div style={{ maxHeight: 500, overflowY: 'auto', border: '1px solid #334155', borderRadius: 8 }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+            <thead style={{ position: 'sticky', top: 0, background: '#0f172a' }}>
+              <tr>
+                {['#', 'שלב', 'question_id', 'שאלה ב-DB', `ניחוש — ${name}`].map(h =>
+                  <th key={h} style={{ padding: '5px 10px', color: '#64748b', textAlign: 'right', borderBottom: '1px solid #334155' }}>{h}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {items.map(({ pred, question }, i) => (
+                <tr key={i} style={{ borderBottom: '1px solid #1e293b', background: i % 2 === 0 ? 'transparent' : '#161f2e' }}>
+                  <td style={{ padding: '4px 10px', color: '#64748b' }}>{i + 1}</td>
+                  <td style={{ padding: '4px 10px' }}>
+                    <span style={{ background: (TABLE_COLORS[question.table_id] || '#94a3b8') + '22', color: TABLE_COLORS[question.table_id] || '#94a3b8', padding: '1px 5px', borderRadius: 3, fontSize: 11 }}>{question.table_id}</span>
+                  </td>
+                  <td style={{ padding: '4px 10px', color: '#64748b', whiteSpace: 'nowrap' }}>{question.question_id}</td>
+                  <td style={{ padding: '4px 10px', color: '#e2e8f0' }}>
+                    {question.question_text || `${question.home_team || ''} - ${question.away_team || ''}`}
+                  </td>
+                  <td style={{ padding: '4px 10px', color: '#6ee7b7', fontWeight: 'bold' }}>{pred.value}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
 
   return (
-    <div dir="rtl" style={{ minHeight:'100vh', background:'#0f172a', color:'#e2e8f0', padding:24, fontFamily:'Arial,sans-serif' }}>
-      <div style={{ maxWidth:1100, margin:'0 auto' }}>
-        <h1 style={{ fontSize:26, fontWeight:'bold', color:'#06b6d4', marginBottom:24 }}>ייבוא ניחושים מ-CSV</h1>
+    <div dir="rtl" style={{ minHeight: '100vh', background: '#0f172a', color: '#e2e8f0', padding: '20px', fontFamily: 'Arial, sans-serif' }}>
+      <div style={{ maxWidth: 1100, margin: '0 auto' }}>
+        <h1 style={{ fontSize: 22, fontWeight: 'bold', color: '#06b6d4', marginBottom: 20 }}>ייבוא ניחושים מ-CSV</h1>
 
-        {/* Step 1: delete test + load questions */}
-        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16, marginBottom:20 }}>
-          <div style={{ background:'#1e293b', borderRadius:12, padding:20, border:'1px solid #7f1d1d' }}>
-            <h2 style={{ color:'#f87171', fontSize:14, marginBottom:10 }}>שלב 1 — מחיקת משתמשי בדיקה</h2>
-            <Button onClick={deleteTestUsers} disabled={deletingTest||!currentGame} style={{ background:'#dc2626', color:'white' }}>
-              {deletingTest ? <><Loader2 className="w-4 h-4 animate-spin ml-2"/>מוחק...</> : <><Trash2 className="w-4 h-4 ml-2"/>מחק בדיקה_אחד/שתיים/שלוש</>}
-            </Button>
-          </div>
-          <div style={{ background:'#1e293b', borderRadius:12, padding:20, border:'1px solid #334155' }}>
-            <h2 style={{ color:'#e2e8f0', fontSize:14, marginBottom:10 }}>שלב 2 — טעינת שאלות מסופאבייס</h2>
-            <Button onClick={loadQuestions} disabled={loadingQs||!currentGame} style={{ background:'#0284c7', color:'white' }}>
-              {loadingQs ? <><Loader2 className="w-4 h-4 animate-spin ml-2"/>טוען...</> : `טען שאלות${questions.length ? ` (✓ ${questions.length})` : ''}`}
-            </Button>
-          </div>
-        </div>
-
-        {questions.length > 0 && (
+        {/* Delete test users */}
+        {box('#1e293b', '#7f1d1d',
           <>
-            {/* Step 3: verify single file */}
-            <div style={{ background:'#1e293b', borderRadius:12, padding:20, marginBottom:20, border:'1px solid #0284c7' }}>
-              <h2 style={{ color:'#38bdf8', fontSize:14, marginBottom:8 }}>שלב 3 — בדיקת קובץ יחיד (אימות לפני טעינה מלאה)</h2>
-              <p style={{ color:'#64748b', fontSize:12, marginBottom:12 }}>בחר קובץ אחד — תראה טבלה מלאה של כל הניחושים שזוהו ואילו לא</p>
-              <input type="file" accept=".csv" onChange={handleFile} style={{ color:'#e2e8f0' }}/>
-            </div>
-
-            {/* Verification table */}
-            {parsed && (
-              <div style={{ background:'#1e293b', borderRadius:12, padding:20, marginBottom:20, border: parsed.unmatched.length===0 ? '1px solid #059669' : '1px solid #dc2626' }}>
-                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16 }}>
-                  <h2 style={{ color: parsed.unmatched.length===0 ? '#6ee7b7' : '#f87171', fontSize:16 }}>
-                    {parsed.unmatched.length===0 ? <><CheckCircle className="w-5 h-5 inline ml-2"/>כל הניחושים זוהו!</> : <><AlertTriangle className="w-5 h-5 inline ml-2"/>{parsed.unmatched.length} ניחושים לא זוהו</>}
-                  </h2>
-                  <span style={{ color:'#94a3b8', fontSize:13 }}>
-                    {parsed.name} — {parsed.matched.length} זוהו / {parsed.unmatched.length} לא זוהו
-                  </span>
-                </div>
-
-                {/* UNMATCHED TABLE */}
-                {parsed.unmatched.length > 0 && (
-                  <div style={{ marginBottom:24 }}>
-                    <h3 style={{ color:'#f87171', fontSize:14, marginBottom:8 }}>❌ ניחושים שלא זוהו ({parsed.unmatched.length})</h3>
-                    <div style={{ overflowX:'auto', background:'#0f172a', borderRadius:8 }}>
-                      <table style={{ width:'100%', borderCollapse:'collapse' }}>
-                        <thead>
-                          <tr>
-                            {['#','שאלה מה-CSV (מה חיפשנו)','ערך הניחוש','קטגוריה'].map(h => <th key={h} style={hdr}>{h}</th>)}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {parsed.unmatched.map((u,i) => (
-                            <tr key={i} style={{ background: i%2===0 ? '#0f172a' : '#111827' }}>
-                              <td style={{ ...cell, color:'#f87171', width:40 }}>{u.csvNum||i+1}</td>
-                              <td style={{ ...cell, color:'#fca5a5' }}>
-                                {u.type==='match' ? `⚽ ${u.home} נגד ${u.away}` :
-                                 u.type==='qualifier' ? `📋 רשימת ${u.stage} — מקום ${u.slot}: ${u.team}` :
-                                 u.qtext}
-                              </td>
-                              <td style={{ ...cell, color:'#fbbf24', fontFamily:'monospace' }}>"{u.value}"</td>
-                              <td style={{ ...cell, color:'#64748b' }}>{sectionLabel(u.section)}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                    <p style={{ color:'#f87171', fontSize:12, marginTop:8 }}>⛔ לא ניתן לייבא עד שכל הניחושים ימופו. שלח את הטבלה הזו לתיקון.</p>
-                  </div>
-                )}
-
-                {/* MATCHED TABLE */}
-                <div>
-                  <h3 style={{ color:'#6ee7b7', fontSize:14, marginBottom:8 }}>✅ ניחושים שזוהו ({parsed.matched.length}) — אמת שהערכים נכונים</h3>
-                  <div style={{ overflowX:'auto', background:'#0f172a', borderRadius:8, maxHeight:500 }}>
-                    <table style={{ width:'100%', borderCollapse:'collapse' }}>
-                      <thead>
-                        <tr>
-                          {['#','שאלה ב-DB (מה נמצא)','ניחוש CSV','table_id','question_id'].map(h => <th key={h} style={hdr}>{h}</th>)}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {parsed.matched.map(({pred, question}, i) => (
-                          <tr key={i} style={{ background: i%2===0 ? '#0f172a' : '#111827' }}>
-                            <td style={{ ...cell, color:'#6ee7b7', width:40 }}>{i+1}</td>
-                            <td style={{ ...cell, color:'#e2e8f0' }}>
-                              {question.home_team && question.away_team
-                                ? `${question.home_team} נגד ${question.away_team}`
-                                : question.question_text}
-                            </td>
-                            <td style={{ ...cell, color:'#38bdf8', fontFamily:'monospace', fontWeight:'bold' }}>"{pred.value}"</td>
-                            <td style={{ ...cell, color:'#818cf8', whiteSpace:'nowrap' }}>{question.table_id}</td>
-                            <td style={{ ...cell, color:'#64748b', whiteSpace:'nowrap', fontSize:11 }}>{question.question_id}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Step 4: import all - only if single-file test was perfect */}
-            {parsed && parsed.unmatched.length === 0 && (
-              <div style={{ background:'#1e293b', borderRadius:12, padding:20, marginBottom:20, border:'1px solid #059669' }}>
-                <h2 style={{ color:'#6ee7b7', fontSize:14, marginBottom:8 }}>שלב 4 — טעינה מלאה של כל המשתתפים</h2>
-                <p style={{ color:'#64748b', fontSize:12, marginBottom:12 }}>בחר את כל הקבצים (Ctrl+A) — יובאו רק כשהאימות הצליח</p>
-                <input type="file" accept=".csv" multiple onChange={handleAllFiles} style={{ color:'#e2e8f0', marginBottom:12, display:'block' }}/>
-                {allFiles.length > 0 && (
-                  <Button onClick={() => doImport(allFiles)} disabled={importing}
-                    style={{ background:'linear-gradient(135deg,#059669,#047857)', color:'white', padding:'10px 24px' }}>
-                    {importing
-                      ? <><Loader2 className="w-5 h-5 animate-spin ml-2"/>מייבא {allFiles.length} קבצים...</>
-                      : <><Upload className="w-5 h-5 ml-2"/>ייבא {allFiles.length} משתתפים</>}
-                  </Button>
-                )}
-              </div>
-            )}
+            <h2 style={{ color: '#f87171', fontSize: 13, marginBottom: 8 }}>🗑️ מחיקת משתמשי בדיקה</h2>
+            <Button onClick={deleteTestUsers} disabled={deletingTest || !currentGame}
+              style={{ background: '#dc2626', color: 'white', fontSize: 12 }}>
+              {deletingTest ? <><Loader2 className="w-3 h-3 animate-spin ml-1" />מוחק...</> : <><Trash2 className="w-3 h-3 ml-1" />מחק בדיקה_אחד / שתיים / שלוש</>}
+            </Button>
           </>
         )}
 
-        {/* Import results */}
-        {importResults && (
-          <div style={{ background:'#064e3b', borderRadius:12, padding:24, border:'1px solid #059669' }}>
-            <h2 style={{ color:'#6ee7b7', fontSize:18, marginBottom:12 }}>✅ ייבוא הושלם! {importResults.totalInserted} ניחושים</h2>
-            <div style={{ maxHeight:400, overflowY:'auto' }}>
-              <table style={{ width:'100%', borderCollapse:'collapse', fontSize:13 }}>
-                <thead><tr style={{ background:'#065f46' }}>
-                  {['משתתף','ניחושים','שגיאות'].map(h=><th key={h} style={{ padding:'5px 10px', color:'#6ee7b7', textAlign:'right' }}>{h}</th>)}
-                </tr></thead>
+        {/* Load questions */}
+        {box('#1e293b', '#334155',
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ color: '#94a3b8', fontSize: 13 }}>{questions.length ? `✅ ${questions.length} שאלות נטענו` : 'שאלות לא נטענו'}</span>
+            <Button onClick={loadQuestions} disabled={loadingQs || !currentGame}
+              style={{ background: '#0284c7', color: 'white', fontSize: 13 }}>
+              {loadingQs ? <><Loader2 className="w-3 h-3 animate-spin ml-1" />טוען...</> : 'טען שאלות'}
+            </Button>
+          </div>
+        )}
+
+        {/* Step 1: single file test */}
+        {questions.length > 0 && step === 'init' && box('#1e293b', '#0284c7',
+          <>
+            <h2 style={{ color: '#38bdf8', fontSize: 14, marginBottom: 4 }}>שלב 1 — בדיקה עם קובץ בודד</h2>
+            <p style={{ color: '#64748b', fontSize: 12, marginBottom: 10 }}>בחר קובץ אחד לוודא שהזיהוי מושלם</p>
+            <input type="file" accept=".csv" onChange={handleSingleFile} style={{ color: '#e2e8f0' }} />
+          </>
+        )}
+
+        {/* Single file preview */}
+        {step === 'preview' && parsed?.single && (
+          <div style={{ background: '#1e293b', borderRadius: 10, padding: 16, marginBottom: 16, border: '1px solid #334155' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <h2 style={{ color: '#06b6d4', fontSize: 15 }}>תוצאות: {parsed.name}</h2>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <span style={{ background: '#064e3b', color: '#6ee7b7', padding: '3px 10px', borderRadius: 4, fontSize: 12 }}>✓ {parsed.matched.length} זוהו</span>
+                <span style={{ background: parsed.unmatched.length > 0 ? '#450a0a' : '#064e3b', color: parsed.unmatched.length > 0 ? '#fca5a5' : '#6ee7b7', padding: '3px 10px', borderRadius: 4, fontSize: 12 }}>
+                  {parsed.unmatched.length > 0 ? `✗ ${parsed.unmatched.length} לא זוהו` : '✓ 0 שגיאות'}
+                </span>
+              </div>
+            </div>
+
+            {parsed.unmatched.length > 0 && <UnmatchedTable items={parsed.unmatched} />}
+            <MatchedTable items={parsed.matched} name={parsed.name} />
+
+            {parsed.unmatched.length === 0 && (
+              <div style={{ marginTop: 14, padding: 12, background: '#0f2718', borderRadius: 8, border: '1px solid #059669' }}>
+                <p style={{ color: '#6ee7b7', fontSize: 13, marginBottom: 10 }}>✅ זיהוי מושלם! ניתן לטעון את כל הקבצים.</p>
+                <label style={{ display: 'inline-block', padding: '8px 16px', background: 'linear-gradient(135deg,#059669,#047857)', color: 'white', borderRadius: 6, cursor: 'pointer', fontSize: 13 }}>
+                  <Upload className="w-4 h-4 inline ml-1" />בחר את כל קבצי ה-CSV (Ctrl+A)
+                  <input type="file" accept=".csv" multiple onChange={handleAllFiles} style={{ display: 'none' }} />
+                </label>
+              </div>
+            )}
+            {parsed.unmatched.length > 0 && (
+              <p style={{ color: '#f87171', fontSize: 12, marginTop: 10 }}>⛔ תקן את {parsed.unmatched.length} השגיאות לפני הייבוא.</p>
+            )}
+          </div>
+        )}
+
+        {/* Bulk preview */}
+        {step === 'bulk_preview' && parsed?.bulk && (
+          <div style={{ background: '#1e293b', borderRadius: 10, padding: 16, marginBottom: 16, border: '1px solid #334155' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <h2 style={{ color: '#06b6d4', fontSize: 15 }}>ייבוא {parsed.results.length} משתתפים</h2>
+              {parsed.totalUnmatched === 0
+                ? <span style={{ color: '#6ee7b7', fontSize: 13 }}>✅ כל {parsed.totalMatched} ניחושים זוהו!</span>
+                : <span style={{ color: '#fca5a5', fontSize: 13 }}>⚠️ {parsed.totalUnmatched} לא זוהו</span>}
+            </div>
+            <div style={{ maxHeight: 380, overflowY: 'auto', marginBottom: 12 }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                <thead style={{ position: 'sticky', top: 0, background: '#0f172a' }}>
+                  <tr>{['שם', 'זוהו', 'לא זוהו'].map(h => <th key={h} style={{ padding: '4px 10px', color: '#64748b', textAlign: 'right', borderBottom: '1px solid #334155' }}>{h}</th>)}</tr>
+                </thead>
                 <tbody>
-                  {importResults.perParticipant.map((p,i)=>(
-                    <tr key={i} style={{ borderBottom:'1px solid #065f46' }}>
-                      <td style={{ padding:'5px 10px', color:'#d1fae5' }}>{p.name}</td>
-                      <td style={{ padding:'5px 10px', color:'#6ee7b7' }}>{p.inserted}</td>
-                      <td style={{ padding:'5px 10px', color:p.errors>0?'#fca5a5':'#6ee7b7' }}>{p.errors}</td>
+                  {parsed.results.map((r, i) => (
+                    <tr key={i} style={{ borderBottom: '1px solid #1e293b' }}>
+                      <td style={{ padding: '4px 10px', color: '#f1f5f9' }}>{r.name}</td>
+                      <td style={{ padding: '4px 10px', color: '#6ee7b7' }}>{r.matched.length}</td>
+                      <td style={{ padding: '4px 10px', color: r.unmatched.length > 0 ? '#fca5a5' : '#6ee7b7' }}>{r.unmatched.length}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
-            <p style={{ color:'#94a3b8', fontSize:12, marginTop:12 }}>עכשיו עבור ל-AdminResults → לחץ "שמור תוצאות" לחישוב הדירוג.</p>
+            {parsed.totalUnmatched === 0 && (
+              <Button onClick={() => runImport(parsed.results)} disabled={importing}
+                style={{ background: 'linear-gradient(135deg,#059669,#047857)', color: 'white', padding: '10px 24px' }}>
+                {importing ? <><Loader2 className="w-5 h-5 animate-spin ml-2" />מייבא...</> : <><Upload className="w-5 h-5 ml-2" />ייבא {parsed.totalMatched} ניחושים ל-{parsed.results.length} משתתפים</>}
+              </Button>
+            )}
           </div>
         )}
+
+        {/* Done */}
+        {step === 'done' && importResults && (
+          <div style={{ background: '#064e3b', borderRadius: 10, padding: 20, border: '1px solid #059669' }}>
+            <h2 style={{ color: '#6ee7b7', fontSize: 18, marginBottom: 10 }}>✅ ייבוא הושלם!</h2>
+            <p style={{ color: '#a7f3d0', marginBottom: 12 }}>
+              יובאו <strong>{importResults.totalInserted}</strong> ניחושים{importResults.totalErrors > 0 && ` (${importResults.totalErrors} שגיאות)`}
+            </p>
+            <div style={{ maxHeight: 350, overflowY: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                <thead><tr style={{ background: '#065f46' }}>{['משתתף', 'ניחושים', 'שגיאות'].map(h => <th key={h} style={{ padding: '4px 10px', color: '#6ee7b7', textAlign: 'right' }}>{h}</th>)}</tr></thead>
+                <tbody>
+                  {importResults.perParticipant.map((p, i) => (
+                    <tr key={i} style={{ borderBottom: '1px solid #065f46' }}>
+                      <td style={{ padding: '4px 10px', color: '#d1fae5' }}>{p.name}</td>
+                      <td style={{ padding: '4px 10px', color: '#6ee7b7' }}>{p.inserted}</td>
+                      <td style={{ padding: '4px 10px', color: p.errors > 0 ? '#fca5a5' : '#6ee7b7' }}>{p.errors}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p style={{ color: '#94a3b8', fontSize: 12, marginTop: 10 }}>עבור ל-AdminResults → "שמור תוצאות" לחישוב דירוג.</p>
+          </div>
+        )}
+
       </div>
     </div>
   );
