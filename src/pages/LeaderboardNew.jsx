@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Trophy, Loader2, Crown, TrendingUp, TrendingDown, Minus, Users, Target, CheckCircle, RefreshCw, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
+import { Trophy, Loader2, Crown, TrendingUp, TrendingDown, Minus, Users, Target, CheckCircle, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
 import { supabase } from '@/api/supabaseClient';
 import * as db from '@/api/entities';
 import { useToast } from "@/components/ui/use-toast";
@@ -13,8 +13,7 @@ import { calculateTotalScore } from "@/components/scoring/ScoreService";
 export default function LeaderboardNew() {
   const [rankings, setRankings] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [recalculating, setRecalculating] = useState(false);
-  const [recalcProgress, setRecalcProgress] = useState('');
+
   const [settingBaseline, setSettingBaseline] = useState(false);
   const [selectedParticipant, setSelectedParticipant] = useState(null);
   const [participantDetails, setParticipantDetails] = useState(null);
@@ -153,101 +152,6 @@ export default function LeaderboardNew() {
 
   useEffect(() => { loadRankings(); }, [loadRankings]);
 
-  // ── Recalculate scores for ALL participants and save to DB ─────────────────
-  const handleRecalculateScores = async () => {
-    if (!currentGame) return;
-    setRecalculating(true);
-    setRecalcProgress('טוען שאלות...');
-    try {
-      // 1. טען שאלות
-      const allQuestions = await loadAllQuestions(currentGame.id);
-      console.log(`✅ ${allQuestions.length} שאלות`);
-
-      // 2. טען כל הניחושים
-      setRecalcProgress('טוען ניחושים...');
-      const allPredictions = await loadAllPredictions(currentGame.id);
-      console.log(`✅ ${allPredictions.length} ניחושים`);
-
-      // 3. קבץ לפי משתתף
-      const byParticipant = {};
-      allPredictions.forEach(pred => {
-        if (!pred.participant_name?.trim()) return;
-        if (!byParticipant[pred.participant_name]) byParticipant[pred.participant_name] = [];
-        byParticipant[pred.participant_name].push(pred);
-      });
-      const participants = Object.keys(byParticipant);
-      console.log(`✅ ${participants.length} משתתפים`);
-
-      // 4. חשב ניקוד לכל משתתף
-      const scores = [];
-      for (const name of participants) {
-        const { total } = calcScore(allQuestions, byParticipant[name]);
-        scores.push({ participant_name: name, current_score: total });
-      }
-
-      // 5. מיין + מיקומים
-      scores.sort((a, b) => b.current_score - a.current_score);
-      let pos = 1;
-      for (let i = 0; i < scores.length; i++) {
-        if (i > 0 && scores[i].current_score !== scores[i-1].current_score) pos = i + 1;
-        scores[i].current_position = pos;
-      }
-
-      // 6. טען rankings קיימים (לשמירת baseline)
-      setRecalcProgress('טוען דירוג קיים...');
-      const existingRankings = await loadAllRankings(currentGame.id, null);
-      const existingMap = {};
-      existingRankings.forEach(r => { existingMap[r.participant_name] = r; });
-
-      // 7. שמור לכל משתתף
-      let saved = 0;
-      for (const p of scores) {
-        const existing = existingMap[p.participant_name];
-        setRecalcProgress(`שומר ${++saved}/${scores.length}: ${p.participant_name}`);
-
-        const data = {
-          participant_name: p.participant_name,
-          game_id: currentGame.id,
-          current_score: p.current_score,
-          current_position: p.current_position,
-          previous_score: existing?.current_score || 0,
-          previous_position: existing?.current_position || 0,
-          baseline_score: existing?.baseline_score || 0,
-          baseline_position: existing?.baseline_position || 0,
-          score_change: p.current_score - (existing?.baseline_score || 0),
-          position_change: (existing?.baseline_position || 0) - p.current_position,
-          last_updated: new Date().toISOString(),
-          last_baseline_set: existing?.last_baseline_set || null
-        };
-
-        try {
-          if (existing) {
-            await db.Ranking.update(existing.id, data);
-          } else {
-            await db.Ranking.create(data);
-          }
-        } catch (err) {
-          console.error(`❌ שגיאה: ${p.participant_name}`, err);
-        }
-
-        // מניעת rate limit
-        await new Promise(r => setTimeout(r, 100));
-      }
-
-      setRecalcProgress('');
-      toast({
-        title: "✅ הצלחה!",
-        description: `ניקוד עודכן עבור ${scores.length} משתתפים`,
-        className: "bg-cyan-900/30 border-cyan-500 text-cyan-200"
-      });
-      await loadRankings();
-    } catch (error) {
-      console.error("Error recalculating:", error);
-      setRecalcProgress('');
-      toast({ title: "שגיאה", description: error.message, variant: "destructive" });
-    }
-    setRecalculating(false);
-  };
 
   // ── Set baseline ───────────────────────────────────────────────────────────
   const handleSetBaseline = async () => {
@@ -411,29 +315,10 @@ export default function LeaderboardNew() {
           {isAdmin && (
             <div className="flex gap-2 md:gap-3 w-full md:w-auto flex-wrap">
 
-              {/* כפתור חישוב ניקוד */}
-              <Button
-                onClick={handleRecalculateScores}
-                disabled={recalculating || settingBaseline}
-                style={{
-                  background: recalculating
-                    ? 'rgba(6,182,212,0.3)'
-                    : 'linear-gradient(135deg, #06b6d4 0%, #0284c7 100%)',
-                  boxShadow: '0 0 20px rgba(6, 182, 212, 0.4)'
-                }}
-                className="text-white flex-1 md:flex-none h-8 md:h-10 text-[10px] md:text-sm"
-              >
-                {recalculating ? (
-                  <><Loader2 className="w-3 h-3 md:w-4 md:h-4 animate-spin ml-1" />מחשב...</>
-                ) : (
-                  <><RefreshCw className="w-3 h-3 md:w-4 md:h-4 ml-1" />חשב ניקוד</>
-                )}
-              </Button>
-
               {/* כפתור קבע דירוג */}
               <Button
                 onClick={handleSetBaseline}
-                disabled={settingBaseline || recalculating}
+                disabled={settingBaseline}
                 style={{
                   background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
                   boxShadow: '0 0 20px rgba(16, 185, 129, 0.4)'
@@ -449,17 +334,6 @@ export default function LeaderboardNew() {
             </div>
           )}
         </div>
-
-        {/* Progress bar */}
-        {recalculating && recalcProgress && (
-          <div className="mb-4 p-3 rounded-lg text-sm" style={{
-            background: 'rgba(6,182,212,0.1)',
-            border: '1px solid rgba(6,182,212,0.3)',
-            color: '#06b6d4'
-          }}>
-            ⏳ {recalcProgress}
-          </div>
-        )}
 
         {/* Stats */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-4 mb-4 md:mb-8">
