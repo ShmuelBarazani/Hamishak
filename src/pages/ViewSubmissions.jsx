@@ -619,7 +619,7 @@ export default function ViewSubmissions() {
                   <SelectTrigger className="w-48 h-8 text-sm" style={{ background: 'rgba(15, 23, 42, 0.6)', border: '1px solid rgba(6, 182, 212, 0.3)', color: '#f8fafc' }}>
                     <SelectValue placeholder="בחר שם..." className="text-right" />
                   </SelectTrigger>
-                  <SelectContent className="max-w-[200px]" position="popper" align="start" style={{ background: '#1e293b', border: '1px solid rgba(6, 182, 212, 0.3)' }}>
+                  <SelectContent className="max-w-[200px]" position="popper" align="start" style={{ background: '#1e293b', border: '1px solid rgba(6, 182, 212, 0.3)', maxHeight: '60vh', overflowY: 'auto' }}>
                     {allParticipants.map(p => (<SelectItem key={p} value={p} className="hover:bg-cyan-500/20 text-right pr-8" style={{ color: '#f8fafc' }}>{p}</SelectItem>))}
                   </SelectContent>
                 </Select>
