@@ -12,11 +12,13 @@ import { useToast } from "@/components/ui/use-toast";
 import RoundTableResults from "@/components/predictions/RoundTableResults";
 import StandingsTable from "@/components/predictions/StandingsTable";
 import { useGame } from "@/components/contexts/GameContext";
+import { calculateTotalScore } from "@/components/scoring/ScoreService";
 
 
 export default function AdminResults() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [recalculating, setRecalculating] = useState(false);
   const [results, setResults] = useState({});
   const [teams, setTeams] = useState({});
   const [validationLists, setValidationLists] = useState({});
@@ -279,6 +281,127 @@ export default function AdminResults() {
   };
 
   // 🚀 שמירת תוצאות בלבד (ללא חישוב ניקוד!)
+  // 🔥 חישוב ניקוד משתתף
+  const calculateParticipantScore = (allQs, predictions) => {
+    const tempPreds = {};
+    predictions.forEach(pred => {
+      const existing = tempPreds[pred.question_id];
+      if (!existing || new Date(pred.created_at) > new Date(existing.created_at)) {
+        tempPreds[pred.question_id] = pred;
+      }
+    });
+    const predMap = {};
+    for (const [qid, pred] of Object.entries(tempPreds)) {
+      predMap[qid] = pred.text_prediction;
+    }
+    const { total } = calculateTotalScore(allQs, predMap);
+    return total;
+  };
+
+  // 🔥 עדכון טבלת דירוג (נקרא אוטומטית אחרי שמירת תוצאות)
+  const recalculateRankings = async () => {
+    if (!currentGame) return;
+    setRecalculating(true);
+    try {
+      const BATCH = 5000;
+
+      // טען שאלות
+      let qs = [];
+      let qSkip = 0;
+      while (true) {
+        const batch = await db.Question.filter({ game_id: currentGame.id }, null, BATCH, qSkip);
+        qs = [...qs, ...batch];
+        if (batch.length < BATCH) break;
+        qSkip += BATCH;
+      }
+      qs = qs.filter(q => q.table_id && q.table_id !== 'T1');
+
+      // חלץ קבוצות מטקסט
+      qs.forEach(q => {
+        if (!q.home_team && !q.away_team && q.question_text) {
+          const sep = q.question_text.includes(' נגד ') ? ' נגד ' : q.question_text.includes(' - ') ? ' - ' : null;
+          if (sep) {
+            const parts = q.question_text.split(sep).map(t => t.trim());
+            if (parts.length === 2) { q.home_team = parts[0]; q.away_team = parts[1]; }
+          }
+        }
+      });
+
+      // טען ניחושים
+      let preds = [];
+      let pSkip = 0;
+      while (true) {
+        const batch = await db.Prediction.filter({ game_id: currentGame.id }, null, BATCH, pSkip);
+        preds = [...preds, ...batch];
+        if (batch.length < BATCH) break;
+        pSkip += BATCH;
+      }
+
+      // קבץ לפי משתתף
+      const byParticipant = {};
+      preds.forEach(p => {
+        if (!p.participant_name?.trim()) return;
+        if (!byParticipant[p.participant_name]) byParticipant[p.participant_name] = [];
+        byParticipant[p.participant_name].push(p);
+      });
+
+      // חשב ניקוד
+      const scores = Object.entries(byParticipant).map(([name, ps]) => ({
+        participant_name: name,
+        current_score: calculateParticipantScore(qs, ps)
+      }));
+      scores.sort((a, b) => b.current_score - a.current_score);
+      let pos = 1;
+      scores.forEach((s, i) => {
+        if (i > 0 && scores[i].current_score !== scores[i-1].current_score) pos = i + 1;
+        s.current_position = pos;
+      });
+
+      // טען baselines קיימות
+      const baselines = await db.Ranking.filter({ game_id: currentGame.id }, null, 1000);
+      const baselineMap = {};
+      baselines.forEach(b => { baselineMap[b.participant_name] = b; });
+
+      // עדכן/צור רשומות
+      for (let i = 0; i < scores.length; i++) {
+        const s = scores[i];
+        const base = baselineMap[s.participant_name];
+        const data = {
+          participant_name: s.participant_name,
+          game_id: currentGame.id,
+          current_score: s.current_score,
+          current_position: s.current_position,
+          previous_score: base?.current_score || 0,
+          previous_position: base?.current_position || 0,
+          baseline_score: base?.baseline_score || 0,
+          baseline_position: base?.baseline_position || 0,
+          score_change: s.current_score - (base?.baseline_score || 0),
+          position_change: (base?.baseline_position || 0) - s.current_position,
+          last_updated: new Date().toISOString(),
+          last_baseline_set: base?.last_baseline_set || null
+        };
+        try {
+          if (base) await db.Ranking.update(base.id, data);
+          else await db.Ranking.create(data);
+        } catch (err) {
+          console.error(\`שגיאה בדירוג \${s.participant_name}:\`, err);
+        }
+        if ((i + 1) % 5 === 0) await new Promise(r => setTimeout(r, 200));
+      }
+
+      toast({
+        title: "דירוג עודכן!",
+        description: \`חושב ניקוד עבור \${scores.length} משתתפים\`,
+        className: "bg-green-900/30 border-green-500 text-green-200",
+        duration: 3000
+      });
+    } catch (error) {
+      console.error("שגיאה בחישוב דירוג:", error);
+      toast({ title: "שגיאה בדירוג", description: error.message, variant: "destructive", duration: 3000 });
+    }
+    setRecalculating(false);
+  };
+
   const handleSaveResults = async () => {
     setSaving(true);
     try {
@@ -314,12 +437,13 @@ export default function AdminResults() {
 
       toast({
         title: "נשמר!",
-        description: `עודכנו ${changedQuestions.length} תוצאות`,
+        description: `עודכנו ${changedQuestions.length} תוצאות — מחשב דירוג...`,
         className: "bg-cyan-900/30 border-cyan-500 text-cyan-200",
         duration: 2000
       });
       
       loadData();
+      await recalculateRankings();
 
     } catch (error) {
       console.error("שגיאה בשמירה:", error);
@@ -855,12 +979,21 @@ export default function AdminResults() {
         </div>
         
         {isAdmin && (
-          <Button onClick={handleSaveResults} disabled={saving} className="h-10 px-6 text-white" style={{
-            background: 'linear-gradient(135deg, #06b6d4 0%, #0ea5e9 100%)',
-            boxShadow: '0 0 20px rgba(6, 182, 212, 0.4)'
+          <Button onClick={handleSaveResults} disabled={saving || recalculating} className="h-10 px-6 text-white" style={{
+            background: recalculating 
+              ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)'
+              : 'linear-gradient(135deg, #06b6d4 0%, #0ea5e9 100%)',
+            boxShadow: recalculating 
+              ? '0 0 20px rgba(16, 185, 129, 0.4)'
+              : '0 0 20px rgba(6, 182, 212, 0.4)'
           }}>
-            {saving ? <Loader2 className="w-5 h-5 animate-spin ml-2" /> : <Save className="w-5 h-5 ml-2" />}
-            שמור תוצאות
+            {saving ? (
+              <><Loader2 className="w-5 h-5 animate-spin ml-2" />שומר...</>
+            ) : recalculating ? (
+              <><Loader2 className="w-5 h-5 animate-spin ml-2" />מחשב דירוג...</>
+            ) : (
+              <><Save className="w-5 h-5 ml-2" />שמור תוצאות</>
+            )}
           </Button>
         )}
       </div>
