@@ -167,8 +167,11 @@ export function calculateQuestionScore(question, prediction, allQuestionsInTable
   const isActualScore = isScoreFormat(normalizedActual);
   const isPredScore = isScoreFormat(normalizedPred);
 
-  // 🎯 משחק עם תוצאה
-  if (isActualScore && isPredScore) {
+  // 🎯 משחק עם תוצאה — רק לשאלות עם home_team ו-away_team!
+  // שאלות טקסט שהתשובה שלהן נראית כמו "X-Y" (למשל: טווח דקות) לא יטופלו כמשחק
+  const isMatchQuestion = !!(question.home_team && question.away_team);
+
+  if (isActualScore && isPredScore && isMatchQuestion) {
     const [actualHome, actualAway] = parseScore(normalizedActual);
     const [predHome, predAway] = parseScore(normalizedPred);
     
@@ -233,7 +236,10 @@ export function calculateQuestionScore(question, prediction, allQuestionsInTable
 export function getMaxScore(question) {
   if (question.table_id === 'T1') return 0;
   
-  if (isScoreFormat(question.actual_result)) {
+  // רק שאלות עם home_team ו-away_team הן שאלות משחק אמיתיות
+  const isMatchQuestion = !!(question.home_team && question.away_team);
+  
+  if (isMatchQuestion && isScoreFormat(question.actual_result)) {
     return question.table_id === 'T20' ? 6 : 10;
   }
   
