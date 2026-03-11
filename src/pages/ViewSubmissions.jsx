@@ -42,6 +42,142 @@ function ParticipantTotalScore({ participantName, gameId }) {
   );
 }
 
+// 🔥 Custom dropdown שעוקף overflow:hidden של containers הורים
+function ParticipantDropdown({ participants, value, onChange }) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const triggerRef = React.useRef(null);
+  const [pos, setPos] = useState({ top: 0, left: 0, width: 200 });
+
+  const filtered = search
+    ? participants.filter(p => p.includes(search))
+    : participants;
+
+  const openDropdown = () => {
+    if (triggerRef.current) {
+      const rect = triggerRef.current.getBoundingClientRect();
+      setPos({
+        top: rect.bottom + window.scrollY + 4,
+        left: rect.left + window.scrollX,
+        width: Math.max(rect.width, 200),
+      });
+    }
+    setOpen(true);
+    setSearch('');
+  };
+
+  // סגור בלחיצה מחוץ
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e) => {
+      if (triggerRef.current && !triggerRef.current.contains(e.target)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  return (
+    <div style={{ position: 'relative', display: 'inline-block' }}>
+      {/* כפתור פתיחה */}
+      <button
+        ref={triggerRef}
+        onClick={() => open ? setOpen(false) : openDropdown()}
+        style={{
+          background: 'rgba(15, 23, 42, 0.8)',
+          border: '1px solid rgba(6, 182, 212, 0.35)',
+          color: value ? '#f8fafc' : '#94a3b8',
+          borderRadius: '6px',
+          padding: '4px 10px',
+          fontSize: '0.875rem',
+          height: '32px',
+          minWidth: '190px',
+          direction: 'rtl',
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '8px',
+        }}
+      >
+        <span>{value || 'בחר שם...'}</span>
+        <span style={{ fontSize: '0.65rem', color: '#06b6d4' }}>▾</span>
+      </button>
+
+      {/* רשימה — position:fixed כדי לעקוף כל overflow */}
+      {open && (
+        <div
+          style={{
+            position: 'fixed',
+            top: pos.top,
+            left: pos.left,
+            width: pos.width,
+            zIndex: 99999,
+            background: '#0f172a',
+            border: '1px solid rgba(6, 182, 212, 0.35)',
+            borderRadius: '8px',
+            boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
+            maxHeight: '60vh',
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden',
+          }}
+          onMouseDown={e => e.stopPropagation()}
+        >
+          {/* שדה חיפוש */}
+          <div style={{ padding: '6px 8px', borderBottom: '1px solid rgba(6,182,212,0.15)' }}>
+            <input
+              autoFocus
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="חיפוש..."
+              dir="rtl"
+              style={{
+                width: '100%',
+                background: 'rgba(30,41,59,0.8)',
+                border: '1px solid rgba(6,182,212,0.2)',
+                borderRadius: '4px',
+                color: '#f8fafc',
+                padding: '3px 8px',
+                fontSize: '0.8rem',
+                outline: 'none',
+              }}
+            />
+          </div>
+          {/* רשימת משתתפים — גלילה מלאה */}
+          <div style={{ overflowY: 'auto', flex: 1 }}>
+            {filtered.map(p => (
+              <div
+                key={p}
+                onClick={() => { onChange(p); setOpen(false); }}
+                style={{
+                  padding: '7px 12px',
+                  cursor: 'pointer',
+                  fontSize: '0.875rem',
+                  color: p === value ? '#06b6d4' : '#f8fafc',
+                  background: p === value ? 'rgba(6,182,212,0.12)' : 'transparent',
+                  direction: 'rtl',
+                  textAlign: 'right',
+                }}
+                onMouseEnter={e => { if (p !== value) e.currentTarget.style.background = 'rgba(6,182,212,0.08)'; }}
+                onMouseLeave={e => { if (p !== value) e.currentTarget.style.background = 'transparent'; }}
+              >
+                {p === value && <span style={{ marginLeft: '6px', fontSize: '0.7rem' }}>✓</span>}
+                {p}
+              </div>
+            ))}
+            {filtered.length === 0 && (
+              <div style={{ padding: '10px 12px', color: '#64748b', fontSize: '0.8rem', textAlign: 'center' }}>לא נמצאו תוצאות</div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
 export default function ViewSubmissions() {
   const [loading, setLoading] = useState(true);
   const [loadingPredictions, setLoadingPredictions] = useState(false);
@@ -615,28 +751,11 @@ export default function ViewSubmissions() {
             <Card style={{ background: 'rgba(30, 41, 59, 0.6)', border: '1px solid rgba(6, 182, 212, 0.2)', backdropFilter: 'blur(10px)' }}>
               <CardContent className="p-3 flex items-center gap-3">
                 <span className="text-sm font-medium" style={{ color: '#06b6d4' }}>משתתף:</span>
-                <select
-                  value={selectedParticipant || ''}
-                  onChange={e => setSelectedParticipant(e.target.value || null)}
-                  style={{
-                    background: 'rgba(15, 23, 42, 0.8)',
-                    border: '1px solid rgba(6, 182, 212, 0.3)',
-                    color: selectedParticipant ? '#f8fafc' : '#94a3b8',
-                    borderRadius: '6px',
-                    padding: '4px 10px',
-                    fontSize: '0.875rem',
-                    height: '32px',
-                    minWidth: '180px',
-                    direction: 'rtl',
-                    cursor: 'pointer',
-                    outline: 'none',
-                  }}
-                >
-                  <option value="" style={{ background: '#1e293b', color: '#94a3b8' }}>בחר שם...</option>
-                  {allParticipants.map(p => (
-                    <option key={p} value={p} style={{ background: '#1e293b', color: '#f8fafc' }}>{p}</option>
-                  ))}
-                </select>
+                <ParticipantDropdown
+                  participants={allParticipants}
+                  value={selectedParticipant}
+                  onChange={setSelectedParticipant}
+                />
               </CardContent>
             </Card>
 
