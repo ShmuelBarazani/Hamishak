@@ -372,11 +372,21 @@ function LayoutContent({ children, currentPageName }) {
               </div>
             </div>
             <button onClick={handleLogout} title="התנתק" style={{
-              background: 'transparent', border: 'none', cursor: 'pointer',
-              color: '#475569', padding: '4px', borderRadius: '6px'
-            }}>
-              <LogOut style={{ width: '14px', height: '14px' }} />
-            </button>
+                background: 'rgba(239,68,68,0.1)',
+                border: '1px solid rgba(239,68,68,0.3)',
+                cursor: 'pointer',
+                color: '#ef4444',
+                padding: '4px 10px',
+                borderRadius: '6px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '5px',
+                fontSize: '0.75rem',
+                fontFamily: 'inherit'
+              }}>
+                <LogOut style={{ width: '13px', height: '13px' }} />
+                התנתק
+              </button>
           </div>
         ) : (
           <button
