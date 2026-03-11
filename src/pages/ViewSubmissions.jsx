@@ -615,14 +615,28 @@ export default function ViewSubmissions() {
             <Card style={{ background: 'rgba(30, 41, 59, 0.6)', border: '1px solid rgba(6, 182, 212, 0.2)', backdropFilter: 'blur(10px)' }}>
               <CardContent className="p-3 flex items-center gap-3">
                 <span className="text-sm font-medium" style={{ color: '#06b6d4' }}>משתתף:</span>
-                <Select onValueChange={setSelectedParticipant} value={selectedParticipant || ''}>
-                  <SelectTrigger className="w-48 h-8 text-sm" style={{ background: 'rgba(15, 23, 42, 0.6)', border: '1px solid rgba(6, 182, 212, 0.3)', color: '#f8fafc' }}>
-                    <SelectValue placeholder="בחר שם..." className="text-right" />
-                  </SelectTrigger>
-                  <SelectContent className="max-w-[200px]" position="popper" align="start" style={{ background: '#1e293b', border: '1px solid rgba(6, 182, 212, 0.3)', maxHeight: '60vh', overflowY: 'auto' }}>
-                    {allParticipants.map(p => (<SelectItem key={p} value={p} className="hover:bg-cyan-500/20 text-right pr-8" style={{ color: '#f8fafc' }}>{p}</SelectItem>))}
-                  </SelectContent>
-                </Select>
+                <select
+                  value={selectedParticipant || ''}
+                  onChange={e => setSelectedParticipant(e.target.value || null)}
+                  style={{
+                    background: 'rgba(15, 23, 42, 0.8)',
+                    border: '1px solid rgba(6, 182, 212, 0.3)',
+                    color: selectedParticipant ? '#f8fafc' : '#94a3b8',
+                    borderRadius: '6px',
+                    padding: '4px 10px',
+                    fontSize: '0.875rem',
+                    height: '32px',
+                    minWidth: '180px',
+                    direction: 'rtl',
+                    cursor: 'pointer',
+                    outline: 'none',
+                  }}
+                >
+                  <option value="" style={{ background: '#1e293b', color: '#94a3b8' }}>בחר שם...</option>
+                  {allParticipants.map(p => (
+                    <option key={p} value={p} style={{ background: '#1e293b', color: '#f8fafc' }}>{p}</option>
+                  ))}
+                </select>
               </CardContent>
             </Card>
 
