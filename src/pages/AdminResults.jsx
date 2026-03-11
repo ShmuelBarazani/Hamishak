@@ -52,7 +52,7 @@ export default function AdminResults() {
     loadUser();
   }, []);
 
-  const isAdmin = currentUser?.role === 'admin';
+  const isAdmin = currentUser?.role === 'admin' || currentUser?.user_metadata?.role === 'admin';
 
   // טעינת נתונים
   const loadData = useCallback(async () => {
