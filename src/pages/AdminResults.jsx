@@ -738,7 +738,7 @@ export default function AdminResults() {
       if (!type) {
         if (btn.sectionKey === 'rounds') type = 'rounds';
         else if (btn.sectionKey.startsWith('round_')) type = 'playoff';
-        else if (btn.sectionKey.startsWith('qual_') || btn.sectionKey === 'playoffWinners') type = 'qualifiers';
+        else if (btn.sectionKey.startsWith('qual_') || btn.sectionKey === 'playoffWinners' || btn.stageType === 'qualifiers') type = 'qualifiers';
         else type = 'special';
       }
       if (!grouped[type]) grouped[type] = [];
