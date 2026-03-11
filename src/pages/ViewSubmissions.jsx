@@ -104,7 +104,7 @@ export default function ViewSubmissions() {
   const { currentGame } = useGame();
 
   // 🔥 חשוב: isAdmin חייב להיות מחושב לפני כל השימושים בו
-  const isAdmin = currentUser?.role === 'admin';
+  const isAdmin = currentUser?.role === 'admin' || currentUser?.user_metadata?.role === 'admin';
 
   useEffect(() => {
     const loadUser = async () => {
@@ -178,7 +178,7 @@ export default function ViewSubmissions() {
             }
           }
 
-          const tableCollection = (q.home_team && q.away_team || q.table_id === 'T10') ? rTables : sTables;
+          const tableCollection = (q.home_team && q.away_team) ? rTables : sTables;
           
           // 🎯 קביעת מזהה ותיאור טבלה
           let tableId = q.table_id;
@@ -262,8 +262,7 @@ export default function ViewSubmissions() {
             const desc = table.description?.trim();
             const isGroup = table.id.includes('בית') || desc?.includes('בית');
             const stageType = table.questions[0]?.stage_type;
-            // T10 יאוחד עם roundTables - לא יופיע כשאלות מיוחדות נפרדות
-            if (table.id === 'T10') return false;
+            // T10 מוצג כשאלות מיוחדות
             return desc && !/^\d+$/.test(desc) && !locationTableIds.includes(table.id) && table.id !== 'T19' && !isGroup && stageType !== 'qualifiers';
         }).sort((a,b) => {
             const orderA = a.questions[0]?.stage_order || 999;
