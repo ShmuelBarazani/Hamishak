@@ -495,7 +495,7 @@ export default function AdminResults() {
                   <Badge variant="outline" className="border-cyan-400 text-cyan-200 justify-center text-xs h-6 w-full">{main.question_id}</Badge>
                   <label className="text-right font-medium text-sm text-blue-100 truncate">{main.question_text}</label>
                   {renderSelectWithLogos(main, results[main.id] || '', val => handleResultChange(main.id, val === '__CLEAR__' ? '' : val), 'w-[140px]')}
-                  <Badge className="text-xs px-2 py-1 justify-center h-6 w-full" style={{ background: '#fbbf24', color: 'white' }}>{main.possible_points || 0}</Badge>
+                  <Badge className="text-xs px-2 py-1 justify-center h-6 w-full" style={{ borderColor: 'rgba(6,182,212,0.5)', color: '#06b6d4', background: 'rgba(6,182,212,0.1)' }}>{main.possible_points || 0}</Badge>
                   {sortedSubs.map(sub => (
                     <React.Fragment key={sub.id}>
                       <Badge variant="outline" className="border-cyan-400 text-cyan-200 justify-center text-xs h-6 w-full">{sub.question_id}</Badge>
