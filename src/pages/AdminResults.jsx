@@ -52,34 +52,55 @@ export default function AdminResults() {
 
   // ── Helpers ───────────────────────────────────────────────────────────────
   const loadAllQuestions = async (gameId) => {
-    let all = [], skip = 0;
+    let all = [], from = 0;
+    const PAGE = 1000;
     while (true) {
-      const batch = await db.Question.filter({ game_id: gameId }, null, 5000, skip);
-      all = [...all, ...batch];
-      if (batch.length < 5000) break;
-      skip += 5000;
+      const { data, error } = await supabase
+        .from('questions').select('*').eq('game_id', gameId).range(from, from + PAGE - 1);
+      if (error) { console.error('questions fetch error:', error); break; }
+      if (!data || data.length === 0) break;
+      all = [...all, ...data];
+      if (data.length < PAGE) break;
+      from += PAGE;
     }
     return all;
   };
 
   const loadAllPredictions = async (gameId) => {
-    let all = [], skip = 0;
+    // db.Prediction.filter מוגבל ל-1000 — משתמשים ב-supabase ישיר עם range()
+    let all = [], from = 0;
+    const PAGE = 1000;
     while (true) {
-      const batch = await db.Prediction.filter({ game_id: gameId }, null, 5000, skip);
-      all = [...all, ...batch];
-      if (batch.length < 5000) break;
-      skip += 5000;
+      const { data, error } = await supabase
+        .from('predictions')
+        .select('*')
+        .eq('game_id', gameId)
+        .range(from, from + PAGE - 1);
+      if (error) { console.error('predictions fetch error:', error); break; }
+      if (!data || data.length === 0) break;
+      all = [...all, ...data];
+      console.log(`   📊 ניחושים: נטענו ${data.length}, סה"כ ${all.length}`);
+      if (data.length < PAGE) break;
+      from += PAGE;
     }
     return all;
   };
 
   const loadAllRankings = async (gameId) => {
-    let all = [], skip = 0;
+    // db.Ranking.filter מוגבל — משתמשים ב-supabase ישיר עם range()
+    let all = [], from = 0;
+    const PAGE = 500;
     while (true) {
-      const batch = await db.Ranking.filter({ game_id: gameId }, null, 500, skip);
-      all = [...all, ...batch];
-      if (batch.length < 500) break;
-      skip += 500;
+      const { data, error } = await supabase
+        .from('rankings')
+        .select('*')
+        .eq('game_id', gameId)
+        .range(from, from + PAGE - 1);
+      if (error) { console.error('rankings fetch error:', error); break; }
+      if (!data || data.length === 0) break;
+      all = [...all, ...data];
+      if (data.length < PAGE) break;
+      from += PAGE;
     }
     return all;
   };
