@@ -1,7 +1,7 @@
 import { useState, useCallback } from "react";
 import { supabase } from "@/api/supabaseClient";
 import * as db from "@/api/entities";
-import { useGame } from "@/components/GameContext";
+import { useGame } from "@/components/contexts/GameContext";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
 import { Upload, Trash2, CheckCircle, XCircle, Loader2, AlertTriangle } from "lucide-react";
