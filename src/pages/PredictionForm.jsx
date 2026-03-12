@@ -401,22 +401,24 @@ export default function PredictionForm() {
               if (!main) return null;
               const sortedSubs = [...subs].sort((a, b) => parseFloat(a.question_id) - parseFloat(b.question_id));
               return (
-                <div key={main.id} style={{ borderRadius: '8px', overflow: 'hidden', border: '1px solid var(--tp-12)', background: 'rgba(0,0,0,0.25)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '9px 12px', minWidth: 0 }}>
-                    <Badge variant="outline" style={{ borderColor: 'var(--tp)', color: 'var(--tp)', minWidth: '44px', textAlign: 'center', flexShrink: 0, fontSize: '0.72rem' }}>{main.question_id}</Badge>
-                    <span style={{ flex: 1, minWidth: 0, fontSize: '0.875rem', color: '#94a3b8', textAlign: 'right' }}>{main.question_text}</span>
-                    <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <div key={main.id} style={{ display: 'flex', alignItems: 'center', padding: '7px 10px', borderRadius: '8px', overflow: 'hidden', border: '1px solid var(--tp-12)', background: 'rgba(0,0,0,0.22)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: sortedSubs.length > 0 ? '1.4' : '1', minWidth: 0 }}>
+                    <Badge variant="outline" style={{ borderColor: 'var(--tp-50)', color: 'var(--tp)', minWidth: '44px', textAlign: 'center', flexShrink: 0, fontSize: '0.72rem' }}>{main.question_id}</Badge>
+                    <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '0.82rem', color: '#94a3b8', textAlign: 'right' }}>{main.question_text}</span>
+                    <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: '5px' }}>
                       {renderSelectWithLogos(main, predictions[main.id] || "", (val) => handlePredictionChange(main.id, val), "w-[120px]")}
-                      {main.possible_points && <Badge style={{ borderColor: 'var(--tp-50)', color: 'var(--tp)', background: 'var(--tp-10)', fontSize: '0.7rem', whiteSpace: 'nowrap' }}>{main.possible_points} נק'</Badge>}
+                      {main.possible_points && <Badge style={{ borderColor: 'var(--tp-35)', color: 'var(--tp)', background: 'var(--tp-08)', fontSize: '0.68rem', flexShrink: 0, whiteSpace: 'nowrap' }}>{main.possible_points} נק'</Badge>}
                     </div>
                   </div>
-                  {sortedSubs.map((sub, idx) => (
-                    <div key={sub.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '7px 12px 7px 22px', borderTop: '1px solid var(--tp-08)', background: 'rgba(0,0,0,0.18)', minWidth: 0 }}>
-                      <span style={{ color: 'var(--tp)', fontSize: '0.7rem', flexShrink: 0, opacity: 0.5 }}>{idx === sortedSubs.length-1 ? '└' : '├'}</span>
-                      <Badge variant="outline" style={{ borderColor: 'rgba(139,92,246,0.5)', color: '#a78bfa', minWidth: '44px', textAlign: 'center', flexShrink: 0, fontSize: '0.72rem' }}>{sub.question_id}</Badge>
-                      <span style={{ flex: 1, minWidth: 0, fontSize: '0.82rem', color: '#cbd5e1', textAlign: 'right' }}>{sub.question_text}</span>
-                      <div style={{ flexShrink: 0 }}>{renderSelectWithLogos(sub, predictions[sub.id] || "", (val) => handlePredictionChange(sub.id, val), "w-[120px]")}</div>
-                    </div>
+                  {sortedSubs.map((sub) => (
+                    <React.Fragment key={sub.id}>
+                      <div style={{ width: '1px', height: '26px', background: 'rgba(255,255,255,0.07)', flexShrink: 0, margin: '0 8px' }} />
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: '1', minWidth: 0 }}>
+                        <Badge variant="outline" style={{ borderColor: 'rgba(139,92,246,0.45)', color: '#a78bfa', minWidth: '44px', textAlign: 'center', flexShrink: 0, fontSize: '0.72rem' }}>{sub.question_id}</Badge>
+                        <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '0.82rem', color: '#cbd5e1', textAlign: 'right' }}>{sub.question_text}</span>
+                        <div style={{ flexShrink: 0 }}>{renderSelectWithLogos(sub, predictions[sub.id] || "", (val) => handlePredictionChange(sub.id, val), "w-[120px]")}</div>
+                      </div>
+                    </React.Fragment>
                   ))}
                 </div>
               );
@@ -440,27 +442,28 @@ export default function PredictionForm() {
               const { main, subs } = grouped[mainId];
               if (!main) return null;
               const sortedSubs = [...subs].sort((a, b) => parseFloat(a.question_id) - parseFloat(b.question_id));
-              // ── רינדור שאלה — מבנה אנכי ──
               return (
-                <div key={main.id} style={{ borderRadius: '8px', overflow: 'hidden', border: '1px solid var(--tp-12)', background: 'rgba(0,0,0,0.25)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '9px 12px', minWidth: 0 }}>
-                    <Badge variant="outline" style={{ borderColor: 'var(--tp)', color: 'var(--tp)', minWidth: '44px', textAlign: 'center', flexShrink: 0, fontSize: '0.72rem' }}>{main.question_id}</Badge>
-                    <span style={{ flex: 1, minWidth: 0, fontSize: '0.875rem', color: '#f1f5f9', fontWeight: '500', textAlign: 'right' }}>{main.question_text}</span>
-                    <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <div key={main.id} style={{ display: 'flex', alignItems: 'center', padding: '7px 10px', borderRadius: '8px', overflow: 'hidden', border: '1px solid var(--tp-12)', background: 'rgba(0,0,0,0.22)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: sortedSubs.length > 0 ? '1.4' : '1', minWidth: 0 }}>
+                    <Badge variant="outline" style={{ borderColor: 'var(--tp-50)', color: 'var(--tp)', minWidth: '44px', textAlign: 'center', flexShrink: 0, fontSize: '0.72rem' }}>{main.question_id}</Badge>
+                    <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '0.82rem', color: '#f1f5f9', fontWeight: '500', textAlign: 'right' }}>{main.question_text}</span>
+                    <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: '5px' }}>
                       {renderSelectWithLogos(main, predictions[main.id] || "", (val) => handlePredictionChange(main.id, val), "w-[160px]")}
-                      {main.possible_points && <Badge style={{ borderColor: 'var(--tp-50)', color: 'var(--tp)', background: 'var(--tp-10)', fontSize: '0.7rem', whiteSpace: 'nowrap' }}>{main.possible_points} נק'</Badge>}
+                      {main.possible_points && <Badge style={{ borderColor: 'var(--tp-35)', color: 'var(--tp)', background: 'var(--tp-08)', fontSize: '0.68rem', flexShrink: 0, whiteSpace: 'nowrap' }}>{main.possible_points} נק'</Badge>}
                     </div>
                   </div>
-                  {sortedSubs.map((sub, idx) => (
-                    <div key={sub.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '7px 12px 7px 22px', borderTop: '1px solid var(--tp-08)', background: 'rgba(0,0,0,0.18)', minWidth: 0 }}>
-                      <span style={{ color: 'var(--tp)', fontSize: '0.7rem', flexShrink: 0, opacity: 0.5 }}>{idx === sortedSubs.length-1 ? '└' : '├'}</span>
-                      <Badge variant="outline" style={{ borderColor: 'rgba(139,92,246,0.5)', color: '#a78bfa', minWidth: '44px', textAlign: 'center', flexShrink: 0, fontSize: '0.72rem' }}>{sub.question_id}</Badge>
-                      <span style={{ flex: 1, minWidth: 0, fontSize: '0.82rem', color: '#cbd5e1', textAlign: 'right' }}>{sub.question_text}</span>
-                      <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        {renderSelectWithLogos(sub, predictions[sub.id] || "", (val) => handlePredictionChange(sub.id, val), "w-[160px]")}
-                        {sub.possible_points && <Badge style={{ borderColor: 'rgba(139,92,246,0.4)', color: '#a78bfa', background: 'rgba(139,92,246,0.1)', fontSize: '0.7rem', whiteSpace: 'nowrap' }}>{sub.possible_points} נק'</Badge>}
+                  {sortedSubs.map((sub) => (
+                    <React.Fragment key={sub.id}>
+                      <div style={{ width: '1px', height: '26px', background: 'rgba(255,255,255,0.07)', flexShrink: 0, margin: '0 8px' }} />
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: '1', minWidth: 0 }}>
+                        <Badge variant="outline" style={{ borderColor: 'rgba(139,92,246,0.45)', color: '#a78bfa', minWidth: '44px', textAlign: 'center', flexShrink: 0, fontSize: '0.72rem' }}>{sub.question_id}</Badge>
+                        <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '0.82rem', color: '#cbd5e1', textAlign: 'right' }}>{sub.question_text}</span>
+                        <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: '5px' }}>
+                          {renderSelectWithLogos(sub, predictions[sub.id] || "", (val) => handlePredictionChange(sub.id, val), "w-[160px]")}
+                          {sub.possible_points && <Badge style={{ borderColor: 'rgba(139,92,246,0.35)', color: '#a78bfa', background: 'rgba(139,92,246,0.08)', fontSize: '0.68rem', flexShrink: 0, whiteSpace: 'nowrap' }}>{sub.possible_points} נק'</Badge>}
+                        </div>
                       </div>
-                    </div>
+                    </React.Fragment>
                   ))}
                 </div>
               );
@@ -490,25 +493,27 @@ export default function PredictionForm() {
                 ? renderSelectWithLogos(q, predictions[q.id] || "", (val) => handlePredictionChange(q.id, val), "w-[160px]")
                 : <Input value={predictions[q.id] || ""} onChange={(e) => handlePredictionChange(q.id, e.target.value)} className="h-8 text-sm" placeholder="הזן תשובה..." style={{ background: 'rgba(0,0,0,0.35)', border: '1px solid var(--tp-20)', color: '#f8fafc', width: '160px' }} />;
               return (
-                <div key={main.id} style={{ borderRadius: '8px', overflow: 'hidden', border: '1px solid var(--tp-12)', background: 'rgba(0,0,0,0.25)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '9px 12px', minWidth: 0 }}>
-                    <Badge variant="outline" style={{ borderColor: 'var(--tp)', color: 'var(--tp)', minWidth: '44px', textAlign: 'center', flexShrink: 0, fontSize: '0.72rem' }}>{main.question_id}</Badge>
-                    <span style={{ flex: 1, minWidth: 0, fontSize: '0.875rem', color: '#94a3b8', textAlign: 'right' }}>{main.question_text}</span>
-                    <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <div key={main.id} style={{ display: 'flex', alignItems: 'center', padding: '7px 10px', borderRadius: '8px', overflow: 'hidden', border: '1px solid var(--tp-12)', background: 'rgba(0,0,0,0.22)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: sortedSubs.length > 0 ? '1.4' : '1', minWidth: 0 }}>
+                    <Badge variant="outline" style={{ borderColor: 'var(--tp-50)', color: 'var(--tp)', minWidth: '44px', textAlign: 'center', flexShrink: 0, fontSize: '0.72rem' }}>{main.question_id}</Badge>
+                    <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '0.82rem', color: '#94a3b8', textAlign: 'right' }}>{main.question_text}</span>
+                    <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: '5px' }}>
                       {renderControl(main)}
-                      {main.possible_points && <Badge style={{ borderColor: 'var(--tp-50)', color: 'var(--tp)', background: 'var(--tp-10)', fontSize: '0.7rem', whiteSpace: 'nowrap' }}>{main.possible_points} נק'</Badge>}
+                      {main.possible_points && <Badge style={{ borderColor: 'var(--tp-35)', color: 'var(--tp)', background: 'var(--tp-08)', fontSize: '0.68rem', flexShrink: 0, whiteSpace: 'nowrap' }}>{main.possible_points} נק'</Badge>}
                     </div>
                   </div>
-                  {sortedSubs.map((sub, idx) => (
-                    <div key={sub.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '7px 12px 7px 22px', borderTop: '1px solid var(--tp-08)', background: 'rgba(0,0,0,0.18)', minWidth: 0 }}>
-                      <span style={{ color: 'var(--tp)', fontSize: '0.7rem', flexShrink: 0, opacity: 0.5 }}>{idx === sortedSubs.length-1 ? '└' : '├'}</span>
-                      <Badge variant="outline" style={{ borderColor: 'rgba(139,92,246,0.5)', color: '#a78bfa', minWidth: '44px', textAlign: 'center', flexShrink: 0, fontSize: '0.72rem' }}>{sub.question_id}</Badge>
-                      <span style={{ flex: 1, minWidth: 0, fontSize: '0.82rem', color: '#cbd5e1', textAlign: 'right' }}>{sub.question_text}</span>
-                      <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        {renderControl(sub)}
-                        {sub.possible_points && <Badge style={{ borderColor: 'rgba(139,92,246,0.4)', color: '#a78bfa', background: 'rgba(139,92,246,0.1)', fontSize: '0.7rem', whiteSpace: 'nowrap' }}>{sub.possible_points} נק'</Badge>}
+                  {sortedSubs.map((sub) => (
+                    <React.Fragment key={sub.id}>
+                      <div style={{ width: '1px', height: '26px', background: 'rgba(255,255,255,0.07)', flexShrink: 0, margin: '0 8px' }} />
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: '1', minWidth: 0 }}>
+                        <Badge variant="outline" style={{ borderColor: 'rgba(139,92,246,0.45)', color: '#a78bfa', minWidth: '44px', textAlign: 'center', flexShrink: 0, fontSize: '0.72rem' }}>{sub.question_id}</Badge>
+                        <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '0.82rem', color: '#cbd5e1', textAlign: 'right' }}>{sub.question_text}</span>
+                        <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: '5px' }}>
+                          {renderControl(sub)}
+                          {sub.possible_points && <Badge style={{ borderColor: 'rgba(139,92,246,0.35)', color: '#a78bfa', background: 'rgba(139,92,246,0.08)', fontSize: '0.68rem', flexShrink: 0, whiteSpace: 'nowrap' }}>{sub.possible_points} נק'</Badge>}
+                        </div>
                       </div>
-                    </div>
+                    </React.Fragment>
                   ))}
                 </div>
               );
