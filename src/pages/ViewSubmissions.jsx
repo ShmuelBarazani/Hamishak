@@ -143,6 +143,13 @@ export default function ViewSubmissions() {
           return desc && !/^\d+$/.test(desc) && !locationTableIds.includes(table.id) && table.id !== 'T19' && !isGroup && stageType !== 'qualifiers';
         }).sort((a,b) => { const oa = a.questions[0]?.stage_order || 999, ob = b.questions[0]?.stage_order || 999; if (oa !== ob) return oa - ob; return (parseInt(a.id.replace('T','')) || 0) - (parseInt(b.id.replace('T','')) || 0); });
         setSpecialTables(allSpecialTables);
+      // ── שינוי שם T3 ──────────────────────────────────────────
+      sortedRoundTables.forEach(t => {
+        if (t.id === 'T3') t.description = 'שלב שמינית הגמר - המשחקים!';
+      });
+      allSpecialTables.forEach(t => {
+        if (t.id === 'T3') t.description = 'שלב שמינית הגמר - המשחקים!';
+      });
         const t10Special = sTables['T10'];
         if (t10Special) { const t10Round = Object.values(rTables).find(t => t.id === 'T10'); if (t10Round) t10Round.specialQuestions = t10Special.questions; }
         setQualifiersTables(Object.values(sTables).filter(t => t.questions[0]?.stage_type === 'qualifiers').sort((a,b) => (a.questions[0]?.stage_order || 999) - (b.questions[0]?.stage_order || 999)));
