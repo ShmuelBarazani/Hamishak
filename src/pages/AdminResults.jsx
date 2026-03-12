@@ -523,10 +523,13 @@ export default function AdminResults() {
   // ── Stage chips ───────────────────────────────────────────────────────────
   const renderStageChips = (buttons) => {
     const groupMap = {
-      playoff:    { label: '⚽ משחקי פלייאוף',  color: '#3b82f6', bg: 'rgba(59,130,246,0.12)',  border: 'rgba(59,130,246,0.35)' },
-      special:    { label: '✨ שאלות מיוחדות',  color: '#8b5cf6', bg: 'rgba(139,92,246,0.12)', border: 'rgba(139,92,246,0.35)' },
-      qualifiers: { label: '📋 רשימות עולות',   color: '#f97316', bg: 'rgba(249,115,22,0.12)',  border: 'rgba(249,115,22,0.35)' },
-      other:      { label: '📌 נוסף',             color: '#64748b', bg: 'rgba(100,116,139,0.1)', border: 'rgba(100,116,139,0.25)' },
+      playoff:    { label: '⚽ פלייאוף',    color: '#3b82f6', bg: 'rgba(59,130,246,0.12)',  border: 'rgba(59,130,246,0.35)',  activeBg: '#2563eb' },
+      league:     { label: '⚽ ליגה',        color: '#3b82f6', bg: 'rgba(59,130,246,0.12)',  border: 'rgba(59,130,246,0.35)',  activeBg: '#2563eb' },
+      groups:     { label: '🏠 בתים',        color: 'var(--tp)', bg: 'var(--tp-12)', border: 'var(--tp-35)', activeBg: 'var(--tp-dark)' },
+      rounds:     { label: '⚽ מחזורים',     color: 'var(--tp)', bg: 'var(--tp-12)', border: 'var(--tp-35)', activeBg: 'var(--tp-dark)' },
+      special:    { label: '✨ מיוחדות',     color: '#8b5cf6', bg: 'rgba(139,92,246,0.12)', border: 'rgba(139,92,246,0.35)', activeBg: '#7c3aed' },
+      qualifiers: { label: '📋 עולות',       color: '#f97316', bg: 'rgba(249,115,22,0.12)',  border: 'rgba(249,115,22,0.35)',  activeBg: '#ea580c' },
+      other:      { label: '📌 נוסף',        color: '#64748b', bg: 'rgba(100,116,139,0.10)', border: 'rgba(100,116,139,0.25)', activeBg: '#475569' },
     };
     const grouped = {};
     buttons.forEach(btn => {
