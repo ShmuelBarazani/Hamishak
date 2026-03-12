@@ -255,7 +255,7 @@ function LayoutContent({ children, currentPageName }) {
               {currentGame ? currentGame.game_name : "בחר משחק"}
             </SelectValue>
           </SelectTrigger>
-          <SelectContent style={{ background: '#1e293b', border: '1px solid var(--tp-30)', color: '#f1f5f9', zIndex: 9999 }}>
+          <SelectContent style={{ background: 'var(--bg2)', border: '1px solid var(--tp-30)', color: '#f1f5f9', zIndex: 9999 }}>
             {games.map(game => (
               <SelectItem key={game.id} value={game.id} style={{ color: '#f1f5f9' }}>
                 <div>
@@ -362,13 +362,13 @@ function LayoutContent({ children, currentPageName }) {
   }
 
   return (
-    <div dir="rtl" style={{ display: 'flex', minHeight: '100vh', background: 'linear-gradient(135deg, #0a0f1e 0%, #111827 50%, #0a0f1e 100%)', fontFamily: "'Rubik', 'Heebo', sans-serif" }}>
+    <div dir="rtl" style={{ display: 'flex', minHeight: '100vh', background: 'linear-gradient(135deg, var(--bg1) 0%, var(--bg2) 50%, var(--bg1) 100%)', fontFamily: "'Rubik', 'Heebo', sans-serif" }}>
 
       {/* DESKTOP SIDEBAR */}
       <div style={{
         width: '230px', flexShrink: 0,
-        background: 'rgba(17,24,39,0.98)',
-        borderLeft: '1px solid rgba(56,189,248,0.15)',
+        background: 'var(--sidebar, rgba(10,12,26,0.98))',
+        borderLeft: '1px solid var(--tp-15)',
         position: 'sticky', top: 0, height: '100vh',
         overflowY: 'auto', display: 'flex', flexDirection: 'column', zIndex: 40,
       }} className="desktop-sidebar">
@@ -388,8 +388,8 @@ function LayoutContent({ children, currentPageName }) {
         position: 'fixed', top: 0,
         right: sidebarOpen ? 0 : '-250px',
         width: '250px', height: '100vh',
-        background: 'rgba(17,24,39,0.99)',
-        borderLeft: '1px solid rgba(56,189,248,0.2)',
+        background: 'var(--sidebar, rgba(10,12,26,0.99))',
+        borderLeft: '1px solid var(--tp-20)',
         zIndex: 50, transition: 'right 0.25s ease',
         overflowY: 'auto', display: 'flex', flexDirection: 'column',
       }} className="mobile-sidebar">
@@ -407,8 +407,8 @@ function LayoutContent({ children, currentPageName }) {
         {/* Mobile topbar */}
         <div style={{
           display: 'none', padding: '10px 16px',
-          background: 'rgba(17,24,39,0.98)',
-          borderBottom: '1px solid rgba(56,189,248,0.15)',
+          background: 'var(--sidebar, rgba(10,12,26,0.98))',
+          borderBottom: '1px solid var(--tp-15)',
           alignItems: 'center', justifyContent: 'space-between',
           position: 'sticky', top: 0, zIndex: 30,
         }} className="mobile-topbar">
@@ -438,9 +438,9 @@ function LayoutContent({ children, currentPageName }) {
       <UploadStatusIndicator />
 
       <Dialog open={showAdminDialog} onOpenChange={setShowAdminDialog}>
-        <DialogContent style={{ background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)', border: '1px solid rgba(6,182,212,0.3)' }} dir="rtl">
+        <DialogContent style={{ background: 'linear-gradient(135deg, var(--bg3) 0%, var(--bg1) 100%)', border: '1px solid var(--tp-30)' }} dir="rtl">
           <DialogHeader>
-            <DialogTitle style={{ color: '#06b6d4', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <DialogTitle style={{ color: 'var(--tp)', display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Shield style={{ width: '20px', height: '20px' }} /> התחברות מנהל
             </DialogTitle>
             <DialogDescription style={{ color: '#94a3b8' }}>הזן את סיסמת המנהל</DialogDescription>
@@ -448,11 +448,11 @@ function LayoutContent({ children, currentPageName }) {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
             <Input type="password" value={adminPassword} onChange={e => setAdminPassword(e.target.value)}
               onKeyPress={e => e.key === 'Enter' && handleAdminLogin()} placeholder="סיסמה..."
-              style={{ background: '#0f172a', borderColor: 'rgba(6,182,212,0.3)', color: '#f8fafc' }} />
+              style={{ background: 'var(--bg1)', borderColor: 'var(--tp-30)', color: '#f8fafc' }} />
             <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
               <Button variant="outline" onClick={() => { setShowAdminDialog(false); setAdminPassword(""); }}
-                style={{ borderColor: 'rgba(6,182,212,0.3)', color: '#94a3b8', background: 'transparent' }}>ביטול</Button>
-              <Button onClick={handleAdminLogin} style={{ background: 'linear-gradient(135deg, #06b6d4, #0ea5e9)', color: 'white' }}>התחבר כמנהל</Button>
+                style={{ borderColor: 'var(--tp-30)', color: '#94a3b8', background: 'transparent' }}>ביטול</Button>
+              <Button onClick={handleAdminLogin} style={{ background: 'linear-gradient(135deg, var(--tp), var(--tp))', color: 'white' }}>התחבר כמנהל</Button>
             </div>
           </div>
         </DialogContent>
@@ -519,13 +519,24 @@ export default function Layout({ children, currentPageName }) {
             @import url('https://fonts.googleapis.com/css2?family=Rubik:wght@300;400;500;600;700;800;900&family=Heebo:wght@300;400;500;700;900&display=swap');
             *, *::before, *::after { font-family: 'Rubik', 'Heebo', sans-serif !important; }
 
-            html, body { margin: 0; padding: 0; width: 100%; min-height: 100vh; background: var(--bg1, #0a0f1e); color: #f1f5f9; }
-            #root { width: 100%; min-height: 100vh; }
+            /* ── Reset ──────────────────────────────────────────── */
+            html, body { margin: 0; padding: 0; width: 100%; min-height: 100vh; }
+            html, body, #root {
+              background: var(--bg1, #0a0f1e) !important;
+              color: #f1f5f9;
+              transition: background 0.35s ease;
+            }
+            #root { min-height: 100vh; }
 
+            /* ── Scrollbar ──────────────────────────────────────── */
             ::-webkit-scrollbar { width: 6px; height: 6px; }
             ::-webkit-scrollbar-track { background: var(--bg2, #111827); }
-            ::-webkit-scrollbar-thumb { background: linear-gradient(180deg, var(--tp, #38bdf8), var(--tp-dark, #3b82f6)); border-radius: 3px; }
+            ::-webkit-scrollbar-thumb {
+              background: linear-gradient(180deg, var(--tp, #06b6d4), var(--tp-dark, #0891b2));
+              border-radius: 3px;
+            }
 
+            /* ── Responsive sidebar ─────────────────────────────── */
             @media (max-width: 768px) {
               .desktop-sidebar { display: none !important; }
               .mobile-topbar   { display: flex !important; }
@@ -535,9 +546,62 @@ export default function Layout({ children, currentPageName }) {
               .mobile-topbar   { display: none !important; }
             }
 
-            .nav-item:hover { background: var(--tp-08, rgba(56,189,248,0.07)) !important; color: #e2e8f0 !important; }
+            /* ── Navigation ─────────────────────────────────────── */
+            .nav-item:hover { background: var(--tp-10) !important; color: #e2e8f0 !important; }
             .neon-border { border: 1px solid var(--tp-30); box-shadow: var(--tp-glow); }
-            .crypto-card { background: linear-gradient(135deg, var(--bg3) 0%, var(--bg1) 100%); border: 1px solid var(--tp-15); border-radius: 8px; }
+
+            /* ── Table headers ──────────────────────────────────── */
+            thead tr th, thead tr td { background: var(--bg2, #111827) !important; }
+
+            /* ── Inputs / Selects ───────────────────────────────── */
+            input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+            select, textarea {
+              background: rgba(var(--bg1-rgb, 10,15,30), 0.85) !important;
+              border-color: var(--tp-22, var(--tp-20)) !important;
+              color: #f1f5f9 !important;
+              transition: background 0.35s, border-color 0.35s;
+            }
+            input:focus, select:focus, textarea:focus {
+              border-color: var(--tp-50) !important;
+              box-shadow: 0 0 0 2px var(--tp-15) !important;
+              outline: none !important;
+            }
+
+            /* ── Radix Select dropdown ──────────────────────────── */
+            [data-radix-select-viewport],
+            [data-radix-popper-content-wrapper] > div {
+              background: var(--bg2, #111827) !important;
+              border: 1px solid var(--tp-25) !important;
+            }
+            [role="option"]:hover,
+            [data-highlighted] {
+              background: var(--tp-15) !important;
+              color: #fff !important;
+            }
+
+            /* ── shadcn Card override ───────────────────────────── */
+            /* shadcn Card uses bg-card class → --card CSS var */
+            /* We override --card in ThemeContext, so this is a safety net */
+            .bg-card { background: hsl(var(--card)) !important; }
+            .border-border { border-color: hsl(var(--border)) !important; }
+
+            /* ── Hover tints ────────────────────────────────────── */
+            .hover\\:bg-cyan-900\\/20:hover,
+            .hover\\:bg-cyan-500\\/10:hover { background: var(--tp-10) !important; }
+            .hover\\:border-cyan-700\\/50:hover { border-color: var(--tp-50) !important; }
+
+            /* ── text-cyan-* utility override ──────────────────── */
+            .text-cyan-400 { color: var(--tp) !important; }
+            .text-cyan-300 { color: var(--tp) !important; opacity: 0.85; }
+            .text-cyan-200 { color: var(--tp) !important; opacity: 0.70; }
+            .border-cyan-400 { border-color: var(--tp) !important; }
+            .border-cyan-700\\/50 { border-color: var(--tp-50) !important; }
+
+            /* ── Badge border-cyan ──────────────────────────────── */
+            .border-cyan-400.text-cyan-200 {
+              border-color: var(--tp-50) !important;
+              color: var(--tp) !important;
+            }
           `}</style>
           <LayoutContent currentPageName={currentPageName}>
             {children}
