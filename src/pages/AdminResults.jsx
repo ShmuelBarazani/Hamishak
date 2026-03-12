@@ -386,9 +386,9 @@ export default function AdminResults() {
           onChange={(e) => onChange(e.target.value)}
           style={{
             width: '180px',
-            background: hasResult ? 'rgba(6,182,212,0.2)' : 'rgba(51,65,85,0.5)',
-            borderColor: hasResult ? '#06b6d4' : 'rgba(100,116,139,1)',
-            color: hasResult ? '#06b6d4' : '#f8fafc',
+            background: hasResult ? 'var(--tp-20)' : 'rgba(51,65,85,0.5)',
+            borderColor: hasResult ? 'var(--tp)' : 'rgba(100,116,139,1)',
+            color: hasResult ? 'var(--tp)' : '#f8fafc',
             fontWeight: hasResult ? '700' : 'normal'
           }}
           placeholder="הזן תוצאה..."
@@ -402,9 +402,9 @@ export default function AdminResults() {
     return (
       <Select value={safeValue} onValueChange={onChange} disabled={!isAdmin}>
         <SelectTrigger className={selectClassName} style={{
-          background: hasResult ? 'rgba(6,182,212,0.2)' : 'rgba(51,65,85,0.5)',
-          borderColor: hasResult ? '#06b6d4' : 'rgba(100,116,139,1)',
-          color: hasResult ? '#06b6d4' : '#94a3b8',
+          background: hasResult ? 'var(--tp-20)' : 'rgba(51,65,85,0.5)',
+          borderColor: hasResult ? 'var(--tp)' : 'rgba(100,116,139,1)',
+          color: hasResult ? 'var(--tp)' : '#94a3b8',
           fontWeight: hasResult ? '700' : 'normal'
         }}>
           <SelectValue placeholder="בחר...">
@@ -454,7 +454,7 @@ export default function AdminResults() {
       <Badge variant="outline" className="border-cyan-400 text-cyan-200 justify-center text-xs h-6 w-full">{q.question_id}</Badge>
       <span className="text-right font-medium text-sm text-blue-100 truncate">{q.question_text}</span>
       {renderSelectWithLogos(q, results[q.id] || '', val => handleResultChange(q.id, val === '__CLEAR__' ? '' : val), `w-[${widths.select}]`)}
-      <Badge className="text-xs px-2 py-1 justify-center h-6 w-full" style={{ borderColor: 'rgba(6,182,212,0.5)', color: '#06b6d4', background: 'rgba(6,182,212,0.1)' }}>{q.possible_points || 0}</Badge>
+      <Badge className="text-xs px-2 py-1 justify-center h-6 w-full" style={{ borderColor: 'var(--tp-50)', color: 'var(--tp)', background: 'var(--tp-10)' }}>{q.possible_points || 0}</Badge>
     </div>
   );
 
@@ -481,34 +481,28 @@ export default function AdminResults() {
 
               if (sortedSubs.length === 0) return renderQuestionRow(main);
 
-              if (sortedSubs.length === 1) {
-                return (
-                  <div key={main.id} style={{ display: 'grid', gridTemplateColumns: '50px minmax(250px,2fr) 160px 50px 1fr 50px minmax(180px,1.5fr) 160px 50px', gap: '8px', alignItems: 'center', padding: '8px 12px', borderRadius: '6px' }} className="border border-cyan-600/30 bg-slate-700/20">
-                    <Badge variant="outline" className="border-cyan-400 text-cyan-200 justify-center text-xs h-6 w-full">{main.question_id}</Badge>
-                    <label className="text-right font-medium text-sm text-blue-100">{main.question_text}</label>
-                    {renderSelectWithLogos(main, results[main.id] || '', val => handleResultChange(main.id, val === '__CLEAR__' ? '' : val), 'w-[160px]')}
-                    <Badge className="text-xs px-2 py-1 justify-center h-6 w-full" style={{ borderColor: 'rgba(6,182,212,0.5)', color: '#06b6d4', background: 'rgba(6,182,212,0.1)' }}>{main.possible_points || 0}</Badge>
-                    <div />
-                    <Badge variant="outline" className="border-cyan-400 text-cyan-200 justify-center text-xs h-6 w-full">{sortedSubs[0].question_id}</Badge>
-                    <label className="text-right font-medium text-sm text-blue-100">{sortedSubs[0].question_text}</label>
-                    {renderSelectWithLogos(sortedSubs[0], results[sortedSubs[0].id] || '', val => handleResultChange(sortedSubs[0].id, val === '__CLEAR__' ? '' : val), 'w-[160px]')}
-                    <Badge className="text-xs px-2 py-1 justify-center h-6 w-full" style={{ borderColor: 'rgba(6,182,212,0.5)', color: '#06b6d4', background: 'rgba(6,182,212,0.1)' }}>{sortedSubs[0].possible_points || 0}</Badge>
-                  </div>
-                );
-              }
-
+              // ── שורה אחת: ראשית + תתי-סעיפים ──────────────────────────
               return (
-                <div key={main.id} style={{ display: 'grid', gridTemplateColumns: '45px 1fr 140px 45px 45px 1fr 140px 45px 45px 1fr 140px 45px', gap: '6px', alignItems: 'center', padding: '8px 12px', borderRadius: '6px' }} className="border border-cyan-600/30 bg-slate-700/20">
-                  <Badge variant="outline" className="border-cyan-400 text-cyan-200 justify-center text-xs h-6 w-full">{main.question_id}</Badge>
-                  <label className="text-right font-medium text-sm text-blue-100 truncate">{main.question_text}</label>
-                  {renderSelectWithLogos(main, results[main.id] || '', val => handleResultChange(main.id, val === '__CLEAR__' ? '' : val), 'w-[140px]')}
-                  <Badge className="text-xs px-2 py-1 justify-center h-6 w-full" style={{ borderColor: 'rgba(6,182,212,0.5)', color: '#06b6d4', background: 'rgba(6,182,212,0.1)' }}>{main.possible_points || 0}</Badge>
-                  {sortedSubs.map(sub => (
+                <div key={main.id} style={{ display: 'flex', alignItems: 'center', padding: '7px 10px', borderRadius: '8px', overflow: 'hidden', border: '1px solid var(--tp-12)', background: 'rgba(0,0,0,0.22)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: '1.4', minWidth: 0 }}>
+                    <Badge variant="outline" style={{ borderColor: 'var(--tp-50)', color: 'var(--tp)', minWidth: '44px', textAlign: 'center', flexShrink: 0, fontSize: '0.72rem' }}>{main.question_id}</Badge>
+                    <label style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '0.82rem', color: '#f1f5f9', fontWeight: '500', textAlign: 'right', cursor: 'default' }}>{main.question_text}</label>
+                    <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: '5px' }}>
+                      {renderSelectWithLogos(main, results[main.id] || '', val => handleResultChange(main.id, val === '__CLEAR__' ? '' : val), 'w-[150px]')}
+                      {main.possible_points && <Badge style={{ borderColor: 'var(--tp-35)', color: 'var(--tp)', background: 'var(--tp-08)', fontSize: '0.68rem', flexShrink: 0, whiteSpace: 'nowrap' }}>{main.possible_points} נק'</Badge>}
+                    </div>
+                  </div>
+                  {sortedSubs.map((sub) => (
                     <React.Fragment key={sub.id}>
-                      <Badge variant="outline" className="border-cyan-400 text-cyan-200 justify-center text-xs h-6 w-full">{sub.question_id}</Badge>
-                      <label className="text-right font-medium text-sm text-blue-100 truncate">{sub.question_text}</label>
-                      {renderSelectWithLogos(sub, results[sub.id] || '', val => handleResultChange(sub.id, val === '__CLEAR__' ? '' : val), 'w-[140px]')}
-                      <Badge className="text-xs px-2 py-1 justify-center h-6 w-full" style={{ borderColor: 'rgba(6,182,212,0.5)', color: '#06b6d4', background: 'rgba(6,182,212,0.1)' }}>{sub.possible_points || 0}</Badge>
+                      <div style={{ width: '1px', height: '26px', background: 'rgba(255,255,255,0.07)', flexShrink: 0, margin: '0 8px' }} />
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: '1', minWidth: 0 }}>
+                        <Badge variant="outline" style={{ borderColor: 'rgba(139,92,246,0.45)', color: '#a78bfa', minWidth: '44px', textAlign: 'center', flexShrink: 0, fontSize: '0.72rem' }}>{sub.question_id}</Badge>
+                        <label style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '0.82rem', color: '#cbd5e1', textAlign: 'right', cursor: 'default' }}>{sub.question_text}</label>
+                        <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: '5px' }}>
+                          {renderSelectWithLogos(sub, results[sub.id] || '', val => handleResultChange(sub.id, val === '__CLEAR__' ? '' : val), 'w-[150px]')}
+                          {sub.possible_points && <Badge style={{ borderColor: 'rgba(139,92,246,0.35)', color: '#a78bfa', background: 'rgba(139,92,246,0.08)', fontSize: '0.68rem', flexShrink: 0, whiteSpace: 'nowrap' }}>{sub.possible_points} נק'</Badge>}
+                        </div>
+                      </div>
                     </React.Fragment>
                   ))}
                 </div>
@@ -539,7 +533,7 @@ export default function AdminResults() {
     });
     const order = ['playoff','league','groups','rounds','special','qualifiers','other'];
     return (
-      <div style={{ padding: '14px 12px', background: 'rgba(17,24,39,0.7)', borderRadius: '12px', border: '1px solid rgba(56,189,248,0.12)', marginBottom: '16px' }}>
+      <div style={{ padding: '14px 12px', background: 'rgba(0,0,0,0.40)', borderRadius: '12px', border: '1px solid var(--tp-12)', marginBottom: '16px' }}>
         <div style={{ fontSize: '0.6rem', fontWeight: '700', letterSpacing: '0.12em', textTransform: 'uppercase', color: '#475569', marginBottom: '10px' }}>בחירת שלב</div>
         {order.filter(t => grouped[t]).map(type => {
           const info = groupMap[type] || groupMap.other;
@@ -570,7 +564,7 @@ export default function AdminResults() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-screen" style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%)' }}>
+      <div className="flex items-center justify-center h-screen" style={{ background: 'linear-gradient(135deg, var(--bg1) 0%, var(--bg2) 50%, var(--bg1) 100%)' }}>
         <Loader2 className="w-8 h-8 animate-spin text-cyan-400" />
         <span className="mr-3 text-cyan-300">טוען נתונים...</span>
       </div>
@@ -587,57 +581,52 @@ export default function AdminResults() {
   allButtons.sort((a, b) => a.numericId - b.numericId);
 
   const renderSidebar = () => {
-    const colorMap = {
-      playoff:    { color: '#3b82f6', activeBg: '#2563eb', border: 'rgba(59,130,246,0.35)',   bg: 'rgba(59,130,246,0.10)'    },
-      league:     { color: '#3b82f6', activeBg: '#2563eb', border: 'rgba(59,130,246,0.35)',   bg: 'rgba(59,130,246,0.10)'    },
-      groups:     { color: 'var(--tp)', activeBg: 'var(--tp-dark)', border: 'var(--tp-35)', bg: 'var(--tp-10)' },
-      rounds:     { color: 'var(--tp)', activeBg: 'var(--tp-dark)', border: 'var(--tp-35)', bg: 'var(--tp-10)' },
-      special:    { color: '#8b5cf6', activeBg: '#7c3aed', border: 'rgba(139,92,246,0.35)',  bg: 'rgba(139,92,246,0.10)'   },
-      qualifiers: { color: '#f97316', activeBg: '#ea580c', border: 'rgba(249,115,22,0.35)',   bg: 'rgba(249,115,22,0.10)'    },
-      other:      { color: '#64748b', activeBg: '#475569', border: 'rgba(100,116,139,0.30)',  bg: 'rgba(100,116,139,0.08)'   },
+    const groupMap = {
+      playoff:    { label: '⚽ פלייאוף',   color: '#3b82f6',     bg: 'rgba(59,130,246,0.10)',   border: 'rgba(59,130,246,0.30)',   activeBg: '#2563eb',          activeShadow: '0 2px 10px rgba(59,130,246,0.44)'   },
+      league:     { label: '⚽ ליגה',       color: '#3b82f6',     bg: 'rgba(59,130,246,0.10)',   border: 'rgba(59,130,246,0.30)',   activeBg: '#2563eb',          activeShadow: '0 2px 10px rgba(59,130,246,0.44)'   },
+      groups:     { label: '🏠 בתים',       color: 'var(--tp)',   bg: 'var(--tp-10)',            border: 'var(--tp-30)',            activeBg: 'var(--tp-dark)',   activeShadow: 'var(--tp-glow-sm)'                  },
+      rounds:     { label: '⚽ מחזורים',    color: 'var(--tp)',   bg: 'var(--tp-10)',            border: 'var(--tp-30)',            activeBg: 'var(--tp-dark)',   activeShadow: 'var(--tp-glow-sm)'                  },
+      special:    { label: '✨ מיוחדות',    color: '#8b5cf6',     bg: 'rgba(139,92,246,0.10)',   border: 'rgba(139,92,246,0.30)',   activeBg: '#7c3aed',          activeShadow: '0 2px 10px rgba(139,92,246,0.44)'   },
+      qualifiers: { label: '📋 רשימות',     color: '#f97316',     bg: 'rgba(249,115,22,0.10)',   border: 'rgba(249,115,22,0.30)',   activeBg: '#ea580c',          activeShadow: '0 2px 10px rgba(249,115,22,0.44)'   },
+      other:      { label: '📌 נוסף',       color: '#64748b',     bg: 'rgba(100,116,139,0.08)',  border: 'rgba(100,116,139,0.20)',  activeBg: '#475569',          activeShadow: '0 2px 8px rgba(100,116,139,0.30)'   },
     };
-    const groupLabels = {
-      playoff:    '⚽ משחקים',
-      league:     '⚽ ליגה',
-      groups:     '🏠 בתים',
-      rounds:     '⚽ מחזורים',
-      special:    '✨ מיוחדות',
-      qualifiers: '📋 רשימות',
-      other:      '📌 נוסף',
-    };
-    const typeOrder = ['playoff','league','groups','rounds','special','qualifiers','other'];
     const grouped = {};
     allButtons.forEach(btn => {
       const t = btn.stageType || 'other';
       if (!grouped[t]) grouped[t] = [];
       grouped[t].push(btn);
     });
+    const order = ['playoff','league','groups','rounds','special','qualifiers','other'];
     return (
       <aside style={{ width: '215px', flexShrink: 0, position: 'sticky', top: '70px', alignSelf: 'flex-start', maxHeight: 'calc(100vh - 90px)', overflowY: 'auto', paddingBottom: '16px' }}>
-        <div style={{ fontSize: '0.58rem', fontWeight: '700', letterSpacing: '0.12em', textTransform: 'uppercase', color: '#475569', marginBottom: '10px', paddingRight: '4px' }}>בחירת שלב</div>
-        {typeOrder.filter(t => grouped[t]).map(type => {
-          const c = colorMap[type] || colorMap.other;
-          return (
-            <div key={type} style={{ marginBottom: '12px' }}>
-              <div style={{ fontSize: '0.58rem', fontWeight: '700', letterSpacing: '0.1em', color: c.color, marginBottom: '5px', paddingRight: '4px' }}>{groupLabels[type]}</div>
-              {grouped[type].map(btn => {
-                const active = openSections[btn.sectionKey];
-                return (
-                  <button key={btn.key} onClick={() => toggleSection(btn.sectionKey)} style={{
-                    display: 'block', width: '100%', textAlign: 'right', padding: '7px 10px',
-                    marginBottom: '4px', borderRadius: '8px', fontSize: '0.8rem', fontWeight: active ? '700' : '400',
-                    color: active ? 'white' : c.color,
-                    background: active ? c.activeBg : c.bg,
-                    border: `1px solid ${active ? c.color : c.border}`,
-                    cursor: 'pointer', transition: 'all 0.15s',
-                    boxShadow: active ? `0 2px 10px ${c.color === 'var(--tp)' ? 'var(--tp-40)' : c.color + '55'}` : 'none',
-                    fontFamily: 'Rubik, Heebo, sans-serif', lineHeight: '1.35',
-                  }}>{btn.description}</button>
-                );
-              })}
-            </div>
-          );
-        })}
+        <div style={{ background: 'rgba(13,18,30,0.9)', borderRadius: '12px', border: '1px solid var(--tp-12)', padding: '14px 10px', backdropFilter: 'blur(10px)' }}>
+          <div style={{ fontSize: '0.5rem', fontWeight: '800', letterSpacing: '0.18em', textTransform: 'uppercase', color: '#334155', marginBottom: '14px', paddingRight: '2px' }}>בחירת שלב</div>
+          {order.filter(t => grouped[t]).map(type => {
+            const info = groupMap[type] || groupMap.other;
+            return (
+              <div key={type} style={{ marginBottom: '14px' }}>
+                <div style={{ fontSize: '0.55rem', fontWeight: '700', letterSpacing: '0.08em', textTransform: 'uppercase', color: info.color, marginBottom: '5px', paddingRight: '2px', opacity: 0.85 }}>{info.label}</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                  {grouped[type].map(btn => {
+                    const active = openSections[btn.sectionKey];
+                    return (
+                      <button key={btn.key} onClick={() => toggleSection(btn.sectionKey)} style={{
+                        display: 'block', width: '100%', textAlign: 'right', padding: '7px 10px',
+                        borderRadius: '8px', fontSize: '0.8rem', fontWeight: active ? '700' : '400',
+                        color: active ? 'white' : info.color,
+                        background: active ? info.activeBg : info.bg,
+                        border: `1px solid ${active ? info.color : info.border}`,
+                        cursor: 'pointer', transition: 'all 0.15s',
+                        boxShadow: active ? (info.activeShadow || `0 2px 10px ${info.color}44`) : 'none',
+                        fontFamily: 'Rubik, Heebo, sans-serif', lineHeight: '1.35',
+                      }}>{btn.description}</button>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </aside>
     );
   };
@@ -677,14 +666,14 @@ export default function AdminResults() {
   );
 
   return (
-    <div dir="rtl" style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%)', minHeight: '100vh' }}>
+    <div dir="rtl" style={{ background: 'linear-gradient(135deg, var(--bg1) 0%, var(--bg2) 50%, var(--bg1) 100%)', minHeight: '100vh' }}>
 
       {/* Header sticky */}
-      <div style={{ position: 'sticky', top: 0, zIndex: 20, background: 'rgba(15,23,42,0.95)', backdropFilter: 'blur(12px)', borderBottom: '1px solid rgba(6,182,212,0.15)', padding: '10px 20px' }}>
+      <div style={{ position: 'sticky', top: 0, zIndex: 20, background: 'rgba(0,0,0,0.70)', backdropFilter: 'blur(12px)', borderBottom: '1px solid var(--tp-15)', padding: '10px 20px' }}>
         <div className="flex flex-row justify-between items-center gap-3 max-w-7xl mx-auto">
           <div>
             <h1 className="text-lg md:text-2xl font-bold flex items-center gap-2" style={{ color: '#f8fafc' }}>
-              <Trophy className="w-5 h-5 md:w-7 md:h-7" style={{ color: '#06b6d4' }} />
+              <Trophy className="w-5 h-5 md:w-7 md:h-7" style={{ color: 'var(--tp)' }} />
               {isAdmin ? 'עדכון תוצאות אמת' : 'תוצאות אמת'}
             </h1>
             <p className="text-xs" style={{ color: '#94a3b8' }}>
@@ -693,7 +682,7 @@ export default function AdminResults() {
           </div>
           {isAdmin && (
             <Button size="sm" onClick={handleSaveResults} disabled={saving || recalculating} className="text-white" style={{
-              background: recalculating ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)' : 'linear-gradient(135deg, #06b6d4 0%, #0ea5e9 100%)',
+              background: recalculating ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)' : 'linear-gradient(135deg, var(--tp) 0%, var(--tp) 100%)',
             }}>
               {saving ? <><Loader2 className="w-4 h-4 animate-spin ml-1" />שומר...</>
                 : recalculating ? <><Loader2 className="w-4 h-4 animate-spin ml-1" />מחשב...</>
