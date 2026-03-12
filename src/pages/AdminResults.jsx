@@ -168,6 +168,13 @@ export default function AdminResults() {
         return desc && !/^\d+$/.test(desc) && !locationTableIds.includes(t.id) && t.id !== 'T19' && !t.id.includes('בית') && t.id !== 'T1' && t.id !== 'T9';
       }).sort((a,b) => ((a.stage_order||0) - (b.stage_order||0)) || (parseInt(a.id.replace('T','').replace(/\D/g,'')) - parseInt(b.id.replace('T','').replace(/\D/g,''))));
       setSpecialTables(allSpecialTables);
+      // ── שינוי שם T3 ──────────────────────────────────────────
+      sortedRoundTables.forEach(t => {
+        if (t.id === 'T3') t.description = 'שלב שמינית הגמר - המשחקים!';
+      });
+      allSpecialTables.forEach(t => {
+        if (t.id === 'T3') t.description = 'שלב שמינית הגמר - המשחקים!';
+      });
 
       const t10Special = sTables['T10'];
       if (t10Special) {
@@ -576,71 +583,138 @@ export default function AdminResults() {
   if (playoffWinnersTable) allButtons.push({ numericId: parseInt(playoffWinnersTable.id.replace('T','')||'0'), stageType: 'qualifiers', key: playoffWinnersTable.id, description: playoffWinnersTable.description, sectionKey: 'playoffWinners' });
   allButtons.sort((a, b) => a.numericId - b.numericId);
 
-  return (
-    <div className="p-3 md:p-6 max-w-7xl mx-auto" dir="rtl" style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%)', minHeight: '100vh' }}>
+  const renderSidebar = () => {
+    const colorMap = {
+      playoff:    { color: '#3b82f6', activeBg: '#2563eb', border: 'rgba(59,130,246,0.35)' },
+      special:    { color: '#8b5cf6', activeBg: '#7c3aed', border: 'rgba(139,92,246,0.35)' },
+      qualifiers: { color: '#f97316', activeBg: '#ea580c', border: 'rgba(249,115,22,0.35)' },
+      other:      { color: '#64748b', activeBg: '#475569', border: 'rgba(100,116,139,0.3)' },
+    };
+    const groupLabels = {
+      playoff: '⚽ משחקים',
+      special: '✨ שאלות מיוחדות',
+      qualifiers: '📋 רשימות',
+      other: '📌 נוסף',
+    };
+    const grouped = {};
+    allButtons.forEach(btn => {
+      const t = btn.stageType || 'other';
+      if (!grouped[t]) grouped[t] = [];
+      grouped[t].push(btn);
+    });
+    return (
+      <aside style={{ width: '215px', flexShrink: 0, position: 'sticky', top: '70px', alignSelf: 'flex-start', maxHeight: 'calc(100vh - 90px)', overflowY: 'auto', paddingBottom: '16px' }}>
+        <div style={{ fontSize: '0.58rem', fontWeight: '700', letterSpacing: '0.12em', textTransform: 'uppercase', color: '#475569', marginBottom: '10px', paddingRight: '4px' }}>בחירת שלב</div>
+        {['playoff','special','qualifiers','other'].filter(t => grouped[t]).map(type => {
+          const c = colorMap[type];
+          return (
+            <div key={type} style={{ marginBottom: '12px' }}>
+              <div style={{ fontSize: '0.58rem', fontWeight: '700', letterSpacing: '0.1em', color: c.color, marginBottom: '5px', paddingRight: '4px' }}>{groupLabels[type]}</div>
+              {grouped[type].map(btn => {
+                const active = openSections[btn.sectionKey];
+                return (
+                  <button key={btn.key} onClick={() => toggleSection(btn.sectionKey)} style={{
+                    display: 'block', width: '100%', textAlign: 'right', padding: '8px 12px',
+                    marginBottom: '4px', borderRadius: '8px', fontSize: '0.8rem', fontWeight: active ? '700' : '400',
+                    color: active ? 'white' : c.color,
+                    background: active ? c.activeBg : 'rgba(15,23,42,0.4)',
+                    border: `1px solid ${active ? c.color : c.border}`,
+                    cursor: 'pointer', transition: 'all 0.15s',
+                    boxShadow: active ? `0 0 10px ${c.color}55` : 'none',
+                    fontFamily: 'Rubik, Heebo, sans-serif',
+                  }}>{btn.description}</button>
+                );
+              })}
+            </div>
+          );
+        })}
+      </aside>
+    );
+  };
 
-      {/* Header */}
-      <div className="flex flex-col md:flex-row justify-between items-start gap-3 mb-4 md:mb-8">
-        <div>
-          <h1 className="text-xl md:text-3xl font-bold mb-1 flex items-center gap-2" style={{ color: '#f8fafc', textShadow: '0 0 10px rgba(6,182,212,0.3)' }}>
-            <Trophy className="w-6 h-6 md:w-8 md:h-8" style={{ color: '#06b6d4' }} />
-            {isAdmin ? 'עדכון תוצאות אמת' : 'תוצאות אמת'}
-          </h1>
-          <p className="text-xs md:text-base" style={{ color: '#94a3b8' }}>
-            {isAdmin ? 'עדכן תוצאות ואז לחץ "שמור תוצאות"' : 'צפייה בתוצאות האמיתיות'}
-          </p>
-        </div>
-        {isAdmin && (
-          <Button onClick={handleSaveResults} disabled={saving || recalculating} className="h-10 px-6 text-white" style={{
-            background: recalculating ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)' : 'linear-gradient(135deg, #06b6d4 0%, #0ea5e9 100%)',
-            boxShadow: recalculating ? '0 0 20px rgba(16,185,129,0.4)' : '0 0 20px rgba(6,182,212,0.4)'
-          }}>
-            {saving ? <><Loader2 className="w-5 h-5 animate-spin ml-2" />שומר...</>
-              : recalculating ? <><Loader2 className="w-5 h-5 animate-spin ml-2" />מחשב דירוג...</>
-              : <><Save className="w-5 h-5 ml-2" />שמור תוצאות</>}
-          </Button>
-        )}
-      </div>
-
-      {/* Progress */}
-      {recalculating && recalcProgress && (
-        <div className="mb-4 p-3 rounded-lg text-sm" style={{ background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.3)', color: '#10b981' }}>
-          ⏳ {recalcProgress}
-        </div>
-      )}
-
+  const renderContent = () => (
+    <div style={{ flex: 1, minWidth: 0 }}>
       {allButtons.length === 0 ? (
         <Alert variant="destructive" className="bg-cyan-900/50 border-cyan-700 text-cyan-200">
           <FileText className="w-4 h-4" />
           <AlertDescription>לא נמצאו שאלות במערכת.</AlertDescription>
         </Alert>
       ) : (
-        <>
-          {renderStageChips(allButtons)}
-          {allButtons.map(button => {
-            if (!openSections[button.sectionKey]) return null;
-            if (button.sectionKey.startsWith('round_')) {
-              const tableId = button.sectionKey.replace('round_', '');
-              const table = roundTables.find(t => t.id === tableId);
-              if (!table) return null;
-              return (
-                <div key={button.key} className="mb-4 space-y-3">
-                  <RoundTableResults table={table} teams={teams} results={results} onResultChange={handleResultChange} isAdmin={isAdmin} />
-                  {table.specialQuestions?.length > 0 && (
-                    <div className="mt-4">{renderSpecialQuestions({ ...table, questions: table.specialQuestions })}</div>
-                  )}
-                </div>
-              );
-            }
-            if (button.sectionKey === 'israeli' && israeliTable) return <div key="israeli" className="mb-4"><RoundTableResults table={israeliTable} teams={teams} results={results} onResultChange={handleResultChange} isAdmin={isAdmin} /></div>;
-            if (button.sectionKey === 'locations') return <div key="locations" className="mb-4 grid grid-cols-1 md:grid-cols-2 gap-3">{locationTables.map(t => renderSpecialQuestions(t))}</div>;
-            if (button.sectionKey === 'playoffWinners' && playoffWinnersTable) return <div key="playoffWinners" className="mb-6">{renderSpecialQuestions(playoffWinnersTable)}</div>;
-            const t = specialTables.find(t => t.id === button.key);
-            if (t) return <div key={t.id} className="mb-6">{renderSpecialQuestions(t)}</div>;
-            return null;
-          })}
-        </>
+        allButtons.map(button => {
+          if (!openSections[button.sectionKey]) return null;
+          if (button.sectionKey.startsWith('round_')) {
+            const tableId = button.sectionKey.replace('round_', '');
+            const table = roundTables.find(t => t.id === tableId);
+            if (!table) return null;
+            return (
+              <div key={button.key} className="mb-4 space-y-3">
+                <RoundTableResults table={table} teams={teams} results={results} onResultChange={handleResultChange} isAdmin={isAdmin} />
+                {table.specialQuestions?.length > 0 && (
+                  <div className="mt-4">{renderSpecialQuestions({ ...table, questions: table.specialQuestions })}</div>
+                )}
+              </div>
+            );
+          }
+          if (button.sectionKey === 'israeli' && israeliTable) return <div key="israeli" className="mb-4"><RoundTableResults table={israeliTable} teams={teams} results={results} onResultChange={handleResultChange} isAdmin={isAdmin} /></div>;
+          if (button.sectionKey === 'locations') return <div key="locations" className="mb-4 grid grid-cols-1 md:grid-cols-2 gap-3">{locationTables.map(t => renderSpecialQuestions(t))}</div>;
+          if (button.sectionKey === 'playoffWinners' && playoffWinnersTable) return <div key="playoffWinners" className="mb-6">{renderSpecialQuestions(playoffWinnersTable)}</div>;
+          const t = specialTables.find(t => t.id === button.key);
+          if (t) return <div key={t.id} className="mb-6">{renderSpecialQuestions(t)}</div>;
+          return null;
+        })
       )}
+    </div>
+  );
+
+  return (
+    <div dir="rtl" style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%)', minHeight: '100vh' }}>
+
+      {/* Header sticky */}
+      <div style={{ position: 'sticky', top: 0, zIndex: 20, background: 'rgba(15,23,42,0.95)', backdropFilter: 'blur(12px)', borderBottom: '1px solid rgba(6,182,212,0.15)', padding: '10px 20px' }}>
+        <div className="flex flex-row justify-between items-center gap-3 max-w-7xl mx-auto">
+          <div>
+            <h1 className="text-lg md:text-2xl font-bold flex items-center gap-2" style={{ color: '#f8fafc' }}>
+              <Trophy className="w-5 h-5 md:w-7 md:h-7" style={{ color: '#06b6d4' }} />
+              {isAdmin ? 'עדכון תוצאות אמת' : 'תוצאות אמת'}
+            </h1>
+            <p className="text-xs" style={{ color: '#94a3b8' }}>
+              {isAdmin ? 'עדכן תוצאות ואז לחץ "שמור תוצאות"' : 'צפייה בתוצאות האמיתיות'}
+            </p>
+          </div>
+          {isAdmin && (
+            <Button size="sm" onClick={handleSaveResults} disabled={saving || recalculating} className="text-white" style={{
+              background: recalculating ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)' : 'linear-gradient(135deg, #06b6d4 0%, #0ea5e9 100%)',
+            }}>
+              {saving ? <><Loader2 className="w-4 h-4 animate-spin ml-1" />שומר...</>
+                : recalculating ? <><Loader2 className="w-4 h-4 animate-spin ml-1" />מחשב...</>
+                : <><Save className="w-4 h-4 ml-1" />שמור תוצאות</>}
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {/* Progress */}
+      {recalculating && recalcProgress && (
+        <div className="mx-4 mt-2 p-3 rounded-lg text-sm" style={{ background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.3)', color: '#10b981' }}>
+          ⏳ {recalcProgress}
+        </div>
+      )}
+
+      {/* Mobile chips */}
+      <div className="md:hidden p-3">
+        {renderStageChips(allButtons)}
+      </div>
+
+      {/* Desktop: sidebar + content */}
+      <div className="hidden md:flex flex-row gap-4 p-4 max-w-7xl mx-auto" style={{ alignItems: 'flex-start' }}>
+        {renderSidebar()}
+        {renderContent()}
+      </div>
+
+      {/* Mobile content */}
+      <div className="md:hidden p-3">
+        {renderContent()}
+      </div>
     </div>
   );
 }
