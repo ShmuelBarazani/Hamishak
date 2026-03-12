@@ -400,9 +400,28 @@ export default function ViewSubmissions() {
               const isTeamQuestion = !!(main.home_team && main.away_team);
               const mainValue = participantPredictions[main.id] || '';
               const getSubValue = (sub) => { const subVal = participantPredictions[sub.id] || ''; if (sub.question_id === '1.1' && mainValue !== 'אחר') return ''; return subVal; };
-              if (sortedSubs.length === 0) return (<div key={main.id} style={{ display: 'grid', gridTemplateColumns: '50px 1fr 160px 50px', gap: '8px', alignItems: 'center', padding: '8px 12px', borderRadius: '6px' }} className="bg-slate-700/20 border border-slate-600/30"><Badge variant="outline" className="border-cyan-400 text-cyan-200 justify-center text-xs h-6 w-full">{main.question_id}</Badge><span className="text-right font-medium text-sm text-blue-100 truncate">{main.question_text}</span><div className="contents">{renderReadOnlySelect(main, participantPredictions[main.id] || "")}</div></div>);
-              if (sortedSubs.length === 1) return (<div key={main.id} style={{ display: 'grid', gridTemplateColumns: '50px minmax(250px, 2fr) 160px 50px 1fr 50px minmax(180px, 1.5fr) 160px 50px', gap: '8px', alignItems: 'center', padding: '8px 12px', borderRadius: '6px' }} className="bg-slate-700/20 border border-slate-600/30"><Badge variant="outline" className="border-cyan-400 text-cyan-200 justify-center text-xs h-6 w-full">{main.question_id}</Badge><span className="text-right font-medium text-sm text-blue-100">{main.question_text}</span><div className="contents">{isTeamQuestion ? renderTeamPrediction(main.id, participantPredictions[main.id] || "") : renderReadOnlySelect(main, participantPredictions[main.id] || "")}</div><div></div><Badge variant="outline" className="border-cyan-400 text-cyan-200 justify-center text-xs h-6 w-full">{sortedSubs[0].question_id}</Badge><span className="text-right font-medium text-sm text-blue-100">{sortedSubs[0].question_text}</span><div className="contents">{isTeamQuestion ? renderTeamPrediction(sortedSubs[0].id, getSubValue(sortedSubs[0])) : renderReadOnlySelect(sortedSubs[0], getSubValue(sortedSubs[0]))}</div></div>);
-              return (<div key={main.id} style={{ display: 'grid', gridTemplateColumns: '45px 1fr 140px 45px 45px 1fr 140px 45px 45px 1fr 140px 45px', gap: '6px', alignItems: 'center', padding: '8px 12px', borderRadius: '6px' }} className="bg-slate-700/20 border border-slate-600/30"><Badge variant="outline" className="border-cyan-400 text-cyan-200 justify-center text-xs h-6 w-full">{main.question_id}</Badge><span className="text-right font-medium text-sm text-blue-100 truncate">{main.question_text}</span><div className="contents">{isTeamQuestion ? renderTeamPrediction(main.id, participantPredictions[main.id] || "") : renderReadOnlySelect(main, participantPredictions[main.id] || "")}</div>{sortedSubs.map(sub => (<React.Fragment key={sub.id}><Badge variant="outline" className="border-cyan-400 text-cyan-200 justify-center text-xs h-6 w-full">{sub.question_id}</Badge><span className="text-right font-medium text-sm text-blue-100 truncate">{sub.question_text}</span><div className="contents">{isTeamQuestion ? renderTeamPrediction(sub.id, getSubValue(sub)) : renderReadOnlySelect(sub, getSubValue(sub))}</div></React.Fragment>))}</div>);
+              // ── רינדור שאלה — מבנה אנכי תמיד ──
+              const mainVal1 = participantPredictions[main.id] || '';
+              return (
+                <div key={main.id} style={{ borderRadius: '8px', overflow: 'hidden', border: '1px solid rgba(6,182,212,0.12)', background: 'rgba(15,23,42,0.45)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '9px 12px', minWidth: 0 }}>
+                    <Badge variant="outline" style={{ borderColor: 'var(--tp)', color: 'var(--tp)', minWidth: '44px', textAlign: 'center', flexShrink: 0, fontSize: '0.72rem' }}>{main.question_id}</Badge>
+                    <span style={{ flex: 1, minWidth: 0, fontSize: '0.875rem', color: '#f1f5f9', fontWeight: '500', textAlign: 'right' }}>{main.question_text}</span>
+                    <div style={{ flexShrink: 0 }}>{isTeamQuestion ? renderTeamPrediction(main.id, mainVal1) : renderReadOnlySelect(main, mainVal1)}</div>
+                  </div>
+                  {sortedSubs.map((sub, idx) => {
+                    const subVal = (() => { const v = participantPredictions[sub.id] || ''; if (sub.question_id === '1.1' && mainVal1 !== 'אחר') return ''; return v; })();
+                    return (
+                      <div key={sub.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '7px 12px 7px 22px', borderTop: '1px solid rgba(6,182,212,0.07)', background: 'rgba(0,0,0,0.18)', minWidth: 0 }}>
+                        <span style={{ color: 'var(--tp)', fontSize: '0.7rem', flexShrink: 0, opacity: 0.5 }}>{idx === sortedSubs.length-1 ? '└' : '├'}</span>
+                        <Badge variant="outline" style={{ borderColor: 'rgba(139,92,246,0.5)', color: '#a78bfa', minWidth: '44px', textAlign: 'center', flexShrink: 0, fontSize: '0.72rem' }}>{sub.question_id}</Badge>
+                        <span style={{ flex: 1, minWidth: 0, fontSize: '0.82rem', color: '#cbd5e1', textAlign: 'right' }}>{sub.question_text}</span>
+                        <div style={{ flexShrink: 0 }}>{isTeamQuestion ? renderTeamPrediction(sub.id, subVal) : renderReadOnlySelect(sub, subVal)}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
             })}
           </div>
         </CardContent>
@@ -449,9 +468,27 @@ export default function ViewSubmissions() {
               if (!main) return null;
               const sortedSubs = [...subs].sort((a, b) => parseFloat(a.question_id) - parseFloat(b.question_id));
               const mainOriginalValue = participantPredictions[main.id] || '';
-              if (sortedSubs.length === 0) return (<div key={main.id} style={{ display: 'grid', gridTemplateColumns: '50px 1fr 160px 50px', gap: '8px', alignItems: 'center', padding: '8px 12px', borderRadius: '6px', background: 'rgba(15, 23, 42, 0.4)', border: '1px solid rgba(6, 182, 212, 0.1)' }}><Badge variant="outline" className="justify-center text-xs h-6 w-full" style={{ borderColor: '#06b6d4', color: '#06b6d4' }}>{main.question_id}</Badge><span className="text-right font-medium text-sm truncate" style={{ color: '#f8fafc' }}>{main.question_text}</span><div className="flex items-center gap-2">{renderReadOnlySelect(main, mainOriginalValue)}</div></div>);
-              if (sortedSubs.length === 1) { const subOriginalValue = participantPredictions[sortedSubs[0].id] || ''; return (<div key={main.id} style={{ display: 'grid', gridTemplateColumns: '50px minmax(250px, 2fr) 160px 50px 1fr 50px minmax(180px, 1.5fr) 160px 50px', gap: '8px', alignItems: 'center', padding: '8px 12px', borderRadius: '6px', background: 'rgba(15, 23, 42, 0.4)', border: '1px solid rgba(6, 182, 212, 0.1)' }}><Badge variant="outline" className="justify-center text-xs h-6 w-full" style={{ borderColor: '#06b6d4', color: '#06b6d4' }}>{main.question_id}</Badge><span className="text-right font-medium text-sm text-blue-100">{main.question_text}</span><div className="flex items-center gap-2">{renderReadOnlySelect(main, mainOriginalValue)}</div><div></div><Badge variant="outline" className="justify-center text-xs h-6 w-full" style={{ borderColor: '#06b6d4', color: '#06b6d4' }}>{sortedSubs[0].question_id}</Badge><span className="text-right font-medium text-sm text-blue-100">{sortedSubs[0].question_text}</span><div className="flex items-center gap-2">{renderReadOnlySelect(sortedSubs[0], subOriginalValue)}</div></div>); }
-              return (<div key={main.id} style={{ display: 'grid', gridTemplateColumns: '45px 1fr 140px 45px 45px 1fr 140px 45px 45px 1fr 140px 45px', gap: '6px', alignItems: 'center', padding: '8px 12px', borderRadius: '6px', background: 'rgba(15, 23, 42, 0.4)', border: '1px solid rgba(6, 182, 212, 0.1)' }}><Badge variant="outline" className="justify-center text-xs h-6 w-full" style={{ borderColor: '#06b6d4', color: '#06b6d4' }}>{main.question_id}</Badge><span className="text-right font-medium text-sm truncate" style={{ color: '#f8fafc' }}>{main.question_text}</span><div className="flex items-center gap-2">{renderReadOnlySelect(main, mainOriginalValue)}</div>{sortedSubs.map(sub => { const subOriginalValue = participantPredictions[sub.id] || ''; return (<React.Fragment key={sub.id}><Badge variant="outline" className="justify-center text-xs h-6 w-full" style={{ borderColor: '#06b6d4', color: '#06b6d4' }}>{sub.question_id}</Badge><span className="text-right font-medium text-sm truncate" style={{ color: '#f8fafc' }}>{sub.question_text}</span><div className="flex items-center gap-2">{renderReadOnlySelect(sub, subOriginalValue)}</div></React.Fragment>); })}</div>);
+              // ── רינדור שאלה — מבנה אנכי ──
+              return (
+                <div key={main.id} style={{ borderRadius: '8px', overflow: 'hidden', border: '1px solid rgba(6,182,212,0.12)', background: 'rgba(15,23,42,0.45)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '9px 12px', minWidth: 0 }}>
+                    <Badge variant="outline" style={{ borderColor: 'var(--tp)', color: 'var(--tp)', minWidth: '44px', textAlign: 'center', flexShrink: 0, fontSize: '0.72rem' }}>{main.question_id}</Badge>
+                    <span style={{ flex: 1, minWidth: 0, fontSize: '0.875rem', color: '#f1f5f9', fontWeight: '500', textAlign: 'right' }}>{main.question_text}</span>
+                    <div style={{ flexShrink: 0 }}>{renderReadOnlySelect(main, mainOriginalValue)}</div>
+                  </div>
+                  {sortedSubs.map((sub, idx) => {
+                    const subOriginalValue = participantPredictions[sub.id] || '';
+                    return (
+                      <div key={sub.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '7px 12px 7px 22px', borderTop: '1px solid rgba(6,182,212,0.07)', background: 'rgba(0,0,0,0.18)', minWidth: 0 }}>
+                        <span style={{ color: 'var(--tp)', fontSize: '0.7rem', flexShrink: 0, opacity: 0.5 }}>{idx === sortedSubs.length-1 ? '└' : '├'}</span>
+                        <Badge variant="outline" style={{ borderColor: 'rgba(139,92,246,0.5)', color: '#a78bfa', minWidth: '44px', textAlign: 'center', flexShrink: 0, fontSize: '0.72rem' }}>{sub.question_id}</Badge>
+                        <span style={{ flex: 1, minWidth: 0, fontSize: '0.82rem', color: '#cbd5e1', textAlign: 'right' }}>{sub.question_text}</span>
+                        <div style={{ flexShrink: 0 }}>{renderReadOnlySelect(sub, subOriginalValue)}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
             })}
           </div>
           {isLocationTable && selectedParticipant && (
