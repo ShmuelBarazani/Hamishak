@@ -226,11 +226,12 @@ function LayoutContent({ children, currentPageName }) {
           <img
             src={currentGame?.game_icon || "https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/6909e559d350b14a5fc224bb/755e92965_2025-11-06120813.png"}
             alt="logo"
-            style={{ width: '44px', height: '44px', objectFit: 'contain', borderRadius: '8px' }}
+            style={{ width: '64px', height: '64px', objectFit: 'contain', borderRadius: '10px' }}
           />
           <div>
-            <div style={{ fontSize: '0.9rem', fontWeight: '800', color: '#f1f5f9', lineHeight: 1.2 }}>טוטו ל"א</div>
-            <div style={{ fontSize: '0.7rem', color: '#38bdf8' }}>2025-2026</div>
+            <div style={{ fontSize: '1rem', fontWeight: '900', color: '#f1f5f9', lineHeight: 1.25 }}>טוטו ליגת אלופות</div>
+            <div style={{ fontSize: '0.72rem', color: '#38bdf8', fontWeight: '600' }}>2025-2026</div>
+            <div style={{ fontSize: '0.68rem', color: '#94a3b8' }}>שלב הנוק-אאוט</div>
           </div>
         </div>
       </div>
@@ -413,10 +414,10 @@ function LayoutContent({ children, currentPageName }) {
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <img
               src={currentGame?.game_icon || "https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/6909e559d350b14a5fc224bb/755e92965_2025-11-06120813.png"}
-              alt="logo" style={{ width: '30px', height: '30px', objectFit: 'contain' }}
+              alt="logo" style={{ width: '38px', height: '38px', objectFit: 'contain', borderRadius: '6px' }}
             />
             <span style={{ fontSize: '0.9rem', fontWeight: '800', color: '#f1f5f9' }}>
-              {currentGame?.game_name || 'טוטו ל"א'}
+              {currentGame?.game_name || 'טוטו ליגת אלופות'}
             </span>
           </div>
           <div style={{ width: '30px' }} />
