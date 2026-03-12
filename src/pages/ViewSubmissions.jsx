@@ -32,10 +32,10 @@ function ParticipantTotalScore({ participantName, gameId }) {
     loadScore();
   }, [participantName, gameId]);
 
-  if (loading) return <Loader2 className="w-4 h-4 animate-spin" style={{ color: '#06b6d4' }} />;
+  if (loading) return <Loader2 className="w-4 h-4 animate-spin" style={{ color: 'var(--tp)' }} />;
   if (totalScore === null) return null;
   return (
-    <Badge className="text-white text-sm px-3 py-1 flex items-center gap-1.5" style={{ background: 'linear-gradient(135deg, #06b6d4 0%, #0ea5e9 100%)', boxShadow: '0 0 10px rgba(6, 182, 212, 0.4)' }}>
+    <Badge className="text-white text-sm px-3 py-1 flex items-center gap-1.5" style={{ background: 'linear-gradient(135deg, var(--tp) 0%, var(--tp) 100%)', boxShadow: '0 0 10px var(--tp-40)' }}>
       <Award className="w-4 h-4" />
       סה"כ: {totalScore} נקודות
     </Badge>
@@ -324,7 +324,7 @@ export default function ViewSubmissions() {
     const maxScore = getMaxPossibleScore(question);
     const hasValue = originalValue && originalValue.trim() !== '';
     const hasActualResult = question.actual_result && question.actual_result.trim() !== '' && question.actual_result !== '__CLEAR__';
-    const textColor = hasActualResult ? '#06b6d4' : '#f8fafc';
+    const textColor = hasActualResult ? 'var(--tp)' : '#f8fafc';
     const isQuestion11_1 = question.question_id === '11.1';
     const isQuestion11_2 = question.question_id === '11.2';
     const boxWidth = isQuestion11_1 ? 'min-w-[60px] max-w-[65px]' : isQuestion11_2 ? 'min-w-[145px] max-w-[150px]' : 'min-w-[135px] max-w-[140px]';
@@ -340,10 +340,10 @@ export default function ViewSubmissions() {
       return (
         <>
           <Select value={selectValue} onValueChange={(val) => handlePredictionEdit(question.id, val === "__CLEAR__" ? "" : val)}>
-            <SelectTrigger className={`${boxWidth} h-10`} style={{ background: 'rgba(15, 23, 42, 0.6)', border: '1px solid rgba(6, 182, 212, 0.3)', color: '#f8fafc' }}>
+            <SelectTrigger className={`${boxWidth} h-10`} style={{ background: 'rgba(0,0,0,0.35)', border: '1px solid var(--tp-30)', color: '#f8fafc' }}>
               {currentValue ? (<div className="flex items-center gap-2 w-full">{currentTeam?.logo_url && <img src={currentTeam.logo_url} alt={displayCurrentTeamNameForEdit} className="w-4 h-4 rounded-full" onError={(e) => e.target.style.display='none'} />}<span className="truncate">{displayCurrentTeamNameForEdit}</span></div>) : (<span className="text-slate-400">{isQuestion11_1 || isQuestion11_2 ? "" : "- בחר -"}</span>)}
             </SelectTrigger>
-            <SelectContent style={{ background: '#1e293b', border: '1px solid rgba(6, 182, 212, 0.3)' }}>
+            <SelectContent style={{ background: 'var(--bg2)', border: '1px solid var(--tp-30)' }}>
               <SelectItem value="__CLEAR__" className="hover:bg-cyan-700/20" style={{ color: '#94a3b8' }}>-</SelectItem>
               {options.map(opt => { const cleanOpt = opt.replace(/\s*\([^)]+\)\s*$/, '').trim(); const optTeam = isTeamsList ? (data.teams[opt] || data.teams[cleanOpt]) : null; return (<SelectItem key={opt} value={opt} className="hover:bg-cyan-700/20" style={{ color: '#f8fafc' }}><div className="flex items-center gap-2">{optTeam?.logo_url && <img src={optTeam.logo_url} alt={cleanOpt} className="w-4 h-4 rounded-full" onError={(e) => e.target.style.display='none'} />}<span>{cleanOpt}</span></div></SelectItem>); })}
             </SelectContent>
@@ -355,10 +355,10 @@ export default function ViewSubmissions() {
 
     if (isEditMode && isAdmin && (!question.validation_list || !data.validationLists[question.validation_list])) {
       const valueForInput = editedPredictions[question.id] !== undefined ? editedPredictions[question.id] : originalValue;
-      return (<div className="flex items-center gap-2"><input type="text" value={valueForInput} onChange={(e) => handlePredictionEdit(question.id, e.target.value)} className="rounded-md px-3 py-2 min-w-[120px] h-10" style={{ background: 'rgba(15, 23, 42, 0.6)', border: '1px solid rgba(6, 182, 212, 0.3)', color: '#f8fafc' }} /><Badge className="bg-slate-600 text-slate-300 text-xs px-1.5 py-0.5 min-w-[45px] justify-center">?/{maxScore}</Badge></div>);
+      return (<div className="flex items-center gap-2"><input type="text" value={valueForInput} onChange={(e) => handlePredictionEdit(question.id, e.target.value)} className="rounded-md px-3 py-2 min-w-[120px] h-10" style={{ background: 'rgba(0,0,0,0.35)', border: '1px solid var(--tp-30)', color: '#f8fafc' }} /><Badge className="bg-slate-600 text-slate-300 text-xs px-1.5 py-0.5 min-w-[45px] justify-center">?/{maxScore}</Badge></div>);
     }
 
-    if (!hasValue) return (<><div className={`rounded-md px-2 py-2 ${boxWidth} flex items-center gap-1`} style={{ background: 'rgba(15, 23, 42, 0.6)', border: '1px solid rgba(6, 182, 212, 0.2)' }}><span style={{ color: '#94a3b8', fontSize: isQuestion11_1 ? '0.65rem' : '0.875rem' }}>-</span></div><div className="w-12"></div></>);
+    if (!hasValue) return (<><div className={`rounded-md px-2 py-2 ${boxWidth} flex items-center gap-1`} style={{ background: 'rgba(0,0,0,0.35)', border: '1px solid var(--tp-20)' }}><span style={{ color: '#94a3b8', fontSize: isQuestion11_1 ? '0.65rem' : '0.875rem' }}>-</span></div><div className="w-12"></div></>);
 
     const score = calculateQuestionScore(question, originalValue);
     // 🔥 Fixed: replaced yellow badge with blue for partial scores
@@ -370,7 +370,7 @@ export default function ViewSubmissions() {
       else if (score > 0) badgeColor = 'bg-blue-800 text-blue-200'; // 🔥 was yellow, now blue
     }
 
-    return (<><div className={`rounded-md px-2 py-2 ${boxWidth} flex items-center gap-1`} style={{ background: hasActualResult ? 'rgba(6, 182, 212, 0.2)' : 'rgba(15, 23, 42, 0.6)', border: hasActualResult ? '1px solid #06b6d4' : '1px solid rgba(6, 182, 212, 0.2)', boxShadow: hasActualResult ? '0 0 10px rgba(6, 182, 212, 0.4)' : 'none' }}>{team?.logo_url && <img src={team.logo_url} alt={displayTeamNameForReadonly} className="w-4 h-4 rounded-full flex-shrink-0" onError={(e) => e.target.style.display='none'} />}<span style={{ color: textColor, fontSize: isQuestion11_1 ? '0.65rem' : '0.875rem', fontWeight: hasActualResult ? '700' : 'normal' }}>{displayTeamNameForReadonly}</span></div>{score !== null ? (<Badge className={`${badgeColor} text-xs font-bold px-1.5 py-0.5 min-w-[45px] justify-center`}>{score}/{maxScore}</Badge>) : (<Badge className="bg-slate-600 text-slate-300 text-xs px-1.5 py-0.5 min-w-[45px] justify-center">?/{maxScore}</Badge>)}</>);
+    return (<><div className={`rounded-md px-2 py-2 ${boxWidth} flex items-center gap-1`} style={{ background: hasActualResult ? 'var(--tp-20)' : 'rgba(0,0,0,0.35)', border: hasActualResult ? '1px solid var(--tp)' : '1px solid var(--tp-20)', boxShadow: hasActualResult ? '0 0 10px var(--tp-40)' : 'none' }}>{team?.logo_url && <img src={team.logo_url} alt={displayTeamNameForReadonly} className="w-4 h-4 rounded-full flex-shrink-0" onError={(e) => e.target.style.display='none'} />}<span style={{ color: textColor, fontSize: isQuestion11_1 ? '0.65rem' : '0.875rem', fontWeight: hasActualResult ? '700' : 'normal' }}>{displayTeamNameForReadonly}</span></div>{score !== null ? (<Badge className={`${badgeColor} text-xs font-bold px-1.5 py-0.5 min-w-[45px] justify-center`}>{score}/{maxScore}</Badge>) : (<Badge className="bg-slate-600 text-slate-300 text-xs px-1.5 py-0.5 min-w-[45px] justify-center">?/{maxScore}</Badge>)}</>);
   };
 
   const renderT10Questions = (table) => {
@@ -380,13 +380,13 @@ export default function ViewSubmissions() {
     const sortedMainIds = Object.keys(grouped).sort((a, b) => Number(a) - Number(b));
     const renderTeamPrediction = (questionId, originalValue) => {
       const valueToDisplay = editedPredictions[questionId] !== undefined ? editedPredictions[questionId] : originalValue;
-      if (!valueToDisplay || valueToDisplay.trim() === '') return (<><div className="rounded-md px-2 py-2 min-w-[135px] max-w-[140px] flex items-center gap-1" style={{ background: 'rgba(15, 23, 42, 0.6)', border: '1px solid rgba(6, 182, 212, 0.2)' }}><span style={{ color: '#94a3b8', fontSize: '0.875rem' }}>-</span></div><div className="w-12"></div></>);
+      if (!valueToDisplay || valueToDisplay.trim() === '') return (<><div className="rounded-md px-2 py-2 min-w-[135px] max-w-[140px] flex items-center gap-1" style={{ background: 'rgba(0,0,0,0.35)', border: '1px solid var(--tp-20)' }}><span style={{ color: '#94a3b8', fontSize: '0.875rem' }}>-</span></div><div className="w-12"></div></>);
       const matchedName = findMatchedTeamName(valueToDisplay);
       const team = data.teams[matchedName];
       const q = questions.find(question => question.id === questionId);
       const hasActualResult = q?.actual_result && q.actual_result.trim() !== '' && q.actual_result !== '__CLEAR__';
-      const textColor = hasActualResult ? '#06b6d4' : '#f8fafc';
-      return (<><div className="rounded-md px-2 py-2 min-w-[135px] max-w-[140px] flex items-center gap-1" style={{ background: hasActualResult ? 'rgba(6, 182, 212, 0.2)' : 'rgba(15, 23, 42, 0.6)', border: hasActualResult ? '1px solid #06b6d4' : '1px solid rgba(6, 182, 212, 0.2)', boxShadow: hasActualResult ? '0 0 10px rgba(6, 182, 212, 0.4)' : 'none' }}>{team?.logo_url && <img src={team.logo_url} alt={matchedName} className="w-4 h-4 rounded-full flex-shrink-0" onError={(e) => e.target.style.display='none'} />}<span style={{ color: textColor, fontSize: '0.875rem', fontWeight: hasActualResult ? '700' : 'normal' }}>{matchedName}</span></div><Badge className="bg-slate-600 text-slate-300 text-xs px-1.5 py-0.5 min-w-[45px] justify-center">?/10</Badge></>);
+      const textColor = hasActualResult ? 'var(--tp)' : '#f8fafc';
+      return (<><div className="rounded-md px-2 py-2 min-w-[135px] max-w-[140px] flex items-center gap-1" style={{ background: hasActualResult ? 'var(--tp-20)' : 'rgba(0,0,0,0.35)', border: hasActualResult ? '1px solid var(--tp)' : '1px solid var(--tp-20)', boxShadow: hasActualResult ? '0 0 10px var(--tp-40)' : 'none' }}>{team?.logo_url && <img src={team.logo_url} alt={matchedName} className="w-4 h-4 rounded-full flex-shrink-0" onError={(e) => e.target.style.display='none'} />}<span style={{ color: textColor, fontSize: '0.875rem', fontWeight: hasActualResult ? '700' : 'normal' }}>{matchedName}</span></div><Badge className="bg-slate-600 text-slate-300 text-xs px-1.5 py-0.5 min-w-[45px] justify-center">?/10</Badge></>);
     };
     return (
       <Card className="bg-slate-800/40 border-slate-700 shadow-lg shadow-slate-900/20">
@@ -403,7 +403,7 @@ export default function ViewSubmissions() {
               // ── רינדור שאלה — מבנה אנכי תמיד ──
               const mainVal1 = participantPredictions[main.id] || '';
               return (
-                <div key={main.id} style={{ borderRadius: '8px', overflow: 'hidden', border: '1px solid rgba(6,182,212,0.12)', background: 'rgba(15,23,42,0.45)' }}>
+                <div key={main.id} style={{ borderRadius: '8px', overflow: 'hidden', border: '1px solid var(--tp-12)', background: 'rgba(0,0,0,0.25)' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '9px 12px', minWidth: 0 }}>
                     <Badge variant="outline" style={{ borderColor: 'var(--tp)', color: 'var(--tp)', minWidth: '44px', textAlign: 'center', flexShrink: 0, fontSize: '0.72rem' }}>{main.question_id}</Badge>
                     <span style={{ flex: 1, minWidth: 0, fontSize: '0.875rem', color: '#f1f5f9', fontWeight: '500', textAlign: 'right' }}>{main.question_text}</span>
@@ -412,7 +412,7 @@ export default function ViewSubmissions() {
                   {sortedSubs.map((sub, idx) => {
                     const subVal = (() => { const v = participantPredictions[sub.id] || ''; if (sub.question_id === '1.1' && mainVal1 !== 'אחר') return ''; return v; })();
                     return (
-                      <div key={sub.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '7px 12px 7px 22px', borderTop: '1px solid rgba(6,182,212,0.07)', background: 'rgba(0,0,0,0.18)', minWidth: 0 }}>
+                      <div key={sub.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '7px 12px 7px 22px', borderTop: '1px solid var(--tp-08)', background: 'rgba(0,0,0,0.18)', minWidth: 0 }}>
                         <span style={{ color: 'var(--tp)', fontSize: '0.7rem', flexShrink: 0, opacity: 0.5 }}>{idx === sortedSubs.length-1 ? '└' : '├'}</span>
                         <Badge variant="outline" style={{ borderColor: 'rgba(139,92,246,0.5)', color: '#a78bfa', minWidth: '44px', textAlign: 'center', flexShrink: 0, fontSize: '0.72rem' }}>{sub.question_id}</Badge>
                         <span style={{ flex: 1, minWidth: 0, fontSize: '0.82rem', color: '#cbd5e1', textAlign: 'right' }}>{sub.question_text}</span>
@@ -432,7 +432,7 @@ export default function ViewSubmissions() {
   const renderQualifiersTable = (table) => {
     const questions = table.questions || [];
     return (
-      <div style={{ background: 'rgba(30, 41, 59, 0.6)', border: '1px solid rgba(249, 115, 22, 0.3)', borderRadius: '12px', padding: '16px', backdropFilter: 'blur(10px)' }}>
+      <div style={{ background: 'var(--bg3-60)', border: '1px solid rgba(249, 115, 22, 0.3)', borderRadius: '12px', padding: '16px', backdropFilter: 'blur(10px)' }}>
         <h3 className="text-right font-bold text-base mb-4" style={{ color: '#f97316' }}>📋 {table.description}</h3>
         <div className="grid grid-cols-1 gap-2">
           {questions.map(q => {
@@ -440,7 +440,7 @@ export default function ViewSubmissions() {
             const hasResult = q.actual_result && q.actual_result !== '__CLEAR__';
             const isCorrect = hasResult && pred && pred.trim() === q.actual_result?.trim();
             const isWrong = hasResult && pred && pred.trim() !== q.actual_result?.trim();
-            return (<div key={q.id} style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '8px', alignItems: 'center', padding: '8px 12px', borderRadius: '6px', background: isCorrect ? 'rgba(16, 185, 129, 0.1)' : isWrong ? 'rgba(239, 68, 68, 0.1)' : 'rgba(15, 23, 42, 0.4)', border: `1px solid ${isCorrect ? 'rgba(16, 185, 129, 0.3)' : isWrong ? 'rgba(239, 68, 68, 0.3)' : 'rgba(249, 115, 22, 0.15)'}` }}><span className="text-right text-sm" style={{ color: '#f8fafc' }}>{q.question_text}</span><div className="flex items-center gap-2">{pred ? (<span className="text-sm font-medium px-2 py-1 rounded" style={{ background: 'rgba(249, 115, 22, 0.15)', color: '#f97316', border: '1px solid rgba(249, 115, 22, 0.3)' }}>{pred}</span>) : (<span className="text-sm" style={{ color: '#64748b' }}>—</span>)}{hasResult && (<span className="text-sm font-bold" style={{ color: isCorrect ? '#10b981' : '#ef4444' }}>{isCorrect ? '✓' : '✗'}</span>)}</div></div>);
+            return (<div key={q.id} style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '8px', alignItems: 'center', padding: '8px 12px', borderRadius: '6px', background: isCorrect ? 'rgba(16, 185, 129, 0.1)' : isWrong ? 'rgba(239, 68, 68, 0.1)' : 'rgba(0,0,0,0.22)', border: `1px solid ${isCorrect ? 'rgba(16, 185, 129, 0.3)' : isWrong ? 'rgba(239, 68, 68, 0.3)' : 'rgba(249, 115, 22, 0.15)'}` }}><span className="text-right text-sm" style={{ color: '#f8fafc' }}>{q.question_text}</span><div className="flex items-center gap-2">{pred ? (<span className="text-sm font-medium px-2 py-1 rounded" style={{ background: 'rgba(249, 115, 22, 0.15)', color: '#f97316', border: '1px solid rgba(249, 115, 22, 0.3)' }}>{pred}</span>) : (<span className="text-sm" style={{ color: '#64748b' }}>—</span>)}{hasResult && (<span className="text-sm font-bold" style={{ color: isCorrect ? '#10b981' : '#ef4444' }}>{isCorrect ? '✓' : '✗'}</span>)}</div></div>);
           })}
         </div>
       </div>
@@ -459,8 +459,8 @@ export default function ViewSubmissions() {
     let teamsBonusPotential = 0, orderBonusPotential = 0;
     if (isLocationTable) { if (table.id === 'T17') { teamsBonusPotential = 30; orderBonusPotential = 50; } else if (table.id === 'T19') { teamsBonusPotential = 20; orderBonusPotential = 0; } else { teamsBonusPotential = 20; orderBonusPotential = 40; } }
     return (
-      <Card style={{ background: 'rgba(30, 41, 59, 0.6)', border: '1px solid rgba(6, 182, 212, 0.2)', backdropFilter: 'blur(10px)' }}>
-        <CardHeader className="py-3"><CardTitle style={{ color: '#06b6d4' }}>{table.description}</CardTitle></CardHeader>
+      <Card style={{ background: 'var(--bg3-60)', border: '1px solid var(--tp-20)', backdropFilter: 'blur(10px)' }}>
+        <CardHeader className="py-3"><CardTitle style={{ color: 'var(--tp)' }}>{table.description}</CardTitle></CardHeader>
         <CardContent className="p-3">
           <div className="space-y-2">
             {sortedMainIds.map(mainId => {
@@ -470,7 +470,7 @@ export default function ViewSubmissions() {
               const mainOriginalValue = participantPredictions[main.id] || '';
               // ── רינדור שאלה — מבנה אנכי ──
               return (
-                <div key={main.id} style={{ borderRadius: '8px', overflow: 'hidden', border: '1px solid rgba(6,182,212,0.12)', background: 'rgba(15,23,42,0.45)' }}>
+                <div key={main.id} style={{ borderRadius: '8px', overflow: 'hidden', border: '1px solid var(--tp-12)', background: 'rgba(0,0,0,0.25)' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '9px 12px', minWidth: 0 }}>
                     <Badge variant="outline" style={{ borderColor: 'var(--tp)', color: 'var(--tp)', minWidth: '44px', textAlign: 'center', flexShrink: 0, fontSize: '0.72rem' }}>{main.question_id}</Badge>
                     <span style={{ flex: 1, minWidth: 0, fontSize: '0.875rem', color: '#f1f5f9', fontWeight: '500', textAlign: 'right' }}>{main.question_text}</span>
@@ -479,7 +479,7 @@ export default function ViewSubmissions() {
                   {sortedSubs.map((sub, idx) => {
                     const subOriginalValue = participantPredictions[sub.id] || '';
                     return (
-                      <div key={sub.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '7px 12px 7px 22px', borderTop: '1px solid rgba(6,182,212,0.07)', background: 'rgba(0,0,0,0.18)', minWidth: 0 }}>
+                      <div key={sub.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '7px 12px 7px 22px', borderTop: '1px solid var(--tp-08)', background: 'rgba(0,0,0,0.18)', minWidth: 0 }}>
                         <span style={{ color: 'var(--tp)', fontSize: '0.7rem', flexShrink: 0, opacity: 0.5 }}>{idx === sortedSubs.length-1 ? '└' : '├'}</span>
                         <Badge variant="outline" style={{ borderColor: 'rgba(139,92,246,0.5)', color: '#a78bfa', minWidth: '44px', textAlign: 'center', flexShrink: 0, fontSize: '0.72rem' }}>{sub.question_id}</Badge>
                         <span style={{ flex: 1, minWidth: 0, fontSize: '0.82rem', color: '#cbd5e1', textAlign: 'right' }}>{sub.question_text}</span>
@@ -514,7 +514,7 @@ export default function ViewSubmissions() {
     );
   };
 
-  if (loading) return (<div className="flex items-center justify-center h-screen" style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%)' }}><Loader2 className="w-8 h-8 animate-spin" style={{ color: '#06b6d4' }} /><span className="ml-3" style={{ color: '#06b6d4' }}>טוען נתונים...</span></div>);
+  if (loading) return (<div className="flex items-center justify-center h-screen" style={{ background: 'linear-gradient(135deg, var(--bg1) 0%, var(--bg2) 50%, var(--bg1) 100%)' }}><Loader2 className="w-8 h-8 animate-spin" style={{ color: 'var(--tp)' }} /><span className="ml-3" style={{ color: 'var(--tp)' }}>טוען נתונים...</span></div>);
 
   const TEXT_LENGTH_THRESHOLD = 18;
 
@@ -557,7 +557,7 @@ export default function ViewSubmissions() {
     const order = ['rounds','league','groups','playoff','special','qualifiers','other'];
     const sortedGroups = order.filter(t => grouped[t]);
     return (
-      <div style={{ background: 'rgba(13,18,30,0.9)', borderRadius: '12px', border: '1px solid rgba(56,189,248,0.12)', padding: '14px 10px', backdropFilter: 'blur(10px)' }}>
+      <div style={{ background: 'rgba(13,18,30,0.9)', borderRadius: '12px', border: '1px solid var(--tp-12)', padding: '14px 10px', backdropFilter: 'blur(10px)' }}>
         <div style={{ fontSize: '0.5rem', fontWeight: '800', letterSpacing: '0.18em', textTransform: 'uppercase', color: '#334155', marginBottom: '14px', paddingRight: '2px' }}>בחירת שלב</div>
         {sortedGroups.map(type => {
           const info = groupMap[type] || groupMap.other;
@@ -593,7 +593,7 @@ export default function ViewSubmissions() {
       other:      { color: '#64748b', bg: 'rgba(100,116,139,0.10)', border: 'rgba(100,116,139,0.25)' },
     };
     return (
-      <div style={{ padding: '12px', background: 'rgba(17,24,39,0.7)', borderRadius: '12px', border: '1px solid rgba(56,189,248,0.12)', marginBottom: '16px' }}>
+      <div style={{ padding: '12px', background: 'rgba(0,0,0,0.40)', borderRadius: '12px', border: '1px solid var(--tp-12)', marginBottom: '16px' }}>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
           {allButtonsList.map(button => {
             const type = button.stageType || 'other';
@@ -625,28 +625,28 @@ export default function ViewSubmissions() {
   };
 
   return (
-    <div className="min-h-screen" dir="rtl" style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%)' }}>
+    <div className="min-h-screen" dir="rtl" style={{ background: 'linear-gradient(135deg, var(--bg1) 0%, var(--bg2) 50%, var(--bg1) 100%)' }}>
 
       {/* ===== STICKY HEADER ===== */}
-      <div className="sticky top-0 z-30 backdrop-blur-sm shadow-lg" style={{ background: 'rgba(15, 23, 42, 0.95)', borderBottom: '1px solid rgba(6, 182, 212, 0.2)' }}>
+      <div className="sticky top-0 z-30 backdrop-blur-sm shadow-lg" style={{ background: 'rgba(0,0,0,0.70)', borderBottom: '1px solid var(--tp-20)' }}>
         <div className="p-3 md:p-5 max-w-7xl mx-auto">
           <div className="flex flex-col md:flex-row justify-between items-start gap-2 md:gap-0 mb-3 md:mb-4">
             <div>
-              <h1 className="text-xl md:text-2xl font-bold mb-1 flex items-center gap-2" style={{ color: '#f8fafc', textShadow: '0 0 10px rgba(6, 182, 212, 0.3)' }}>
-                <Users className="w-5 h-5 md:w-7 md:h-7" style={{ color: '#06b6d4' }} />
+              <h1 className="text-xl md:text-2xl font-bold mb-1 flex items-center gap-2" style={{ color: '#f8fafc', textShadow: '0 0 10px var(--tp-30)' }}>
+                <Users className="w-5 h-5 md:w-7 md:h-7" style={{ color: 'var(--tp)' }} />
                 צפייה בניחושים
               </h1>
-              {currentGame?.game_name && <p className="text-xs font-medium" style={{ color: '#06b6d4' }}>{currentGame.game_name}</p>}
+              {currentGame?.game_name && <p className="text-xs font-medium" style={{ color: 'var(--tp)' }}>{currentGame.game_name}</p>}
               <p className="text-xs md:text-sm" style={{ color: '#94a3b8' }}>בחר משתתף כדי לראות את הניחושים שלו.</p>
             </div>
             <div className="flex gap-1.5 md:gap-2 flex-wrap w-full md:w-auto">
               {isAdmin && selectedParticipant && !loadingPredictions && (
                 !isEditMode ? (
-                  <Button onClick={() => setIsEditMode(true)} variant="outline" size="sm" style={{ borderColor: 'rgba(6, 182, 212, 0.5)', color: '#06b6d4', background: 'rgba(30, 41, 59, 0.4)' }} className="hover:bg-cyan-500/20"><Pencil className="w-4 h-4 ml-1.5" />ערוך</Button>
+                  <Button onClick={() => setIsEditMode(true)} variant="outline" size="sm" style={{ borderColor: 'var(--tp-50)', color: 'var(--tp)', background: 'rgba(255,255,255,0.04)' }} className="hover:bg-cyan-500/20"><Pencil className="w-4 h-4 ml-1.5" />ערוך</Button>
                 ) : (
                   <>
-                    <Button onClick={() => { setEditedPredictions({}); setIsEditMode(false); }} variant="outline" size="sm" style={{ borderColor: 'rgba(148, 163, 184, 0.5)', color: '#94a3b8', background: 'rgba(30, 41, 59, 0.4)' }} className="hover:bg-slate-500/20" disabled={savingChanges}>ביטול</Button>
-                    <Button onClick={handleSaveChanges} size="sm" disabled={Object.keys(editedPredictions).length === 0 || savingChanges} style={{ background: Object.keys(editedPredictions).length > 0 ? 'linear-gradient(135deg, #06b6d4 0%, #0ea5e9 100%)' : 'rgba(71, 85, 105, 0.5)', color: Object.keys(editedPredictions).length > 0 ? 'white' : '#64748b' }}>
+                    <Button onClick={() => { setEditedPredictions({}); setIsEditMode(false); }} variant="outline" size="sm" style={{ borderColor: 'rgba(148, 163, 184, 0.5)', color: '#94a3b8', background: 'rgba(255,255,255,0.04)' }} className="hover:bg-slate-500/20" disabled={savingChanges}>ביטול</Button>
+                    <Button onClick={handleSaveChanges} size="sm" disabled={Object.keys(editedPredictions).length === 0 || savingChanges} style={{ background: Object.keys(editedPredictions).length > 0 ? 'linear-gradient(135deg, var(--tp) 0%, var(--tp) 100%)' : 'rgba(71, 85, 105, 0.5)', color: Object.keys(editedPredictions).length > 0 ? 'white' : '#64748b' }}>
                       {savingChanges ? <><Loader2 className="w-4 h-4 animate-spin ml-1.5" />שומר...</> : <><Save className="w-4 h-4 ml-1.5" />שמור {Object.keys(editedPredictions).length > 0 && `(${Object.keys(editedPredictions).length})`}</>}
                     </Button>
                   </>
@@ -654,10 +654,10 @@ export default function ViewSubmissions() {
               )}
               {isAdmin && (
                 <>
-                  <Button onClick={handleExportData} disabled={exporting} variant="outline" size="sm" style={{ borderColor: 'rgba(34, 197, 94, 0.5)', color: '#86efac', background: 'rgba(30, 41, 59, 0.4)' }} className="hover:bg-green-500/20">
+                  <Button onClick={handleExportData} disabled={exporting} variant="outline" size="sm" style={{ borderColor: 'rgba(34, 197, 94, 0.5)', color: '#86efac', background: 'rgba(255,255,255,0.04)' }} className="hover:bg-green-500/20">
                     {exporting ? <><Loader2 className="w-4 h-4 ml-1.5 animate-spin" />מייצא...</> : <><Download className="w-4 h-4 ml-1.5" />ייצוא</>}
                   </Button>
-                  <Button onClick={() => { loadParticipantStats(); setShowDeleteDialog(true); }} variant="outline" size="sm" style={{ borderColor: 'rgba(239, 68, 68, 0.5)', color: '#fca5a5', background: 'rgba(30, 41, 59, 0.4)' }} className="hover:bg-red-500/20">
+                  <Button onClick={() => { loadParticipantStats(); setShowDeleteDialog(true); }} variant="outline" size="sm" style={{ borderColor: 'rgba(239, 68, 68, 0.5)', color: '#fca5a5', background: 'rgba(255,255,255,0.04)' }} className="hover:bg-red-500/20">
                     <Trash2 className="w-4 h-4 ml-1.5" />ניהול
                   </Button>
                 </>
@@ -666,14 +666,14 @@ export default function ViewSubmissions() {
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-            <Card style={{ background: 'rgba(30, 41, 59, 0.6)', border: '1px solid rgba(6, 182, 212, 0.2)', backdropFilter: 'blur(10px)' }}>
+            <Card style={{ background: 'var(--bg3-60)', border: '1px solid var(--tp-20)', backdropFilter: 'blur(10px)' }}>
               <CardContent className="p-3 flex items-center gap-3">
-                <span className="text-sm font-medium" style={{ color: '#06b6d4' }}>משתתף:</span>
+                <span className="text-sm font-medium" style={{ color: 'var(--tp)' }}>משתתף:</span>
                 <Select onValueChange={setSelectedParticipant} value={selectedParticipant || ''}>
-                  <SelectTrigger className="w-48 h-8 text-sm" style={{ background: 'rgba(15, 23, 42, 0.6)', border: '1px solid rgba(6, 182, 212, 0.3)', color: '#f8fafc' }}>
+                  <SelectTrigger className="w-48 h-8 text-sm" style={{ background: 'rgba(0,0,0,0.35)', border: '1px solid var(--tp-30)', color: '#f8fafc' }}>
                     <SelectValue placeholder="בחר שם..." />
                   </SelectTrigger>
-                  <SelectContent style={{ background: '#1e293b', border: '1px solid rgba(6, 182, 212, 0.3)' }}>
+                  <SelectContent style={{ background: 'var(--bg2)', border: '1px solid var(--tp-30)' }}>
                     {allParticipants.map(p => (
                       <SelectItem key={p} value={p} style={{ color: '#f8fafc' }}>{p}</SelectItem>
                     ))}
@@ -683,15 +683,15 @@ export default function ViewSubmissions() {
             </Card>
 
             {selectedParticipant && (
-              <Card style={{ background: 'rgba(30, 41, 59, 0.6)', border: '1px solid rgba(6, 182, 212, 0.2)', backdropFilter: 'blur(10px)' }}>
+              <Card style={{ background: 'var(--bg3-60)', border: '1px solid var(--tp-20)', backdropFilter: 'blur(10px)' }}>
                 <CardContent className="p-3">
                   <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm font-medium" style={{ color: '#06b6d4' }}>פרטי המשתתף</span>
+                    <span className="text-sm font-medium" style={{ color: 'var(--tp)' }}>פרטי המשתתף</span>
                     <ParticipantTotalScore participantName={selectedParticipant} gameId={currentGame?.id} />
                   </div>
                   {participantQuestions.length > 0 && (
                     <div className="grid grid-cols-3 gap-2">
-                      {participantQuestions.map(q => { const isNameField = q.question_text?.includes("שם"); const displayValue = isNameField ? selectedParticipant : (participantDetails[q.id] || '-'); return (<div key={q.id} className="text-right"><label className="text-xs font-medium mb-1 block" style={{ color: '#94a3b8' }}>{q.question_text}</label><div className="rounded-md px-2 py-1 text-sm text-right" style={{ background: 'rgba(15, 23, 42, 0.6)', border: '1px solid rgba(6, 182, 212, 0.2)' }}><span style={{ color: '#f8fafc' }}>{displayValue}</span></div></div>); })}
+                      {participantQuestions.map(q => { const isNameField = q.question_text?.includes("שם"); const displayValue = isNameField ? selectedParticipant : (participantDetails[q.id] || '-'); return (<div key={q.id} className="text-right"><label className="text-xs font-medium mb-1 block" style={{ color: '#94a3b8' }}>{q.question_text}</label><div className="rounded-md px-2 py-1 text-sm text-right" style={{ background: 'rgba(0,0,0,0.35)', border: '1px solid var(--tp-20)' }}><span style={{ color: '#f8fafc' }}>{displayValue}</span></div></div>); })}
                     </div>
                   )}
                 </CardContent>
@@ -699,7 +699,7 @@ export default function ViewSubmissions() {
             )}
           </div>
 
-          {loadingPredictions && (<div className="flex items-center justify-center py-3 mt-3"><Loader2 className="w-5 h-5 animate-spin ml-2" style={{ color: '#06b6d4' }} /><span style={{ color: '#06b6d4' }}>טוען ניחושים...</span></div>)}
+          {loadingPredictions && (<div className="flex items-center justify-center py-3 mt-3"><Loader2 className="w-5 h-5 animate-spin ml-2" style={{ color: 'var(--tp)' }} /><span style={{ color: 'var(--tp)' }}>טוען ניחושים...</span></div>)}
         </div>
       </div>
 
@@ -725,8 +725,8 @@ export default function ViewSubmissions() {
           )}
 
           {!selectedParticipant && !loadingPredictions && (
-            <Alert className="mt-2" style={{ background: 'rgba(30, 41, 59, 0.6)', border: '1px solid rgba(6, 182, 212, 0.2)', color: '#f8fafc' }}>
-              <FileText className="w-4 h-4" style={{ color: '#06b6d4' }} />
+            <Alert className="mt-2" style={{ background: 'var(--bg3-60)', border: '1px solid var(--tp-20)', color: '#f8fafc' }}>
+              <FileText className="w-4 h-4" style={{ color: 'var(--tp)' }} />
               <AlertDescription style={{ color: '#94a3b8' }}>בחר משתתף כדי לראות את הניחושים שלו.</AlertDescription>
             </Alert>
           )}
@@ -739,7 +739,7 @@ export default function ViewSubmissions() {
       {isAdmin && (
         <>
           <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
-            <DialogContent className="max-w-2xl" dir="rtl" style={{ background: '#1e293b', border: '1px solid rgba(6, 182, 212, 0.3)' }}>
+            <DialogContent className="max-w-2xl" dir="rtl" style={{ background: 'var(--bg2)', border: '1px solid var(--tp-30)' }}>
               <DialogHeader>
                 <DialogTitle className="text-2xl font-bold flex items-center gap-2" style={{ color: '#f8fafc' }}><AlertTriangle className="w-6 h-6" style={{ color: '#ef4444' }} />ניהול משתתפים</DialogTitle>
                 <DialogDescription className="text-slate-300">לחץ על כפתור המחיקה כדי למחוק את כל הניחושים של משתתף.<strong className="text-red-300"> פעולה זו אינה הפיכה!</strong></DialogDescription>
@@ -747,7 +747,7 @@ export default function ViewSubmissions() {
               <div className="max-h-[60vh] overflow-y-auto">
                 {participantStats.length === 0 ? (<div className="text-center py-8 flex flex-col items-center justify-center"><Loader2 className="w-8 h-8 animate-spin mb-2" style={{ color: '#94a3b8' }} /><span style={{ color: '#94a3b8' }}>טוען נתונים...</span></div>) : (
                   <div className="space-y-2">
-                    {participantStats.map(stat => (<div key={stat.name} className="flex items-center justify-between p-3 rounded-lg border hover:bg-slate-700/50" style={{ background: 'rgba(15, 23, 42, 0.6)', border: '1px solid rgba(6, 182, 212, 0.2)' }}><div><p className="font-medium" style={{ color: '#f8fafc' }}>{stat.name}</p><p className="text-sm" style={{ color: '#94a3b8' }}>{stat.predictionsCount} ניחושים</p></div><Button onClick={() => handleDeleteParticipant(stat.name)} disabled={deletingParticipant === stat.name} variant="destructive" size="sm">{deletingParticipant === stat.name ? <><Loader2 className="w-4 h-4 ml-2" />מוחק...</> : <><Trash2 className="w-4 h-4 ml-2" />מחק</>}</Button></div>))}
+                    {participantStats.map(stat => (<div key={stat.name} className="flex items-center justify-between p-3 rounded-lg border hover:bg-slate-700/50" style={{ background: 'rgba(0,0,0,0.35)', border: '1px solid var(--tp-20)' }}><div><p className="font-medium" style={{ color: '#f8fafc' }}>{stat.name}</p><p className="text-sm" style={{ color: '#94a3b8' }}>{stat.predictionsCount} ניחושים</p></div><Button onClick={() => handleDeleteParticipant(stat.name)} disabled={deletingParticipant === stat.name} variant="destructive" size="sm">{deletingParticipant === stat.name ? <><Loader2 className="w-4 h-4 ml-2" />מוחק...</> : <><Trash2 className="w-4 h-4 ml-2" />מחק</>}</Button></div>))}
                   </div>
                 )}
               </div>
