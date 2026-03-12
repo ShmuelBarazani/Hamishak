@@ -13,6 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input";
 import { UploadStatusProvider } from '@/components/contexts/UploadStatusContext';
 import { GameProvider, useGame } from '@/components/contexts/GameContext';
+import { ThemeProvider, useTheme, injectThemeCSSVars, THEMES } from '@/components/contexts/ThemeContext';
 import UploadStatusIndicator from '@/components/layout/UploadStatusIndicator';
 import { useToast } from "@/components/ui/use-toast";
 
@@ -203,9 +204,9 @@ function LayoutContent({ children, currentPageName }) {
           display: 'flex', alignItems: 'center', gap: '10px',
           padding: '10px 14px', borderRadius: '10px',
           fontSize: '1rem', fontWeight: active ? '700' : '500',
-          color: item.disabled ? '#475569' : active ? '#38bdf8' : '#94a3b8',
-          background: active ? 'rgba(56,189,248,0.1)' : 'transparent',
-          borderRight: active ? '3px solid #38bdf8' : '3px solid transparent',
+          color: item.disabled ? '#475569' : active ? 'var(--tp)' : '#94a3b8',
+          background: active ? 'var(--tp-10)' : 'transparent',
+          borderRight: active ? '3px solid var(--tp)' : '3px solid transparent',
           textDecoration: 'none', transition: 'all 0.15s',
           cursor: item.disabled ? 'not-allowed' : 'pointer',
           opacity: item.disabled ? 0.5 : 1, marginBottom: '2px',
@@ -221,7 +222,7 @@ function LayoutContent({ children, currentPageName }) {
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
 
       {/* לוגו */}
-      <div style={{ padding: '16px', borderBottom: '1px solid rgba(56,189,248,0.15)' }}>
+      <div style={{ padding: '16px', borderBottom: '1px solid var(--tp-15)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <img
             src={currentGame?.game_icon || "https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/6909e559d350b14a5fc224bb/755e92965_2025-11-06120813.png"}
@@ -230,15 +231,15 @@ function LayoutContent({ children, currentPageName }) {
           />
           <div>
             <div style={{ fontSize: '1rem', fontWeight: '900', color: '#f1f5f9', lineHeight: 1.25 }}>טוטו ליגת אלופות</div>
-            <div style={{ fontSize: '0.72rem', color: '#38bdf8', fontWeight: '600' }}>2025-2026</div>
+            <div style={{ fontSize: '0.72rem', color: 'var(--tp)', fontWeight: '600' }}>2025-2026</div>
             <div style={{ fontSize: '0.68rem', color: '#94a3b8' }}>שלב הנוק-אאוט</div>
           </div>
         </div>
       </div>
 
       {/* בחירת משחק */}
-      <div style={{ padding: '10px 12px', borderBottom: '1px solid rgba(56,189,248,0.1)', background: 'rgba(56,189,248,0.04)' }}>
-        <div style={{ fontSize: '0.65rem', fontWeight: '700', letterSpacing: '0.1em', textTransform: 'uppercase', color: '#38bdf8', marginBottom: '6px' }}>
+      <div style={{ padding: '10px 12px', borderBottom: '1px solid var(--tp-10)', background: 'var(--tp-05)' }}>
+        <div style={{ fontSize: '0.65rem', fontWeight: '700', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--tp)', marginBottom: '6px' }}>
           🎮 משחק פעיל
         </div>
         <Select
@@ -247,19 +248,19 @@ function LayoutContent({ children, currentPageName }) {
           disabled={gamesLoading || games.length === 0}
         >
           <SelectTrigger style={{
-            background: 'rgba(15,23,42,0.6)', border: '1px solid rgba(56,189,248,0.2)',
+            background: 'rgba(15,23,42,0.6)', border: '1px solid var(--tp-20)',
             color: '#f1f5f9', fontSize: '0.85rem', fontWeight: '600', height: '36px', borderRadius: '8px',
           }}>
             <SelectValue placeholder="בחר משחק">
               {currentGame ? currentGame.game_name : "בחר משחק"}
             </SelectValue>
           </SelectTrigger>
-          <SelectContent style={{ background: '#1e293b', border: '1px solid rgba(56,189,248,0.3)', color: '#f1f5f9', zIndex: 9999 }}>
+          <SelectContent style={{ background: '#1e293b', border: '1px solid var(--tp-30)', color: '#f1f5f9', zIndex: 9999 }}>
             {games.map(game => (
               <SelectItem key={game.id} value={game.id} style={{ color: '#f1f5f9' }}>
                 <div>
                   <div style={{ fontWeight: '700', fontSize: '0.85rem' }}>{game.game_name}</div>
-                  {game.game_subtitle && <div style={{ fontSize: '0.7rem', color: '#38bdf8' }}>{game.game_subtitle}</div>}
+                  {game.game_subtitle && <div style={{ fontSize: '0.7rem', color: 'var(--tp)' }}>{game.game_subtitle}</div>}
                 </div>
               </SelectItem>
             ))}
@@ -285,7 +286,7 @@ function LayoutContent({ children, currentPageName }) {
 
         {/* מילוי ניחושים — רק למשתמש מחובר */}
         {!effectiveUser && (
-          <div style={{ margin: '8px 4px 0', padding: '10px 14px', borderRadius: '10px', background: 'rgba(56,189,248,0.04)', border: '1px dashed rgba(56,189,248,0.2)' }}>
+          <div style={{ margin: '8px 4px 0', padding: '10px 14px', borderRadius: '10px', background: 'var(--tp-05)', border: '1px dashed var(--tp-20)' }}>
             <button
               onClick={() => window.location.href = '/login'}
               style={{ display: 'flex', alignItems: 'center', gap: '10px', width: '100%', background: 'transparent', border: 'none', cursor: 'pointer', color: '#64748b', fontSize: '1rem', fontWeight: '500', fontFamily: 'inherit' }}
@@ -307,13 +308,16 @@ function LayoutContent({ children, currentPageName }) {
         )}
       </div>
 
+      {/* ── בוחר THEME ── גלוי לכולם */}
+      <ThemePicker />
+
       {/* משתמש */}
-      <div style={{ padding: '12px 16px', borderTop: '1px solid rgba(56,189,248,0.15)' }}>
+      <div style={{ padding: '12px 16px', borderTop: '1px solid var(--tp-15)' }}>
         {effectiveUser ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <div style={{
               width: '36px', height: '36px', borderRadius: '50%', flexShrink: 0,
-              background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)',
+              background: 'linear-gradient(135deg, var(--tp), #8b5cf6)',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               fontSize: '0.8rem', fontWeight: '800', color: 'white'
             }}>
@@ -323,7 +327,7 @@ function LayoutContent({ children, currentPageName }) {
               <div style={{ fontSize: '0.85rem', fontWeight: '600', color: '#f1f5f9', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {effectiveUser.user_metadata?.full_name || effectiveUser.email}
               </div>
-              <div style={{ fontSize: '0.7rem', color: isAdmin ? '#38bdf8' : '#64748b' }}>
+              <div style={{ fontSize: '0.7rem', color: isAdmin ? 'var(--tp)' : '#64748b' }}>
                 {isAdmin ? '👑 מנהל' : '✅ משתתף'}
               </div>
             </div>
@@ -340,8 +344,8 @@ function LayoutContent({ children, currentPageName }) {
             onClick={() => window.location.href = '/login'}
             style={{
               width: '100%', padding: '9px 12px', borderRadius: '8px',
-              background: 'rgba(56,189,248,0.1)', border: '1px solid rgba(56,189,248,0.3)',
-              color: '#38bdf8', fontSize: '0.9rem', fontWeight: '600',
+              background: 'var(--tp-10)', border: '1px solid var(--tp-30)',
+              color: 'var(--tp)', fontSize: '0.9rem', fontWeight: '600',
               cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
               fontFamily: 'inherit'
             }}
@@ -457,38 +461,89 @@ function LayoutContent({ children, currentPageName }) {
   );
 }
 
+// ─── בוחר THEME ───────────────────────────────────────────────────────────────
+function ThemePicker() {
+  const { themeId, setTheme, allThemes } = useTheme();
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div style={{ padding: '8px 12px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        style={{
+          width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'inherit',
+          padding: '6px 6px', borderRadius: '8px',
+        }}
+      >
+        <span style={{ fontSize: '0.72rem', fontWeight: '600', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.1em' }}>🎨 ערכת נושא</span>
+        <span style={{ fontSize: '0.85rem', color: 'var(--tp)' }}>{allThemes[themeId]?.name}</span>
+      </button>
+
+      {open && (
+        <div style={{ marginTop: '6px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          {Object.values(allThemes).map(t => (
+            <button
+              key={t.id}
+              onClick={() => { setTheme(t.id); setOpen(false); }}
+              style={{
+                display: 'flex', alignItems: 'center', gap: '10px',
+                padding: '7px 10px', borderRadius: '8px', border: 'none', cursor: 'pointer',
+                background: themeId === t.id ? `rgba(${t.r},${t.g},${t.b},0.15)` : 'transparent',
+                outline: themeId === t.id ? `1px solid rgba(${t.r},${t.g},${t.b},0.5)` : 'none',
+                fontFamily: 'inherit', transition: 'all 0.12s',
+              }}
+            >
+              <span style={{
+                width: '14px', height: '14px', borderRadius: '50%', flexShrink: 0,
+                background: t.primary, boxShadow: `0 0 6px ${t.primary}`,
+              }} />
+              <span style={{ fontSize: '0.85rem', color: themeId === t.id ? t.primary : '#94a3b8', fontWeight: themeId === t.id ? '700' : '400' }}>
+                {t.name}
+              </span>
+              {themeId === t.id && <span style={{ marginRight: 'auto', fontSize: '0.75rem', color: t.primary }}>✓</span>}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Layout({ children, currentPageName }) {
   return (
-    <UploadStatusProvider>
-      <GameProvider>
-        <style>{`
-          @import url('https://fonts.googleapis.com/css2?family=Rubik:wght@300;400;500;600;700;800;900&family=Heebo:wght@300;400;500;700;900&display=swap');
-          *, *::before, *::after { font-family: 'Rubik', 'Heebo', sans-serif !important; }
+    <ThemeProvider>
+      <UploadStatusProvider>
+        <GameProvider>
+          <style>{`
+            @import url('https://fonts.googleapis.com/css2?family=Rubik:wght@300;400;500;600;700;800;900&family=Heebo:wght@300;400;500;700;900&display=swap');
+            *, *::before, *::after { font-family: 'Rubik', 'Heebo', sans-serif !important; }
 
-          html, body { margin: 0; padding: 0; width: 100%; min-height: 100vh; background: #0a0f1e; color: #f1f5f9; }
-          #root { width: 100%; min-height: 100vh; }
+            html, body { margin: 0; padding: 0; width: 100%; min-height: 100vh; background: var(--bg1, #0a0f1e); color: #f1f5f9; }
+            #root { width: 100%; min-height: 100vh; }
 
-          ::-webkit-scrollbar { width: 6px; height: 6px; }
-          ::-webkit-scrollbar-track { background: #111827; }
-          ::-webkit-scrollbar-thumb { background: linear-gradient(180deg, #38bdf8, #3b82f6); border-radius: 3px; }
+            ::-webkit-scrollbar { width: 6px; height: 6px; }
+            ::-webkit-scrollbar-track { background: var(--bg2, #111827); }
+            ::-webkit-scrollbar-thumb { background: linear-gradient(180deg, var(--tp, #38bdf8), var(--tp-dark, #3b82f6)); border-radius: 3px; }
 
-          @media (max-width: 768px) {
-            .desktop-sidebar { display: none !important; }
-            .mobile-topbar   { display: flex !important; }
-          }
-          @media (min-width: 769px) {
-            .mobile-sidebar  { display: none !important; }
-            .mobile-topbar   { display: none !important; }
-          }
+            @media (max-width: 768px) {
+              .desktop-sidebar { display: none !important; }
+              .mobile-topbar   { display: flex !important; }
+            }
+            @media (min-width: 769px) {
+              .mobile-sidebar  { display: none !important; }
+              .mobile-topbar   { display: none !important; }
+            }
 
-          .nav-item:hover { background: rgba(56,189,248,0.07) !important; color: #e2e8f0 !important; }
-          .neon-border { border: 1px solid rgba(56,189,248,0.3); box-shadow: 0 0 10px rgba(56,189,248,0.15); }
-          .crypto-card { background: linear-gradient(135deg, #1a2236 0%, #0a0f1e 100%); border: 1px solid rgba(56,189,248,0.15); border-radius: 8px; }
-        `}</style>
-        <LayoutContent currentPageName={currentPageName}>
-          {children}
-        </LayoutContent>
-      </GameProvider>
-    </UploadStatusProvider>
+            .nav-item:hover { background: var(--tp-08, rgba(56,189,248,0.07)) !important; color: #e2e8f0 !important; }
+            .neon-border { border: 1px solid var(--tp-30); box-shadow: var(--tp-glow); }
+            .crypto-card { background: linear-gradient(135deg, var(--bg3) 0%, var(--bg1) 100%); border: 1px solid var(--tp-15); border-radius: 8px; }
+          `}</style>
+          <LayoutContent currentPageName={currentPageName}>
+            {children}
+          </LayoutContent>
+        </GameProvider>
+      </UploadStatusProvider>
+    </ThemeProvider>
   );
 }
