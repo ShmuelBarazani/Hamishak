@@ -537,7 +537,7 @@ export default function AdminResults() {
       if (!grouped[t]) grouped[t] = [];
       grouped[t].push(btn);
     });
-    const order = ['playoff','special','qualifiers','other'];
+    const order = ['playoff','league','groups','rounds','special','qualifiers','other'];
     return (
       <div style={{ padding: '14px 12px', background: 'rgba(17,24,39,0.7)', borderRadius: '12px', border: '1px solid rgba(56,189,248,0.12)', marginBottom: '16px' }}>
         <div style={{ fontSize: '0.6rem', fontWeight: '700', letterSpacing: '0.12em', textTransform: 'uppercase', color: '#475569', marginBottom: '10px' }}>בחירת שלב</div>
@@ -588,17 +588,24 @@ export default function AdminResults() {
 
   const renderSidebar = () => {
     const colorMap = {
-      playoff:    { color: '#3b82f6', activeBg: '#2563eb', border: 'rgba(59,130,246,0.35)' },
-      special:    { color: '#8b5cf6', activeBg: '#7c3aed', border: 'rgba(139,92,246,0.35)' },
-      qualifiers: { color: '#f97316', activeBg: '#ea580c', border: 'rgba(249,115,22,0.35)' },
-      other:      { color: '#64748b', activeBg: '#475569', border: 'rgba(100,116,139,0.3)' },
+      playoff:    { color: '#3b82f6', activeBg: '#2563eb', border: 'rgba(59,130,246,0.35)',   bg: 'rgba(59,130,246,0.10)'    },
+      league:     { color: '#3b82f6', activeBg: '#2563eb', border: 'rgba(59,130,246,0.35)',   bg: 'rgba(59,130,246,0.10)'    },
+      groups:     { color: 'var(--tp)', activeBg: 'var(--tp-dark)', border: 'var(--tp-35)', bg: 'var(--tp-10)' },
+      rounds:     { color: 'var(--tp)', activeBg: 'var(--tp-dark)', border: 'var(--tp-35)', bg: 'var(--tp-10)' },
+      special:    { color: '#8b5cf6', activeBg: '#7c3aed', border: 'rgba(139,92,246,0.35)',  bg: 'rgba(139,92,246,0.10)'   },
+      qualifiers: { color: '#f97316', activeBg: '#ea580c', border: 'rgba(249,115,22,0.35)',   bg: 'rgba(249,115,22,0.10)'    },
+      other:      { color: '#64748b', activeBg: '#475569', border: 'rgba(100,116,139,0.30)',  bg: 'rgba(100,116,139,0.08)'   },
     };
     const groupLabels = {
-      playoff: '⚽ משחקים',
-      special: '✨ שאלות מיוחדות',
+      playoff:    '⚽ משחקים',
+      league:     '⚽ ליגה',
+      groups:     '🏠 בתים',
+      rounds:     '⚽ מחזורים',
+      special:    '✨ מיוחדות',
       qualifiers: '📋 רשימות',
-      other: '📌 נוסף',
+      other:      '📌 נוסף',
     };
+    const typeOrder = ['playoff','league','groups','rounds','special','qualifiers','other'];
     const grouped = {};
     allButtons.forEach(btn => {
       const t = btn.stageType || 'other';
@@ -608,8 +615,8 @@ export default function AdminResults() {
     return (
       <aside style={{ width: '215px', flexShrink: 0, position: 'sticky', top: '70px', alignSelf: 'flex-start', maxHeight: 'calc(100vh - 90px)', overflowY: 'auto', paddingBottom: '16px' }}>
         <div style={{ fontSize: '0.58rem', fontWeight: '700', letterSpacing: '0.12em', textTransform: 'uppercase', color: '#475569', marginBottom: '10px', paddingRight: '4px' }}>בחירת שלב</div>
-        {['playoff','special','qualifiers','other'].filter(t => grouped[t]).map(type => {
-          const c = colorMap[type];
+        {typeOrder.filter(t => grouped[t]).map(type => {
+          const c = colorMap[type] || colorMap.other;
           return (
             <div key={type} style={{ marginBottom: '12px' }}>
               <div style={{ fontSize: '0.58rem', fontWeight: '700', letterSpacing: '0.1em', color: c.color, marginBottom: '5px', paddingRight: '4px' }}>{groupLabels[type]}</div>
@@ -617,14 +624,14 @@ export default function AdminResults() {
                 const active = openSections[btn.sectionKey];
                 return (
                   <button key={btn.key} onClick={() => toggleSection(btn.sectionKey)} style={{
-                    display: 'block', width: '100%', textAlign: 'right', padding: '8px 12px',
+                    display: 'block', width: '100%', textAlign: 'right', padding: '7px 10px',
                     marginBottom: '4px', borderRadius: '8px', fontSize: '0.8rem', fontWeight: active ? '700' : '400',
                     color: active ? 'white' : c.color,
-                    background: active ? c.activeBg : 'rgba(15,23,42,0.4)',
+                    background: active ? c.activeBg : c.bg,
                     border: `1px solid ${active ? c.color : c.border}`,
                     cursor: 'pointer', transition: 'all 0.15s',
-                    boxShadow: active ? `0 0 10px ${c.color}55` : 'none',
-                    fontFamily: 'Rubik, Heebo, sans-serif',
+                    boxShadow: active ? `0 2px 10px ${c.color === 'var(--tp)' ? 'var(--tp-40)' : c.color + '55'}` : 'none',
+                    fontFamily: 'Rubik, Heebo, sans-serif', lineHeight: '1.35',
                   }}>{btn.description}</button>
                 );
               })}
