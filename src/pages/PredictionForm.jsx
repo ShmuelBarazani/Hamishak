@@ -400,14 +400,24 @@ export default function PredictionForm() {
               const { main, subs } = grouped[mainId];
               if (!main) return null;
               const sortedSubs = [...subs].sort((a, b) => parseFloat(a.question_id) - parseFloat(b.question_id));
-              const gridCols = sortedSubs.length === 1 ? '60px 180px 140px 60px 180px 140px auto' : '60px 1fr 180px auto';
               return (
-                <div key={main.id} style={{ display: 'grid', gridTemplateColumns: gridCols, gap: '8px', alignItems: 'center', padding: '12px', borderRadius: '8px', background: 'rgba(15, 23, 42, 0.4)', border: '1px solid rgba(6, 182, 212, 0.1)' }} className="hover:bg-cyan-900/20 hover:border-cyan-700/50">
-                  <Badge variant="outline" style={{ borderColor: 'rgba(6, 182, 212, 0.5)', color: '#06b6d4', minWidth: '50px' }} className="justify-center">{main.question_id}</Badge>
-                  <span className="font-medium text-sm" style={{ color: '#94a3b8' }}>{main.question_text}</span>
-                  <span>{renderSelectWithLogos(main, predictions[main.id] || "", (val) => handlePredictionChange(main.id, val), "w-[120px]")}</span>
-                  {sortedSubs.map(sub => (<React.Fragment key={sub.id}><Badge variant="outline" style={{ borderColor: 'rgba(6, 182, 212, 0.5)', color: '#06b6d4', minWidth: '45px' }} className="justify-center">{sub.question_id}</Badge><span className="font-medium text-sm" style={{ color: '#94a3b8' }}>{sub.question_text}</span><span>{renderSelectWithLogos(sub, predictions[sub.id] || "", (val) => handlePredictionChange(sub.id, val), "w-[120px]")}</span></React.Fragment>))}
-                  {main.possible_points && (<Badge variant="outline" className="text-xs px-2 py-1 justify-self-end" style={{ borderColor: 'rgba(6, 182, 212, 0.5)', color: '#06b6d4', background: 'rgba(6, 182, 212, 0.1)', minWidth: '50px' }}>{main.possible_points} נק'</Badge>)}
+                <div key={main.id} style={{ borderRadius: '8px', overflow: 'hidden', border: '1px solid rgba(6,182,212,0.12)', background: 'rgba(15,23,42,0.45)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '9px 12px', minWidth: 0 }}>
+                    <Badge variant="outline" style={{ borderColor: 'var(--tp)', color: 'var(--tp)', minWidth: '44px', textAlign: 'center', flexShrink: 0, fontSize: '0.72rem' }}>{main.question_id}</Badge>
+                    <span style={{ flex: 1, minWidth: 0, fontSize: '0.875rem', color: '#94a3b8', textAlign: 'right' }}>{main.question_text}</span>
+                    <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      {renderSelectWithLogos(main, predictions[main.id] || "", (val) => handlePredictionChange(main.id, val), "w-[120px]")}
+                      {main.possible_points && <Badge style={{ borderColor: 'var(--tp-50)', color: 'var(--tp)', background: 'var(--tp-10)', fontSize: '0.7rem', whiteSpace: 'nowrap' }}>{main.possible_points} נק'</Badge>}
+                    </div>
+                  </div>
+                  {sortedSubs.map((sub, idx) => (
+                    <div key={sub.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '7px 12px 7px 22px', borderTop: '1px solid rgba(6,182,212,0.07)', background: 'rgba(0,0,0,0.18)', minWidth: 0 }}>
+                      <span style={{ color: 'var(--tp)', fontSize: '0.7rem', flexShrink: 0, opacity: 0.5 }}>{idx === sortedSubs.length-1 ? '└' : '├'}</span>
+                      <Badge variant="outline" style={{ borderColor: 'rgba(139,92,246,0.5)', color: '#a78bfa', minWidth: '44px', textAlign: 'center', flexShrink: 0, fontSize: '0.72rem' }}>{sub.question_id}</Badge>
+                      <span style={{ flex: 1, minWidth: 0, fontSize: '0.82rem', color: '#cbd5e1', textAlign: 'right' }}>{sub.question_text}</span>
+                      <div style={{ flexShrink: 0 }}>{renderSelectWithLogos(sub, predictions[sub.id] || "", (val) => handlePredictionChange(sub.id, val), "w-[120px]")}</div>
+                    </div>
+                  ))}
                 </div>
               );
             })}
@@ -430,9 +440,30 @@ export default function PredictionForm() {
               const { main, subs } = grouped[mainId];
               if (!main) return null;
               const sortedSubs = [...subs].sort((a, b) => parseFloat(a.question_id) - parseFloat(b.question_id));
-              if (sortedSubs.length === 0) return (<div key={main.id} style={{ display: 'grid', gridTemplateColumns: '50px 1fr 160px 50px', gap: '8px', alignItems: 'center', padding: '8px 12px', borderRadius: '6px', background: 'rgba(15, 23, 42, 0.4)', border: '1px solid rgba(6, 182, 212, 0.1)' }}><Badge variant="outline" className="border-cyan-400 text-cyan-200 justify-center text-xs h-6 w-full">{main.question_id}</Badge><span className="text-right font-medium text-sm text-blue-100 truncate">{main.question_text}</span>{renderSelectWithLogos(main, predictions[main.id] || "", (val) => handlePredictionChange(main.id, val), "w-[160px]")}<Badge className="text-xs px-2 py-1 justify-center h-6 w-full" style={{ borderColor: 'rgba(6, 182, 212, 0.5)', color: '#06b6d4', background: 'rgba(6, 182, 212, 0.1)' }}>{main.possible_points || 0}</Badge></div>);
-              if (sortedSubs.length === 1) return (<div key={main.id} style={{ display: 'grid', gridTemplateColumns: '50px minmax(250px, 2fr) 160px 50px 1fr 50px minmax(180px, 1.5fr) 160px 50px', gap: '8px', alignItems: 'center', padding: '8px 12px', borderRadius: '6px', background: 'rgba(15, 23, 42, 0.4)', border: '1px solid rgba(6, 182, 212, 0.1)' }}><Badge variant="outline" className="border-cyan-400 text-cyan-200 justify-center text-xs h-6 w-full">{main.question_id}</Badge><span className="text-right font-medium text-sm text-blue-100">{main.question_text}</span>{renderSelectWithLogos(main, predictions[main.id] || "", (val) => handlePredictionChange(main.id, val), "w-[160px]")}<Badge className="text-xs px-2 py-1 justify-center h-6 w-full" style={{ borderColor: 'rgba(6, 182, 212, 0.5)', color: '#06b6d4', background: 'rgba(6, 182, 212, 0.1)' }}>{main.possible_points || 0}</Badge><div></div><Badge variant="outline" className="border-cyan-400 text-cyan-200 justify-center text-xs h-6 w-full">{sortedSubs[0].question_id}</Badge><span className="text-right font-medium text-sm text-blue-100">{sortedSubs[0].question_text}</span>{renderSelectWithLogos(sortedSubs[0], predictions[sortedSubs[0].id] || "", (val) => handlePredictionChange(sortedSubs[0].id, val), "w-[160px]")}<Badge className="text-xs px-2 py-1 justify-center h-6 w-full" style={{ borderColor: 'rgba(6, 182, 212, 0.5)', color: '#06b6d4', background: 'rgba(6, 182, 212, 0.1)' }}>{sortedSubs[0].possible_points || 0}</Badge></div>);
-              return (<div key={main.id} style={{ display: 'grid', gridTemplateColumns: '45px 1fr 140px 45px 45px 1fr 140px 45px 45px 1fr 140px 45px', gap: '6px', alignItems: 'center', padding: '8px 12px', borderRadius: '6px', background: 'rgba(15, 23, 42, 0.4)', border: '1px solid rgba(6, 182, 212, 0.1)' }}><Badge variant="outline" className="border-cyan-400 text-cyan-200 justify-center text-xs h-6 w-full">{main.question_id}</Badge><span className="text-right font-medium text-sm text-blue-100 truncate">{main.question_text}</span>{renderSelectWithLogos(main, predictions[main.id] || "", (val) => handlePredictionChange(main.id, val), "w-[140px]")}<Badge className="text-xs px-2 py-1 justify-center h-6 w-full" style={{ borderColor: 'rgba(6, 182, 212, 0.5)', color: '#06b6d4', background: 'rgba(6, 182, 212, 0.1)' }}>{main.possible_points || 0}</Badge>{sortedSubs.map(sub => (<React.Fragment key={sub.id}><Badge variant="outline" className="border-cyan-400 text-cyan-200 justify-center text-xs h-6 w-full">{sub.question_id}</Badge><span className="text-right font-medium text-sm text-blue-100 truncate">{sub.question_text}</span>{renderSelectWithLogos(sub, predictions[sub.id] || "", (val) => handlePredictionChange(sub.id, val), "w-[140px]")}<Badge className="text-xs px-2 py-1 justify-center h-6 w-full" style={{ borderColor: 'rgba(6, 182, 212, 0.5)', color: '#06b6d4', background: 'rgba(6, 182, 212, 0.1)' }}>{sub.possible_points || 0}</Badge></React.Fragment>))}</div>);
+              // ── רינדור שאלה — מבנה אנכי ──
+              return (
+                <div key={main.id} style={{ borderRadius: '8px', overflow: 'hidden', border: '1px solid rgba(6,182,212,0.12)', background: 'rgba(15,23,42,0.45)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '9px 12px', minWidth: 0 }}>
+                    <Badge variant="outline" style={{ borderColor: 'var(--tp)', color: 'var(--tp)', minWidth: '44px', textAlign: 'center', flexShrink: 0, fontSize: '0.72rem' }}>{main.question_id}</Badge>
+                    <span style={{ flex: 1, minWidth: 0, fontSize: '0.875rem', color: '#f1f5f9', fontWeight: '500', textAlign: 'right' }}>{main.question_text}</span>
+                    <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      {renderSelectWithLogos(main, predictions[main.id] || "", (val) => handlePredictionChange(main.id, val), "w-[160px]")}
+                      {main.possible_points && <Badge style={{ borderColor: 'var(--tp-50)', color: 'var(--tp)', background: 'var(--tp-10)', fontSize: '0.7rem', whiteSpace: 'nowrap' }}>{main.possible_points} נק'</Badge>}
+                    </div>
+                  </div>
+                  {sortedSubs.map((sub, idx) => (
+                    <div key={sub.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '7px 12px 7px 22px', borderTop: '1px solid rgba(6,182,212,0.07)', background: 'rgba(0,0,0,0.18)', minWidth: 0 }}>
+                      <span style={{ color: 'var(--tp)', fontSize: '0.7rem', flexShrink: 0, opacity: 0.5 }}>{idx === sortedSubs.length-1 ? '└' : '├'}</span>
+                      <Badge variant="outline" style={{ borderColor: 'rgba(139,92,246,0.5)', color: '#a78bfa', minWidth: '44px', textAlign: 'center', flexShrink: 0, fontSize: '0.72rem' }}>{sub.question_id}</Badge>
+                      <span style={{ flex: 1, minWidth: 0, fontSize: '0.82rem', color: '#cbd5e1', textAlign: 'right' }}>{sub.question_text}</span>
+                      <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        {renderSelectWithLogos(sub, predictions[sub.id] || "", (val) => handlePredictionChange(sub.id, val), "w-[160px]")}
+                        {sub.possible_points && <Badge style={{ borderColor: 'rgba(139,92,246,0.4)', color: '#a78bfa', background: 'rgba(139,92,246,0.1)', fontSize: '0.7rem', whiteSpace: 'nowrap' }}>{sub.possible_points} נק'</Badge>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              );
             })}
           </div>
         </CardContent>
@@ -455,23 +486,32 @@ export default function PredictionForm() {
               const { main, subs } = grouped[mainId];
               if (!main) return null;
               const sortedSubs = [...subs].sort((a, b) => parseFloat(a.question_id) - parseFloat(b.question_id));
-              if (sortedSubs.length > 0) {
-                const gridCols = sortedSubs.length === 1 ? '50px minmax(250px, 2fr) 140px 50px 1fr 50px minmax(180px, 1.5fr) 140px 50px' : sortedSubs.length === 2 ? '50px 150px 140px 50px 1fr 50px 150px 140px 50px 50px 150px 140px 50px' : '50px 1fr auto';
-                return (<div key={main.id} style={{ display: 'grid', gridTemplateColumns: gridCols, gap: '8px', alignItems: 'center', padding: '12px', borderRadius: '8px', background: 'rgba(15, 23, 42, 0.4)', border: '1px solid rgba(6, 182, 212, 0.1)' }} className="hover:bg-cyan-900/20 hover:border-cyan-700/50">
-                  <Badge variant="outline" style={{ borderColor: 'rgba(6, 182, 212, 0.5)', color: '#06b6d4' }} className="justify-center text-xs">{main.question_id}</Badge>
-                  <span className="font-medium text-xs" style={{ color: '#94a3b8' }}>{main.question_text}</span>
-                  <span>{main.validation_list && validationLists[main.validation_list] ? renderSelectWithLogos(main, predictions[main.id] || "", (val) => handlePredictionChange(main.id, val), "w-[130px]") : <Input value={predictions[main.id] || ""} onChange={(e) => handlePredictionChange(main.id, e.target.value)} className="h-8 text-xs" placeholder="הזן תשובה..." style={{ background: 'rgba(15, 23, 42, 0.6)', border: '1px solid rgba(6, 182, 212, 0.2)', color: '#f8fafc', width: '130px' }} />}</span>
-                  {main.possible_points && <Badge variant="outline" className="text-xs px-1.5 py-0.5" style={{ borderColor: 'rgba(6, 182, 212, 0.5)', color: '#06b6d4', background: 'rgba(6, 182, 212, 0.1)' }}>{main.possible_points}</Badge>}
-                  <div></div>
-                  {sortedSubs.map(sub => (<React.Fragment key={sub.id}><Badge variant="outline" style={{ borderColor: 'rgba(6, 182, 212, 0.5)', color: '#06b6d4' }} className="justify-center text-xs">{sub.question_id}</Badge><span className="font-medium text-xs" style={{ color: '#94a3b8' }}>{sub.question_text}</span><span>{sub.validation_list && validationLists[sub.validation_list] ? renderSelectWithLogos(sub, predictions[sub.id] || "", (val) => handlePredictionChange(sub.id, val), "w-[130px]") : <Input value={predictions[sub.id] || ""} onChange={(e) => handlePredictionChange(sub.id, e.target.value)} className="h-8 text-xs" placeholder="הזן תשובה..." style={{ background: 'rgba(15, 23, 42, 0.6)', border: '1px solid rgba(6, 182, 212, 0.2)', color: '#f8fafc', width: '130px' }} />}</span>{sub.possible_points && <Badge variant="outline" className="text-xs px-1.5 py-0.5" style={{ borderColor: 'rgba(6, 182, 212, 0.5)', color: '#06b6d4', background: 'rgba(6, 182, 212, 0.1)' }}>{sub.possible_points}</Badge>}</React.Fragment>))}
-                </div>);
-              }
-              return (<div key={main.id} style={{ display: 'grid', gridTemplateColumns: '60px 1fr 180px auto', gap: '8px', alignItems: 'center', padding: '12px', borderRadius: '8px', background: 'rgba(15, 23, 42, 0.4)', border: '1px solid rgba(6, 182, 212, 0.1)' }} className="hover:bg-cyan-900/20 hover:border-cyan-700/50">
-                <Badge variant="outline" style={{ borderColor: 'rgba(6, 182, 212, 0.5)', color: '#06b6d4', minWidth: '50px' }} className="justify-center">{main.question_id}</Badge>
-                <span className="font-medium text-sm" style={{ color: '#94a3b8' }}>{main.question_text}</span>
-                <div>{main.validation_list && validationLists[main.validation_list] ? renderSelectWithLogos(main, predictions[main.id] || "", (val) => handlePredictionChange(main.id, val), "w-[180px]") : <Input value={predictions[main.id] || ""} onChange={(e) => handlePredictionChange(main.id, e.target.value)} className="h-9" placeholder="הזן תשובה..." style={{ background: 'rgba(15, 23, 42, 0.6)', border: '1px solid rgba(6, 182, 212, 0.2)', color: '#f8fafc' }} />}</div>
-                {main.possible_points && <Badge variant="outline" className="text-xs px-2 py-1 justify-self-end" style={{ borderColor: 'rgba(6, 182, 212, 0.5)', color: '#06b6d4', background: 'rgba(6, 182, 212, 0.1)', minWidth: '50px' }}>{main.possible_points} נק'</Badge>}
-              </div>);
+              const renderControl = (q) => q.validation_list && validationLists[q.validation_list]
+                ? renderSelectWithLogos(q, predictions[q.id] || "", (val) => handlePredictionChange(q.id, val), "w-[160px]")
+                : <Input value={predictions[q.id] || ""} onChange={(e) => handlePredictionChange(q.id, e.target.value)} className="h-8 text-sm" placeholder="הזן תשובה..." style={{ background: 'rgba(15,23,42,0.6)', border: '1px solid rgba(6,182,212,0.2)', color: '#f8fafc', width: '160px' }} />;
+              return (
+                <div key={main.id} style={{ borderRadius: '8px', overflow: 'hidden', border: '1px solid rgba(6,182,212,0.12)', background: 'rgba(15,23,42,0.45)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '9px 12px', minWidth: 0 }}>
+                    <Badge variant="outline" style={{ borderColor: 'var(--tp)', color: 'var(--tp)', minWidth: '44px', textAlign: 'center', flexShrink: 0, fontSize: '0.72rem' }}>{main.question_id}</Badge>
+                    <span style={{ flex: 1, minWidth: 0, fontSize: '0.875rem', color: '#94a3b8', textAlign: 'right' }}>{main.question_text}</span>
+                    <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      {renderControl(main)}
+                      {main.possible_points && <Badge style={{ borderColor: 'var(--tp-50)', color: 'var(--tp)', background: 'var(--tp-10)', fontSize: '0.7rem', whiteSpace: 'nowrap' }}>{main.possible_points} נק'</Badge>}
+                    </div>
+                  </div>
+                  {sortedSubs.map((sub, idx) => (
+                    <div key={sub.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '7px 12px 7px 22px', borderTop: '1px solid rgba(6,182,212,0.07)', background: 'rgba(0,0,0,0.18)', minWidth: 0 }}>
+                      <span style={{ color: 'var(--tp)', fontSize: '0.7rem', flexShrink: 0, opacity: 0.5 }}>{idx === sortedSubs.length-1 ? '└' : '├'}</span>
+                      <Badge variant="outline" style={{ borderColor: 'rgba(139,92,246,0.5)', color: '#a78bfa', minWidth: '44px', textAlign: 'center', flexShrink: 0, fontSize: '0.72rem' }}>{sub.question_id}</Badge>
+                      <span style={{ flex: 1, minWidth: 0, fontSize: '0.82rem', color: '#cbd5e1', textAlign: 'right' }}>{sub.question_text}</span>
+                      <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        {renderControl(sub)}
+                        {sub.possible_points && <Badge style={{ borderColor: 'rgba(139,92,246,0.4)', color: '#a78bfa', background: 'rgba(139,92,246,0.1)', fontSize: '0.7rem', whiteSpace: 'nowrap' }}>{sub.possible_points} נק'</Badge>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              );
             })}
           </div>
         </CardContent>
