@@ -350,7 +350,7 @@ export default function PredictionForm() {
     return (
       <span style={{ display: 'inline-block', verticalAlign: 'middle' }}>
         <Select value={cleanValue} onValueChange={onChange}>
-          <SelectTrigger className={customWidth} style={{ background: 'rgba(15, 23, 42, 0.6)', border: '1px solid rgba(6, 182, 212, 0.2)', color: '#f8fafc' }}>
+          <SelectTrigger className={customWidth} style={{ background: 'rgba(0,0,0,0.35)', border: '1px solid var(--tp-20)', color: '#f8fafc' }}>
             <SelectValue placeholder="בחר...">
               {cleanValue && cleanValue !== "__CLEAR__" ? (
                 <div className="flex items-center gap-2">
@@ -359,7 +359,7 @@ export default function PredictionForm() {
               ) : 'בחר...'}
             </SelectValue>
           </SelectTrigger>
-          <SelectContent style={{ background: 'rgba(15, 23, 42, 0.9)', border: '1px solid rgba(6, 182, 212, 0.3)', color: '#f8fafc', backdropFilter: 'blur(5px)' }}>
+          <SelectContent style={{ background: 'rgba(0,0,0,0.55)', border: '1px solid var(--tp-30)', color: '#f8fafc', backdropFilter: 'blur(5px)' }}>
             <SelectItem value="__CLEAR__" style={{ color: '#94a3b8' }} className="hover:bg-cyan-900/30">&nbsp;</SelectItem>
             {options.map(opt => {
               const cleanOptName = opt.replace(/\s*\([^)]+\)\s*$/, '').trim();
@@ -392,8 +392,8 @@ export default function PredictionForm() {
     questions.forEach(q => { const mainId = Math.floor(parseFloat(q.question_id)); if (!grouped[mainId]) grouped[mainId] = { main: null, subs: [] }; if (q.question_id.includes('.')) grouped[mainId].subs.push(q); else grouped[mainId].main = q; });
     const sortedMainIds = Object.keys(grouped).sort((a, b) => Number(a) - Number(b));
     return (
-      <Card style={{ background: 'rgba(30, 41, 59, 0.6)', border: '1px solid rgba(6, 182, 212, 0.2)', backdropFilter: 'blur(10px)' }}>
-        <CardHeader className="py-3"><CardTitle style={{ color: '#06b6d4' }}>{table.description}</CardTitle></CardHeader>
+      <Card style={{ background: 'var(--bg3-60)', border: '1px solid var(--tp-20)', backdropFilter: 'blur(10px)' }}>
+        <CardHeader className="py-3"><CardTitle style={{ color: 'var(--tp)' }}>{table.description}</CardTitle></CardHeader>
         <CardContent className="p-3">
           <div className="space-y-3">
             {sortedMainIds.map(mainId => {
@@ -401,7 +401,7 @@ export default function PredictionForm() {
               if (!main) return null;
               const sortedSubs = [...subs].sort((a, b) => parseFloat(a.question_id) - parseFloat(b.question_id));
               return (
-                <div key={main.id} style={{ borderRadius: '8px', overflow: 'hidden', border: '1px solid rgba(6,182,212,0.12)', background: 'rgba(15,23,42,0.45)' }}>
+                <div key={main.id} style={{ borderRadius: '8px', overflow: 'hidden', border: '1px solid var(--tp-12)', background: 'rgba(0,0,0,0.25)' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '9px 12px', minWidth: 0 }}>
                     <Badge variant="outline" style={{ borderColor: 'var(--tp)', color: 'var(--tp)', minWidth: '44px', textAlign: 'center', flexShrink: 0, fontSize: '0.72rem' }}>{main.question_id}</Badge>
                     <span style={{ flex: 1, minWidth: 0, fontSize: '0.875rem', color: '#94a3b8', textAlign: 'right' }}>{main.question_text}</span>
@@ -411,7 +411,7 @@ export default function PredictionForm() {
                     </div>
                   </div>
                   {sortedSubs.map((sub, idx) => (
-                    <div key={sub.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '7px 12px 7px 22px', borderTop: '1px solid rgba(6,182,212,0.07)', background: 'rgba(0,0,0,0.18)', minWidth: 0 }}>
+                    <div key={sub.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '7px 12px 7px 22px', borderTop: '1px solid var(--tp-08)', background: 'rgba(0,0,0,0.18)', minWidth: 0 }}>
                       <span style={{ color: 'var(--tp)', fontSize: '0.7rem', flexShrink: 0, opacity: 0.5 }}>{idx === sortedSubs.length-1 ? '└' : '├'}</span>
                       <Badge variant="outline" style={{ borderColor: 'rgba(139,92,246,0.5)', color: '#a78bfa', minWidth: '44px', textAlign: 'center', flexShrink: 0, fontSize: '0.72rem' }}>{sub.question_id}</Badge>
                       <span style={{ flex: 1, minWidth: 0, fontSize: '0.82rem', color: '#cbd5e1', textAlign: 'right' }}>{sub.question_text}</span>
@@ -432,8 +432,8 @@ export default function PredictionForm() {
     questions.forEach(q => { const mainId = Math.floor(parseFloat(q.question_id)); if (!grouped[mainId]) grouped[mainId] = { main: null, subs: [] }; if (q.question_id.includes('.')) grouped[mainId].subs.push(q); else grouped[mainId].main = q; });
     const sortedMainIds = Object.keys(grouped).sort((a, b) => Number(a) - Number(b));
     return (
-      <Card style={{ background: 'rgba(30, 41, 59, 0.6)', border: '1px solid rgba(6, 182, 212, 0.2)', backdropFilter: 'blur(10px)' }}>
-        <CardHeader className="py-3"><CardTitle style={{ color: '#06b6d4' }}>{table.description}</CardTitle></CardHeader>
+      <Card style={{ background: 'var(--bg3-60)', border: '1px solid var(--tp-20)', backdropFilter: 'blur(10px)' }}>
+        <CardHeader className="py-3"><CardTitle style={{ color: 'var(--tp)' }}>{table.description}</CardTitle></CardHeader>
         <CardContent className="p-3">
           <div className="space-y-2">
             {sortedMainIds.map(mainId => {
@@ -442,7 +442,7 @@ export default function PredictionForm() {
               const sortedSubs = [...subs].sort((a, b) => parseFloat(a.question_id) - parseFloat(b.question_id));
               // ── רינדור שאלה — מבנה אנכי ──
               return (
-                <div key={main.id} style={{ borderRadius: '8px', overflow: 'hidden', border: '1px solid rgba(6,182,212,0.12)', background: 'rgba(15,23,42,0.45)' }}>
+                <div key={main.id} style={{ borderRadius: '8px', overflow: 'hidden', border: '1px solid var(--tp-12)', background: 'rgba(0,0,0,0.25)' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '9px 12px', minWidth: 0 }}>
                     <Badge variant="outline" style={{ borderColor: 'var(--tp)', color: 'var(--tp)', minWidth: '44px', textAlign: 'center', flexShrink: 0, fontSize: '0.72rem' }}>{main.question_id}</Badge>
                     <span style={{ flex: 1, minWidth: 0, fontSize: '0.875rem', color: '#f1f5f9', fontWeight: '500', textAlign: 'right' }}>{main.question_text}</span>
@@ -452,7 +452,7 @@ export default function PredictionForm() {
                     </div>
                   </div>
                   {sortedSubs.map((sub, idx) => (
-                    <div key={sub.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '7px 12px 7px 22px', borderTop: '1px solid rgba(6,182,212,0.07)', background: 'rgba(0,0,0,0.18)', minWidth: 0 }}>
+                    <div key={sub.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '7px 12px 7px 22px', borderTop: '1px solid var(--tp-08)', background: 'rgba(0,0,0,0.18)', minWidth: 0 }}>
                       <span style={{ color: 'var(--tp)', fontSize: '0.7rem', flexShrink: 0, opacity: 0.5 }}>{idx === sortedSubs.length-1 ? '└' : '├'}</span>
                       <Badge variant="outline" style={{ borderColor: 'rgba(139,92,246,0.5)', color: '#a78bfa', minWidth: '44px', textAlign: 'center', flexShrink: 0, fontSize: '0.72rem' }}>{sub.question_id}</Badge>
                       <span style={{ flex: 1, minWidth: 0, fontSize: '0.82rem', color: '#cbd5e1', textAlign: 'right' }}>{sub.question_text}</span>
@@ -478,8 +478,8 @@ export default function PredictionForm() {
     questions.forEach(q => { const mainId = Math.floor(parseFloat(q.question_id)); if (!grouped[mainId]) grouped[mainId] = { main: null, subs: [] }; if (q.question_id.includes('.')) grouped[mainId].subs.push(q); else grouped[mainId].main = q; });
     const sortedMainIds = Object.keys(grouped).sort((a, b) => Number(a) - Number(b));
     return (
-      <Card style={{ background: 'rgba(30, 41, 59, 0.6)', border: '1px solid rgba(6, 182, 212, 0.2)', backdropFilter: 'blur(10px)' }}>
-        <CardHeader className="py-3"><CardTitle style={{ color: '#06b6d4' }}>{table.description}</CardTitle></CardHeader>
+      <Card style={{ background: 'var(--bg3-60)', border: '1px solid var(--tp-20)', backdropFilter: 'blur(10px)' }}>
+        <CardHeader className="py-3"><CardTitle style={{ color: 'var(--tp)' }}>{table.description}</CardTitle></CardHeader>
         <CardContent className="p-3">
           <div className="space-y-3">
             {sortedMainIds.map(mainId => {
@@ -488,9 +488,9 @@ export default function PredictionForm() {
               const sortedSubs = [...subs].sort((a, b) => parseFloat(a.question_id) - parseFloat(b.question_id));
               const renderControl = (q) => q.validation_list && validationLists[q.validation_list]
                 ? renderSelectWithLogos(q, predictions[q.id] || "", (val) => handlePredictionChange(q.id, val), "w-[160px]")
-                : <Input value={predictions[q.id] || ""} onChange={(e) => handlePredictionChange(q.id, e.target.value)} className="h-8 text-sm" placeholder="הזן תשובה..." style={{ background: 'rgba(15,23,42,0.6)', border: '1px solid rgba(6,182,212,0.2)', color: '#f8fafc', width: '160px' }} />;
+                : <Input value={predictions[q.id] || ""} onChange={(e) => handlePredictionChange(q.id, e.target.value)} className="h-8 text-sm" placeholder="הזן תשובה..." style={{ background: 'rgba(0,0,0,0.35)', border: '1px solid var(--tp-20)', color: '#f8fafc', width: '160px' }} />;
               return (
-                <div key={main.id} style={{ borderRadius: '8px', overflow: 'hidden', border: '1px solid rgba(6,182,212,0.12)', background: 'rgba(15,23,42,0.45)' }}>
+                <div key={main.id} style={{ borderRadius: '8px', overflow: 'hidden', border: '1px solid var(--tp-12)', background: 'rgba(0,0,0,0.25)' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '9px 12px', minWidth: 0 }}>
                     <Badge variant="outline" style={{ borderColor: 'var(--tp)', color: 'var(--tp)', minWidth: '44px', textAlign: 'center', flexShrink: 0, fontSize: '0.72rem' }}>{main.question_id}</Badge>
                     <span style={{ flex: 1, minWidth: 0, fontSize: '0.875rem', color: '#94a3b8', textAlign: 'right' }}>{main.question_text}</span>
@@ -500,7 +500,7 @@ export default function PredictionForm() {
                     </div>
                   </div>
                   {sortedSubs.map((sub, idx) => (
-                    <div key={sub.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '7px 12px 7px 22px', borderTop: '1px solid rgba(6,182,212,0.07)', background: 'rgba(0,0,0,0.18)', minWidth: 0 }}>
+                    <div key={sub.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '7px 12px 7px 22px', borderTop: '1px solid var(--tp-08)', background: 'rgba(0,0,0,0.18)', minWidth: 0 }}>
                       <span style={{ color: 'var(--tp)', fontSize: '0.7rem', flexShrink: 0, opacity: 0.5 }}>{idx === sortedSubs.length-1 ? '└' : '├'}</span>
                       <Badge variant="outline" style={{ borderColor: 'rgba(139,92,246,0.5)', color: '#a78bfa', minWidth: '44px', textAlign: 'center', flexShrink: 0, fontSize: '0.72rem' }}>{sub.question_id}</Badge>
                       <span style={{ flex: 1, minWidth: 0, fontSize: '0.82rem', color: '#cbd5e1', textAlign: 'right' }}>{sub.question_text}</span>
@@ -519,16 +519,16 @@ export default function PredictionForm() {
     );
   };
 
-  if (loading) return (<div className="p-6 flex items-center justify-center h-64" style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%)', minHeight: '100vh' }}><Loader2 className="w-8 h-8 animate-spin text-blue-600 mr-3" /><span className="text-blue-600">טוען נתונים...</span></div>);
+  if (loading) return (<div className="p-6 flex items-center justify-center h-64" style={{ background: 'linear-gradient(135deg, var(--bg1) 0%, var(--bg2) 50%, var(--bg1) 100%)', minHeight: '100vh' }}><Loader2 className="w-8 h-8 animate-spin text-blue-600 mr-3" /><span className="text-blue-600">טוען נתונים...</span></div>);
 
   const isAdmin = currentUser?.user_metadata?.role === 'admin';
   const isFormLocked = currentGame?.status === 'locked';
 
   if (isFormLocked && !isAdmin) return (
-    <div className="p-6 flex flex-col items-center justify-center gap-6" style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%)', minHeight: '100vh' }}>
-      <Card style={{ background: 'rgba(30, 41, 59, 0.8)', border: '1px solid rgba(239, 68, 68, 0.4)', maxWidth: '600px', boxShadow: '0 0 30px rgba(239, 68, 68, 0.2)' }}>
+    <div className="p-6 flex flex-col items-center justify-center gap-6" style={{ background: 'linear-gradient(135deg, var(--bg1) 0%, var(--bg2) 50%, var(--bg1) 100%)', minHeight: '100vh' }}>
+      <Card style={{ background: 'rgba(0,0,0,0.40)', border: '1px solid rgba(239, 68, 68, 0.4)', maxWidth: '600px', boxShadow: '0 0 30px rgba(239, 68, 68, 0.2)' }}>
         <CardHeader><div className="flex items-center gap-3 justify-center"><Lock className="w-8 h-8" style={{ color: '#ef4444' }} /><CardTitle className="text-2xl" style={{ color: '#ef4444' }}>מילוי ניחושים נעול</CardTitle></div></CardHeader>
-        <CardContent className="text-center space-y-4"><p className="text-lg" style={{ color: '#fca5a5' }}>המשחק נעול - לא ניתן למלא ניחושים</p><p style={{ color: '#94a3b8' }}>ניתן לצפות בניחושים ובתוצאות, אך לא למלא ניחושים חדשים</p><Alert style={{ background: 'rgba(6, 182, 212, 0.1)', border: '1px solid rgba(6, 182, 212, 0.3)', textAlign: 'right' }}><AlertDescription style={{ color: '#06b6d4' }}>💡 <strong>למה הטופס נעול?</strong><br />הטופס נעול בדרך כלל לפני תחילת התחרות או לאחר המועד האחרון למילוי ניחושים.</AlertDescription></Alert></CardContent>
+        <CardContent className="text-center space-y-4"><p className="text-lg" style={{ color: '#fca5a5' }}>המשחק נעול - לא ניתן למלא ניחושים</p><p style={{ color: '#94a3b8' }}>ניתן לצפות בניחושים ובתוצאות, אך לא למלא ניחושים חדשים</p><Alert style={{ background: 'var(--tp-10)', border: '1px solid var(--tp-30)', textAlign: 'right' }}><AlertDescription style={{ color: 'var(--tp)' }}>💡 <strong>למה הטופס נעול?</strong><br />הטופס נעול בדרך כלל לפני תחילת התחרות או לאחר המועד האחרון למילוי ניחושים.</AlertDescription></Alert></CardContent>
       </Card>
     </div>
   );
@@ -564,7 +564,7 @@ export default function PredictionForm() {
     const order = ['rounds','league','groups','playoff','special','qualifiers','other'];
     const sortedGroups = order.filter(t => grouped[t]);
     return (
-      <div style={{ background: 'rgba(13,18,30,0.9)', borderRadius: '12px', border: '1px solid rgba(56,189,248,0.12)', padding: '14px 10px', backdropFilter: 'blur(10px)' }}>
+      <div style={{ background: 'rgba(13,18,30,0.9)', borderRadius: '12px', border: '1px solid var(--tp-12)', padding: '14px 10px', backdropFilter: 'blur(10px)' }}>
         <div style={{ fontSize: '0.5rem', fontWeight: '800', letterSpacing: '0.18em', textTransform: 'uppercase', color: '#334155', marginBottom: '14px', paddingRight: '2px' }}>בחירת שלב</div>
         {sortedGroups.map(type => {
           const info = groupMap[type] || groupMap.other;
@@ -600,7 +600,7 @@ export default function PredictionForm() {
       other:      { color: '#64748b', bg: 'rgba(100,116,139,0.10)', border: 'rgba(100,116,139,0.25)' },
     };
     return (
-      <div style={{ padding: '12px', background: 'rgba(17,24,39,0.7)', borderRadius: '12px', border: '1px solid rgba(56,189,248,0.12)', marginBottom: '16px' }}>
+      <div style={{ padding: '12px', background: 'rgba(0,0,0,0.40)', borderRadius: '12px', border: '1px solid var(--tp-12)', marginBottom: '16px' }}>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
           {allButtonsList.map(button => {
             const type = button.stageType || 'other';
@@ -621,9 +621,9 @@ export default function PredictionForm() {
       const tableId = button.sectionKey.replace('round_', '');
       const table = roundTables.find(t => t.id === tableId);
       if (!table) return null;
-      return (<div key={button.key} className="mb-6"><RoundTable table={table} teams={teams} predictions={predictions} onPredictionChange={handlePredictionChange} cardStyle={{ background: 'rgba(30, 41, 59, 0.6)', border: '1px solid rgba(6, 182, 212, 0.2)', backdropFilter: 'blur(10px)' }} titleStyle={{ color: '#06b6d4' }} questionRowStyle={{ background: 'rgba(15, 23, 42, 0.4)', border: '1px solid rgba(6, 182, 212, 0.1)', transition: 'all 0.2s ease-in-out' }} questionRowHoverClass="hover:bg-cyan-900/20 hover:border-cyan-700/50" badgeStyle={{ borderColor: 'rgba(6, 182, 212, 0.5)', color: '#06b6d4' }} questionTextStyle={{ color: '#94a3b8' }} inputStyle={{ background: 'rgba(15, 23, 42, 0.6)', border: '1px solid rgba(6, 182, 212, 0.2)', color: '#f8fafc' }} />{table.specialQuestions && table.specialQuestions.length > 0 && (<div className="mt-4">{renderSpecialQuestions({ ...table, questions: table.specialQuestions })}</div>)}</div>);
+      return (<div key={button.key} className="mb-6"><RoundTable table={table} teams={teams} predictions={predictions} onPredictionChange={handlePredictionChange} cardStyle={{ background: 'var(--bg3-60)', border: '1px solid var(--tp-20)', backdropFilter: 'blur(10px)' }} titleStyle={{ color: 'var(--tp)' }} questionRowStyle={{ background: 'rgba(0,0,0,0.25)', border: '1px solid var(--tp-10)', transition: 'all 0.2s ease-in-out' }} questionRowHoverClass="hover:bg-cyan-900/20 hover:border-cyan-700/50" badgeStyle={{ borderColor: 'var(--tp-50)', color: 'var(--tp)' }} questionTextStyle={{ color: '#94a3b8' }} inputStyle={{ background: 'rgba(0,0,0,0.35)', border: '1px solid var(--tp-20)', color: '#f8fafc' }} />{table.specialQuestions && table.specialQuestions.length > 0 && (<div className="mt-4">{renderSpecialQuestions({ ...table, questions: table.specialQuestions })}</div>)}</div>);
     }
-    if (button.sectionKey === 'israeli' && israeliTable) return (<div key="israeli-section" className="mb-6"><RoundTable table={israeliTable} teams={teams} predictions={predictions} onPredictionChange={handlePredictionChange} cardStyle={{ background: 'rgba(30, 41, 59, 0.6)', border: '1px solid rgba(6, 182, 212, 0.2)', backdropFilter: 'blur(10px)' }} titleStyle={{ color: '#06b6d4' }} questionRowStyle={{ background: 'rgba(15, 23, 42, 0.4)', border: '1px solid rgba(6, 182, 212, 0.1)' }} questionRowHoverClass="hover:bg-cyan-900/20 hover:border-cyan-700/50" badgeStyle={{ borderColor: 'rgba(6, 182, 212, 0.5)', color: '#06b6d4' }} questionTextStyle={{ color: '#94a3b8' }} inputStyle={{ background: 'rgba(15, 23, 42, 0.6)', border: '1px solid rgba(6, 182, 212, 0.2)', color: '#f8fafc' }} /></div>);
+    if (button.sectionKey === 'israeli' && israeliTable) return (<div key="israeli-section" className="mb-6"><RoundTable table={israeliTable} teams={teams} predictions={predictions} onPredictionChange={handlePredictionChange} cardStyle={{ background: 'var(--bg3-60)', border: '1px solid var(--tp-20)', backdropFilter: 'blur(10px)' }} titleStyle={{ color: 'var(--tp)' }} questionRowStyle={{ background: 'rgba(0,0,0,0.25)', border: '1px solid var(--tp-10)' }} questionRowHoverClass="hover:bg-cyan-900/20 hover:border-cyan-700/50" badgeStyle={{ borderColor: 'var(--tp-50)', color: 'var(--tp)' }} questionTextStyle={{ color: '#94a3b8' }} inputStyle={{ background: 'rgba(0,0,0,0.35)', border: '1px solid var(--tp-20)', color: '#f8fafc' }} /></div>);
     if (button.sectionKey === 'locations') return (<div key="locations-section" className="mb-6 grid grid-cols-1 md:grid-cols-2 gap-6">{locationTables.map(table => renderSpecialQuestions(table))}</div>);
     if (button.sectionKey === 'playoffWinners' && playoffWinnersTable) return (<div key="playoff-winners-section" className="mb-6">{renderSpecialQuestions(playoffWinnersTable)}</div>);
     if (button.sectionKey.startsWith('qual_')) { const tableId = button.sectionKey.replace('qual_', ''); const table = qualifiersTables.find(t => t.id === tableId); if (!table) return null; return (<div key={button.sectionKey} className="mb-6">{renderSpecialQuestions(table)}</div>); }
@@ -633,17 +633,17 @@ export default function PredictionForm() {
   });
 
   return (
-    <div dir="rtl" style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%)', minHeight: '100vh' }}>
+    <div dir="rtl" style={{ background: 'linear-gradient(135deg, var(--bg1) 0%, var(--bg2) 50%, var(--bg1) 100%)', minHeight: '100vh' }}>
 
       {/* ===== STICKY HEADER ===== */}
-      <div className="sticky top-0 z-30 backdrop-blur-sm shadow-lg" style={{ background: 'rgba(15, 23, 42, 0.95)', borderBottom: '1px solid rgba(6, 182, 212, 0.2)' }}>
+      <div className="sticky top-0 z-30 backdrop-blur-sm shadow-lg" style={{ background: 'rgba(0,0,0,0.70)', borderBottom: '1px solid var(--tp-20)' }}>
         <div className="p-3 md:p-4 max-w-7xl mx-auto flex items-center justify-between gap-3">
           <div>
-            <h1 className="text-lg md:text-2xl font-bold flex items-center gap-2" style={{ color: '#f8fafc', textShadow: '0 0 10px rgba(6, 182, 212, 0.3)' }}>
-              <Trophy className="w-5 h-5 md:w-7 md:h-7" style={{ color: '#06b6d4' }} />
+            <h1 className="text-lg md:text-2xl font-bold flex items-center gap-2" style={{ color: '#f8fafc', textShadow: '0 0 10px var(--tp-30)' }}>
+              <Trophy className="w-5 h-5 md:w-7 md:h-7" style={{ color: 'var(--tp)' }} />
               מילוי ניחושים
             </h1>
-            {currentGame?.game_name && <p className="text-xs font-medium" style={{ color: '#06b6d4' }}>{currentGame.game_name}</p>}
+            {currentGame?.game_name && <p className="text-xs font-medium" style={{ color: 'var(--tp)' }}>{currentGame.game_name}</p>}
             {participantName && <p className="text-xs" style={{ color: '#94a3b8' }}>משתתף: <strong style={{ color: '#f8fafc' }}>{participantName}</strong></p>}
           </div>
           <div className="flex gap-2">
@@ -652,7 +652,7 @@ export default function PredictionForm() {
                 {isFormLocked ? <><Lock className="w-4 h-4 ml-1.5" />נעול</> : <><Unlock className="w-4 h-4 ml-1.5" />פתוח</>}
               </Button>
             )}
-            <Button onClick={saveAllPredictions} disabled={saving} style={{ background: 'linear-gradient(135deg, #06b6d4 0%, #0ea5e9 100%)', boxShadow: '0 0 15px rgba(6, 182, 212, 0.4)' }} className="text-white" size="sm">
+            <Button onClick={saveAllPredictions} disabled={saving} style={{ background: 'linear-gradient(135deg, var(--tp) 0%, var(--tp) 100%)', boxShadow: '0 0 15px var(--tp-40)' }} className="text-white" size="sm">
               {saving ? <><Loader2 className="w-4 h-4 animate-spin ml-1.5" />שומר...</> : <><Save className="w-4 h-4 ml-1.5" />שמור הכל</>}
             </Button>
           </div>
