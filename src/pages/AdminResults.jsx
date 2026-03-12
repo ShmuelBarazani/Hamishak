@@ -458,7 +458,68 @@ export default function AdminResults() {
     </div>
   );
 
+  // ── בונוסי שלבים ──────────────────────────────────────────────────────────
+  const STAGE_BONUSES = {
+    T3: { points: 16, desc: 'ניקוד בכל משחקי שמינית הגמר' },
+    T4: { points: 16, desc: 'ניחוש כל 8 קבוצות רבע הגמר' },
+    T5: { points: 12, desc: 'ניחוש כל 4 קבוצות חצי הגמר' },
+    T6: { points: 6,  desc: 'ניחוש שתי קבוצות הגמר' },
+  };
+
+  const renderBonusBanner = (tableId) => {
+    const bonus = STAGE_BONUSES[tableId];
+    if (!bonus) return null;
+    return (
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: '10px', justifyContent: 'center',
+        padding: '8px 16px', borderRadius: '8px', marginBottom: '8px',
+        background: 'rgba(234,179,8,0.10)', border: '1px solid rgba(234,179,8,0.40)',
+      }}>
+        <span style={{ fontSize: '1.1rem' }}>🏆</span>
+        <span style={{ color: '#fde68a', fontSize: '0.82rem', fontWeight: '600' }}>
+          בונוס שלב: +{bonus.points} נקודות
+        </span>
+        <span style={{ color: '#fbbf24', fontSize: '0.75rem', opacity: 0.85 }}>— {bonus.desc}</span>
+      </div>
+    );
+  };
+
+  // ── טבלאות עולות (T4/T5/T6) — מיון + ניקוד + בונוס ───────────────────────
+  const ADVANCING_CONFIG = { T4: 8, T5: 4, T6: 2 };
+
+  const renderAdvancingTeamTable = (table) => {
+    const count = ADVANCING_CONFIG[table.id];
+    // רק חריצי העולות: question_id שלם בטווח 1..N, ללא כפילויות
+    const seenIds = new Set();
+    const slots = table.questions
+      .filter(q => {
+        const n = parseFloat(q.question_id);
+        if (!Number.isInteger(n) || n < 1 || n > count) return false;
+        if (seenIds.has(n)) return false;
+        seenIds.add(n);
+        return true;
+      })
+      .sort((a, b) => parseFloat(a.question_id) - parseFloat(b.question_id));
+
+    return (
+      <Card className="bg-slate-800/40 border-cyan-700 shadow-lg shadow-cyan-900/20">
+        <CardHeader className="py-3">
+          <CardTitle className="text-cyan-400">{table.description}</CardTitle>
+        </CardHeader>
+        <CardContent className="p-3">
+          {renderBonusBanner(table.id)}
+          <div className="space-y-2">
+            {slots.map(q => renderQuestionRow(q))}
+          </div>
+        </CardContent>
+      </Card>
+    );
+  };
+
   const renderSpecialQuestions = (table) => {
+    // T4/T5/T6 — שתמול ייעודי
+    if (ADVANCING_CONFIG[table.id]) return renderAdvancingTeamTable(table);
+
     const grouped = {};
     table.questions.forEach((q, idx) => {
       const qId = q.question_id != null ? String(q.question_id) : String(q.stage_order || idx);
@@ -573,12 +634,25 @@ export default function AdminResults() {
 
   // Build nav buttons
   const allButtons = [];
-  roundTables.forEach(t => allButtons.push({ numericId: t.stage_order || parseInt(t.id.replace('T','').replace(/\D/g,''))||0, stageType: 'playoff', key: `round_${t.id}`, description: t.description || t.id, sectionKey: `round_${t.id}` }));
-  specialTables.forEach(t => allButtons.push({ numericId: t.stage_order || parseInt(t.id.replace('T','').replace(/\D/g,''))||0, stageType: 'special', key: t.id, description: t.description, sectionKey: t.id }));
+  roundTables.forEach(t => {
+    const st = t.questions[0]?.stage_type;
+    const stageType = st === 'groups' ? 'groups' : st === 'rounds' ? 'rounds' : st === 'league' ? 'league' : 'playoff';
+    allButtons.push({ numericId: t.stage_order || parseInt(t.id.replace('T','').replace(/\D/g,''))||0, stageType, key: `round_${t.id}`, description: t.description || t.id, sectionKey: `round_${t.id}` });
+  });
+  specialTables.forEach(t => {
+    const st = t.questions[0]?.stage_type;
+    const stageType = st && ['playoff','groups','rounds','league','qualifiers','other'].includes(st) ? st : 'special';
+    allButtons.push({ numericId: t.stage_order || parseInt(t.id.replace('T','').replace(/\D/g,''))||0, stageType, key: t.id, description: t.description, sectionKey: t.id });
+  });
   if (locationTables.length > 0) allButtons.push({ numericId: 99, stageType: 'other', key: 'locations', description: 'מיקומים', sectionKey: 'locations' });
-  if (israeliTable) allButtons.push({ numericId: parseInt(israeliTable.id.replace('T','')||'0'), stageType: 'special', key: israeliTable.id, description: israeliTable.description, sectionKey: 'israeli' });
+  if (israeliTable) allButtons.push({ numericId: parseInt(israeliTable.id.replace('T','')||'0'), stageType: israeliTable.questions?.[0]?.stage_type || 'special', key: israeliTable.id, description: israeliTable.description, sectionKey: 'israeli' });
   if (playoffWinnersTable) allButtons.push({ numericId: parseInt(playoffWinnersTable.id.replace('T','')||'0'), stageType: 'qualifiers', key: playoffWinnersTable.id, description: playoffWinnersTable.description, sectionKey: 'playoffWinners' });
-  allButtons.sort((a, b) => a.numericId - b.numericId);
+  allButtons.sort((a, b) => {
+    const order = ['rounds','league','groups','playoff','special','qualifiers','other'];
+    const ai = order.indexOf(a.stageType), bi = order.indexOf(b.stageType);
+    if (ai !== bi) return ai - bi;
+    return a.numericId - b.numericId;
+  });
 
   const renderSidebar = () => {
     const groupMap = {
@@ -596,12 +670,13 @@ export default function AdminResults() {
       if (!grouped[t]) grouped[t] = [];
       grouped[t].push(btn);
     });
-    const order = ['playoff','league','groups','rounds','special','qualifiers','other'];
+    const order = ['rounds','league','groups','playoff','special','qualifiers','other'];
+    const sortedGroups = order.filter(t => grouped[t]);
     return (
       <aside style={{ width: '215px', flexShrink: 0, position: 'sticky', top: '70px', alignSelf: 'flex-start', maxHeight: 'calc(100vh - 90px)', overflowY: 'auto', paddingBottom: '16px' }}>
         <div style={{ background: 'rgba(13,18,30,0.9)', borderRadius: '12px', border: '1px solid var(--tp-12)', padding: '14px 10px', backdropFilter: 'blur(10px)' }}>
           <div style={{ fontSize: '0.5rem', fontWeight: '800', letterSpacing: '0.18em', textTransform: 'uppercase', color: '#334155', marginBottom: '14px', paddingRight: '2px' }}>בחירת שלב</div>
-          {order.filter(t => grouped[t]).map(type => {
+          {sortedGroups.map(type => {
             const info = groupMap[type] || groupMap.other;
             return (
               <div key={type} style={{ marginBottom: '14px' }}>
@@ -647,6 +722,7 @@ export default function AdminResults() {
             if (!table) return null;
             return (
               <div key={button.key} className="mb-4 space-y-3">
+                {renderBonusBanner(table.id)}
                 <RoundTableResults table={table} teams={teams} results={results} onResultChange={handleResultChange} isAdmin={isAdmin} />
                 {table.specialQuestions?.length > 0 && (
                   <div className="mt-4">{renderSpecialQuestions({ ...table, questions: table.specialQuestions })}</div>
