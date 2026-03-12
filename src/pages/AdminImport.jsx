@@ -573,12 +573,25 @@ export default function AdminResults() {
 
   // Build nav buttons
   const allButtons = [];
-  roundTables.forEach(t => allButtons.push({ numericId: t.stage_order || parseInt(t.id.replace('T','').replace(/\D/g,''))||0, stageType: 'playoff', key: `round_${t.id}`, description: t.description || t.id, sectionKey: `round_${t.id}` }));
-  specialTables.forEach(t => allButtons.push({ numericId: t.stage_order || parseInt(t.id.replace('T','').replace(/\D/g,''))||0, stageType: 'special', key: t.id, description: t.description, sectionKey: t.id }));
+  roundTables.forEach(t => {
+    const st = t.questions[0]?.stage_type;
+    const stageType = st === 'groups' ? 'groups' : st === 'rounds' ? 'rounds' : st === 'league' ? 'league' : 'playoff';
+    allButtons.push({ numericId: t.stage_order || parseInt(t.id.replace('T','').replace(/\D/g,''))||0, stageType, key: `round_${t.id}`, description: t.description || t.id, sectionKey: `round_${t.id}` });
+  });
+  specialTables.forEach(t => {
+    const st = t.questions[0]?.stage_type;
+    const stageType = st && ['playoff','groups','rounds','league','qualifiers','other'].includes(st) ? st : 'special';
+    allButtons.push({ numericId: t.stage_order || parseInt(t.id.replace('T','').replace(/\D/g,''))||0, stageType, key: t.id, description: t.description, sectionKey: t.id });
+  });
   if (locationTables.length > 0) allButtons.push({ numericId: 99, stageType: 'other', key: 'locations', description: 'מיקומים', sectionKey: 'locations' });
-  if (israeliTable) allButtons.push({ numericId: parseInt(israeliTable.id.replace('T','')||'0'), stageType: 'special', key: israeliTable.id, description: israeliTable.description, sectionKey: 'israeli' });
+  if (israeliTable) allButtons.push({ numericId: parseInt(israeliTable.id.replace('T','')||'0'), stageType: israeliTable.questions?.[0]?.stage_type || 'special', key: israeliTable.id, description: israeliTable.description, sectionKey: 'israeli' });
   if (playoffWinnersTable) allButtons.push({ numericId: parseInt(playoffWinnersTable.id.replace('T','')||'0'), stageType: 'qualifiers', key: playoffWinnersTable.id, description: playoffWinnersTable.description, sectionKey: 'playoffWinners' });
-  allButtons.sort((a, b) => a.numericId - b.numericId);
+  allButtons.sort((a, b) => {
+    const order = ['rounds','league','groups','playoff','special','qualifiers','other'];
+    const ai = order.indexOf(a.stageType), bi = order.indexOf(b.stageType);
+    if (ai !== bi) return ai - bi;
+    return a.numericId - b.numericId;
+  });
 
   const renderSidebar = () => {
     const groupMap = {
@@ -596,12 +609,13 @@ export default function AdminResults() {
       if (!grouped[t]) grouped[t] = [];
       grouped[t].push(btn);
     });
-    const order = ['playoff','league','groups','rounds','special','qualifiers','other'];
+    const order = ['rounds','league','groups','playoff','special','qualifiers','other'];
+    const sortedGroups = order.filter(t => grouped[t]);
     return (
       <aside style={{ width: '215px', flexShrink: 0, position: 'sticky', top: '70px', alignSelf: 'flex-start', maxHeight: 'calc(100vh - 90px)', overflowY: 'auto', paddingBottom: '16px' }}>
         <div style={{ background: 'rgba(13,18,30,0.9)', borderRadius: '12px', border: '1px solid var(--tp-12)', padding: '14px 10px', backdropFilter: 'blur(10px)' }}>
           <div style={{ fontSize: '0.5rem', fontWeight: '800', letterSpacing: '0.18em', textTransform: 'uppercase', color: '#334155', marginBottom: '14px', paddingRight: '2px' }}>בחירת שלב</div>
-          {order.filter(t => grouped[t]).map(type => {
+          {sortedGroups.map(type => {
             const info = groupMap[type] || groupMap.other;
             return (
               <div key={type} style={{ marginBottom: '14px' }}>
