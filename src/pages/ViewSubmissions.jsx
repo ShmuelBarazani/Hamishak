@@ -358,7 +358,7 @@ export default function ViewSubmissions() {
       return (<div className="flex items-center gap-2"><input type="text" value={valueForInput} onChange={(e) => handlePredictionEdit(question.id, e.target.value)} className="rounded-md px-3 py-2 min-w-[120px] h-10" style={{ background: 'rgba(0,0,0,0.35)', border: '1px solid var(--tp-30)', color: '#f8fafc' }} /><Badge className="bg-slate-600 text-slate-300 text-xs px-1.5 py-0.5 min-w-[45px] justify-center">?/{maxScore}</Badge></div>);
     }
 
-    if (!hasValue) return (<><div className={`rounded-md px-2 py-2 ${boxWidth} flex items-center gap-1`} style={{ background: 'rgba(0,0,0,0.35)', border: '1px solid var(--tp-20)' }}><span style={{ color: '#94a3b8', fontSize: isQuestion11_1 ? '0.65rem' : '0.875rem' }}>-</span></div><div className="w-12"></div></>);
+    if (!hasValue) return (<div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}><div className={`rounded-md px-2 py-2 ${boxWidth} flex items-center gap-1`} style={{ background: 'rgba(0,0,0,0.35)', border: '1px solid var(--tp-20)' }}><span style={{ color: '#94a3b8', fontSize: isQuestion11_1 ? '0.65rem' : '0.875rem' }}>-</span></div><div className="w-12"></div></div>);
 
     const score = calculateQuestionScore(question, originalValue);
     // 🔥 Fixed: replaced yellow badge with blue for partial scores
@@ -370,7 +370,7 @@ export default function ViewSubmissions() {
       else if (score > 0) badgeColor = 'bg-blue-800 text-blue-200'; // 🔥 was yellow, now blue
     }
 
-    return (<><div className={`rounded-md px-2 py-2 ${boxWidth} flex items-center gap-1`} style={{ background: hasActualResult ? 'var(--tp-20)' : 'rgba(0,0,0,0.35)', border: hasActualResult ? '1px solid var(--tp)' : '1px solid var(--tp-20)', boxShadow: hasActualResult ? '0 0 10px var(--tp-40)' : 'none' }}>{team?.logo_url && <img src={team.logo_url} alt={displayTeamNameForReadonly} className="w-4 h-4 rounded-full flex-shrink-0" onError={(e) => e.target.style.display='none'} />}<span style={{ color: textColor, fontSize: isQuestion11_1 ? '0.65rem' : '0.875rem', fontWeight: hasActualResult ? '700' : 'normal' }}>{displayTeamNameForReadonly}</span></div>{score !== null ? (<Badge className={`${badgeColor} text-xs font-bold px-1.5 py-0.5 min-w-[45px] justify-center`}>{score}/{maxScore}</Badge>) : (<Badge className="bg-slate-600 text-slate-300 text-xs px-1.5 py-0.5 min-w-[45px] justify-center">?/{maxScore}</Badge>)}</>);
+    return (<div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}><div className={`rounded-md px-2 py-2 ${boxWidth} flex items-center gap-1`} style={{ background: hasActualResult ? 'var(--tp-20)' : 'rgba(0,0,0,0.35)', border: hasActualResult ? '1px solid var(--tp)' : '1px solid var(--tp-20)', boxShadow: hasActualResult ? '0 0 10px var(--tp-40)' : 'none' }}>{team?.logo_url && <img src={team.logo_url} alt={displayTeamNameForReadonly} className="w-4 h-4 rounded-full flex-shrink-0" onError={(e) => e.target.style.display='none'} />}<span style={{ color: textColor, fontSize: isQuestion11_1 ? '0.65rem' : '0.875rem', fontWeight: hasActualResult ? '700' : 'normal' }}>{displayTeamNameForReadonly}</span></div>{score !== null ? (<Badge className={`${badgeColor} text-xs font-bold px-1.5 py-0.5 min-w-[45px] justify-center`}>{score}/{maxScore}</Badge>) : (<Badge className="bg-slate-600 text-slate-300 text-xs px-1.5 py-0.5 min-w-[45px] justify-center">?/{maxScore}</Badge>)}</div>);
   };
 
   const renderT10Questions = (table) => {
@@ -380,13 +380,13 @@ export default function ViewSubmissions() {
     const sortedMainIds = Object.keys(grouped).sort((a, b) => Number(a) - Number(b));
     const renderTeamPrediction = (questionId, originalValue) => {
       const valueToDisplay = editedPredictions[questionId] !== undefined ? editedPredictions[questionId] : originalValue;
-      if (!valueToDisplay || valueToDisplay.trim() === '') return (<><div className="rounded-md px-2 py-2 min-w-[135px] max-w-[140px] flex items-center gap-1" style={{ background: 'rgba(0,0,0,0.35)', border: '1px solid var(--tp-20)' }}><span style={{ color: '#94a3b8', fontSize: '0.875rem' }}>-</span></div><div className="w-12"></div></>);
+      if (!valueToDisplay || valueToDisplay.trim() === '') return (<div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}><div className="rounded-md px-2 py-2 min-w-[135px] max-w-[140px] flex items-center gap-1" style={{ background: 'rgba(0,0,0,0.35)', border: '1px solid var(--tp-20)' }}><span style={{ color: '#94a3b8', fontSize: '0.875rem' }}>-</span></div><div className="w-12"></div></div>);
       const matchedName = findMatchedTeamName(valueToDisplay);
       const team = data.teams[matchedName];
       const q = questions.find(question => question.id === questionId);
       const hasActualResult = q?.actual_result && q.actual_result.trim() !== '' && q.actual_result !== '__CLEAR__';
       const textColor = hasActualResult ? 'var(--tp)' : '#f8fafc';
-      return (<><div className="rounded-md px-2 py-2 min-w-[135px] max-w-[140px] flex items-center gap-1" style={{ background: hasActualResult ? 'var(--tp-20)' : 'rgba(0,0,0,0.35)', border: hasActualResult ? '1px solid var(--tp)' : '1px solid var(--tp-20)', boxShadow: hasActualResult ? '0 0 10px var(--tp-40)' : 'none' }}>{team?.logo_url && <img src={team.logo_url} alt={matchedName} className="w-4 h-4 rounded-full flex-shrink-0" onError={(e) => e.target.style.display='none'} />}<span style={{ color: textColor, fontSize: '0.875rem', fontWeight: hasActualResult ? '700' : 'normal' }}>{matchedName}</span></div><Badge className="bg-slate-600 text-slate-300 text-xs px-1.5 py-0.5 min-w-[45px] justify-center">?/10</Badge></>);
+      return (<div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}><div className="rounded-md px-2 py-2 min-w-[135px] max-w-[140px] flex items-center gap-1" style={{ background: hasActualResult ? 'var(--tp-20)' : 'rgba(0,0,0,0.35)', border: hasActualResult ? '1px solid var(--tp)' : '1px solid var(--tp-20)', boxShadow: hasActualResult ? '0 0 10px var(--tp-40)' : 'none' }}>{team?.logo_url && <img src={team.logo_url} alt={matchedName} className="w-4 h-4 rounded-full flex-shrink-0" onError={(e) => e.target.style.display='none'} />}<span style={{ color: textColor, fontSize: '0.875rem', fontWeight: hasActualResult ? '700' : 'normal' }}>{matchedName}</span></div><Badge className="bg-slate-600 text-slate-300 text-xs px-1.5 py-0.5 min-w-[45px] justify-center">?/10</Badge></div>);
     };
     return (
       <Card className="bg-slate-800/40 border-slate-700 shadow-lg shadow-slate-900/20">
