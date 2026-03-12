@@ -263,8 +263,8 @@ export default function LeaderboardNew() {
   const SortIcon = ({ column }) => {
     if (sortColumn !== column) return <ArrowUpDown className="w-2.5 h-2.5 md:w-4 md:h-4 opacity-30" />;
     return sortDirection === 'asc'
-      ? <ArrowUp className="w-2.5 h-2.5 md:w-4 md:h-4" style={{ color: '#06b6d4' }} />
-      : <ArrowDown className="w-2.5 h-2.5 md:w-4 md:h-4" style={{ color: '#06b6d4' }} />;
+      ? <ArrowUp className="w-2.5 h-2.5 md:w-4 md:h-4" style={{ color: 'var(--tp)' }} />
+      : <ArrowDown className="w-2.5 h-2.5 md:w-4 md:h-4" style={{ color: 'var(--tp)' }} />;
   };
 
   const getPositionIcon = (p) => {
@@ -283,10 +283,10 @@ export default function LeaderboardNew() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-screen" style={{
-        background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%)'
+        background: 'linear-gradient(135deg, var(--bg1) 0%, var(--bg2) 50%, var(--bg1) 100%)'
       }}>
-        <Loader2 className="w-8 h-8 animate-spin" style={{ color: '#06b6d4' }} />
-        <span className="mr-3" style={{ color: '#06b6d4' }}>טוען דירוג...</span>
+        <Loader2 className="w-8 h-8 animate-spin" style={{ color: 'var(--tp)' }} />
+        <span className="mr-3" style={{ color: 'var(--tp)' }}>טוען דירוג...</span>
       </div>
     );
   }
@@ -296,7 +296,7 @@ export default function LeaderboardNew() {
 
   return (
     <div className="min-h-screen p-3 md:p-6" dir="rtl" style={{
-      background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%)'
+      background: 'linear-gradient(135deg, var(--bg1) 0%, var(--bg2) 50%, var(--bg1) 100%)'
     }}>
       <div className="max-w-7xl mx-auto">
 
@@ -304,9 +304,9 @@ export default function LeaderboardNew() {
         <div className="flex flex-col md:flex-row justify-between items-start gap-3 mb-4 md:mb-8">
           <div>
             <h1 className="text-xl md:text-4xl font-bold mb-1 md:mb-2 flex items-center gap-2 md:gap-3" style={{
-              color: '#f8fafc', textShadow: '0 0 10px rgba(6, 182, 212, 0.3)'
+              color: '#f8fafc', textShadow: '0 0 10px var(--tp-30)'
             }}>
-              <Trophy className="w-6 h-6 md:w-10 md:h-10" style={{ color: '#06b6d4' }} />
+              <Trophy className="w-6 h-6 md:w-10 md:h-10" style={{ color: 'var(--tp)' }} />
               טבלת דירוג
             </h1>
             <p className="text-xs md:text-base" style={{ color: '#94a3b8' }}>מצב העמידה הנוכחי של המשתתפים</p>
@@ -338,14 +338,14 @@ export default function LeaderboardNew() {
         {/* Stats */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-4 mb-4 md:mb-8">
           {[
-            { label: 'סה"כ משתתפים', value: rankings.length, icon: Users, color: '#06b6d4' },
-            { label: 'ניקוד ממוצע', value: avgScore.toFixed(1), icon: Target, color: '#0ea5e9' },
+            { label: 'סה"כ משתתפים', value: rankings.length, icon: Users, color: 'var(--tp)' },
+            { label: 'ניקוד ממוצע', value: avgScore.toFixed(1), icon: Target, color: 'var(--tp)' },
             { label: 'ניקוד מקסימלי', value: maxScore.toFixed(1), icon: TrendingUp, color: '#8b5cf6' },
             { label: 'ניקוד מינימלי', value: minScore.toFixed(1), icon: TrendingDown, color: '#94a3b8' }
           ].map((stat, idx) => (
             <Card key={idx} style={{
-              background: 'rgba(30, 41, 59, 0.6)',
-              border: '1px solid rgba(6, 182, 212, 0.2)',
+              background: 'var(--bg3-60)',
+              border: '1px solid var(--tp-20)',
               backdropFilter: 'blur(10px)'
             }}>
               <CardContent className="p-2 md:p-4">
@@ -363,18 +363,18 @@ export default function LeaderboardNew() {
 
         {/* Table */}
         <Card style={{
-          background: 'rgba(30, 41, 59, 0.6)',
-          border: '1px solid rgba(6, 182, 212, 0.2)',
+          background: 'var(--bg3-60)',
+          border: '1px solid var(--tp-20)',
           backdropFilter: 'blur(10px)'
         }}>
           <CardHeader className="py-2 md:py-4">
-            <CardTitle className="text-sm md:text-lg" style={{ color: '#06b6d4' }}>הדירוג הנוכחי</CardTitle>
+            <CardTitle className="text-sm md:text-lg" style={{ color: 'var(--tp)' }}>הדירוג הנוכחי</CardTitle>
           </CardHeader>
           <CardContent className="p-0">
             <div style={{ maxHeight: '600px', overflow: 'auto' }}>
               <table className="w-full" style={{ borderCollapse: 'collapse' }}>
-                <thead style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: '#1e293b' }}>
-                  <tr style={{ borderBottom: '2px solid rgba(6, 182, 212, 0.3)' }}>
+                <thead style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--bg3)' }}>
+                  <tr style={{ borderBottom: '2px solid var(--tp-30)' }}>
                     {[
                       { key: 'current_position', label: '#', mobile: '#', align: 'center' },
                       { key: 'participant_name', label: 'שם', mobile: 'שם', align: 'right' },
@@ -387,7 +387,7 @@ export default function LeaderboardNew() {
                       <th
                         key={col.key}
                         className={`p-1 md:p-3 cursor-pointer hover:bg-cyan-900/20 transition-colors text-[8px] md:text-sm text-${col.align} ${col.mobile === null ? 'hidden md:table-cell' : ''}`}
-                        style={{ backgroundColor: '#1e293b', color: '#94a3b8' }}
+                        style={{ backgroundColor: 'var(--bg3)', color: '#94a3b8' }}
                         onClick={() => handleSort(col.key)}
                       >
                         <div className={`flex items-center ${col.align === 'right' ? 'justify-start' : 'justify-center'} gap-0.5 md:gap-2`}>
@@ -403,7 +403,7 @@ export default function LeaderboardNew() {
                 </thead>
                 <tbody>
                   {sortedRankings.map((rank) => (
-                    <tr key={rank.id} className="hover:bg-cyan-500/10" style={{ borderBottom: '1px solid rgba(6, 182, 212, 0.1)' }}>
+                    <tr key={rank.id} className="hover:bg-white/5" style={{ borderBottom: '1px solid var(--tp-10)' }}>
                       <td className="text-center p-1 md:p-2">
                         <div className="flex items-center justify-center gap-0.5 md:gap-1.5">
                           <span className="hidden md:inline">{getPositionIcon(rank.current_position)}</span>
@@ -412,14 +412,14 @@ export default function LeaderboardNew() {
                       </td>
                       <td
                         className="font-medium text-[10px] md:text-base cursor-pointer hover:underline text-right p-1 md:p-2"
-                        style={{ color: '#0ea5e9' }}
+                        style={{ color: 'var(--tp)' }}
                         onClick={() => loadParticipantDetails(rank.participant_name)}
                       >
                         {rank.participant_name}
                       </td>
                       <td className="text-center p-1 md:p-2">
                         <Badge className="text-white text-[10px] md:text-base px-1.5 md:px-3 py-0.5 md:py-1"
-                          style={{ background: '#06b6d4', boxShadow: '0 0 10px rgba(6, 182, 212, 0.4)' }}>
+                          style={{ background: 'var(--tp)', boxShadow: '0 0 10px var(--tp-40)' }}>
                           {rank.current_score}
                         </Badge>
                       </td>
@@ -452,16 +452,16 @@ export default function LeaderboardNew() {
       {/* Participant detail dialog */}
       <Dialog open={selectedParticipant !== null} onOpenChange={() => setSelectedParticipant(null)}>
         <DialogContent className="max-w-6xl max-h-[85vh] w-[95vw] md:w-auto flex flex-col" style={{
-          background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
-          border: '1px solid rgba(6, 182, 212, 0.2)',
-          boxShadow: '0 0 30px rgba(6, 182, 212, 0.3)'
+          background: 'linear-gradient(135deg, var(--bg1) 0%, var(--bg3) 100%)',
+          border: '1px solid var(--tp-20)',
+          boxShadow: '0 0 30px var(--tp-30)'
         }} dir="rtl">
-          <DialogHeader className="flex-shrink-0 pb-2 md:pb-4" style={{ borderBottom: '1px solid rgba(6, 182, 212, 0.3)' }}>
+          <DialogHeader className="flex-shrink-0 pb-2 md:pb-4" style={{ borderBottom: '1px solid var(--tp-30)' }}>
             <DialogTitle className="text-base md:text-2xl font-bold text-right" style={{ color: '#f8fafc' }}>
               {participantDetails?.name}
             </DialogTitle>
             <div className="flex flex-wrap items-center gap-2 md:gap-4 mt-1 md:mt-2">
-              <Badge className="text-white text-xs md:text-lg px-2 md:px-4 py-1 md:py-2 rounded-full" style={{ background: '#0ea5e9' }}>
+              <Badge className="text-white text-xs md:text-lg px-2 md:px-4 py-1 md:py-2 rounded-full" style={{ background: 'var(--tp)' }}>
                 סה"כ: {participantDetails?.totalScore} נקודות
               </Badge>
               <span className="text-[10px] md:text-base" style={{ color: '#94a3b8' }}>
@@ -471,10 +471,10 @@ export default function LeaderboardNew() {
           </DialogHeader>
           <div className="flex-1" style={{ overflow: 'auto' }}>
             <table className="w-full" style={{ borderCollapse: 'separate', borderSpacing: '0 4px' }}>
-              <thead style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: '#0f172a' }}>
+              <thead style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--bg1)' }}>
                 <tr>
                   {['טבלה','מס׳','שאלה','ניחוש','תוצאה','ניקוד'].map(h => (
-                    <th key={h} className="text-center p-2 text-xs" style={{ backgroundColor: '#0f172a', color: '#94a3b8' }}>{h}</th>
+                    <th key={h} className="text-center p-2 text-xs" style={{ backgroundColor: 'var(--bg1)', color: '#94a3b8' }}>{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -486,16 +486,16 @@ export default function LeaderboardNew() {
                   else if (s.score > 0) badgeColor = 'bg-yellow-500 text-white';
 
                   return (
-                    <tr key={i} className="hover:bg-cyan-500/10" style={{ backgroundColor: '#1e293b' }}>
+                    <tr key={i} className="hover:bg-white/5" style={{ backgroundColor: 'var(--bg3)' }}>
                       <td className="text-center p-1.5">
                         <Badge variant="outline" className="rounded-full px-1.5 py-0.5 text-[10px]"
-                          style={{ borderColor: '#06b6d4', color: '#06b6d4', background: 'rgba(6,182,212,0.1)' }}>
+                          style={{ borderColor: 'var(--tp)', color: 'var(--tp)', background: 'var(--tp-10)' }}>
                           {s.table_id}
                         </Badge>
                       </td>
                       <td className="text-center p-1.5">
                         <Badge variant="outline" className="rounded-full px-1.5 py-0.5 text-[10px]"
-                          style={{ borderColor: '#0ea5e9', color: '#0ea5e9', background: 'rgba(14,165,233,0.1)' }}>
+                          style={{ borderColor: 'var(--tp)', color: 'var(--tp)', background: 'var(--tp-10)' }}>
                           {s.question_id_display}
                         </Badge>
                       </td>
