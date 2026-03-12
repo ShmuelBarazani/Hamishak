@@ -102,8 +102,17 @@ export default function ViewSubmissions() {
         const listsMap = validationListsData.reduce((acc, list) => { acc[list.list_name] = list.options; return acc; }, {});
         const teamListObj = validationListsData.find(list => list.list_name?.toLowerCase().includes('קבוצ') && !list.list_name?.toLowerCase().includes('מוקדמות'));
         if (teamListObj) setTeamValidationList(teamListObj.options);
-        const uniqueParticipants = [...new Set(samplePredictions.map(p => p.participant_name))].sort();
-        setAllParticipants(uniqueParticipants);
+
+        // 🔥 טוען רשימת משתתפים מ-game_participants — לא מניחושים (db.filter מוגבל ל-1000)
+        const { data: gpData } = await supabase
+          .from('game_participants')
+          .select('participant_name')
+          .eq('game_id', currentGame.id)
+          .order('participant_name', { ascending: true });
+        const allParticipantNames = gpData && gpData.length > 0
+          ? [...new Set(gpData.map(r => r.participant_name).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'he'))
+          : [...new Set(samplePredictions.map(p => p.participant_name))].sort((a, b) => a.localeCompare(b, 'he'));
+        setAllParticipants(allParticipantNames);
         const rTables = {}, sTables = {};
         questions.forEach(q => {
           if (!q.table_id) return;
