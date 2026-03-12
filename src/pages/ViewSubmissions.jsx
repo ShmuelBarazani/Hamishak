@@ -400,26 +400,26 @@ export default function ViewSubmissions() {
               const isTeamQuestion = !!(main.home_team && main.away_team);
               const mainValue = participantPredictions[main.id] || '';
               const getSubValue = (sub) => { const subVal = participantPredictions[sub.id] || ''; if (sub.question_id === '1.1' && mainValue !== 'אחר') return ''; return subVal; };
-              // ── רינדור שאלה — מבנה אנכי תמיד ──
+              // ── שורה אחת: ראשית + תתי-סעיפים ───────────────────────────
               const mainVal1 = participantPredictions[main.id] || '';
+              const getSubVal1 = (sub) => { const v = participantPredictions[sub.id] || ''; if (sub.question_id === '1.1' && mainVal1 !== 'אחר') return ''; return v; };
               return (
-                <div key={main.id} style={{ borderRadius: '8px', overflow: 'hidden', border: '1px solid var(--tp-12)', background: 'rgba(0,0,0,0.25)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '9px 12px', minWidth: 0 }}>
-                    <Badge variant="outline" style={{ borderColor: 'var(--tp)', color: 'var(--tp)', minWidth: '44px', textAlign: 'center', flexShrink: 0, fontSize: '0.72rem' }}>{main.question_id}</Badge>
-                    <span style={{ flex: 1, minWidth: 0, fontSize: '0.875rem', color: '#f1f5f9', fontWeight: '500', textAlign: 'right' }}>{main.question_text}</span>
+                <div key={main.id} style={{ display: 'flex', alignItems: 'center', padding: '7px 10px', borderRadius: '8px', overflow: 'hidden', border: '1px solid var(--tp-12)', background: 'rgba(0,0,0,0.22)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: sortedSubs.length > 0 ? '1.4' : '1', minWidth: 0 }}>
+                    <Badge variant="outline" style={{ borderColor: 'var(--tp-50)', color: 'var(--tp)', minWidth: '44px', textAlign: 'center', flexShrink: 0, fontSize: '0.72rem' }}>{main.question_id}</Badge>
+                    <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '0.82rem', color: '#f1f5f9', fontWeight: '500', textAlign: 'right' }}>{main.question_text}</span>
                     <div style={{ flexShrink: 0 }}>{isTeamQuestion ? renderTeamPrediction(main.id, mainVal1) : renderReadOnlySelect(main, mainVal1)}</div>
                   </div>
-                  {sortedSubs.map((sub, idx) => {
-                    const subVal = (() => { const v = participantPredictions[sub.id] || ''; if (sub.question_id === '1.1' && mainVal1 !== 'אחר') return ''; return v; })();
-                    return (
-                      <div key={sub.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '7px 12px 7px 22px', borderTop: '1px solid var(--tp-08)', background: 'rgba(0,0,0,0.18)', minWidth: 0 }}>
-                        <span style={{ color: 'var(--tp)', fontSize: '0.7rem', flexShrink: 0, opacity: 0.5 }}>{idx === sortedSubs.length-1 ? '└' : '├'}</span>
-                        <Badge variant="outline" style={{ borderColor: 'rgba(139,92,246,0.5)', color: '#a78bfa', minWidth: '44px', textAlign: 'center', flexShrink: 0, fontSize: '0.72rem' }}>{sub.question_id}</Badge>
-                        <span style={{ flex: 1, minWidth: 0, fontSize: '0.82rem', color: '#cbd5e1', textAlign: 'right' }}>{sub.question_text}</span>
-                        <div style={{ flexShrink: 0 }}>{isTeamQuestion ? renderTeamPrediction(sub.id, subVal) : renderReadOnlySelect(sub, subVal)}</div>
+                  {sortedSubs.map((sub) => (
+                    <React.Fragment key={sub.id}>
+                      <div style={{ width: '1px', height: '26px', background: 'rgba(255,255,255,0.07)', flexShrink: 0, margin: '0 8px' }} />
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: '1', minWidth: 0 }}>
+                        <Badge variant="outline" style={{ borderColor: 'rgba(139,92,246,0.45)', color: '#a78bfa', minWidth: '44px', textAlign: 'center', flexShrink: 0, fontSize: '0.72rem' }}>{sub.question_id}</Badge>
+                        <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '0.82rem', color: '#cbd5e1', textAlign: 'right' }}>{sub.question_text}</span>
+                        <div style={{ flexShrink: 0 }}>{isTeamQuestion ? renderTeamPrediction(sub.id, getSubVal1(sub)) : renderReadOnlySelect(sub, getSubVal1(sub))}</div>
                       </div>
-                    );
-                  })}
+                    </React.Fragment>
+                  ))}
                 </div>
               );
             })}
@@ -468,23 +468,25 @@ export default function ViewSubmissions() {
               if (!main) return null;
               const sortedSubs = [...subs].sort((a, b) => parseFloat(a.question_id) - parseFloat(b.question_id));
               const mainOriginalValue = participantPredictions[main.id] || '';
-              // ── רינדור שאלה — מבנה אנכי ──
+              // ── שורה אחת: ראשית + תתי-סעיפים ──────────────────────────
               return (
-                <div key={main.id} style={{ borderRadius: '8px', overflow: 'hidden', border: '1px solid var(--tp-12)', background: 'rgba(0,0,0,0.25)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '9px 12px', minWidth: 0 }}>
-                    <Badge variant="outline" style={{ borderColor: 'var(--tp)', color: 'var(--tp)', minWidth: '44px', textAlign: 'center', flexShrink: 0, fontSize: '0.72rem' }}>{main.question_id}</Badge>
-                    <span style={{ flex: 1, minWidth: 0, fontSize: '0.875rem', color: '#f1f5f9', fontWeight: '500', textAlign: 'right' }}>{main.question_text}</span>
+                <div key={main.id} style={{ display: 'flex', alignItems: 'center', padding: '7px 10px', borderRadius: '8px', overflow: 'hidden', border: '1px solid var(--tp-12)', background: 'rgba(0,0,0,0.22)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: sortedSubs.length > 0 ? '1.4' : '1', minWidth: 0 }}>
+                    <Badge variant="outline" style={{ borderColor: 'var(--tp-50)', color: 'var(--tp)', minWidth: '44px', textAlign: 'center', flexShrink: 0, fontSize: '0.72rem' }}>{main.question_id}</Badge>
+                    <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '0.82rem', color: '#f1f5f9', fontWeight: '500', textAlign: 'right' }}>{main.question_text}</span>
                     <div style={{ flexShrink: 0 }}>{renderReadOnlySelect(main, mainOriginalValue)}</div>
                   </div>
-                  {sortedSubs.map((sub, idx) => {
+                  {sortedSubs.map((sub) => {
                     const subOriginalValue = participantPredictions[sub.id] || '';
                     return (
-                      <div key={sub.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '7px 12px 7px 22px', borderTop: '1px solid var(--tp-08)', background: 'rgba(0,0,0,0.18)', minWidth: 0 }}>
-                        <span style={{ color: 'var(--tp)', fontSize: '0.7rem', flexShrink: 0, opacity: 0.5 }}>{idx === sortedSubs.length-1 ? '└' : '├'}</span>
-                        <Badge variant="outline" style={{ borderColor: 'rgba(139,92,246,0.5)', color: '#a78bfa', minWidth: '44px', textAlign: 'center', flexShrink: 0, fontSize: '0.72rem' }}>{sub.question_id}</Badge>
-                        <span style={{ flex: 1, minWidth: 0, fontSize: '0.82rem', color: '#cbd5e1', textAlign: 'right' }}>{sub.question_text}</span>
-                        <div style={{ flexShrink: 0 }}>{renderReadOnlySelect(sub, subOriginalValue)}</div>
-                      </div>
+                      <React.Fragment key={sub.id}>
+                        <div style={{ width: '1px', height: '26px', background: 'rgba(255,255,255,0.07)', flexShrink: 0, margin: '0 8px' }} />
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: '1', minWidth: 0 }}>
+                          <Badge variant="outline" style={{ borderColor: 'rgba(139,92,246,0.45)', color: '#a78bfa', minWidth: '44px', textAlign: 'center', flexShrink: 0, fontSize: '0.72rem' }}>{sub.question_id}</Badge>
+                          <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '0.82rem', color: '#cbd5e1', textAlign: 'right' }}>{sub.question_text}</span>
+                          <div style={{ flexShrink: 0 }}>{renderReadOnlySelect(sub, subOriginalValue)}</div>
+                        </div>
+                      </React.Fragment>
                     );
                   })}
                 </div>
