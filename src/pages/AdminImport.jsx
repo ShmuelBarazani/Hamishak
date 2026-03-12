@@ -1,562 +1,729 @@
-import { useState, useCallback } from "react";
-import * as db from "@/api/entities";
-import { useGame } from "@/components/contexts/GameContext";
+import React, { useState, useEffect, useCallback } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
+import { supabase } from '@/api/supabaseClient';
+import * as db from '@/api/entities';
+import { Trophy, FileText, Save, Loader2 } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
-import { Upload, Loader2, ChevronDown, ChevronUp } from "lucide-react";
+import RoundTableResults from "@/components/predictions/RoundTableResults";
+import { useGame } from "@/components/contexts/GameContext";
+import { calculateTotalScore } from "@/components/scoring/ScoreService";
 
-// ─── CSV Parser ───────────────────────────────────────────────────────────────
-// These CSV files use "field","field" format.
-// Hebrew text like ע"י contains un-escaped quotes that break standard parsers.
-// Solution: split each line on `","` (the real field separator), strip outer quotes.
-function parseCSV(text) {
-  const rows = [];
-  for (const line of text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n')) {
-    if (!line.trim()) continue;
-    const parts = line.split('","');
-    const cleaned = parts.map((p, i) => {
-      if (i === 0) p = p.replace(/^"/, '');
-      if (i === parts.length - 1) p = p.replace(/"[,\s]*$/, '');
-      return p.trim();
-    });
-    rows.push(cleaned);
-  }
-  return rows;
-}
+export default function AdminResults() {
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [recalculating, setRecalculating] = useState(false);
+  const [recalcProgress, setRecalcProgress] = useState('');
+  const [results, setResults] = useState({});
+  const [teams, setTeams] = useState({});
+  const [validationLists, setValidationLists] = useState({});
+  const [openSections, setOpenSections] = useState({});
 
-// ─── Text helpers ─────────────────────────────────────────────────────────────
-function cleanText(s) {
-  return (s || '').replace(/\(\*+\)/g, '').replace(/["'"״'']/g, '').replace(/\s+/g, ' ').trim();
-}
-function normalizeTeam(s) {
-  return (s || '').replace(/\s*\([^)]*\)\s*$/, '').replace(/\s+/g, ' ').trim();
-}
-function wordOverlap(a, b) {
-  const stop = new Set(['את','של','עם','אם','או','על','בין','ב','ל','מ','כ','הכי','ביותר','אחד','אחת','כל','כולל','לא','שלב','שיובקע','שיובקעו']);
-  const wa = new Set(cleanText(a).split(' ').filter(w => w.length > 1 && !stop.has(w)));
-  const wb = new Set(cleanText(b).split(' ').filter(w => w.length > 1 && !stop.has(w)));
-  if (!wa.size || !wb.size) return 0;
-  let common = 0; for (const w of wa) if (wb.has(w)) common++;
-  return common / Math.max(wa.size, wb.size);
-}
+  const [allQuestions, setAllQuestions] = useState([]);
+  const [roundTables, setRoundTables] = useState([]);
+  const [israeliTable, setIsraeliTable] = useState(null);
+  const [specialTables, setSpecialTables] = useState([]);
+  const [locationTables, setLocationTables] = useState([]);
+  const [playoffWinnersTable, setPlayoffWinnersTable] = useState(null);
 
-// ─── Extract predictions ──────────────────────────────────────────────────────
-function extractPredictions(rows) {
-  const safe = (r, c) => (rows[r]?.[c] || '').trim();
-  const name = safe(2, 4);
-  const preds = [];
+  const [currentUser, setCurrentUser] = useState(null);
+  const [selectedT11Teams, setSelectedT11Teams] = useState(new Set());
+  const [selectedT12Teams, setSelectedT12Teams] = useState(new Set());
+  const [selectedT13Teams, setSelectedT13Teams] = useState(new Set());
 
-  // ── Section anchors: find qualifier header rows ────────────────────────────
-  // "רשימת הקבוצות שיעלו לרבע גמר" → T4 qualifiers start
-  // "רשימת הנבחרות שיעלו לחצי גמר" → T6 qualifiers start
-  // "רשימת הנבחרות שיעלו לגמר"      → T8 qualifiers start
-  let t4s = -1, t6s = -1, t8s = -1;
-  for (let i = 0; i < rows.length; i++) {
-    const c3 = safe(i, 3);
-    if (c3.includes('רשימת') && c3.includes('רבע') && t4s < 0) t4s = i;
-    else if (c3.includes('רשימת') && c3.includes('חצי') && t4s >= 0 && t6s < 0) t6s = i;
-    else if (c3.includes('רשימת') && c3.includes('גמר') && !c3.includes('רבע') && !c3.includes('חצי') && t6s >= 0 && t8s < 0) t8s = i;
-  }
-
-  const lastQual = (start, end) => {
-    let last = start;
-    for (let i = start; i < end; i++) {
-      const sl = safe(i, 2), tm = safe(i, 3);
-      if (/^\d+$/.test(sl) && tm && !tm.includes('שם') && !tm.includes('בונוס')) last = i;
-    }
-    return last;
-  };
-
-  const t4e = (t4s >= 0 && t6s >= 0) ? lastQual(t4s, t6s) : -1;
-  const t6e = (t6s >= 0 && t8s >= 0) ? lastQual(t6s, t8s) : -1;
-  const t8e = t8s >= 0 ? lastQual(t8s, t8s + 20) : -1;
-
-  let t9e = -1, t10s = -1;
-  if (t8e >= 0) {
-    for (let i = t8e + 1; i < rows.length; i++) {
-      const n = safe(i, 0);
-      if (/^\(\d+$/.test(n) && safe(i, 7)) {
-        if (n === '(10') { t9e = i; t10s = i + 1; break; }
-      }
-    }
-  }
-
-  // ── T2: General knockout ──────────────────────────────────────────────────
-  // Q1/Q2/Q3: scan rows 10-30
-  for (const [target, mc, svc, stc] of [
-    ['(1', 3, 8, 7],
-    ['(2', 4, 7, 6],
-    ['(3', 4, 7, 6],
-  ]) {
-    for (let i = 10; i < 30; i++) {
-      if (safe(i, 0) !== target) continue;
-      const mv = safe(i, mc) || safe(i, mc === 3 ? 4 : 3);
-      const sv = safe(i, svc);
-      const st = safe(i, stc);
-      if (mv) preds.push({ label: `T2 ${target} ראשי`, csvText: safe(i, 1), value: mv, section: 'T2' });
-      if (sv) preds.push({ label: `T2 ${target} תת`, csvText: st, value: sv, section: 'T2', subOf: target, parentCsvText: safe(i, 1) });
-      break;
-    }
-  }
-
-  // Q4+: scan rows before first T3 match
-  let t3start = -1;
-  for (let i = 0; i < rows.length; i++) {
-    const h = safe(i, 3), a = safe(i, 5), hs = safe(i, 6), as_ = safe(i, 8);
-    if (h && a && /^\d+$/.test(hs) && /^\d+$/.test(as_) && normalizeTeam(h) && normalizeTeam(a)) { t3start = i; break; }
-  }
-  const t2end = t3start > 0 ? t3start : 90;
-  for (let i = 0; i < t2end; i++) {
-    const n = safe(i, 0);
-    if (!/^\(\d+$/.test(n) || ['(1','(2','(3'].includes(n)) continue;
-    const v = safe(i, 6);
-    if (v) preds.push({ label: `T2 ${n}`, csvText: safe(i, 1), value: v, section: 'T2' });
-  }
-
-  // ── T3: Matches ───────────────────────────────────────────────────────────
-  for (let i = 0; i < rows.length; i++) {
-    const h = safe(i, 3), a = safe(i, 5), hs = safe(i, 6), as_ = safe(i, 8);
-    if (h && a && /^\d+$/.test(hs) && /^\d+$/.test(as_) && normalizeTeam(h) && normalizeTeam(a))
-      preds.push({ label: `T3:${normalizeTeam(h)}-${normalizeTeam(a)}`, type: 'match',
-        home: normalizeTeam(h), away: normalizeTeam(a), value: `${hs}-${as_}`, section: 'T3' });
-  }
-
-  // ── T4: שמינית qualifiers ────────────────────────────────────────────────
-  if (t4s >= 0 && t6s >= 0) {
-    for (let i = t4s; i < t6s; i++) {
-      const sl = safe(i, 2), tm = safe(i, 3);
-      if (/^\d+$/.test(sl) && tm && !tm.includes('שם') && !tm.includes('בונוס'))
-        preds.push({ label: `T4 מקום ${sl}`, type: 'qualifier',
-          slot: parseInt(sl), team: normalizeTeam(tm), value: normalizeTeam(tm), section: 'T4' });
-    }
-  }
-
-  // ── T5: שמינית special ───────────────────────────────────────────────────
-  if (t4e >= 0 && t6s >= 0) {
-    for (let i = t4e + 1; i < t6s; i++) {
-      const n = safe(i, 0);
-      if (!/^\(\d+$/.test(n)) continue;
-      const v = safe(i, 7);
-      if (v) preds.push({ label: `T5 ${n}`, csvText: safe(i, 1), value: v, section: 'T5' });
-    }
-  }
-
-  // ── T6: רבע qualifiers ───────────────────────────────────────────────────
-  if (t6s >= 0 && t8s >= 0) {
-    for (let i = t6s; i < t8s; i++) {
-      const sl = safe(i, 2), tm = safe(i, 3);
-      if (/^\d+$/.test(sl) && tm && !tm.includes('שם') && !tm.includes('בונוס'))
-        preds.push({ label: `T6 מקום ${sl}`, type: 'qualifier',
-          slot: parseInt(sl), team: normalizeTeam(tm), value: normalizeTeam(tm), section: 'T6' });
-    }
-  }
-
-  // ── T7: רבע special ──────────────────────────────────────────────────────
-  if (t6e >= 0 && t8s >= 0) {
-    for (let i = t6e + 1; i < t8s; i++) {
-      const n = safe(i, 0);
-      if (!/^\(\d+$/.test(n)) continue;
-      const v = safe(i, 7);
-      if (v) preds.push({ label: `T7 ${n}`, csvText: safe(i, 1), value: v, section: 'T7' });
-    }
-  }
-
-  // ── T8: חצי qualifiers ───────────────────────────────────────────────────
-  if (t8s >= 0) {
-    for (let i = t8s; i < t8s + 20; i++) {
-      const sl = safe(i, 2), tm = safe(i, 3);
-      if (/^\d+$/.test(sl) && tm && !tm.includes('שם') && !tm.includes('בונוס'))
-        preds.push({ label: `T8 מקום ${sl}`, type: 'qualifier',
-          slot: parseInt(sl), team: normalizeTeam(tm), value: normalizeTeam(tm), section: 'T8' });
-    }
-  }
-
-  // ── T9: חצי special ──────────────────────────────────────────────────────
-  if (t8e >= 0 && t9e >= 0) {
-    for (let i = t8e + 1; i <= t9e; i++) {
-      const n = safe(i, 0);
-      if (!/^\(\d+$/.test(n)) continue;
-      const v = safe(i, 7);
-      if (v) preds.push({ label: `T9 ${n}`, csvText: safe(i, 1), value: v, section: 'T9' });
-    }
-  }
-
-  // ── T10: גמר special ─────────────────────────────────────────────────────
-  if (t10s >= 0) {
-    for (let i = t10s; i < rows.length; i++) {
-      const n = safe(i, 0);
-      if (!/^\(\d+$/.test(n)) continue;
-      const v = safe(i, 7);
-      if (v) preds.push({ label: `T10 ${n}`, csvText: safe(i, 1), value: v, section: 'T10' });
-    }
-  }
-
-  return { name, preds, anchors: { t4s, t6s, t8s, t9e, t10s } };
-}
-
-// ─── Matcher ──────────────────────────────────────────────────────────────────
-function buildSubMap(questions) {
-  const sm = {};
-  for (const q of questions) {
-    const qid = String(q.question_id || '');
-    if (qid.includes('.')) {
-      const p = qid.split('.')[0];
-      if (!sm[p]) sm[p] = [];
-      sm[p].push(q);
-    }
-  }
-  return sm;
-}
-
-function bestFuzzy(csvText, pool, threshold) {
-  const norm = cleanText(csvText || '');
-  const exact = pool.find(q => cleanText(q.question_text || '') === norm);
-  if (exact) return exact;
-  let best = null, bestScore = 0;
-  for (const q of pool) {
-    if (!q.question_text) continue;
-    const score = wordOverlap(norm, cleanText(q.question_text));
-    if (score > bestScore) { bestScore = score; best = q; }
-  }
-  return bestScore >= threshold ? best : null;
-}
-
-function matchPred(pred, questions, subMap) {
-  const sPool = questions.filter(q => q.table_id === pred.section);
-  if (pred.type === 'match') {
-    const m = sPool.find(q => normalizeTeam(q.home_team||'') === pred.home && normalizeTeam(q.away_team||'') === pred.away);
-    if (m) return m;
-    const rev = sPool.find(q => normalizeTeam(q.home_team||'') === pred.away && normalizeTeam(q.away_team||'') === pred.home);
-    if (rev) return { ...rev, _reversed: true };
-    return null;
-  }
-  if (pred.type === 'qualifier') {
-    const qPool = sPool.filter(q => !q.home_team).sort((a, b) => (parseFloat(a.question_id)||0) - (parseFloat(b.question_id)||0));
-    return qPool[pred.slot - 1] || null;
-  }
-  if (pred.subOf) {
-    const pq = bestFuzzy(pred.parentCsvText, sPool, 0.65) || bestFuzzy(pred.parentCsvText, questions, 0.70);
-    if (pq) {
-      const pid = String(pq.question_id || '').replace(/\.0$/, '');
-      const subs = subMap[pid] || [];
-      if (subs.length === 1) return subs[0];
-      if (subs.length > 1) {
-        let best = null, sc = 0;
-        for (const s of subs) { const x = wordOverlap(cleanText(pred.csvText||''), cleanText(s.question_text||'')); if (x > sc) { sc = x; best = s; } }
-        return best;
-      }
-    }
-  }
-  return bestFuzzy(pred.csvText, sPool, 0.65) || bestFuzzy(pred.csvText, questions, 0.72);
-}
-
-// ─── Colors ───────────────────────────────────────────────────────────────────
-const TC = { T2:'#a78bfa', T3:'#34d399', T4:'#34d399', T5:'#fbbf24', T6:'#f97316', T7:'#f87171', T8:'#60a5fa', T9:'#38bdf8', T10:'#f472b6' };
-
-export default function AdminImport() {
+  const { toast } = useToast();
   const { currentGame } = useGame();
-  const { toast }       = useToast();
-  const [questions, setQuestions] = useState([]);
-  const [subMap,    setSubMap]    = useState({});
-  const [loadingQs, setLoadingQs] = useState(false);
-  const [parsed,    setParsed]    = useState(null);
-  const [importing, setImporting] = useState(false);
-  const [importResults, setImportResults] = useState(null);
-  const [step,      setStep]      = useState('init');
-  const [showMatched, setShowMatched] = useState(false);
 
-  const loadQuestions = useCallback(async () => {
-    if (!currentGame) return null;
-    setLoadingQs(true);
-    try {
-      let qs = [], skip = 0;
-      while (true) {
-        const batch = await db.Question.filter({ game_id: currentGame.id }, null, 5000, skip);
-        qs = [...qs, ...batch]; if (batch.length < 5000) break; skip += 5000;
-      }
-      qs = qs.filter(q => q.table_id !== 'T1');
-      const sm = buildSubMap(qs);
-      setQuestions(qs); setSubMap(sm);
-      toast({ title: `✅ ${qs.length} שאלות נטענו`, duration: 3000 });
-      return { qs, sm };
-    } catch (err) {
-      toast({ title: 'שגיאה', description: err.message, variant: 'destructive', duration: 4000 });
-      return null;
-    } finally { setLoadingQs(false); }
-  }, [currentGame]);
+  useEffect(() => {
+    const loadUser = async () => {
+      try {
+        const isAuth = await supabase.auth.getSession().then(r => !!r.data.session);
+        if (isAuth) setCurrentUser(await supabase.auth.getUser().then(r => r.data.user));
+      } catch (e) { console.error("Failed to load user:", e); }
+    };
+    loadUser();
+  }, []);
 
-  const processFile = (text, qs, sm) => {
-    const rows = parseCSV(text);
-    const { name, preds, anchors } = extractPredictions(rows);
-    const matched = [], unmatched = [];
-    for (const pred of preds) {
-      const q = matchPred(pred, qs, sm);
-      if (q) matched.push({ pred, question: q });
-      else   unmatched.push(pred);
+  const isAdmin = currentUser?.role === 'admin' || currentUser?.user_metadata?.role === 'admin';
+
+  // ── Helpers ───────────────────────────────────────────────────────────────
+  const loadAllQuestions = async (gameId) => {
+    let all = [], from = 0;
+    const PAGE = 1000;
+    while (true) {
+      const { data, error } = await supabase
+        .from('questions').select('*').eq('game_id', gameId).range(from, from + PAGE - 1);
+      if (error) { console.error('questions fetch error:', error); break; }
+      if (!data || data.length === 0) break;
+      all = [...all, ...data];
+      if (data.length < PAGE) break;
+      from += PAGE;
     }
-    return { name, matched, unmatched, total: preds.length, anchors };
+    return all;
   };
 
-  const handleSingleFile = async (e) => {
-    const file = e.target.files[0]; if (!file) return;
-    let qs = questions, sm = subMap;
-    if (!qs.length) { const res = await loadQuestions(); if (!res) return; qs = res.qs; sm = res.sm; }
-    const text = await file.text();
-    setParsed({ single: true, fileName: file.name, ...processFile(text, qs, sm) });
-    setStep('preview'); setShowMatched(false);
-  };
-
-  const handleAllFiles = async (e) => {
-    const files = Array.from(e.target.files); if (!files.length) return;
-    let qs = questions, sm = subMap;
-    if (!qs.length) { const res = await loadQuestions(); if (!res) return; qs = res.qs; sm = res.sm; }
-    const results = [];
-    for (const file of files) {
-      const text = await file.text();
-      results.push({ fileName: file.name, ...processFile(text, qs, sm) });
+  const loadAllPredictions = async (gameId) => {
+    // db.Prediction.filter מוגבל ל-1000 — משתמשים ב-supabase ישיר עם range()
+    let all = [], from = 0;
+    const PAGE = 1000;
+    while (true) {
+      const { data, error } = await supabase
+        .from('predictions')
+        .select('*')
+        .eq('game_id', gameId)
+        .range(from, from + PAGE - 1);
+      if (error) { console.error('predictions fetch error:', error); break; }
+      if (!data || data.length === 0) break;
+      all = [...all, ...data];
+      console.log(`   📊 ניחושים: נטענו ${data.length}, סה"כ ${all.length}`);
+      if (data.length < PAGE) break;
+      from += PAGE;
     }
-    const totalMatched   = results.reduce((s, r) => s + r.matched.length,   0);
-    const totalUnmatched = results.reduce((s, r) => s + r.unmatched.length, 0);
-    setParsed({ bulk: true, results, totalMatched, totalUnmatched });
-    setStep('bulk_preview');
+    return all;
   };
 
-  const runImport = async (participants) => {
-    setImporting(true);
-    let totalInserted = 0, totalErrors = 0;
-    const perParticipant = [];
+  const loadAllRankings = async (gameId) => {
+    // db.Ranking.filter מוגבל — משתמשים ב-supabase ישיר עם range()
+    let all = [], from = 0;
+    const PAGE = 500;
+    while (true) {
+      const { data, error } = await supabase
+        .from('rankings')
+        .select('*')
+        .eq('game_id', gameId)
+        .range(from, from + PAGE - 1);
+      if (error) { console.error('rankings fetch error:', error); break; }
+      if (!data || data.length === 0) break;
+      all = [...all, ...data];
+      if (data.length < PAGE) break;
+      from += PAGE;
+    }
+    return all;
+  };
+
+  // ── Load page data ────────────────────────────────────────────────────────
+  const loadData = useCallback(async () => {
+    if (!currentGame) { setLoading(false); return; }
+    setLoading(true);
     try {
-      for (const p of participants) {
-        if (!p.matched.length) continue;
-        const existing = await db.Prediction.filter({ game_id: currentGame.id, participant_name: p.name }, null, 9999);
-        for (const x of existing) await db.Prediction.delete(x.id);
-        let inserted = 0, errors = 0;
-        for (let i = 0; i < p.matched.length; i++) {
-          const { pred, question } = p.matched[i];
-          try {
-            const data = { game_id: currentGame.id, question_id: question.id,
-              participant_name: p.name, text_prediction: pred.value, created_at: new Date().toISOString() };
-            if (pred.type === 'match') {
-              let [hs, as_] = pred.value.split('-').map(Number);
-              if (question._reversed) [hs, as_] = [as_, hs];
-              data.home_prediction = hs; data.away_prediction = as_;
-            }
-            await db.Prediction.create(data);
-            inserted++;
-          } catch { errors++; }
-          if ((i + 1) % 10 === 0) await new Promise(r => setTimeout(r, 50));
+      const questions = await loadAllQuestions(currentGame.id);
+      setAllQuestions(questions);
+
+      const teamsData = currentGame.teams_data || [];
+      const teamsMap = teamsData.reduce((acc, t) => { acc[t.name] = t; return acc; }, {});
+      setTeams(teamsMap);
+
+      const listsData = currentGame.validation_lists || [];
+      const listsMap = listsData.reduce((acc, l) => { acc[l.list_name] = l.options; return acc; }, {});
+      listsMap['כן/לא'] = ['כן', 'לא'];
+      setValidationLists(listsMap);
+
+      const rTables = {}, sTables = {};
+      questions.forEach(q => {
+        if (!q.table_id) return;
+        if (q.table_id === 'T3' && q.question_text && !q.home_team) {
+          const parts = q.question_text.split(' - ');
+          if (parts.length === 2) { q.home_team = parts[0].trim(); q.away_team = parts[1].trim(); }
         }
-        try {
-          const gps = await db.GameParticipant.filter({ game_id: currentGame.id, participant_name: p.name }, null, 1);
-          if (!gps.length) await db.GameParticipant.create({ game_id: currentGame.id, participant_name: p.name, is_active: true });
-        } catch {}
-        totalInserted += inserted; totalErrors += errors;
-        perParticipant.push({ name: p.name, inserted, errors });
+        if (q.table_id === 'T20' && q.question_text && !q.home_team) {
+          const sep = q.question_text.includes(' נגד ') ? ' נגד ' : q.question_text.includes(' - ') ? ' - ' : null;
+          if (sep) { const p = q.question_text.split(sep).map(t => t.trim()); if (p.length === 2) { q.home_team = p[0]; q.away_team = p[1]; } }
+        }
+
+        const isKnockoutMatch = q.table_id === 'T3' && q.home_team && q.away_team;
+        const collection = (q.stage_name?.includes('בית') || q.table_description?.includes('בית') || isKnockoutMatch || (q.home_team && q.away_team)) ? rTables : sTables;
+
+        let tableId = q.table_id;
+        let tableDesc = q.table_description;
+        if (q.stage_name?.includes('בית')) { tableId = q.stage_name; tableDesc = q.stage_name; }
+        else if (q.table_description?.includes('שאלות מיוחדות') && q.stage_order) { tableId = `custom_order_${q.stage_order}`; tableDesc = q.stage_name || q.table_description; }
+
+        if (!collection[tableId]) collection[tableId] = { id: tableId, description: tableDesc || tableId, questions: [], stage_order: q.stage_order || 0 };
+        collection[tableId].questions.push(q);
+      });
+
+      const t20Table = rTables['T20']; delete rTables['T20'];
+      setIsraeliTable(t20Table || null);
+      delete sTables['T1'];
+
+      const sortedRoundTables = Object.values(rTables).sort((a, b) => {
+        const aG = a.id.includes('בית'), bG = b.id.includes('בית');
+        if (aG && !bG) return -1; if (!aG && bG) return 1;
+        if (aG && bG) return a.id.localeCompare(b.id, 'he');
+        return (parseInt(a.id.replace('T','').replace(/\D/g,'')) || 0) - (parseInt(b.id.replace('T','').replace(/\D/g,'')) || 0);
+      });
+      setRoundTables(sortedRoundTables);
+
+      const locationTableIds = ['T9','T14','T15','T16','T17'];
+      setLocationTables(Object.values(sTables).filter(t => locationTableIds.includes(t.id)).sort((a,b) => parseInt(a.id.replace('T','')) - parseInt(b.id.replace('T',''))));
+      setPlayoffWinnersTable(sTables['T19'] || null);
+
+      const allSpecialTables = Object.values(sTables).filter(t => {
+        if (t.id === 'T10') return false;
+        const desc = t.description?.trim();
+        return desc && !/^\d+$/.test(desc) && !locationTableIds.includes(t.id) && t.id !== 'T19' && !t.id.includes('בית') && t.id !== 'T1' && t.id !== 'T9';
+      }).sort((a,b) => ((a.stage_order||0) - (b.stage_order||0)) || (parseInt(a.id.replace('T','').replace(/\D/g,'')) - parseInt(b.id.replace('T','').replace(/\D/g,''))));
+      setSpecialTables(allSpecialTables);
+      // ── שינוי שם T3 ──────────────────────────────────────────
+      sortedRoundTables.forEach(t => {
+        if (t.id === 'T3') t.description = 'שלב שמינית הגמר - המשחקים!';
+      });
+      allSpecialTables.forEach(t => {
+        if (t.id === 'T3') t.description = 'שלב שמינית הגמר - המשחקים!';
+      });
+
+      const t10Special = sTables['T10'];
+      if (t10Special) {
+        const t10Round = sortedRoundTables.find(t => t.id === 'T10');
+        if (t10Round) t10Round.specialQuestions = t10Special.questions;
       }
-      setImportResults({ totalInserted, totalErrors, perParticipant });
-      setStep('done');
-      toast({ title: `✅ יובאו ${totalInserted} ניחושים`, duration: 5000 });
-    } catch (err) {
-      toast({ title: 'שגיאה', description: err.message, variant: 'destructive', duration: 5000 });
-    } finally { setImporting(false); }
+
+      const initialResults = questions.reduce((acc, q) => {
+        const r = q.actual_result;
+        acc[q.id] = (!r || r === '__CLEAR__' || r.toLowerCase().includes('null')) ? '__CLEAR__' : r;
+        return acc;
+      }, {});
+      setResults(initialResults);
+    } catch (error) {
+      console.error("שגיאה בטעינה:", error);
+      toast({ title: "שגיאה", description: "טעינת הנתונים נכשלה.", variant: "destructive" });
+    }
+    setLoading(false);
+  }, [currentGame, toast]);
+
+  useEffect(() => { loadData(); }, [loadData]);
+
+  // T11/T12/T13 selected teams
+  useEffect(() => {
+    const filter = (include, exclude=[]) => {
+      const qs = allQuestions.filter(q => {
+        const sn = q.stage_name || '', td = q.table_description || '';
+        return include.some(k => sn.includes(k) || td.includes(k)) && !exclude.some(k => sn.includes(k) || td.includes(k));
+      });
+      const s = new Set();
+      qs.forEach(q => { const r = results[q.id]; if (r && r.trim() && r !== '__CLEAR__') s.add(r); });
+      return s;
+    };
+    setSelectedT11Teams(filter(['רבע גמר']));
+    setSelectedT12Teams(filter(['חצי גמר']));
+    setSelectedT13Teams(filter(['גמר'],['רבע','חצי']));
+  }, [results, allQuestions]);
+
+  const handleResultChange = (questionId, value) => {
+    if (!isAdmin) return;
+    setResults(prev => ({ ...prev, [questionId]: value === '' ? '__CLEAR__' : value }));
   };
 
-  // ─── Render ─────────────────────────────────────────────────────────────────
-  return (
-    <div dir="rtl" style={{ minHeight: '100vh', background: '#0f172a', color: '#e2e8f0', padding: '20px', fontFamily: 'Arial,sans-serif' }}>
-      <div style={{ maxWidth: 1100, margin: '0 auto' }}>
-        <h1 style={{ fontSize: 22, fontWeight: 'bold', color: '#06b6d4', marginBottom: 20 }}>ייבוא ניחושים מ-CSV</h1>
+  // ── Calculate participant score ────────────────────────────────────────────
+  const calcParticipantScore = (qs, predictions) => {
+    const latest = {};
+    predictions.forEach(p => {
+      const ex = latest[p.question_id];
+      if (!ex || new Date(p.created_at) > new Date(ex.created_at)) latest[p.question_id] = p;
+    });
+    const predMap = {};
+    for (const [qid, p] of Object.entries(latest)) predMap[qid] = p.text_prediction;
+    const { total } = calculateTotalScore(qs, predMap);
+    return total;
+  };
 
-        {/* Load questions */}
-        <div style={{ background: '#1e293b', borderRadius: 10, padding: 14, marginBottom: 14, border: '1px solid #334155' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ color: '#94a3b8', fontSize: 13 }}>
-              {questions.length ? `✅ ${questions.length} שאלות נטענו` : 'שאלות לא נטענו'}
-            </span>
-            <Button onClick={loadQuestions} disabled={loadingQs || !currentGame}
-              style={{ background: '#0284c7', color: 'white', fontSize: 13 }}>
-              {loadingQs ? <><Loader2 className="w-3 h-3 animate-spin ml-1" />טוען...</> : 'טען שאלות'}
-            </Button>
-          </div>
-        </div>
+  // ── Recalculate rankings for ALL participants ──────────────────────────────
+  const recalculateRankings = async () => {
+    if (!currentGame) return;
+    setRecalculating(true);
+    setRecalcProgress('טוען שאלות...');
+    try {
+      // 1. שאלות
+      let qs = await loadAllQuestions(currentGame.id);
+      qs = qs.filter(q => q.table_id && q.table_id !== 'T1');
+      qs.forEach(q => {
+        if (!q.home_team && !q.away_team && q.question_text) {
+          const sep = q.question_text.includes(' נגד ') ? ' נגד ' : q.question_text.includes(' - ') ? ' - ' : null;
+          if (sep) { const p = q.question_text.split(sep).map(t => t.trim()); if (p.length === 2) { q.home_team = p[0]; q.away_team = p[1]; } }
+        }
+      });
+      console.log(`✅ ${qs.length} שאלות`);
 
-        {/* Step 1: single file */}
-        {questions.length > 0 && step === 'init' && (
-          <div style={{ background: '#1e293b', borderRadius: 10, padding: 14, marginBottom: 14, border: '2px solid #0284c7' }}>
-            <h2 style={{ color: '#38bdf8', fontSize: 14, marginBottom: 4 }}>שלב 1 — בדיקה עם קובץ בודד</h2>
-            <p style={{ color: '#64748b', fontSize: 12, marginBottom: 10 }}>בחר קובץ אחד לפני ייבוא הכולל</p>
-            <input type="file" accept=".csv" onChange={handleSingleFile} style={{ color: '#e2e8f0' }} />
-          </div>
-        )}
+      // 2. ניחושים — כולם
+      setRecalcProgress('טוען ניחושים...');
+      const preds = await loadAllPredictions(currentGame.id);
+      console.log(`✅ ${preds.length} ניחושים`);
 
-        {/* Single file preview */}
-        {step === 'preview' && parsed?.single && (() => {
-          const { name, matched, unmatched, total, anchors } = parsed;
-          const ok = unmatched.length === 0 && total >= 100;
-          return (
-            <div style={{ background: '#1e293b', borderRadius: 10, padding: 16, marginBottom: 14, border: '1px solid #334155' }}>
+      // 3. קיבוץ לפי משתתף
+      const byParticipant = {};
+      preds.forEach(p => {
+        if (!p.participant_name?.trim()) return;
+        if (!byParticipant[p.participant_name]) byParticipant[p.participant_name] = [];
+        byParticipant[p.participant_name].push(p);
+      });
+      const participants = Object.keys(byParticipant);
+      console.log(`✅ ${participants.length} משתתפים`);
 
-              {/* Header */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                <div>
-                  <h2 style={{ color: '#06b6d4', fontSize: 15, margin: 0 }}>תוצאות: {name}</h2>
-                  <span style={{ color: '#475569', fontSize: 11 }}>
-                    עוגנים: T4={anchors.t4s >= 0 ? `שורה ${anchors.t4s + 1}` : '❌'} T6={anchors.t6s >= 0 ? `שורה ${anchors.t6s + 1}` : '❌'} T8={anchors.t8s >= 0 ? `שורה ${anchors.t8s + 1}` : '❌'}
-                  </span>
-                </div>
-                <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                  <span style={{ color: '#64748b', fontSize: 11 }}>חולצו: {total}</span>
-                  <span style={{ background: '#064e3b', color: '#6ee7b7', padding: '3px 10px', borderRadius: 4, fontSize: 12 }}>✓ {matched.length} זוהו</span>
-                  <span style={{ background: unmatched.length > 0 ? '#450a0a' : '#064e3b', color: unmatched.length > 0 ? '#fca5a5' : '#6ee7b7', padding: '3px 10px', borderRadius: 4, fontSize: 12 }}>
-                    {unmatched.length > 0 ? `✗ ${unmatched.length} לא זוהו` : '✓ 0 שגיאות'}
-                  </span>
-                </div>
+      // 4. חישוב ניקוד
+      setRecalcProgress(`מחשב ניקוד עבור ${participants.length} משתתפים...`);
+      const scores = participants.map(name => ({
+        participant_name: name,
+        current_score: calcParticipantScore(qs, byParticipant[name])
+      }));
+      scores.sort((a, b) => b.current_score - a.current_score);
+      let pos = 1;
+      scores.forEach((s, i) => {
+        if (i > 0 && scores[i].current_score !== scores[i-1].current_score) pos = i + 1;
+        s.current_position = pos;
+      });
+
+      // 5. טען baselines קיימות — עם pagination מלאה!
+      setRecalcProgress('טוען דירוג קיים...');
+      const existingRankings = await loadAllRankings(currentGame.id);
+      console.log(`✅ ${existingRankings.length} שורות דירוג קיימות`);
+      const baselineMap = {};
+      existingRankings.forEach(r => { baselineMap[r.participant_name] = r; });
+
+      // 6. שמור
+      let saved = 0;
+      for (const s of scores) {
+        const base = baselineMap[s.participant_name];
+        setRecalcProgress(`שומר ${++saved}/${scores.length}: ${s.participant_name}`);
+        const data = {
+          participant_name: s.participant_name,
+          game_id: currentGame.id,
+          current_score: s.current_score,
+          current_position: s.current_position,
+          previous_score: base?.current_score || 0,
+          previous_position: base?.current_position || 0,
+          baseline_score: base?.baseline_score || 0,
+          baseline_position: base?.baseline_position || 0,
+          score_change: s.current_score - (base?.baseline_score || 0),
+          position_change: (base?.baseline_position || 0) - s.current_position,
+          last_updated: new Date().toISOString(),
+          last_baseline_set: base?.last_baseline_set || null
+        };
+        try {
+          if (base) await db.Ranking.update(base.id, data);
+          else await db.Ranking.create(data);
+        } catch (err) { console.error('שגיאה בדירוג', s.participant_name, err); }
+        // rate limit — 100ms בין כל שמירה
+        await new Promise(r => setTimeout(r, 100));
+      }
+
+      setRecalcProgress('');
+      toast({
+        title: "✅ דירוג עודכן!",
+        description: `חושב ניקוד עבור ${scores.length} משתתפים`,
+        className: "bg-green-900/30 border-green-500 text-green-200",
+        duration: 4000
+      });
+    } catch (error) {
+      console.error("שגיאה בחישוב דירוג:", error);
+      setRecalcProgress('');
+      toast({ title: "שגיאה בדירוג", description: error.message, variant: "destructive" });
+    }
+    setRecalculating(false);
+  };
+
+  // ── Save results ──────────────────────────────────────────────────────────
+  const handleSaveResults = async () => {
+    setSaving(true);
+    try {
+      const changedQuestions = allQuestions.filter(q => {
+        const nv = (results[q.id] === '__CLEAR__' || !results[q.id]) ? null : results[q.id];
+        const ov = q.actual_result || null;
+        return nv !== ov;
+      });
+
+      if (changedQuestions.length === 0) {
+        toast({ title: "לא בוצעו שינויים", description: "אין שינויים לשמור" });
+        setSaving(false);
+        return;
+      }
+
+      console.log(`💾 שומר ${changedQuestions.length} שאלות...`);
+      for (let i = 0; i < changedQuestions.length; i++) {
+        const q = changedQuestions[i];
+        const val = (results[q.id] === '__CLEAR__' || !results[q.id]) ? null : results[q.id];
+        await db.Question.update(q.id, { actual_result: val });
+        if ((i + 1) % 3 === 0) await new Promise(r => setTimeout(r, 300));
+      }
+
+      toast({
+        title: "נשמר!",
+        description: `עודכנו ${changedQuestions.length} תוצאות — מחשב דירוג...`,
+        className: "bg-cyan-900/30 border-cyan-500 text-cyan-200",
+        duration: 3000
+      });
+
+      await loadData();
+      await recalculateRankings();
+    } catch (error) {
+      console.error("שגיאה בשמירה:", error);
+      toast({ title: "שגיאה", description: error.message, variant: "destructive" });
+    }
+    setSaving(false);
+  };
+
+  const toggleSection = (sectionId) => setOpenSections(prev => ({ ...prev, [sectionId]: !prev[sectionId] }));
+
+  const findTeam = (name) => {
+    if (!name) return null;
+    if (teams[name]) return teams[name];
+    const base = name.replace(/\s*\([^)]*\)\s*$/, '').trim();
+    return teams[base] || null;
+  };
+
+  const renderSelectWithLogos = (question, value, onChange, selectClassName = "w-[200px]") => {
+    const options = validationLists[question.validation_list] || [];
+    const isTeamsList = question.validation_list?.toLowerCase().includes('קבוצ') || question.validation_list?.toLowerCase().includes('נבחר');
+    const hasResult = value && value !== '__CLEAR__';
+
+    if (!question.validation_list || options.length === 0) {
+      return (
+        <Input
+          value={value === '__CLEAR__' ? '' : (value || '')}
+          onChange={(e) => onChange(e.target.value)}
+          style={{
+            width: '180px',
+            background: hasResult ? 'var(--tp-20)' : 'rgba(51,65,85,0.5)',
+            borderColor: hasResult ? 'var(--tp)' : 'rgba(100,116,139,1)',
+            color: hasResult ? 'var(--tp)' : '#f8fafc',
+            fontWeight: hasResult ? '700' : 'normal'
+          }}
+          placeholder="הזן תוצאה..."
+          readOnly={!isAdmin}
+        />
+      );
+    }
+
+    const safeValue = (!value || value === 'null' || value === 'undefined' || value.toLowerCase?.().includes('null')) ? '__CLEAR__' : value;
+
+    return (
+      <Select value={safeValue} onValueChange={onChange} disabled={!isAdmin}>
+        <SelectTrigger className={selectClassName} style={{
+          background: hasResult ? 'var(--tp-20)' : 'rgba(51,65,85,0.5)',
+          borderColor: hasResult ? 'var(--tp)' : 'rgba(100,116,139,1)',
+          color: hasResult ? 'var(--tp)' : '#94a3b8',
+          fontWeight: hasResult ? '700' : 'normal'
+        }}>
+          <SelectValue placeholder="בחר...">
+            {!hasResult ? 'בחר...' : (
+              <div className="flex items-center gap-2">
+                {isTeamsList && findTeam(value)?.logo_url && (
+                  <img src={findTeam(value).logo_url} alt={value} className="w-5 h-5 rounded-full" onError={e => e.target.style.display='none'} />
+                )}
+                <span>{value.replace(/\s*\([^)]+\)\s*$/, '').trim()}</span>
               </div>
-
-              {/* Unmatched */}
-              {unmatched.length > 0 && (
-                <div style={{ background: '#1a0808', border: '2px solid #dc2626', borderRadius: 8, padding: 12, marginBottom: 14 }}>
-                  <h3 style={{ color: '#f87171', fontSize: 13, marginBottom: 8 }}>⚠️ {unmatched.length} ניחושים שלא זוהו</h3>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-                    <thead><tr style={{ background: '#450a0a' }}>
-                      {['#', 'קטגוריה', 'שאלה מה-CSV', 'ניחוש'].map(h =>
-                        <th key={h} style={{ padding: '4px 8px', color: '#fca5a5', textAlign: 'right' }}>{h}</th>)}
-                    </tr></thead>
-                    <tbody>{unmatched.map((u, i) => (
-                      <tr key={i} style={{ borderBottom: '1px solid #450a0a' }}>
-                        <td style={{ padding: '4px 8px', color: '#64748b' }}>{i + 1}</td>
-                        <td style={{ padding: '4px 8px', color: TC[u.section] || '#fbbf24', whiteSpace: 'nowrap' }}>{u.label}</td>
-                        <td style={{ padding: '4px 8px', color: '#fca5a5' }}>
-                          {u.type === 'match' ? `${u.home} - ${u.away}` : u.type === 'qualifier' ? `מקום ${u.slot}: ${u.team}` : (u.csvText || '').slice(0, 90)}
-                        </td>
-                        <td style={{ padding: '4px 8px', color: '#f1f5f9', fontWeight: 'bold', direction: 'ltr', textAlign: 'left' }}>"{u.value}"</td>
-                      </tr>
-                    ))}</tbody>
-                  </table>
-                  <p style={{ color: '#64748b', fontSize: 11, marginTop: 8 }}>📩 שלח לי צילום מסך ואני אתקן</p>
+            )}
+          </SelectValue>
+        </SelectTrigger>
+        <SelectContent className="bg-slate-800 border-cyan-600 text-slate-200">
+          <SelectItem value="__CLEAR__" className="hover:bg-cyan-700/20 text-blue-300">בחר...</SelectItem>
+          {options.map(opt => {
+            const team = isTeamsList ? findTeam(opt) : null;
+            const safeVal = (!value || value === '__CLEAR__') ? '' : value;
+            const sn = question.stage_name || '', td = question.table_description || '';
+            const isS11 = sn.includes('רבע גמר') || td.includes('רבע גמר');
+            const isS12 = sn.includes('חצי גמר') || td.includes('חצי גמר');
+            const isS13 = (sn.includes('גמר') && !sn.includes('רבע') && !sn.includes('חצי')) || (td.includes('גמר') && !td.includes('רבע') && !td.includes('חצי'));
+            const alreadySelected =
+              (isS11 && selectedT11Teams.has(opt) && safeVal !== opt) ||
+              (isS12 && selectedT12Teams.has(opt) && safeVal !== opt) ||
+              (isS13 && selectedT13Teams.has(opt) && safeVal !== opt);
+            return (
+              <SelectItem key={opt} value={opt} className="hover:bg-cyan-700/20" disabled={alreadySelected} style={{ opacity: alreadySelected ? 0.4 : 1 }}>
+                <div className="flex items-center gap-2">
+                  {team?.logo_url && <img src={team.logo_url} alt={opt} className="w-5 h-5 rounded-full" onError={e => e.target.style.display='none'} style={{ opacity: alreadySelected ? 0.4 : 1 }} />}
+                  <span style={{ color: alreadySelected ? '#64748b' : '#f8fafc' }}>{opt.replace(/\s*\([^)]+\)\s*$/, '').trim()}</span>
                 </div>
-              )}
+              </SelectItem>
+            );
+          })}
+        </SelectContent>
+      </Select>
+    );
+  };
 
-              {/* Matched table toggle */}
-              <button onClick={() => setShowMatched(!showMatched)}
-                style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: 12, display: 'flex', alignItems: 'center', gap: 4, marginBottom: 8 }}>
-                {showMatched ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-                {showMatched ? 'הסתר' : 'הצג'} ניחושים שזוהו ({matched.length})
-              </button>
+  const renderQuestionRow = (q, cols = 4, widths = { select: '160px' }) => (
+    <div key={q.id} style={{
+      display: 'grid',
+      gridTemplateColumns: cols === 4 ? `50px 1fr ${widths.select} 50px` : `50px 1fr ${widths.select} 50px`,
+      gap: '8px', alignItems: 'center', padding: '8px 12px', borderRadius: '6px'
+    }} className="border border-cyan-600/30 bg-slate-700/20">
+      <Badge variant="outline" className="border-cyan-400 text-cyan-200 justify-center text-xs h-6 w-full">{q.question_id}</Badge>
+      <span className="text-right font-medium text-sm text-blue-100 truncate">{q.question_text}</span>
+      {renderSelectWithLogos(q, results[q.id] || '', val => handleResultChange(q.id, val === '__CLEAR__' ? '' : val), `w-[${widths.select}]`)}
+      <Badge className="text-xs px-2 py-1 justify-center h-6 w-full" style={{ borderColor: 'var(--tp-50)', color: 'var(--tp)', background: 'var(--tp-10)' }}>{q.possible_points || 0}</Badge>
+    </div>
+  );
 
-              {showMatched && (
-                <div style={{ maxHeight: 500, overflowY: 'auto', border: '1px solid #334155', borderRadius: 8, marginBottom: 12 }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-                    <thead style={{ position: 'sticky', top: 0, background: '#0f172a' }}>
-                      <tr>{['#', 'שלב', 'q_id', 'שאלה ב-DB', 'ניחוש'].map(h =>
-                        <th key={h} style={{ padding: '5px 10px', color: '#64748b', textAlign: 'right', borderBottom: '1px solid #334155' }}>{h}</th>)}</tr>
-                    </thead>
-                    <tbody>{matched.map(({ pred, question }, i) => (
-                      <tr key={i} style={{ borderBottom: '1px solid #1e293b', background: i % 2 === 0 ? 'transparent' : '#161f2e' }}>
-                        <td style={{ padding: '4px 10px', color: '#64748b' }}>{i + 1}</td>
-                        <td style={{ padding: '4px 10px' }}>
-                          <span style={{ background: (TC[question.table_id] || '#94a3b8') + '22', color: TC[question.table_id] || '#94a3b8', padding: '1px 5px', borderRadius: 3, fontSize: 11 }}>{question.table_id}</span>
-                        </td>
-                        <td style={{ padding: '4px 10px', color: '#64748b', whiteSpace: 'nowrap' }}>{question.question_id}</td>
-                        <td style={{ padding: '4px 10px', color: '#e2e8f0' }}>{question.question_text || `${question.home_team || ''} - ${question.away_team || ''}`}</td>
-                        <td style={{ padding: '4px 10px', color: '#6ee7b7', fontWeight: 'bold', direction: 'ltr', textAlign: 'left' }}>
-                          {pred.value}{question._reversed ? ' ↔' : ''}
-                        </td>
-                      </tr>
-                    ))}</tbody>
-                  </table>
-                </div>
-              )}
+  const renderSpecialQuestions = (table) => {
+    const grouped = {};
+    table.questions.forEach((q, idx) => {
+      const qId = q.question_id != null ? String(q.question_id) : String(q.stage_order || idx);
+      const mainId = Math.floor(parseFloat(qId)) || (q.stage_order || idx);
+      if (!grouped[mainId]) grouped[mainId] = { main: null, subs: [] };
+      if (qId.includes('.')) grouped[mainId].subs.push(q);
+      else grouped[mainId].main = q;
+    });
+    const sortedMainIds = Object.keys(grouped).sort((a, b) => Number(a) - Number(b));
 
-              {/* Action */}
-              {ok ? (
-                <div style={{ padding: 12, background: '#0f2718', borderRadius: 8, border: '1px solid #059669' }}>
-                  <p style={{ color: '#6ee7b7', fontSize: 13, marginBottom: 10 }}>✅ זיהוי מושלם! טען את כל הקבצים.</p>
-                  <label style={{ display: 'inline-block', padding: '8px 16px', background: 'linear-gradient(135deg,#059669,#047857)', color: 'white', borderRadius: 6, cursor: 'pointer', fontSize: 13 }}>
-                    <Upload className="w-4 h-4 inline ml-1" />בחר את כל קבצי ה-CSV (Ctrl+A)
-                    <input type="file" accept=".csv" multiple onChange={handleAllFiles} style={{ display: 'none' }} />
-                  </label>
+    return (
+      <Card className="bg-slate-800/40 border-cyan-700 shadow-lg shadow-cyan-900/20">
+        <CardHeader className="py-3"><CardTitle className="text-cyan-400">{table.description}</CardTitle></CardHeader>
+        <CardContent className="p-3">
+          <div className="space-y-2">
+            {sortedMainIds.map(mainId => {
+              const { main, subs } = grouped[mainId];
+              if (!main) return null;
+              const sortedSubs = [...subs].sort((a, b) => parseFloat(a.question_id || a.stage_order) - parseFloat(b.question_id || b.stage_order));
+
+              if (sortedSubs.length === 0) return renderQuestionRow(main);
+
+              if (sortedSubs.length === 1) {
+                return (
+                  <div key={main.id} style={{ display: 'grid', gridTemplateColumns: '50px minmax(250px,2fr) 160px 50px 1fr 50px minmax(180px,1.5fr) 160px 50px', gap: '8px', alignItems: 'center', padding: '8px 12px', borderRadius: '6px' }} className="border border-cyan-600/30 bg-slate-700/20">
+                    <Badge variant="outline" className="border-cyan-400 text-cyan-200 justify-center text-xs h-6 w-full">{main.question_id}</Badge>
+                    <label className="text-right font-medium text-sm text-blue-100">{main.question_text}</label>
+                    {renderSelectWithLogos(main, results[main.id] || '', val => handleResultChange(main.id, val === '__CLEAR__' ? '' : val), 'w-[160px]')}
+                    <Badge className="text-xs px-2 py-1 justify-center h-6 w-full" style={{ borderColor: 'var(--tp-50)', color: 'var(--tp)', background: 'var(--tp-10)' }}>{main.possible_points || 0}</Badge>
+                    <div />
+                    <Badge variant="outline" className="border-cyan-400 text-cyan-200 justify-center text-xs h-6 w-full">{sortedSubs[0].question_id}</Badge>
+                    <label className="text-right font-medium text-sm text-blue-100">{sortedSubs[0].question_text}</label>
+                    {renderSelectWithLogos(sortedSubs[0], results[sortedSubs[0].id] || '', val => handleResultChange(sortedSubs[0].id, val === '__CLEAR__' ? '' : val), 'w-[160px]')}
+                    <Badge className="text-xs px-2 py-1 justify-center h-6 w-full" style={{ borderColor: 'var(--tp-50)', color: 'var(--tp)', background: 'var(--tp-10)' }}>{sortedSubs[0].possible_points || 0}</Badge>
+                  </div>
+                );
+              }
+
+              return (
+                <div key={main.id} style={{ display: 'grid', gridTemplateColumns: '45px 1fr 140px 45px 45px 1fr 140px 45px 45px 1fr 140px 45px', gap: '6px', alignItems: 'center', padding: '8px 12px', borderRadius: '6px' }} className="border border-cyan-600/30 bg-slate-700/20">
+                  <Badge variant="outline" className="border-cyan-400 text-cyan-200 justify-center text-xs h-6 w-full">{main.question_id}</Badge>
+                  <label className="text-right font-medium text-sm text-blue-100 truncate">{main.question_text}</label>
+                  {renderSelectWithLogos(main, results[main.id] || '', val => handleResultChange(main.id, val === '__CLEAR__' ? '' : val), 'w-[140px]')}
+                  <Badge className="text-xs px-2 py-1 justify-center h-6 w-full" style={{ borderColor: 'var(--tp-50)', color: 'var(--tp)', background: 'var(--tp-10)' }}>{main.possible_points || 0}</Badge>
+                  {sortedSubs.map(sub => (
+                    <React.Fragment key={sub.id}>
+                      <Badge variant="outline" className="border-cyan-400 text-cyan-200 justify-center text-xs h-6 w-full">{sub.question_id}</Badge>
+                      <label className="text-right font-medium text-sm text-blue-100 truncate">{sub.question_text}</label>
+                      {renderSelectWithLogos(sub, results[sub.id] || '', val => handleResultChange(sub.id, val === '__CLEAR__' ? '' : val), 'w-[140px]')}
+                      <Badge className="text-xs px-2 py-1 justify-center h-6 w-full" style={{ borderColor: 'var(--tp-50)', color: 'var(--tp)', background: 'var(--tp-10)' }}>{sub.possible_points || 0}</Badge>
+                    </React.Fragment>
+                  ))}
                 </div>
-              ) : unmatched.length === 0 ? (
-                <div style={{ padding: 12, background: '#2d1a00', borderRadius: 8, border: '1px solid #f59e0b' }}>
-                  <p style={{ color: '#fbbf24', fontSize: 13 }}>⚠️ חולצו רק {total} ניחושים (צפוי ~115). בדוק עוגנים: T4={anchors.t4s >= 0 ? '✅' : '❌'} T6={anchors.t6s >= 0 ? '✅' : '❌'} T8={anchors.t8s >= 0 ? '✅' : '❌'}</p>
-                </div>
-              ) : (
-                <p style={{ color: '#f87171', fontSize: 12, marginTop: 10 }}>⛔ תקן את {unmatched.length} השגיאות לפני הייבוא.</p>
-              )}
+              );
+            })}
+          </div>
+        </CardContent>
+      </Card>
+    );
+  };
+
+  // ── Stage chips ───────────────────────────────────────────────────────────
+  const renderStageChips = (buttons) => {
+    const groupMap = {
+      playoff:    { label: '⚽ פלייאוף',    color: '#3b82f6', bg: 'rgba(59,130,246,0.12)',  border: 'rgba(59,130,246,0.35)',  activeBg: '#2563eb' },
+      league:     { label: '⚽ ליגה',        color: '#3b82f6', bg: 'rgba(59,130,246,0.12)',  border: 'rgba(59,130,246,0.35)',  activeBg: '#2563eb' },
+      groups:     { label: '🏠 בתים',        color: 'var(--tp)', bg: 'var(--tp-12)', border: 'var(--tp-35)', activeBg: 'var(--tp-dark)' },
+      rounds:     { label: '⚽ מחזורים',     color: 'var(--tp)', bg: 'var(--tp-12)', border: 'var(--tp-35)', activeBg: 'var(--tp-dark)' },
+      special:    { label: '✨ מיוחדות',     color: '#8b5cf6', bg: 'rgba(139,92,246,0.12)', border: 'rgba(139,92,246,0.35)', activeBg: '#7c3aed' },
+      qualifiers: { label: '📋 עולות',       color: '#f97316', bg: 'rgba(249,115,22,0.12)',  border: 'rgba(249,115,22,0.35)',  activeBg: '#ea580c' },
+      other:      { label: '📌 נוסף',        color: '#64748b', bg: 'rgba(100,116,139,0.10)', border: 'rgba(100,116,139,0.25)', activeBg: '#475569' },
+    };
+    const grouped = {};
+    buttons.forEach(btn => {
+      const t = btn.stageType || (btn.sectionKey.startsWith('round_') ? 'playoff' : (btn.stageType === 'qualifiers' ? 'qualifiers' : 'special'));
+      if (!grouped[t]) grouped[t] = [];
+      grouped[t].push(btn);
+    });
+    const order = ['playoff','league','groups','rounds','special','qualifiers','other'];
+    return (
+      <div style={{ padding: '14px 12px', background: 'rgba(0,0,0,0.40)', borderRadius: '12px', border: '1px solid var(--tp-12)', marginBottom: '16px' }}>
+        <div style={{ fontSize: '0.6rem', fontWeight: '700', letterSpacing: '0.12em', textTransform: 'uppercase', color: '#475569', marginBottom: '10px' }}>בחירת שלב</div>
+        {order.filter(t => grouped[t]).map(type => {
+          const info = groupMap[type] || groupMap.other;
+          return (
+            <div key={type} style={{ marginBottom: '10px' }}>
+              <div style={{ fontSize: '0.58rem', fontWeight: '700', letterSpacing: '0.1em', textTransform: 'uppercase', color: info.color, marginBottom: '5px' }}>{info.label}</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px' }}>
+                {grouped[type].map(btn => {
+                  const active = openSections[btn.sectionKey];
+                  return (
+                    <button key={btn.key} onClick={() => toggleSection(btn.sectionKey)} style={{
+                      display: 'inline-flex', alignItems: 'center', padding: '5px 12px', borderRadius: '999px',
+                      fontSize: '0.78rem', fontWeight: active ? '700' : '400',
+                      color: active ? 'white' : info.color, background: active ? info.color : info.bg,
+                      border: `1px solid ${active ? info.color : info.border}`, cursor: 'pointer',
+                      transition: 'all 0.15s', boxShadow: active ? `0 0 10px ${info.color}66` : 'none',
+                      fontFamily: 'Rubik, Heebo, sans-serif', whiteSpace: 'nowrap'
+                    }}>{btn.description}</button>
+                  );
+                })}
+              </div>
             </div>
           );
-        })()}
+        })}
+      </div>
+    );
+  };
 
-        {/* Bulk preview */}
-        {step === 'bulk_preview' && parsed?.bulk && (
-          <div style={{ background: '#1e293b', borderRadius: 10, padding: 16, marginBottom: 14, border: '1px solid #334155' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-              <h2 style={{ color: '#06b6d4', fontSize: 15 }}>ייבוא {parsed.results.length} משתתפים</h2>
-              {parsed.totalUnmatched === 0
-                ? <span style={{ color: '#6ee7b7', fontSize: 13 }}>✅ כל {parsed.totalMatched} ניחושים זוהו!</span>
-                : <span style={{ color: '#fca5a5', fontSize: 13 }}>⚠️ {parsed.totalUnmatched} לא זוהו</span>}
-            </div>
-            <div style={{ maxHeight: 400, overflowY: 'auto', marginBottom: 12 }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-                <thead style={{ position: 'sticky', top: 0, background: '#0f172a' }}>
-                  <tr>{['שם','חולצו','זוהו','לא זוהו','T4','T6','T8'].map(h =>
-                    <th key={h} style={{ padding: '4px 10px', color: '#64748b', textAlign: 'right', borderBottom: '1px solid #334155' }}>{h}</th>)}</tr>
-                </thead>
-                <tbody>{parsed.results.map((r, i) => (
-                  <tr key={i} style={{ borderBottom: '1px solid #1e293b', background: r.total < 100 ? '#2d1a00' : 'transparent' }}>
-                    <td style={{ padding: '4px 10px', color: '#f1f5f9' }}>{r.name}</td>
-                    <td style={{ padding: '4px 10px', color: r.total < 100 ? '#fbbf24' : '#64748b' }}>{r.total}</td>
-                    <td style={{ padding: '4px 10px', color: '#6ee7b7' }}>{r.matched.length}</td>
-                    <td style={{ padding: '4px 10px', color: r.unmatched.length > 0 ? '#fca5a5' : '#6ee7b7' }}>{r.unmatched.length}</td>
-                    <td style={{ padding: '4px 10px', color: r.anchors?.t4s >= 0 ? '#6ee7b7' : '#f87171', fontSize: 11 }}>{r.anchors?.t4s >= 0 ? '✅' : '❌'}</td>
-                    <td style={{ padding: '4px 10px', color: r.anchors?.t6s >= 0 ? '#6ee7b7' : '#f87171', fontSize: 11 }}>{r.anchors?.t6s >= 0 ? '✅' : '❌'}</td>
-                    <td style={{ padding: '4px 10px', color: r.anchors?.t8s >= 0 ? '#6ee7b7' : '#f87171', fontSize: 11 }}>{r.anchors?.t8s >= 0 ? '✅' : '❌'}</td>
-                  </tr>
-                ))}</tbody>
-              </table>
-            </div>
-            {parsed.totalUnmatched === 0 ? (
-              <Button onClick={() => runImport(parsed.results)} disabled={importing}
-                style={{ background: 'linear-gradient(135deg,#059669,#047857)', color: 'white', padding: '10px 24px' }}>
-                {importing
-                  ? <><Loader2 className="w-5 h-5 animate-spin ml-2" />מייבא...</>
-                  : <><Upload className="w-5 h-5 ml-2" />ייבא {parsed.totalMatched} ניחושים ל-{parsed.results.length} משתתפים</>}
-              </Button>
-            ) : (
-              <p style={{ color: '#f87171', fontSize: 12 }}>⛔ יש {parsed.totalUnmatched} שגיאות — בדוק קבצים עם ❌ בעוגנים</p>
-            )}
-          </div>
-        )}
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-screen" style={{ background: 'linear-gradient(135deg, var(--bg1) 0%, var(--bg2) 50%, var(--bg1) 100%)' }}>
+        <Loader2 className="w-8 h-8 animate-spin text-cyan-400" />
+        <span className="mr-3 text-cyan-300">טוען נתונים...</span>
+      </div>
+    );
+  }
 
-        {/* Done */}
-        {step === 'done' && importResults && (
-          <div style={{ background: '#064e3b', borderRadius: 10, padding: 20, border: '1px solid #059669' }}>
-            <h2 style={{ color: '#6ee7b7', fontSize: 18, marginBottom: 10 }}>✅ ייבוא הושלם!</h2>
-            <p style={{ color: '#a7f3d0', marginBottom: 12 }}>
-              יובאו <strong>{importResults.totalInserted}</strong> ניחושים
-              {importResults.totalErrors > 0 && ` (${importResults.totalErrors} שגיאות)`}
-            </p>
-            <div style={{ maxHeight: 350, overflowY: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-                <thead><tr style={{ background: '#065f46' }}>
-                  {['משתתף', 'ניחושים', 'שגיאות'].map(h =>
-                    <th key={h} style={{ padding: '4px 10px', color: '#6ee7b7', textAlign: 'right' }}>{h}</th>)}
-                </tr></thead>
-                <tbody>{importResults.perParticipant.map((p, i) => (
-                  <tr key={i} style={{ borderBottom: '1px solid #065f46' }}>
-                    <td style={{ padding: '4px 10px', color: '#d1fae5' }}>{p.name}</td>
-                    <td style={{ padding: '4px 10px', color: '#6ee7b7' }}>{p.inserted}</td>
-                    <td style={{ padding: '4px 10px', color: p.errors > 0 ? '#fca5a5' : '#6ee7b7' }}>{p.errors}</td>
-                  </tr>
-                ))}</tbody>
-              </table>
+  // Build nav buttons
+  const allButtons = [];
+  roundTables.forEach(t => allButtons.push({ numericId: t.stage_order || parseInt(t.id.replace('T','').replace(/\D/g,''))||0, stageType: 'playoff', key: `round_${t.id}`, description: t.description || t.id, sectionKey: `round_${t.id}` }));
+  specialTables.forEach(t => allButtons.push({ numericId: t.stage_order || parseInt(t.id.replace('T','').replace(/\D/g,''))||0, stageType: 'special', key: t.id, description: t.description, sectionKey: t.id }));
+  if (locationTables.length > 0) allButtons.push({ numericId: 99, stageType: 'other', key: 'locations', description: 'מיקומים', sectionKey: 'locations' });
+  if (israeliTable) allButtons.push({ numericId: parseInt(israeliTable.id.replace('T','')||'0'), stageType: 'special', key: israeliTable.id, description: israeliTable.description, sectionKey: 'israeli' });
+  if (playoffWinnersTable) allButtons.push({ numericId: parseInt(playoffWinnersTable.id.replace('T','')||'0'), stageType: 'qualifiers', key: playoffWinnersTable.id, description: playoffWinnersTable.description, sectionKey: 'playoffWinners' });
+  allButtons.sort((a, b) => a.numericId - b.numericId);
+
+  const renderSidebar = () => {
+    const colorMap = {
+      playoff:    { color: '#3b82f6', activeBg: '#2563eb', border: 'rgba(59,130,246,0.35)',   bg: 'rgba(59,130,246,0.10)'    },
+      league:     { color: '#3b82f6', activeBg: '#2563eb', border: 'rgba(59,130,246,0.35)',   bg: 'rgba(59,130,246,0.10)'    },
+      groups:     { color: 'var(--tp)', activeBg: 'var(--tp-dark)', border: 'var(--tp-35)', bg: 'var(--tp-10)' },
+      rounds:     { color: 'var(--tp)', activeBg: 'var(--tp-dark)', border: 'var(--tp-35)', bg: 'var(--tp-10)' },
+      special:    { color: '#8b5cf6', activeBg: '#7c3aed', border: 'rgba(139,92,246,0.35)',  bg: 'rgba(139,92,246,0.10)'   },
+      qualifiers: { color: '#f97316', activeBg: '#ea580c', border: 'rgba(249,115,22,0.35)',   bg: 'rgba(249,115,22,0.10)'    },
+      other:      { color: '#64748b', activeBg: '#475569', border: 'rgba(100,116,139,0.30)',  bg: 'rgba(100,116,139,0.08)'   },
+    };
+    const groupLabels = {
+      playoff:    '⚽ משחקים',
+      league:     '⚽ ליגה',
+      groups:     '🏠 בתים',
+      rounds:     '⚽ מחזורים',
+      special:    '✨ מיוחדות',
+      qualifiers: '📋 רשימות',
+      other:      '📌 נוסף',
+    };
+    const typeOrder = ['playoff','league','groups','rounds','special','qualifiers','other'];
+    const grouped = {};
+    allButtons.forEach(btn => {
+      const t = btn.stageType || 'other';
+      if (!grouped[t]) grouped[t] = [];
+      grouped[t].push(btn);
+    });
+    return (
+      <aside style={{ width: '215px', flexShrink: 0, position: 'sticky', top: '70px', alignSelf: 'flex-start', maxHeight: 'calc(100vh - 90px)', overflowY: 'auto', paddingBottom: '16px' }}>
+        <div style={{ fontSize: '0.58rem', fontWeight: '700', letterSpacing: '0.12em', textTransform: 'uppercase', color: '#475569', marginBottom: '10px', paddingRight: '4px' }}>בחירת שלב</div>
+        {typeOrder.filter(t => grouped[t]).map(type => {
+          const c = colorMap[type] || colorMap.other;
+          return (
+            <div key={type} style={{ marginBottom: '12px' }}>
+              <div style={{ fontSize: '0.58rem', fontWeight: '700', letterSpacing: '0.1em', color: c.color, marginBottom: '5px', paddingRight: '4px' }}>{groupLabels[type]}</div>
+              {grouped[type].map(btn => {
+                const active = openSections[btn.sectionKey];
+                return (
+                  <button key={btn.key} onClick={() => toggleSection(btn.sectionKey)} style={{
+                    display: 'block', width: '100%', textAlign: 'right', padding: '7px 10px',
+                    marginBottom: '4px', borderRadius: '8px', fontSize: '0.8rem', fontWeight: active ? '700' : '400',
+                    color: active ? 'white' : c.color,
+                    background: active ? c.activeBg : c.bg,
+                    border: `1px solid ${active ? c.color : c.border}`,
+                    cursor: 'pointer', transition: 'all 0.15s',
+                    boxShadow: active ? `0 2px 10px ${c.color === 'var(--tp)' ? 'var(--tp-40)' : c.color + '55'}` : 'none',
+                    fontFamily: 'Rubik, Heebo, sans-serif', lineHeight: '1.35',
+                  }}>{btn.description}</button>
+                );
+              })}
             </div>
-            <p style={{ color: '#94a3b8', fontSize: 12, marginTop: 10 }}>
-              עבור ל-AdminResults → "שמור תוצאות" לחישוב דירוג.
+          );
+        })}
+      </aside>
+    );
+  };
+
+  const renderContent = () => (
+    <div style={{ flex: 1, minWidth: 0 }}>
+      {allButtons.length === 0 ? (
+        <Alert variant="destructive" className="bg-cyan-900/50 border-cyan-700 text-cyan-200">
+          <FileText className="w-4 h-4" />
+          <AlertDescription>לא נמצאו שאלות במערכת.</AlertDescription>
+        </Alert>
+      ) : (
+        allButtons.map(button => {
+          if (!openSections[button.sectionKey]) return null;
+          if (button.sectionKey.startsWith('round_')) {
+            const tableId = button.sectionKey.replace('round_', '');
+            const table = roundTables.find(t => t.id === tableId);
+            if (!table) return null;
+            return (
+              <div key={button.key} className="mb-4 space-y-3">
+                <RoundTableResults table={table} teams={teams} results={results} onResultChange={handleResultChange} isAdmin={isAdmin} />
+                {table.specialQuestions?.length > 0 && (
+                  <div className="mt-4">{renderSpecialQuestions({ ...table, questions: table.specialQuestions })}</div>
+                )}
+              </div>
+            );
+          }
+          if (button.sectionKey === 'israeli' && israeliTable) return <div key="israeli" className="mb-4"><RoundTableResults table={israeliTable} teams={teams} results={results} onResultChange={handleResultChange} isAdmin={isAdmin} /></div>;
+          if (button.sectionKey === 'locations') return <div key="locations" className="mb-4 grid grid-cols-1 md:grid-cols-2 gap-3">{locationTables.map(t => renderSpecialQuestions(t))}</div>;
+          if (button.sectionKey === 'playoffWinners' && playoffWinnersTable) return <div key="playoffWinners" className="mb-6">{renderSpecialQuestions(playoffWinnersTable)}</div>;
+          const t = specialTables.find(t => t.id === button.key);
+          if (t) return <div key={t.id} className="mb-6">{renderSpecialQuestions(t)}</div>;
+          return null;
+        })
+      )}
+    </div>
+  );
+
+  return (
+    <div dir="rtl" style={{ background: 'linear-gradient(135deg, var(--bg1) 0%, var(--bg2) 50%, var(--bg1) 100%)', minHeight: '100vh' }}>
+
+      {/* Header sticky */}
+      <div style={{ position: 'sticky', top: 0, zIndex: 20, background: 'rgba(0,0,0,0.70)', backdropFilter: 'blur(12px)', borderBottom: '1px solid var(--tp-15)', padding: '10px 20px' }}>
+        <div className="flex flex-row justify-between items-center gap-3 max-w-7xl mx-auto">
+          <div>
+            <h1 className="text-lg md:text-2xl font-bold flex items-center gap-2" style={{ color: '#f8fafc' }}>
+              <Trophy className="w-5 h-5 md:w-7 md:h-7" style={{ color: 'var(--tp)' }} />
+              {isAdmin ? 'עדכון תוצאות אמת' : 'תוצאות אמת'}
+            </h1>
+            <p className="text-xs" style={{ color: '#94a3b8' }}>
+              {isAdmin ? 'עדכן תוצאות ואז לחץ "שמור תוצאות"' : 'צפייה בתוצאות האמיתיות'}
             </p>
           </div>
-        )}
+          {isAdmin && (
+            <Button size="sm" onClick={handleSaveResults} disabled={saving || recalculating} className="text-white" style={{
+              background: recalculating ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)' : 'linear-gradient(135deg, var(--tp) 0%, var(--tp) 100%)',
+            }}>
+              {saving ? <><Loader2 className="w-4 h-4 animate-spin ml-1" />שומר...</>
+                : recalculating ? <><Loader2 className="w-4 h-4 animate-spin ml-1" />מחשב...</>
+                : <><Save className="w-4 h-4 ml-1" />שמור תוצאות</>}
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {/* Progress */}
+      {recalculating && recalcProgress && (
+        <div className="mx-4 mt-2 p-3 rounded-lg text-sm" style={{ background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.3)', color: '#10b981' }}>
+          ⏳ {recalcProgress}
+        </div>
+      )}
+
+      {/* Mobile chips */}
+      <div className="md:hidden p-3">
+        {renderStageChips(allButtons)}
+      </div>
+
+      {/* Desktop: sidebar + content */}
+      <div className="hidden md:flex flex-row gap-4 p-4 max-w-7xl mx-auto" style={{ alignItems: 'flex-start' }}>
+        {renderSidebar()}
+        {renderContent()}
+      </div>
+
+      {/* Mobile content */}
+      <div className="md:hidden p-3">
+        {renderContent()}
       </div>
     </div>
   );
