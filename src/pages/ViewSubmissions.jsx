@@ -710,10 +710,8 @@ export default function ViewSubmissions() {
 
         {/* Desktop sidebar */}
         {selectedParticipant && !loadingPredictions && hasStages && (
-          <aside className="hidden md:block flex-shrink-0 p-4" style={{ width: '215px' }}>
-            <div style={{ position: 'sticky', top: '16px', maxHeight: 'calc(100vh - 32px)', overflowY: 'auto' }}>
-              {renderStageSidebar(allButtons, openSections, toggleSection)}
-            </div>
+          <aside className="hidden md:block flex-shrink-0 p-4" style={{ width: '215px', position: 'sticky', top: '70px', alignSelf: 'flex-start', maxHeight: 'calc(100vh - 80px)', overflowY: 'auto' }}>
+            {renderStageSidebar(allButtons, openSections, toggleSection)}
           </aside>
         )}
 
