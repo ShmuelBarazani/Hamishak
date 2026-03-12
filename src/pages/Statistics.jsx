@@ -71,24 +71,58 @@ const parseQuestionId = (id) => {
   return result;
 };
 
-// ── טעינת כל הניחושים עם supabase pagination ──────────────────────────────
+// ── טעינת כל הניחושים עם pagination ──────────────────────────────────────
 const loadAllPredictions = async (gameId) => {
-  const pageSize = 1000;
-  let all = [], from = 0;
-  while (true) {
-    const { data, error } = await supabase
-      .from('game_predictions')
-      .select('*')
-      .eq('game_id', gameId)
-      .range(from, from + pageSize - 1);
-    if (error) { console.error('Error loading predictions:', error); break; }
-    if (!data?.length) break;
-    all = all.concat(data);
-    console.log(`   ✅ batch: ${data.length} predictions (סה"כ: ${all.length})`);
-    if (data.length < pageSize) break;
-    from += pageSize;
+  // נסיון 1: supabase ישיר עם range (עוקף מגבלת 1000 של db.filter)
+  try {
+    const pageSize = 1000;
+    let all = [], from = 0;
+    while (true) {
+      const { data, error } = await supabase
+        .from('game_predictions')
+        .select('*')
+        .eq('game_id', gameId)
+        .range(from, from + pageSize - 1);
+      if (error) throw error;
+      if (!data?.length) break;
+      all = all.concat(data);
+      console.log(`   ✅ supabase batch: ${data.length} (סה"כ: ${all.length})`);
+      if (data.length < pageSize) break;
+      from += pageSize;
+    }
+    if (all.length > 0) {
+      console.log(`✅ supabase: ${all.length} predictions`);
+      return all;
+    }
+    console.warn('⚠️ supabase החזיר ריק — עובר ל-fallback');
+  } catch (e) {
+    console.warn('⚠️ supabase נכשל, fallback:', e.message);
   }
-  return all;
+
+  // fallback: db.Prediction.filter — מוגבל ל-20 איטרציות למניעת לולאה אינסופית
+  console.log('📊 fallback: db.Prediction.filter...');
+  const batchSize = 1000;
+  let allFallback = [], offset = 0;
+  const seenIds = new Set();
+  let maxIter = 20;
+  while (maxIter-- > 0) {
+    const batch = await db.Prediction.filter(
+      { game_id: gameId }, null, batchSize, offset
+    );
+    if (!batch?.length) break;
+    const newItems = batch.filter(p => !seenIds.has(p.id));
+    if (newItems.length === 0) {
+      console.warn('⚠️ db.Prediction: offset לא נתמך, עוצר');
+      break;
+    }
+    newItems.forEach(p => seenIds.add(p.id));
+    allFallback = allFallback.concat(newItems);
+    console.log(`   ✅ db batch: ${newItems.length} חדשים (סה"כ: ${allFallback.length})`);
+    if (batch.length < batchSize) break;
+    offset += batchSize;
+  }
+  console.log(`✅ fallback: ${allFallback.length} predictions`);
+  return allFallback;
 };
 
 export default function Statistics() {
@@ -269,7 +303,7 @@ export default function Statistics() {
       }
 
       if (tablesToProcess.length === 0 || (tablesToProcess.length > 0 && tablesToProcess[0] === null)) {
-        setGameStats(null);
+        setGameStats({});
         return;
       }
 
@@ -673,7 +707,7 @@ export default function Statistics() {
   }, [roundTables, specialTables, locationTables, playoffTable, israeliTable]);
 
   useEffect(() => {
-    if (selectedSection && !loading && allQuestions.length > 0 && allPredictions.length > 0) {
+    if (selectedSection && !loading && allQuestions.length > 0) {
       const buttonInfo = allButtons.find(btn => btn.key === selectedSection);
       if (!buttonInfo) return;
       if (buttonInfo.key === 'rounds') {
@@ -978,7 +1012,7 @@ export default function Statistics() {
               </Card>
             )}
 
-            {gameStats ? (
+            {gameStats !== null ? (
               <>
                 {selectedSection === 'rounds' && selectedRound && (
                   (() => {
@@ -1303,6 +1337,16 @@ export default function Statistics() {
         )}
 
         {/* תצוגת שאלות מיוחדות */}
+        {/* Spinner while specialStats loads */}
+        {selectedSection && selectedSection !== 'rounds' && selectedSection !== israeliTable?.id && selectedSection !== 'insights' && selectedSection !== 'users' && !specialStats && (
+          <Card style={{ background: 'rgba(30, 41, 59, 0.6)', border: '1px solid rgba(6, 182, 212, 0.2)' }}>
+            <CardContent className="p-12 text-center">
+              <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4" style={{ color: '#06b6d4' }} />
+              <p style={{ color: '#94a3b8' }}>טוען סטטיסטיקות...</p>
+            </CardContent>
+          </Card>
+        )}
+
         {selectedSection && selectedSection !== 'rounds' && selectedSection !== israeliTable?.id && selectedSection !== 'insights' && selectedSection !== 'users' && specialStats && (
           <div className="space-y-6">
             {Object.values(specialStats).map(tableStats => (
