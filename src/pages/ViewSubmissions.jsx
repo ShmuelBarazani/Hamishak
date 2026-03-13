@@ -75,6 +75,8 @@ export default function ViewSubmissions() {
   const { toast } = useToast();
   const { currentGame } = useGame();
   const isAdmin = currentUser?.role === 'admin' || currentUser?.user_metadata?.role === 'admin';
+  // זיהוי שלב הנוק-אאוט לפי שם המשחק — כדי להפריד לוגיקה בין שני המשחקים
+  const isKnockoutGame = !!(currentGame?.name?.includes('נוק-אאוט') || currentGame?.name?.includes('knock') || currentGame?.id === '9c9c1331-5184-406b-98b3-6becd9577567');
 
   useEffect(() => {
     const loadUser = async () => {
@@ -145,22 +147,47 @@ export default function ViewSubmissions() {
         });
         setRoundTables(sortedRoundTables);
         const locationTableIds = ['T9', 'T14', 'T15', 'T16', 'T17'];
-        setLocationTables(Object.values(sTables).filter(t => locationTableIds.includes(t.id)).sort((a,b) => (parseInt(a.id.replace('T','')) || 0) - (parseInt(b.id.replace('T','')) || 0)));
+        // זיהוי מיקומים: לפי ID קשיח OR לפי stage_type/תיאור — לתמוך בשלב הבתים
+        const isLocationTable = (t) => {
+          if (locationTableIds.includes(t.id)) return true;
+          const desc = (t.description || '').toLowerCase();
+          const stType = t.questions[0]?.stage_type || '';
+          return stType === 'locations' || desc.includes('מיקום') || desc.includes('מקומות') || desc.includes('מקום');
+        };
+        const detectedLocationTables = Object.values(sTables).filter(t => isLocationTable(t))
+          .sort((a,b) => (parseInt(a.id.replace('T','')) || 0) - (parseInt(b.id.replace('T','')) || 0));
+        const detectedLocationIds = new Set(detectedLocationTables.map(t => t.id));
+        console.log('[ViewSubmissions] sTables keys:', Object.keys(sTables));
+        console.log('[ViewSubmissions] detectedLocationTables:', detectedLocationTables.map(t => ({ id: t.id, desc: t.description, stageType: t.questions[0]?.stage_type })));
+        console.log('[ViewSubmissions] allSTables stageTypes:', Object.values(sTables).map(t => ({ id: t.id, desc: t.description?.slice(0,30), stageType: t.questions[0]?.stage_type })));
+        setLocationTables(detectedLocationTables);
         const t19Table = sTables['T19']; setPlayoffWinnersTable(t19Table || null);
         const allSpecialTables = Object.values(sTables).filter(table => {
           const desc = table.description?.trim(); const isGroup = table.id.includes('בית') || desc?.includes('בית'); const stageType = table.questions[0]?.stage_type;
-          return desc && !/^\d+$/.test(desc) && !locationTableIds.includes(table.id) && table.id !== 'T19' && !isGroup && stageType !== 'qualifiers';
+          return desc && !/^\d+$/.test(desc) && !detectedLocationIds.has(table.id) && table.id !== 'T19' && !isGroup && stageType !== 'qualifiers';
         }).sort((a,b) => { const oa = a.questions[0]?.stage_order || 999, ob = b.questions[0]?.stage_order || 999; if (oa !== ob) return oa - ob; return (parseInt(a.id.replace('T','')) || 0) - (parseInt(b.id.replace('T','')) || 0); });
         setSpecialTables(allSpecialTables);
-      // ── שינוי שם T3 ──────────────────────────────────────────
-      sortedRoundTables.forEach(t => {
-        if (t.id === 'T3') t.description = 'שלב שמינית הגמר - המשחקים!';
-      });
-      allSpecialTables.forEach(t => {
-        if (t.id === 'T3') t.description = 'שלב שמינית הגמר - המשחקים!';
-      });
+      // ── שינוי שם T3 — רק בשלב הנוק-אאוט ──────────────────────────────────────────
+      const gameIsKnockout = !!(currentGame?.name?.includes('נוק-אאוט') || currentGame?.name?.includes('knock') || currentGame?.id === '9c9c1331-5184-406b-98b3-6becd9577567');
+      if (gameIsKnockout) {
+        sortedRoundTables.forEach(t => {
+          if (t.id === 'T3') t.description = 'שלב שמינית הגמר - המשחקים!';
+        });
+        allSpecialTables.forEach(t => {
+          if (t.id === 'T3') t.description = 'שלב שמינית הגמר - המשחקים!';
+        });
+      }
         const t10Special = sTables['T10'];
-        if (t10Special) { const t10Round = Object.values(rTables).find(t => t.id === 'T10'); if (t10Round) t10Round.specialQuestions = t10Special.questions; }
+        if (t10Special) {
+          const t10Round = Object.values(rTables).find(t => t.id === 'T10');
+          if (t10Round) {
+            // נוק-אאוט: T10 מחובר כשאלות מיוחדות לסבב
+            t10Round.specialQuestions = t10Special.questions;
+          } else if (!allSpecialTables.find(t => t.id === 'T10')) {
+            // שלב הבתים: T10 הוא שלב עצמאי — מוסיפים לרשימת המיוחדות
+            allSpecialTables.push(t10Special);
+          }
+        }
         setQualifiersTables(Object.values(sTables).filter(t => t.questions[0]?.stage_type === 'qualifiers').sort((a,b) => (a.questions[0]?.stage_order || 999) - (b.questions[0]?.stage_order || 999)));
         setData(prev => ({ ...prev, questions, teams: teamsMap, validationLists: listsMap }));
       } catch (error) { console.error("Error loading data:", error); }
@@ -720,7 +747,7 @@ export default function ViewSubmissions() {
                 {grouped[type].map(button => {
                   const active = openSectionsMap[button.sectionKey];
                   return (
-                    <button key={button.key} onClick={() => toggleSectionFn(button.sectionKey)} style={{ display: 'block', width: '100%', textAlign: 'right', padding: '7px 10px', borderRadius: '8px', fontSize: '0.8rem', fontWeight: active ? '700' : '400', color: active ? 'white' : info.color, background: active ? info.activeBg : info.bg, border: `1px solid ${active ? info.color : info.border}`, cursor: 'pointer', transition: 'all 0.15s', boxShadow: active ? (info.activeShadow || `0 2px 10px ${info.color}44`) : 'none', fontFamily: 'Rubik, Heebo, sans-serif', lineHeight: '1.35' }}>
+                    <button key={button.key} onClick={() => toggleSectionFn(button.sectionKey)} style={{ display: 'block', width: '100%', textAlign: 'right', padding: '7px 10px', borderRadius: '8px', fontSize: '0.72rem', fontWeight: active ? '700' : '400', color: active ? 'white' : info.color, background: active ? info.activeBg : info.bg, border: `1px solid ${active ? info.color : info.border}`, cursor: 'pointer', transition: 'all 0.15s', boxShadow: active ? (info.activeShadow || `0 2px 10px ${info.color}44`) : 'none', fontFamily: 'Rubik, Heebo, sans-serif', lineHeight: '1.3' }}>
                       {button.description}
                     </button>
                   );
@@ -770,9 +797,9 @@ export default function ViewSubmissions() {
         const table = roundTables.find(t => t.id === tableId);
         if (!table) return null;
 
-        // ── T3 בונוס שלב (שמינית הגמר) ──
+        // ── T3 בונוס שלב (שמינית הגמר) — רק בנוק-אאוט ──
         let t3BonusBanner = null;
-        if (tableId === 'T3' && selectedParticipant) {
+        if (tableId === 'T3' && selectedParticipant && isKnockoutGame) {
           const t3Qs = table.questions || [];
           const allHaveResults = t3Qs.length > 0 && t3Qs.every(q => q.actual_result && q.actual_result.trim() !== '' && q.actual_result !== '__CLEAR__');
           const predMap = getCombinedPredictionsMap();
@@ -829,7 +856,7 @@ export default function ViewSubmissions() {
       }
       if (button.sectionKey.startsWith('qual_')) { const tableId = button.sectionKey.replace('qual_', ''); const table = qualifiersTables.find(t => t.id === tableId); if (!table) return null; return (<div key={button.sectionKey} className="mb-6">{renderQualifiersTable(table)}</div>); }
       if (button.sectionKey === 'israeli' && israeliTable) return (<div key="israeli-section" className="mb-6"><RoundTableReadOnly table={israeliTable} teams={data.teams} predictions={getCombinedPredictionsMap()} isEditMode={isEditMode && isAdmin} handlePredictionEdit={handlePredictionEdit} /></div>);
-      if (button.sectionKey === 'locations') return (<div key="locations-section" className="mb-6 grid grid-cols-1 md:grid-cols-2 gap-6">{locationTables.map(table => <div key={table.id}>{renderSpecialQuestions(table)}</div>)}</div>);
+      if (button.sectionKey === 'locations') return (<div key="locations-section" className="mb-6 grid grid-cols-1 md:grid-cols-2 gap-6">{locationTables.map(table => { const hasSlots = table.questions.some(q => { const n = parseFloat(q.question_id); return Number.isInteger(n) && n >= 1; }); return <div key={table.id}>{hasSlots ? renderQualifiersTable(table) : renderSpecialQuestions(table)}</div>; })}</div>);
       if (button.sectionKey === 'playoffWinners' && playoffWinnersTable) return (<div key="playoffWinners-section" className="mb-6">{renderSpecialQuestions(playoffWinnersTable)}</div>);
       const specificSpecialTable = specialTables.find(t => t.id === button.key);
       if (specificSpecialTable) return (<div key={specificSpecialTable.id} className="mb-6">{renderSpecialQuestions(specificSpecialTable)}</div>);
@@ -921,7 +948,7 @@ export default function ViewSubmissions() {
 
         {/* Desktop sidebar */}
         {selectedParticipant && !loadingPredictions && hasStages && (
-          <aside className="hidden md:block flex-shrink-0 p-4" style={{ width: '215px', position: 'sticky', top: '70px', alignSelf: 'flex-start', maxHeight: 'calc(100vh - 80px)', overflowY: 'auto' }}>
+          <aside className="hidden md:block flex-shrink-0 p-4" style={{ width: '260px', position: 'sticky', top: '70px', alignSelf: 'flex-start', maxHeight: 'calc(100vh - 80px)', overflowY: 'auto' }}>
             {renderStageSidebar(allButtons, openSections, toggleSection)}
           </aside>
         )}
@@ -969,4 +996,3 @@ export default function ViewSubmissions() {
     </div>
   );
 }
-
