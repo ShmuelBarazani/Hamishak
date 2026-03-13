@@ -110,7 +110,8 @@ export default function Statistics() {
 
   const [roundTables, setRoundTables] = useState([]);
   const [specialTables, setSpecialTables] = useState([]);
-  const [qualifierTables, setQualifierTables] = useState([]); // 🔥 חדש
+  const [qualifierTables, setQualifierTables] = useState([]);
+  const [clickedSegment, setClickedSegment] = useState({}); // { [questionId]: { answer, participants } } // 🔥 חדש
   const [locationTables, setLocationTables] = useState([]);
   const [israeliTable, setIsraeliTable] = useState(null);
   const [playoffTable, setPlayoffTable] = useState(null);
@@ -185,9 +186,13 @@ export default function Statistics() {
         return desc && !/^\d+$/.test(desc) && !locationTableIds.includes(table.id) && table.id !== 'T19';
       }).sort((a, b) => (parseInt(a.id.replace('T', '')) || 0) - (parseInt(b.id.replace('T', '')) || 0));
 
-      // 🔥 הפרדת T4/T5/T6 (עולות) משאר המיוחדות
-      const qualifiers = allSpecialTables.filter(t => QUALIFIER_TABLE_IDS.includes(t.id));
-      const regulars = allSpecialTables.filter(t => !QUALIFIER_TABLE_IDS.includes(t.id));
+      // 🔥 זיהוי עולות לפי תיאור (תומך בשמות שונים)
+      const isQualifierTable = (t) => {
+        const desc = (t.description || '') + (t.name || '');
+        return QUALIFIER_TABLE_IDS.includes(t.id) || desc.includes('רשימת הקבוצות שיעלו') || desc.includes('עולות');
+      };
+      const qualifiers = allSpecialTables.filter(t => isQualifierTable(t));
+      const regulars = allSpecialTables.filter(t => !isQualifierTable(t));
       setQualifierTables(qualifiers);
       setSpecialTables(regulars);
 
@@ -235,22 +240,32 @@ export default function Statistics() {
         // 🔥 עולות: גרף מרוכז אחד — כמה בחרו כל קבוצה, ללא תלות במיקום
         if (tableGroup === 'qualifier') {
           const cfg = ADVANCING_CONFIG[table.id];
-          const advCount = cfg ? cfg.count : 999;
-          const slots = table.questions.filter(q => { const n = parseFloat(q.question_id); return Number.isInteger(n) && n >= 1 && n <= advCount; });
+          // כל שאלות עם question_id שלם (slots), ללא תלות ב-advCount קשיח
+          const slots = table.questions.filter(q => { const n = parseFloat(q.question_id); return Number.isInteger(n) && n >= 1; });
           const slotIds = new Set(slots.map(s => s.id));
+          const advCount = cfg ? cfg.count : slots.length;
 
           const teamCounts = {};
+          const participantsByTeam = {};
           allPredictions.forEach(p => {
             if (!slotIds.has(p.question_id)) return;
             if (!p.text_prediction?.trim()) return;
             const team = cleanTeamName(normalizeTeamName(p.text_prediction.trim()));
             if (!team || team.toLowerCase() === 'null') return;
             teamCounts[team] = (teamCounts[team] || 0) + 1;
+            if (!participantsByTeam[team]) participantsByTeam[team] = new Set();
+            participantsByTeam[team].add(p.participant_name);
+          });
+
+          // Convert Sets → sorted arrays
+          const participantsMap = {};
+          Object.entries(participantsByTeam).forEach(([team, set]) => {
+            participantsMap[team] = [...set].sort((a, b) => a.localeCompare(b, 'he'));
           });
 
           tableStats.qualifierData = {
             chartData: Object.entries(teamCounts).sort((a, b) => b[1] - a[1]).map(([team, count]) => ({ team, count })),
-            cfg, advCount
+            cfg, advCount, participantsMap
           };
 
         } else if (['T14', 'T15', 'T16', 'T17'].includes(table.id)) {
@@ -576,7 +591,7 @@ export default function Statistics() {
                             }}
                           />
                           <YAxis stroke="#94a3b8" tick={{ fontSize: 12, fill: '#94a3b8' }} />
-                          <Tooltip wrapperStyle={{ zIndex: 1000 }} cursor={false} />
+                          <Tooltip wrapperStyle={{ zIndex: 1000, pointerEvents: 'auto' }} cursor={false} />
                           <Bar dataKey="count" radius={[8, 8, 0, 0]} cursor={{ fill: 'transparent' }} activeBar={false}>
                             {data.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
                           </Bar>
@@ -853,15 +868,28 @@ export default function Statistics() {
                               stroke="#334155"
                               tick={{ fontSize: 12, fill: '#f8fafc', fontFamily: 'Rubik, Heebo, sans-serif' }}
                             />
-                            <Tooltip cursor={{ fill: 'rgba(249,115,22,0.08)' }}
+                            <Tooltip
+                              wrapperStyle={{ pointerEvents: 'auto' }}
+                              cursor={{ fill: 'rgba(249,115,22,0.08)' }}
                               content={({ payload }) => {
                                 if (!payload?.[0]) return null;
                                 const d = payload[0].payload;
                                 const pct = totalSelections > 0 ? ((d.count / totalSelections) * 100).toFixed(1) : 0;
+                                const participants = qualifierData.participantsMap?.[d.team] || [];
                                 return (
-                                  <div style={{ background: '#0a0f1a', border: '2px solid #f97316', borderRadius: '8px', padding: '10px', minWidth: '160px' }}>
-                                    <p style={{ color: '#f97316', fontWeight: 'bold', marginBottom: '4px' }}>{d.team}</p>
-                                    <p style={{ color: '#f8fafc', fontSize: '13px' }}>{d.count} בחירות ({pct}%)</p>
+                                  <div style={{ background: '#0a0f1a', border: '2px solid #f97316', borderRadius: '8px', padding: '12px', minWidth: '180px', maxWidth: '320px', boxShadow: '0 4px 12px rgba(0,0,0,0.8)' }}>
+                                    <p style={{ color: '#f97316', fontWeight: 'bold', marginBottom: '4px', fontSize: '13px' }}>{d.team}</p>
+                                    <p style={{ color: '#f8fafc', fontSize: '12px', marginBottom: '6px' }}>{d.count} בחירות ({pct}%)</p>
+                                    {participants.length > 0 && (
+                                      <div style={{ marginTop: '6px', paddingTop: '6px', borderTop: '1px solid #475569' }}>
+                                        <p style={{ color: '#94a3b8', fontSize: '11px', marginBottom: '6px', fontWeight: 'bold' }}>המשתתפים ({participants.length}):</p>
+                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', maxHeight: '160px', overflowY: 'auto', pointerEvents: 'auto' }}>
+                                          {participants.map((n, i) => (
+                                            <span key={i} style={{ background: '#1e293b', color: '#f8fafc', padding: '3px 7px', borderRadius: '4px', fontSize: '10px' }}>{n}</span>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    )}
                                   </div>
                                 );
                               }}
@@ -927,7 +955,7 @@ export default function Statistics() {
                               }}
                             />
                             <YAxis stroke="#94a3b8" tick={{ fontSize: 12, fill: '#94a3b8' }} />
-                            <Tooltip wrapperStyle={{ zIndex: 1000 }} cursor={false} />
+                            <Tooltip wrapperStyle={{ zIndex: 1000, pointerEvents: 'auto' }} cursor={false} />
                             <Bar dataKey="count" radius={[8, 8, 0, 0]} cursor={{ fill: 'transparent' }} activeBar={false}>
                               {tableStats.locationsData.topTeams.slice(0, 10).map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
                             </Bar>
@@ -968,18 +996,17 @@ export default function Statistics() {
                                           outerRadius={70} dataKey="count">
                                           {qStat.chartData.map((entry, i) => {
                                             const isActual = hasActualResult && entry.answer === q.actual_result;
-                                            return <Cell key={i} fill={COLORS[i % COLORS.length]} stroke={isActual ? '#fbbf24' : 'rgba(15,23,42,0.8)'} strokeWidth={isActual ? 3 : 2} />;
+                                             return <Cell key={i} fill={COLORS[i % COLORS.length]} stroke={isActual ? '#fbbf24' : 'rgba(15,23,42,0.8)'} strokeWidth={isActual ? 3 : 2} style={{ cursor: 'pointer' }}
+                                               onClick={() => { const k1c = `${q.id}_${normalizePrediction(entry.answer.trim())}`; const pts = participantsByQuestionAndAnswer.get(k1c) || participantsByQuestionAndAnswer.get(`${q.id}_${entry.answer.trim()}`) || []; setClickedSegment(prev => ({ ...prev, [q.id]: prev[q.id]?.answer === entry.answer ? null : { answer: entry.answer, count: entry.count, percentage: entry.percentage, participants: pts } })); }} />;
                                           })}
                                         </Pie>
-                                        <Tooltip wrapperStyle={{ zIndex: 1000 }} cursor={false}
-                                          content={({ payload }) => {
-                                            if (!payload?.[0]) return null;
-                                            const d = payload[0].payload;
-                                            const k1 = `${q.id}_${normalizePrediction(d.answer.trim())}`;
-                                            let participants = participantsByQuestionAndAnswer.get(k1) || participantsByQuestionAndAnswer.get(`${q.id}_${d.answer.trim()}`) || [];
-                                            return <div style={{ background: '#0a0f1a', border: '2px solid #06b6d4', borderRadius: '8px', padding: '10px', maxWidth: '300px' }}><p style={{ color: '#06b6d4', fontWeight: 'bold', marginBottom: '6px' }}>{d.answer}</p><p style={{ color: '#f8fafc', fontSize: '12px', marginBottom: '6px' }}>{d.count} תשובות ({d.percentage}%)</p>{participants.length > 0 && <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', maxHeight: '120px', overflowY: 'auto' }}>{participants.map((n, i) => <span key={i} style={{ background: '#1e293b', color: '#f8fafc', padding: '3px 6px', borderRadius: '4px', fontSize: '10px' }}>{n}</span>)}</div>}</div>;
-                                          }}
-                                        />
+                                         <Tooltip wrapperStyle={{ zIndex: 1000, pointerEvents: 'none' }} cursor={false}
+                                           content={({ payload }) => {
+                                             if (!payload?.[0]) return null;
+                                             const d = payload[0].payload;
+                                             return <div style={{ background: '#0a0f1a', border: '1px solid #06b6d4', borderRadius: '6px', padding: '8px', pointerEvents: 'none' }}><p style={{ color: '#06b6d4', fontWeight: 'bold', fontSize: '12px' }}>{d.answer}</p><p style={{ color: '#f8fafc', fontSize: '11px' }}>{d.count} תשובות ({d.percentage}%)</p><p style={{ color: '#94a3b8', fontSize: '9px', marginTop: '2px' }}>לחץ לרשימת מנחשים</p></div>;
+                                           }}
+                                         />
                                       </RechartsPieChart>
                                     ) : (
                                       <BarChart data={qStat.chartData.slice(0, 10)} margin={{ top: 10, right: 5, left: 5, bottom: 60 }}>
@@ -991,14 +1018,27 @@ export default function Statistics() {
                                             return <g transform={`translate(${x},${y})`}>{ls.slice(0, 3).map((l, i) => <text key={i} x={0} y={i * 10 + 6} textAnchor="middle" fill="#94a3b8" fontSize="8px">{l}</text>)}</g>;
                                           }} />
                                         <YAxis stroke="#94a3b8" tick={{ fontSize: 10, fill: '#94a3b8' }} />
-                                        <Tooltip wrapperStyle={{ zIndex: 1000 }} cursor={false} />
+                                         <Tooltip wrapperStyle={{ zIndex: 1000, pointerEvents: 'none' }} cursor={false} />
                                         <Bar dataKey="count" radius={[6, 6, 0, 0]} cursor={{ fill: 'transparent' }} activeBar={false}>
-                                          {qStat.chartData.slice(0, 10).map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                                           {qStat.chartData.slice(0, 10).map((entry, i) => { const k1c = `${q.id}_${normalizePrediction(entry.answer.trim())}`; const pts = participantsByQuestionAndAnswer.get(k1c) || participantsByQuestionAndAnswer.get(`${q.id}_${entry.answer.trim()}`) || []; return <Cell key={i} fill={COLORS[i % COLORS.length]} style={{ cursor: 'pointer' }} onClick={() => setClickedSegment(prev => ({ ...prev, [q.id]: prev[q.id]?.answer === entry.answer ? null : { answer: entry.answer, count: entry.count, percentage: entry.percentage, participants: pts } }))} />; })}
                                         </Bar>
                                       </BarChart>
                                     )}
                                   </ResponsiveContainer>
                                 </div>
+                                 {clickedSegment[q.id] && (
+                                   <div style={{ background: 'rgba(6,182,212,0.08)', border: '1px solid rgba(6,182,212,0.3)', borderRadius: '8px', padding: '10px', margin: '8px 0' }}>
+                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                                       <p style={{ color: '#06b6d4', fontWeight: 'bold', fontSize: '13px' }}>{clickedSegment[q.id].answer} — {clickedSegment[q.id].count} תשובות ({clickedSegment[q.id].percentage}%)</p>
+                                       <button onClick={() => setClickedSegment(prev => ({ ...prev, [q.id]: null }))} style={{ color: '#94a3b8', background: 'none', border: 'none', cursor: 'pointer', fontSize: '16px' }}>✕</button>
+                                     </div>
+                                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', maxHeight: '140px', overflowY: 'auto' }}>
+                                       {clickedSegment[q.id].participants.map((n, i) => (
+                                         <span key={i} style={{ background: '#1e293b', color: '#f8fafc', padding: '3px 7px', borderRadius: '4px', fontSize: '10px' }}>{n}</span>
+                                       ))}
+                                     </div>
+                                   </div>
+                                 )}
                                 <div className="mt-3 pt-3 border-t border-slate-700 px-2">
                                   <p className="text-xs text-slate-400 mb-1">התשובה הפופולרית:</p>
                                   <p className="text-cyan-300 font-bold text-sm">{qStat.mostPopular.answer}</p>
