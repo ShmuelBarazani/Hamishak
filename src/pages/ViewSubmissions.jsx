@@ -555,11 +555,17 @@ export default function ViewSubmissions() {
                 <span style={{ fontSize: "0.78rem", color: "#94a3b8", textAlign: "right", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                   {q.question_text || `קבוצה ${q.question_id} שעולה`}
                 </span>
-                <div style={{ padding: "5px 8px", borderRadius: "6px", background: isCorrect ? "rgba(16,185,129,0.12)" : isWrong ? "rgba(239,68,68,0.10)" : "rgba(249,115,22,0.08)", border: `1px solid ${isCorrect ? "rgba(16,185,129,0.35)" : isWrong ? "rgba(239,68,68,0.30)" : "rgba(249,115,22,0.25)"}`, textAlign: "right" }}>
-                  {pred
-                    ? <span style={{ fontSize: "0.84rem", fontWeight: "600", color: isCorrect ? "#6ee7b7" : isWrong ? "#fca5a5" : "#f8fafc" }}>{pred}</span>
-                    : <span style={{ fontSize: "0.84rem", color: "#475569" }}>—</span>
-                  }
+                <div style={{ display: "flex", alignItems: "center", gap: "6px", padding: "5px 8px", borderRadius: "6px", background: isCorrect ? "rgba(16,185,129,0.12)" : isWrong ? "rgba(239,68,68,0.10)" : "rgba(249,115,22,0.08)", border: `1px solid ${isCorrect ? "rgba(16,185,129,0.35)" : isWrong ? "rgba(239,68,68,0.30)" : "rgba(249,115,22,0.25)"}` }}>
+                  {pred ? (() => {
+                    const matched = findMatchedTeamName(pred);
+                    const teamObj = data.teams[matched] || data.teams[pred];
+                    return (
+                      <>
+                        {teamObj?.logo_url && <img src={teamObj.logo_url} alt={matched} className="w-4 h-4 rounded-full flex-shrink-0" onError={(e) => e.target.style.display="none"} />}
+                        <span style={{ fontSize: "0.84rem", fontWeight: "600", color: isCorrect ? "#6ee7b7" : isWrong ? "#fca5a5" : "#f8fafc" }}>{matched}</span>
+                      </>
+                    );
+                  })() : <span style={{ fontSize: "0.84rem", color: "#475569" }}>—</span>}
                 </div>
                 <Badge style={{ minWidth: "42px", justifyContent: "center", fontSize: "0.75rem", background: isCorrect ? "rgba(16,185,129,0.2)" : isWrong ? "rgba(239,68,68,0.15)" : "rgba(100,116,139,0.15)", color: isCorrect ? "#34d399" : isWrong ? "#f87171" : "#94a3b8", border: `1px solid ${isCorrect ? "rgba(16,185,129,0.35)" : isWrong ? "rgba(239,68,68,0.3)" : "rgba(100,116,139,0.3)"}` }}>
                   {hasResult ? (isCorrect ? `+${pts}` : "0") : `?/${q.possible_points || 0}`}
