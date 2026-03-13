@@ -842,10 +842,28 @@ export default function Statistics() {
                     <CardContent className="px-2 pb-6">
                       {chartData.length > 0 ? (
                         <ResponsiveContainer width="100%" height={Math.max(380, chartData.length * 30)}>
-                          <BarChart data={chartData} layout="vertical" margin={{ top: 10, right: 70, left: 10, bottom: 10 }}>
+                          <BarChart data={chartData} layout="vertical" margin={{ top: 10, right: 55, left: 5, bottom: 10 }}>
                             <CartesianGrid strokeDasharray="3 3" stroke="#334155" horizontal={false} />
                             <XAxis type="number" stroke="#94a3b8" tick={{ fontSize: 11, fill: '#94a3b8' }} />
-                            <YAxis type="category" dataKey="team" width={140} stroke="#94a3b8" tick={{ fontSize: 12, fill: '#f8fafc', fontFamily: 'Rubik, Heebo, sans-serif' }} />
+                            <YAxis
+                              type="category"
+                              dataKey="team"
+                              width={175}
+                              stroke="none"
+                              tick={({ x, y, payload }) => (
+                                <text
+                                  x={x - 4}
+                                  y={y}
+                                  textAnchor="end"
+                                  dominantBaseline="middle"
+                                  fill="#f8fafc"
+                                  fontSize="12"
+                                  fontFamily="Rubik, Heebo, sans-serif"
+                                >
+                                  {payload.value}
+                                </text>
+                              )}
+                            />
                             <Tooltip cursor={{ fill: 'rgba(249,115,22,0.08)' }}
                               content={({ payload }) => {
                                 if (!payload?.[0]) return null;
