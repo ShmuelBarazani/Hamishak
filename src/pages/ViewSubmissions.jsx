@@ -133,11 +133,42 @@ export default function ViewSubmissions() {
 
       setLoading(true);
       try {
-        // 🎯 טען רק נתונים של המשחק הנוכחי
-        const [samplePredictions, questions] = await Promise.all([
-          Prediction.filter({ game_id: currentGame.id }, null, 10000),
-          Question.filter({ game_id: currentGame.id }, "-created_at", 10000)
-        ]);
+        // 🎯 טען שאלות + משתתפים ייחודיים (ללא מגבלת 1000)
+        const questions = await Question.filter({ game_id: currentGame.id }, "-created_at", 10000);
+
+        // 🔥 טען משתתפים ישירות מ-game_participants (ללא מגבלת שורות)
+        let uniqueParticipants = [];
+        try {
+          const { data: gpData, error: gpErr } = await supabase
+            .from('game_participants')
+            .select('participant_name')
+            .eq('game_id', currentGame.id)
+            .order('participant_name');
+          if (!gpErr && gpData && gpData.length > 0) {
+            uniqueParticipants = gpData.map(r => r.participant_name).filter(Boolean);
+          }
+        } catch(e) { console.warn('game_participants fallback', e); }
+
+        // fallback — אם game_participants ריק, טען מניחושים בעימוד
+        if (uniqueParticipants.length === 0) {
+          const PAGE = 1000;
+          let allPredNames = [], from = 0, keepGoing = true, iter = 0;
+          while (keepGoing && iter < 20) {
+            const { data: chunk } = await supabase
+              .from('game_predictions')
+              .select('participant_name')
+              .eq('game_id', currentGame.id)
+              .range(from, from + PAGE - 1);
+            if (!chunk || chunk.length === 0) break;
+            allPredNames = allPredNames.concat(chunk);
+            keepGoing = chunk.length === PAGE;
+            from += PAGE;
+            iter++;
+          }
+          uniqueParticipants = [...new Set(allPredNames.map(p => p.participant_name))].sort();
+        }
+
+        const samplePredictions = []; // לא נטען את כל הניחושים כאן
 
         // 🎯 השתמש בנתוני המשחק עצמו במקום entities נפרדות
         const teamsData = currentGame.teams_data || [];
@@ -157,7 +188,6 @@ export default function ViewSubmissions() {
           setTeamValidationList(teamListObj.options);
         }
 
-        const uniqueParticipants = [...new Set(samplePredictions.map(p => p.participant_name))].sort();
         setAllParticipants(uniqueParticipants);
 
         const rTables = {}, sTables = {};
@@ -314,13 +344,26 @@ export default function ViewSubmissions() {
       
       setLoadingPredictions(true);
       try {
-        const predictions = await Prediction.filter({ 
-          participant_name: selectedParticipant,
-          game_id: currentGame.id 
-        }, null, 10000);
-        setData(prev => ({ ...prev, predictions }));
-        setEditedPredictions({}); // Reset edited predictions after loading
-        setIsEditMode(false); // Exit edit mode after loading
+        // 🔥 טען ניחושי משתתף בעימוד — ללא מגבלת 1000
+        const PAGE = 1000;
+        let allPreds = [], from = 0, keepGoing = true, iter = 0;
+        while (keepGoing && iter < 20) {
+          const { data: chunk, error: chunkErr } = await supabase
+            .from('game_predictions')
+            .select('*')
+            .eq('game_id', currentGame.id)
+            .eq('participant_name', selectedParticipant)
+            .range(from, from + PAGE - 1)
+            .order('created_at', { ascending: true });
+          if (chunkErr || !chunk || chunk.length === 0) break;
+          allPreds = allPreds.concat(chunk);
+          keepGoing = chunk.length === PAGE;
+          from += PAGE;
+          iter++;
+        }
+        setData(prev => ({ ...prev, predictions: allPreds }));
+        setEditedPredictions({});
+        setIsEditMode(false);
       } catch (error) {
         console.error("Error loading participant predictions:", error);
       }
@@ -553,12 +596,24 @@ export default function ViewSubmissions() {
         className: "bg-green-900/30 border-green-500 text-green-200"
       });
 
-      // טען מחדש את הניחושים
-      const predictions = await Prediction.filter({ 
-        participant_name: selectedParticipant,
-        game_id: currentGame.id 
-      }, null, 10000);
-      setData(prev => ({ ...prev, predictions }));
+      // טען מחדש את הניחושים (בעימוד — ללא מגבלת 1000)
+      const PAGE2 = 1000;
+      let reloadPreds = [], from2 = 0, go2 = true, iter2 = 0;
+      while (go2 && iter2 < 20) {
+        const { data: chunk2 } = await supabase
+          .from('game_predictions')
+          .select('*')
+          .eq('game_id', currentGame.id)
+          .eq('participant_name', selectedParticipant)
+          .range(from2, from2 + PAGE2 - 1)
+          .order('created_at', { ascending: true });
+        if (!chunk2 || chunk2.length === 0) break;
+        reloadPreds = reloadPreds.concat(chunk2);
+        go2 = chunk2.length === PAGE2;
+        from2 += PAGE2;
+        iter2++;
+      }
+      setData(prev => ({ ...prev, predictions: reloadPreds }));
       setEditedPredictions({});
       setIsEditMode(false);
 
@@ -1272,16 +1327,14 @@ export default function ViewSubmissions() {
     );
     const allResultsIn = slots.length > 0 && slots.every(q => q.actual_result && q.actual_result !== '__CLEAR__');
 
-    // ── בדיקת בונוס שלב ────────────────────────────────────────────────────────
+    // ── בדיקת בונוס שלב — או מלא או לא! ──────────────────────────────────────
     let stageBonusEarned = false;
-    let stageBonusPartial = false;
     if (selectedParticipant && allResultsIn && cfg) {
       const predMap = getCombinedPredictionsMap();
       const guessedSet = new Set(
         slots.map(q => (predMap[q.id] || '').trim().toLowerCase()).filter(Boolean)
       );
       stageBonusEarned = [...actualSet].every(t => guessedSet.has(t));
-      stageBonusPartial = !stageBonusEarned && [...actualSet].some(t => guessedSet.has(t));
     }
 
     const pointsPerSlot = slots[0]?.possible_points || 0;
@@ -1299,14 +1352,14 @@ export default function ViewSubmissions() {
           <div style={{
             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
             padding: '8px 14px', borderRadius: '8px', marginBottom: '10px',
-            background: stageBonusEarned ? 'rgba(16,185,129,0.12)' : stageBonusPartial ? 'rgba(249,115,22,0.10)' : 'rgba(234,179,8,0.08)',
-            border: `1px solid ${stageBonusEarned ? 'rgba(16,185,129,0.45)' : stageBonusPartial ? 'rgba(249,115,22,0.40)' : 'rgba(234,179,8,0.35)'}`,
+            background: stageBonusEarned ? 'rgba(16,185,129,0.12)' : 'rgba(234,179,8,0.08)',
+            border: `1px solid ${stageBonusEarned ? 'rgba(16,185,129,0.45)' : 'rgba(234,179,8,0.35)'}`,
           }}>
             <div className="flex items-center gap-2">
               <span style={{ fontSize: '1rem' }}>🏆</span>
               <div>
-                <p style={{ fontSize: '0.78rem', fontWeight: '700', color: stageBonusEarned ? '#6ee7b7' : stageBonusPartial ? '#fb923c' : '#fde68a' }}>
-                  {stageBonusEarned ? '✅ בונוס שלב!' : stageBonusPartial ? '⏳ בונוס חלקי' : '🏆 בונוס שלב'}
+                <p style={{ fontSize: '0.78rem', fontWeight: '700', color: stageBonusEarned ? '#6ee7b7' : '#fde68a' }}>
+                  {stageBonusEarned ? '✅ בונוס שלב!' : '🏆 בונוס שלב'}
                 </p>
                 <p style={{ fontSize: '0.70rem', color: '#94a3b8' }}>
                   {stageBonusEarned ? `כל ${advCount} הקבוצות נכונות!` : allResultsIn ? `פגיעה בכל ${advCount} → +${cfg.bonus} נק'` : `ממתין לתוצאות...`}
@@ -1315,11 +1368,11 @@ export default function ViewSubmissions() {
             </div>
             <Badge style={{
               fontSize: '0.95rem', fontWeight: '800', padding: '4px 12px',
-              background: stageBonusEarned ? '#059669' : 'rgba(100,116,139,0.3)',
-              color: stageBonusEarned ? '#fff' : '#94a3b8',
-              border: stageBonusEarned ? '1px solid #10b981' : '1px solid rgba(100,116,139,0.4)',
+              background: stageBonusEarned ? '#059669' : allResultsIn ? '#dc2626' : 'rgba(100,116,139,0.3)',
+              color: '#fff',
+              border: stageBonusEarned ? '1px solid #10b981' : allResultsIn ? '1px solid #ef4444' : '1px solid rgba(100,116,139,0.4)',
             }}>
-              {stageBonusEarned ? `+${cfg.bonus}` : `?/${cfg.bonus}`}
+              {stageBonusEarned ? `+${cfg.bonus}` : allResultsIn ? `0/${cfg.bonus}` : `?/${cfg.bonus}`}
             </Badge>
           </div>
         )}
