@@ -38,13 +38,6 @@ export default function AdminResults() {
   const { toast } = useToast();
   const { currentGame } = useGame();
 
-  // ── זיהוי שלב הנוק-אאוט ──────────────────────────────────────────────────
-  const isKnockoutGame = !!(
-    currentGame?.name?.includes('נוק-אאוט') ||
-    currentGame?.name?.includes('knock') ||
-    currentGame?.id === '9c9c1331-5184-406b-98b3-6becd9577567'
-  );
-
   useEffect(() => {
     const loadUser = async () => {
       try {
@@ -74,14 +67,19 @@ export default function AdminResults() {
   };
 
   const loadAllPredictions = async (gameId) => {
+    // db.Prediction.filter מוגבל ל-1000 — משתמשים ב-supabase ישיר עם range()
     let all = [], from = 0;
     const PAGE = 1000;
     while (true) {
       const { data, error } = await supabase
-        .from('predictions').select('*').eq('game_id', gameId).range(from, from + PAGE - 1);
+        .from('predictions')
+        .select('*')
+        .eq('game_id', gameId)
+        .range(from, from + PAGE - 1);
       if (error) { console.error('predictions fetch error:', error); break; }
       if (!data || data.length === 0) break;
       all = [...all, ...data];
+      console.log(`   📊 ניחושים: נטענו ${data.length}, סה"כ ${all.length}`);
       if (data.length < PAGE) break;
       from += PAGE;
     }
@@ -89,11 +87,15 @@ export default function AdminResults() {
   };
 
   const loadAllRankings = async (gameId) => {
+    // db.Ranking.filter מוגבל — משתמשים ב-supabase ישיר עם range()
     let all = [], from = 0;
     const PAGE = 500;
     while (true) {
       const { data, error } = await supabase
-        .from('rankings').select('*').eq('game_id', gameId).range(from, from + PAGE - 1);
+        .from('rankings')
+        .select('*')
+        .eq('game_id', gameId)
+        .range(from, from + PAGE - 1);
       if (error) { console.error('rankings fetch error:', error); break; }
       if (!data || data.length === 0) break;
       all = [...all, ...data];
@@ -138,9 +140,7 @@ export default function AdminResults() {
         let tableId = q.table_id;
         let tableDesc = q.table_description;
         if (q.stage_name?.includes('בית')) { tableId = q.stage_name; tableDesc = q.stage_name; }
-        else if (q.table_description?.includes('שאלות מיוחדות') && q.stage_order && q.table_id !== 'T10') {
-          tableId = `custom_order_${q.stage_order}`; tableDesc = q.stage_name || q.table_description;
-        }
+        else if (q.table_description?.includes('שאלות מיוחדות') && q.stage_order) { tableId = `custom_order_${q.stage_order}`; tableDesc = q.stage_name || q.table_description; }
 
         if (!collection[tableId]) collection[tableId] = { id: tableId, description: tableDesc || tableId, questions: [], stage_order: q.stage_order || 0 };
         collection[tableId].questions.push(q);
@@ -158,45 +158,28 @@ export default function AdminResults() {
       });
       setRoundTables(sortedRoundTables);
 
-      // ── זיהוי דינמי של טבלאות מיקומים ──────────────────────────────────
       const locationTableIds = ['T9','T14','T15','T16','T17'];
-      const isLocationTable = (t) => {
-        if (locationTableIds.includes(t.id)) return true;
-        const desc = (t.description || '').toLowerCase();
-        const stType = t.questions[0]?.stage_type || '';
-        return stType === 'locations' || desc.includes('מיקום') || desc.includes('מקומות') || desc.includes('מקום');
-      };
-      const detectedLocationTables = Object.values(sTables)
-        .filter(t => isLocationTable(t))
-        .sort((a,b) => (parseInt(a.id.replace('T','')) || 0) - (parseInt(b.id.replace('T','')) || 0));
-      const detectedLocationIds = new Set(detectedLocationTables.map(t => t.id));
-      setLocationTables(detectedLocationTables);
-
+      setLocationTables(Object.values(sTables).filter(t => locationTableIds.includes(t.id)).sort((a,b) => parseInt(a.id.replace('T','')) - parseInt(b.id.replace('T',''))));
       setPlayoffWinnersTable(sTables['T19'] || null);
 
       const allSpecialTables = Object.values(sTables).filter(t => {
         if (t.id === 'T10') return false;
         const desc = t.description?.trim();
-        return desc && !/^\d+$/.test(desc) && !detectedLocationIds.has(t.id) && t.id !== 'T19' && !t.id.includes('בית') && t.id !== 'T1' && t.id !== 'T9';
+        return desc && !/^\d+$/.test(desc) && !locationTableIds.includes(t.id) && t.id !== 'T19' && !t.id.includes('בית') && t.id !== 'T1' && t.id !== 'T9';
       }).sort((a,b) => ((a.stage_order||0) - (b.stage_order||0)) || (parseInt(a.id.replace('T','').replace(/\D/g,'')) - parseInt(b.id.replace('T','').replace(/\D/g,''))));
       setSpecialTables(allSpecialTables);
-
-      // ── שינוי שם T3 — רק בנוק-אאוט ──────────────────────────────────────
-      const gameIsKnockout = !!(
-        currentGame?.name?.includes('נוק-אאוט') ||
-        currentGame?.name?.includes('knock') ||
-        currentGame?.id === '9c9c1331-5184-406b-98b3-6becd9577567'
-      );
-      if (gameIsKnockout) {
-        sortedRoundTables.forEach(t => { if (t.id === 'T3') t.description = 'שלב שמינית הגמר - המשחקים!'; });
-        allSpecialTables.forEach(t => { if (t.id === 'T3') t.description = 'שלב שמינית הגמר - המשחקים!'; });
-      }
+      // ── שינוי שם T3 ──────────────────────────────────────────
+      sortedRoundTables.forEach(t => {
+        if (t.id === 'T3') t.description = 'שלב שמינית הגמר - המשחקים!';
+      });
+      allSpecialTables.forEach(t => {
+        if (t.id === 'T3') t.description = 'שלב שמינית הגמר - המשחקים!';
+      });
 
       const t10Special = sTables['T10'];
       if (t10Special) {
         const t10Round = sortedRoundTables.find(t => t.id === 'T10');
         if (t10Round) t10Round.specialQuestions = t10Special.questions;
-        else if (!allSpecialTables.find(t => t.id === 'T10')) allSpecialTables.push(t10Special);
       }
 
       const initialResults = questions.reduce((acc, q) => {
@@ -214,6 +197,7 @@ export default function AdminResults() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
+  // T11/T12/T13 selected teams
   useEffect(() => {
     const filter = (include, exclude=[]) => {
       const qs = allQuestions.filter(q => {
@@ -234,6 +218,7 @@ export default function AdminResults() {
     setResults(prev => ({ ...prev, [questionId]: value === '' ? '__CLEAR__' : value }));
   };
 
+  // ── Calculate participant score ────────────────────────────────────────────
   const calcParticipantScore = (qs, predictions) => {
     const latest = {};
     predictions.forEach(p => {
@@ -246,11 +231,13 @@ export default function AdminResults() {
     return total;
   };
 
+  // ── Recalculate rankings for ALL participants ──────────────────────────────
   const recalculateRankings = async () => {
     if (!currentGame) return;
     setRecalculating(true);
     setRecalcProgress('טוען שאלות...');
     try {
+      // 1. שאלות
       let qs = await loadAllQuestions(currentGame.id);
       qs = qs.filter(q => q.table_id && q.table_id !== 'T1');
       qs.forEach(q => {
@@ -259,10 +246,14 @@ export default function AdminResults() {
           if (sep) { const p = q.question_text.split(sep).map(t => t.trim()); if (p.length === 2) { q.home_team = p[0]; q.away_team = p[1]; } }
         }
       });
+      console.log(`✅ ${qs.length} שאלות`);
 
+      // 2. ניחושים — כולם
       setRecalcProgress('טוען ניחושים...');
       const preds = await loadAllPredictions(currentGame.id);
+      console.log(`✅ ${preds.length} ניחושים`);
 
+      // 3. קיבוץ לפי משתתף
       const byParticipant = {};
       preds.forEach(p => {
         if (!p.participant_name?.trim()) return;
@@ -270,7 +261,9 @@ export default function AdminResults() {
         byParticipant[p.participant_name].push(p);
       });
       const participants = Object.keys(byParticipant);
+      console.log(`✅ ${participants.length} משתתפים`);
 
+      // 4. חישוב ניקוד
       setRecalcProgress(`מחשב ניקוד עבור ${participants.length} משתתפים...`);
       const scores = participants.map(name => ({
         participant_name: name,
@@ -283,11 +276,14 @@ export default function AdminResults() {
         s.current_position = pos;
       });
 
+      // 5. טען baselines קיימות — עם pagination מלאה!
       setRecalcProgress('טוען דירוג קיים...');
       const existingRankings = await loadAllRankings(currentGame.id);
+      console.log(`✅ ${existingRankings.length} שורות דירוג קיימות`);
       const baselineMap = {};
       existingRankings.forEach(r => { baselineMap[r.participant_name] = r; });
 
+      // 6. שמור
       let saved = 0;
       for (const s of scores) {
         const base = baselineMap[s.participant_name];
@@ -310,6 +306,7 @@ export default function AdminResults() {
           if (base) await db.Ranking.update(base.id, data);
           else await db.Ranking.create(data);
         } catch (err) { console.error('שגיאה בדירוג', s.participant_name, err); }
+        // rate limit — 100ms בין כל שמירה
         await new Promise(r => setTimeout(r, 100));
       }
 
@@ -328,6 +325,7 @@ export default function AdminResults() {
     setRecalculating(false);
   };
 
+  // ── Save results ──────────────────────────────────────────────────────────
   const handleSaveResults = async () => {
     setSaving(true);
     try {
@@ -343,6 +341,7 @@ export default function AdminResults() {
         return;
       }
 
+      console.log(`💾 שומר ${changedQuestions.length} שאלות...`);
       for (let i = 0; i < changedQuestions.length; i++) {
         const q = changedQuestions[i];
         const val = (results[q.id] === '__CLEAR__' || !results[q.id]) ? null : results[q.id];
@@ -385,7 +384,13 @@ export default function AdminResults() {
         <Input
           value={value === '__CLEAR__' ? '' : (value || '')}
           onChange={(e) => onChange(e.target.value)}
-          style={{ width: '180px', background: hasResult ? 'var(--tp-20)' : 'rgba(51,65,85,0.5)', borderColor: hasResult ? 'var(--tp)' : 'rgba(100,116,139,1)', color: hasResult ? 'var(--tp)' : '#f8fafc', fontWeight: hasResult ? '700' : 'normal' }}
+          style={{
+            width: '180px',
+            background: hasResult ? 'var(--tp-20)' : 'rgba(51,65,85,0.5)',
+            borderColor: hasResult ? 'var(--tp)' : 'rgba(100,116,139,1)',
+            color: hasResult ? 'var(--tp)' : '#f8fafc',
+            fontWeight: hasResult ? '700' : 'normal'
+          }}
           placeholder="הזן תוצאה..."
           readOnly={!isAdmin}
         />
@@ -393,13 +398,21 @@ export default function AdminResults() {
     }
 
     const safeValue = (!value || value === 'null' || value === 'undefined' || value.toLowerCase?.().includes('null')) ? '__CLEAR__' : value;
+
     return (
       <Select value={safeValue} onValueChange={onChange} disabled={!isAdmin}>
-        <SelectTrigger className={selectClassName} style={{ background: hasResult ? 'var(--tp-20)' : 'rgba(51,65,85,0.5)', borderColor: hasResult ? 'var(--tp)' : 'rgba(100,116,139,1)', color: hasResult ? 'var(--tp)' : '#94a3b8', fontWeight: hasResult ? '700' : 'normal' }}>
+        <SelectTrigger className={selectClassName} style={{
+          background: hasResult ? 'var(--tp-20)' : 'rgba(51,65,85,0.5)',
+          borderColor: hasResult ? 'var(--tp)' : 'rgba(100,116,139,1)',
+          color: hasResult ? 'var(--tp)' : '#94a3b8',
+          fontWeight: hasResult ? '700' : 'normal'
+        }}>
           <SelectValue placeholder="בחר...">
             {!hasResult ? 'בחר...' : (
               <div className="flex items-center gap-2">
-                {isTeamsList && findTeam(value)?.logo_url && <img src={findTeam(value).logo_url} alt={value} className="w-5 h-5 rounded-full" onError={e => e.target.style.display='none'} />}
+                {isTeamsList && findTeam(value)?.logo_url && (
+                  <img src={findTeam(value).logo_url} alt={value} className="w-5 h-5 rounded-full" onError={e => e.target.style.display='none'} />
+                )}
                 <span>{value.replace(/\s*\([^)]+\)\s*$/, '').trim()}</span>
               </div>
             )}
@@ -432,89 +445,56 @@ export default function AdminResults() {
     );
   };
 
-  const renderQuestionRow = (q) => (
-    <div key={q.id} style={{ display: 'grid', gridTemplateColumns: '50px 1fr 160px 50px', gap: '8px', alignItems: 'center', padding: '8px 12px', borderRadius: '6px' }} className="border border-cyan-600/30 bg-slate-700/20">
+  const renderQuestionRow = (q, cols = 4, widths = { select: '160px' }) => (
+    <div key={q.id} style={{
+      display: 'grid',
+      gridTemplateColumns: cols === 4 ? `50px 1fr ${widths.select} 50px` : `50px 1fr ${widths.select} 50px`,
+      gap: '8px', alignItems: 'center', padding: '8px 12px', borderRadius: '6px'
+    }} className="border border-cyan-600/30 bg-slate-700/20">
       <Badge variant="outline" className="border-cyan-400 text-cyan-200 justify-center text-xs h-6 w-full">{q.question_id}</Badge>
       <span className="text-right font-medium text-sm text-blue-100 truncate">{q.question_text}</span>
-      {renderSelectWithLogos(q, results[q.id] || '', val => handleResultChange(q.id, val === '__CLEAR__' ? '' : val), 'w-[160px]')}
+      {renderSelectWithLogos(q, results[q.id] || '', val => handleResultChange(q.id, val === '__CLEAR__' ? '' : val), `w-[${widths.select}]`)}
       <Badge className="text-xs px-2 py-1 justify-center h-6 w-full" style={{ borderColor: 'var(--tp-50)', color: 'var(--tp)', background: 'var(--tp-10)' }}>{q.possible_points || 0}</Badge>
     </div>
   );
 
-  // ── באנר בונוס דינמי ──────────────────────────────────────────────────────
-  // מציג תמיד: ?/N לפני תוצאות, 0/N אחרי תוצאות אם לא הושג, +N אם הושג
-  const renderDynamicBonusBanner = (bonusPoints, bonusDesc, questions, isEarned) => {
-    const allResultsIn = questions.length > 0 &&
-      questions.every(q => { const r = results[q.id]; return r && r !== '__CLEAR__' && r.trim() !== ''; });
-    const earned = allResultsIn && isEarned(questions, results);
+  // ── בונוסי שלבים ──────────────────────────────────────────────────────────
+  const STAGE_BONUSES = {
+    T3: { points: 16, desc: 'ניקוד בכל משחקי שמינית הגמר' },
+    T4: { points: 16, desc: 'ניחוש כל 8 קבוצות רבע הגמר' },
+    T5: { points: 12, desc: 'ניחוש כל 4 קבוצות חצי הגמר' },
+    T6: { points: 6,  desc: 'ניחוש שתי קבוצות הגמר' },
+  };
 
+  const renderBonusBanner = (tableId) => {
+    const bonus = STAGE_BONUSES[tableId];
+    if (!bonus) return null;
     return (
       <div style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '10px 16px', borderRadius: '8px', marginBottom: '10px',
-        background: earned
-          ? 'linear-gradient(90deg,rgba(16,185,129,0.18),rgba(5,150,105,0.10))'
-          : allResultsIn
-            ? 'linear-gradient(90deg,rgba(239,68,68,0.12),rgba(185,28,28,0.08))'
-            : 'rgba(234,179,8,0.10)',
-        border: `1px solid ${earned ? 'rgba(16,185,129,0.50)' : allResultsIn ? 'rgba(239,68,68,0.45)' : 'rgba(234,179,8,0.40)'}`,
+        display: 'flex', alignItems: 'center', gap: '10px', justifyContent: 'center',
+        padding: '8px 16px', borderRadius: '8px', marginBottom: '8px',
+        background: 'rgba(234,179,8,0.10)', border: '1px solid rgba(234,179,8,0.40)',
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <span style={{ fontSize: '1.2rem' }}>{earned ? '✅' : allResultsIn ? '❌' : '⏳'}</span>
-          <div>
-            <p style={{ fontSize: '0.82rem', fontWeight: '700', margin: 0, color: earned ? '#6ee7b7' : allResultsIn ? '#fca5a5' : '#fde68a' }}>
-              {earned ? 'בונוס שלב — הושג!' : allResultsIn ? 'בונוס שלב — לא הושג' : 'בונוס שלב — ממתין לתוצאות'}
-            </p>
-            <p style={{ fontSize: '0.70rem', color: '#94a3b8', margin: 0 }}>{bonusDesc}</p>
-          </div>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <span style={{ fontSize: '0.70rem', color: '#64748b' }}>בונוס</span>
-          <Badge style={{
-            fontSize: '1.05rem', fontWeight: '800', padding: '5px 14px',
-            background: earned
-              ? 'linear-gradient(135deg,#059669,#047857)'
-              : allResultsIn
-                ? 'linear-gradient(135deg,#dc2626,#b91c1c)'
-                : 'rgba(100,116,139,0.25)',
-            color: '#fff',
-            border: earned ? '1px solid #10b981' : allResultsIn ? '1px solid #ef4444' : '1px solid rgba(100,116,139,0.5)',
-            boxShadow: earned ? '0 0 12px rgba(16,185,129,0.4)' : 'none',
-          }}>
-            {earned ? `+${bonusPoints}` : allResultsIn ? `0/${bonusPoints}` : `?/${bonusPoints}`}
-          </Badge>
-        </div>
+        <span style={{ fontSize: '1.1rem' }}>🏆</span>
+        <span style={{ color: '#fde68a', fontSize: '0.82rem', fontWeight: '600' }}>
+          בונוס שלב: +{bonus.points} נקודות
+        </span>
+        <span style={{ color: '#fbbf24', fontSize: '0.75rem', opacity: 0.85 }}>— {bonus.desc}</span>
       </div>
     );
   };
 
-  // ── באנר T3 — רק בנוק-אאוט ───────────────────────────────────────────────
-  const renderT3BonusBanner = (table) => {
-    if (!isKnockoutGame) return null;
-    return renderDynamicBonusBanner(
-      16,
-      'ניקוד בכל משחקי שמינית הגמר מעניק בונוס שלב',
-      table.questions,
-      // T3: הבונוס מושג כאשר כל התוצאות מוזנות (מבחינת האדמין — כל תוצאה = הושלמה)
-      (qs, res) => qs.every(q => { const r = res[q.id]; return r && r !== '__CLEAR__' && r.trim() !== ''; })
-    );
-  };
-
-  // ── טבלאות עולות ─────────────────────────────────────────────────────────
-  const ADVANCING_CONFIG = {
-    T4: { count: 8,  bonus: 16, desc: 'ניחוש נכון של כל 8 קבוצות רבע הגמר' },
-    T5: { count: 4,  bonus: 12, desc: 'ניחוש נכון של כל 4 קבוצות חצי הגמר' },
-    T6: { count: 2,  bonus: 6,  desc: 'ניחוש נכון של שתי קבוצות הגמר' },
-  };
+  // ── טבלאות עולות (T4/T5/T6) — מיון + ניקוד + בונוס ───────────────────────
+  const ADVANCING_CONFIG = { T4: 8, T5: 4, T6: 2 };
 
   const renderAdvancingTeamTable = (table) => {
-    const cfg = ADVANCING_CONFIG[table.id];
-    const maxSlot = cfg ? cfg.count : 9999;
+    const count = ADVANCING_CONFIG[table.id];
+    // רק חריצי העולות: question_id שלם בטווח 1..N, ללא כפילויות
     const seenIds = new Set();
     const slots = table.questions
       .filter(q => {
         const n = parseFloat(q.question_id);
-        if (!Number.isInteger(n) || n < 1 || n > maxSlot) return false;
+        if (!Number.isInteger(n) || n < 1 || n > count) return false;
         if (seenIds.has(n)) return false;
         seenIds.add(n);
         return true;
@@ -527,13 +507,7 @@ export default function AdminResults() {
           <CardTitle className="text-cyan-400">{table.description}</CardTitle>
         </CardHeader>
         <CardContent className="p-3">
-          {cfg && renderDynamicBonusBanner(
-            cfg.bonus,
-            cfg.desc,
-            slots,
-            // בונוס עולות: מושג אם כל התוצאות מוזנות (האדמין הוא שמגדיר — אם הוזן הכל הבונוס נחשב)
-            (qs, res) => qs.every(q => { const r = res[q.id]; return r && r !== '__CLEAR__' && r.trim() !== ''; })
-          )}
+          {renderBonusBanner(table.id)}
           <div className="space-y-2">
             {slots.map(q => renderQuestionRow(q))}
           </div>
@@ -543,6 +517,7 @@ export default function AdminResults() {
   };
 
   const renderSpecialQuestions = (table) => {
+    // T4/T5/T6 — שתמול ייעודי
     if (ADVANCING_CONFIG[table.id]) return renderAdvancingTeamTable(table);
 
     const grouped = {};
@@ -564,7 +539,10 @@ export default function AdminResults() {
               const { main, subs } = grouped[mainId];
               if (!main) return null;
               const sortedSubs = [...subs].sort((a, b) => parseFloat(a.question_id || a.stage_order) - parseFloat(b.question_id || b.stage_order));
+
               if (sortedSubs.length === 0) return renderQuestionRow(main);
+
+              // ── שורה אחת: ראשית + תתי-סעיפים ──────────────────────────
               return (
                 <div key={main.id} style={{ display: 'flex', alignItems: 'center', padding: '7px 10px', borderRadius: '8px', overflow: 'hidden', border: '1px solid var(--tp-12)', background: 'rgba(0,0,0,0.22)' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: '1.4', minWidth: 0 }}>
@@ -597,7 +575,7 @@ export default function AdminResults() {
     );
   };
 
-  // ── Stage chips (mobile) ──────────────────────────────────────────────────
+  // ── Stage chips ───────────────────────────────────────────────────────────
   const renderStageChips = (buttons) => {
     const groupMap = {
       playoff:    { label: '⚽ פלייאוף',    color: '#3b82f6', bg: 'rgba(59,130,246,0.12)',  border: 'rgba(59,130,246,0.35)',  activeBg: '#2563eb' },
@@ -609,7 +587,11 @@ export default function AdminResults() {
       other:      { label: '📌 נוסף',        color: '#64748b', bg: 'rgba(100,116,139,0.10)', border: 'rgba(100,116,139,0.25)', activeBg: '#475569' },
     };
     const grouped = {};
-    buttons.forEach(btn => { const t = btn.stageType || 'special'; if (!grouped[t]) grouped[t] = []; grouped[t].push(btn); });
+    buttons.forEach(btn => {
+      const t = btn.stageType || (btn.sectionKey.startsWith('round_') ? 'playoff' : (btn.stageType === 'qualifiers' ? 'qualifiers' : 'special'));
+      if (!grouped[t]) grouped[t] = [];
+      grouped[t].push(btn);
+    });
     const order = ['playoff','league','groups','rounds','special','qualifiers','other'];
     return (
       <div style={{ padding: '14px 12px', background: 'rgba(0,0,0,0.40)', borderRadius: '12px', border: '1px solid var(--tp-12)', marginBottom: '16px' }}>
@@ -650,7 +632,7 @@ export default function AdminResults() {
     );
   }
 
-  // ── Build nav buttons ─────────────────────────────────────────────────────
+  // Build nav buttons
   const allButtons = [];
   roundTables.forEach(t => {
     const st = t.questions[0]?.stage_type;
@@ -662,8 +644,7 @@ export default function AdminResults() {
     const stageType = st && ['playoff','groups','rounds','league','qualifiers','other'].includes(st) ? st : 'special';
     allButtons.push({ numericId: t.stage_order || parseInt(t.id.replace('T','').replace(/\D/g,''))||0, stageType, key: t.id, description: t.description, sectionKey: t.id });
   });
-  // מיקומים → קבוצת עולות (כתום)
-  if (locationTables.length > 0) allButtons.push({ numericId: 99, stageType: 'qualifiers', key: 'locations', description: 'מיקומים', sectionKey: 'locations' });
+  if (locationTables.length > 0) allButtons.push({ numericId: 99, stageType: 'other', key: 'locations', description: 'מיקומים', sectionKey: 'locations' });
   if (israeliTable) allButtons.push({ numericId: parseInt(israeliTable.id.replace('T','')||'0'), stageType: israeliTable.questions?.[0]?.stage_type || 'special', key: israeliTable.id, description: israeliTable.description, sectionKey: 'israeli' });
   if (playoffWinnersTable) allButtons.push({ numericId: parseInt(playoffWinnersTable.id.replace('T','')||'0'), stageType: 'qualifiers', key: playoffWinnersTable.id, description: playoffWinnersTable.description, sectionKey: 'playoffWinners' });
   allButtons.sort((a, b) => {
@@ -675,22 +656,27 @@ export default function AdminResults() {
 
   const renderSidebar = () => {
     const groupMap = {
-      playoff:    { label: '⚽ פלייאוף',   color: '#3b82f6',  bg: 'rgba(59,130,246,0.10)',  border: 'rgba(59,130,246,0.30)',  activeBg: '#2563eb',  activeShadow: '0 2px 10px rgba(59,130,246,0.44)' },
-      league:     { label: '⚽ ליגה',       color: '#3b82f6',  bg: 'rgba(59,130,246,0.10)',  border: 'rgba(59,130,246,0.30)',  activeBg: '#2563eb',  activeShadow: '0 2px 10px rgba(59,130,246,0.44)' },
-      groups:     { label: '🏠 בתים',       color: 'var(--tp)', bg: 'var(--tp-10)', border: 'var(--tp-30)', activeBg: 'var(--tp-dark)', activeShadow: 'var(--tp-glow-sm)' },
-      rounds:     { label: '⚽ מחזורים',    color: 'var(--tp)', bg: 'var(--tp-10)', border: 'var(--tp-30)', activeBg: 'var(--tp-dark)', activeShadow: 'var(--tp-glow-sm)' },
-      special:    { label: '✨ מיוחדות',    color: '#8b5cf6',  bg: 'rgba(139,92,246,0.10)', border: 'rgba(139,92,246,0.30)', activeBg: '#7c3aed',  activeShadow: '0 2px 10px rgba(139,92,246,0.44)' },
-      qualifiers: { label: '📋 עולות',      color: '#f97316',  bg: 'rgba(249,115,22,0.10)', border: 'rgba(249,115,22,0.30)', activeBg: '#ea580c',  activeShadow: '0 2px 10px rgba(249,115,22,0.44)' },
-      other:      { label: '📌 נוסף',       color: '#64748b',  bg: 'rgba(100,116,139,0.08)', border: 'rgba(100,116,139,0.20)', activeBg: '#475569', activeShadow: '0 2px 8px rgba(100,116,139,0.30)' },
+      playoff:    { label: '⚽ פלייאוף',   color: '#3b82f6',     bg: 'rgba(59,130,246,0.10)',   border: 'rgba(59,130,246,0.30)',   activeBg: '#2563eb',          activeShadow: '0 2px 10px rgba(59,130,246,0.44)'   },
+      league:     { label: '⚽ ליגה',       color: '#3b82f6',     bg: 'rgba(59,130,246,0.10)',   border: 'rgba(59,130,246,0.30)',   activeBg: '#2563eb',          activeShadow: '0 2px 10px rgba(59,130,246,0.44)'   },
+      groups:     { label: '🏠 בתים',       color: 'var(--tp)',   bg: 'var(--tp-10)',            border: 'var(--tp-30)',            activeBg: 'var(--tp-dark)',   activeShadow: 'var(--tp-glow-sm)'                  },
+      rounds:     { label: '⚽ מחזורים',    color: 'var(--tp)',   bg: 'var(--tp-10)',            border: 'var(--tp-30)',            activeBg: 'var(--tp-dark)',   activeShadow: 'var(--tp-glow-sm)'                  },
+      special:    { label: '✨ מיוחדות',    color: '#8b5cf6',     bg: 'rgba(139,92,246,0.10)',   border: 'rgba(139,92,246,0.30)',   activeBg: '#7c3aed',          activeShadow: '0 2px 10px rgba(139,92,246,0.44)'   },
+      qualifiers: { label: '📋 רשימות',     color: '#f97316',     bg: 'rgba(249,115,22,0.10)',   border: 'rgba(249,115,22,0.30)',   activeBg: '#ea580c',          activeShadow: '0 2px 10px rgba(249,115,22,0.44)'   },
+      other:      { label: '📌 נוסף',       color: '#64748b',     bg: 'rgba(100,116,139,0.08)',  border: 'rgba(100,116,139,0.20)',  activeBg: '#475569',          activeShadow: '0 2px 8px rgba(100,116,139,0.30)'   },
     };
     const grouped = {};
-    allButtons.forEach(btn => { const t = btn.stageType || 'other'; if (!grouped[t]) grouped[t] = []; grouped[t].push(btn); });
+    allButtons.forEach(btn => {
+      const t = btn.stageType || 'other';
+      if (!grouped[t]) grouped[t] = [];
+      grouped[t].push(btn);
+    });
     const order = ['rounds','league','groups','playoff','special','qualifiers','other'];
+    const sortedGroups = order.filter(t => grouped[t]);
     return (
-      <aside style={{ width: '260px', flexShrink: 0, position: 'sticky', top: '70px', alignSelf: 'flex-start', maxHeight: 'calc(100vh - 90px)', overflowY: 'auto', paddingBottom: '16px' }}>
+      <aside style={{ width: '215px', flexShrink: 0, position: 'sticky', top: '70px', alignSelf: 'flex-start', maxHeight: 'calc(100vh - 90px)', overflowY: 'auto', paddingBottom: '16px' }}>
         <div style={{ background: 'rgba(13,18,30,0.9)', borderRadius: '12px', border: '1px solid var(--tp-12)', padding: '14px 10px', backdropFilter: 'blur(10px)' }}>
           <div style={{ fontSize: '0.5rem', fontWeight: '800', letterSpacing: '0.18em', textTransform: 'uppercase', color: '#334155', marginBottom: '14px', paddingRight: '2px' }}>בחירת שלב</div>
-          {order.filter(t => grouped[t]).map(type => {
+          {sortedGroups.map(type => {
             const info = groupMap[type] || groupMap.other;
             return (
               <div key={type} style={{ marginBottom: '14px' }}>
@@ -701,13 +687,13 @@ export default function AdminResults() {
                     return (
                       <button key={btn.key} onClick={() => toggleSection(btn.sectionKey)} style={{
                         display: 'block', width: '100%', textAlign: 'right', padding: '7px 10px',
-                        borderRadius: '8px', fontSize: '0.72rem', fontWeight: active ? '700' : '400',
+                        borderRadius: '8px', fontSize: '0.8rem', fontWeight: active ? '700' : '400',
                         color: active ? 'white' : info.color,
                         background: active ? info.activeBg : info.bg,
                         border: `1px solid ${active ? info.color : info.border}`,
                         cursor: 'pointer', transition: 'all 0.15s',
                         boxShadow: active ? (info.activeShadow || `0 2px 10px ${info.color}44`) : 'none',
-                        fontFamily: 'Rubik, Heebo, sans-serif', lineHeight: '1.3',
+                        fontFamily: 'Rubik, Heebo, sans-serif', lineHeight: '1.35',
                       }}>{btn.description}</button>
                     );
                   })}
@@ -736,7 +722,7 @@ export default function AdminResults() {
             if (!table) return null;
             return (
               <div key={button.key} className="mb-4 space-y-3">
-                {renderT3BonusBanner(table)}
+                {renderBonusBanner(table.id)}
                 <RoundTableResults table={table} teams={teams} results={results} onResultChange={handleResultChange} isAdmin={isAdmin} />
                 {table.specialQuestions?.length > 0 && (
                   <div className="mt-4">{renderSpecialQuestions({ ...table, questions: table.specialQuestions })}</div>
@@ -745,14 +731,7 @@ export default function AdminResults() {
             );
           }
           if (button.sectionKey === 'israeli' && israeliTable) return <div key="israeli" className="mb-4"><RoundTableResults table={israeliTable} teams={teams} results={results} onResultChange={handleResultChange} isAdmin={isAdmin} /></div>;
-          if (button.sectionKey === 'locations') return (
-            <div key="locations" className="mb-4 grid grid-cols-1 md:grid-cols-2 gap-3">
-              {locationTables.map(t => {
-                const hasSlots = t.questions.some(q => { const n = parseFloat(q.question_id); return Number.isInteger(n) && n >= 1; });
-                return <div key={t.id}>{hasSlots ? renderAdvancingTeamTable(t) : renderSpecialQuestions(t)}</div>;
-              })}
-            </div>
-          );
+          if (button.sectionKey === 'locations') return <div key="locations" className="mb-4 grid grid-cols-1 md:grid-cols-2 gap-3">{locationTables.map(t => renderSpecialQuestions(t))}</div>;
           if (button.sectionKey === 'playoffWinners' && playoffWinnersTable) return <div key="playoffWinners" className="mb-6">{renderSpecialQuestions(playoffWinnersTable)}</div>;
           const t = specialTables.find(t => t.id === button.key);
           if (t) return <div key={t.id} className="mb-6">{renderSpecialQuestions(t)}</div>;
@@ -765,6 +744,7 @@ export default function AdminResults() {
   return (
     <div dir="rtl" style={{ background: 'linear-gradient(135deg, var(--bg1) 0%, var(--bg2) 50%, var(--bg1) 100%)', minHeight: '100vh' }}>
 
+      {/* Header sticky */}
       <div style={{ position: 'sticky', top: 0, zIndex: 20, background: 'rgba(0,0,0,0.70)', backdropFilter: 'blur(12px)', borderBottom: '1px solid var(--tp-15)', padding: '10px 20px' }}>
         <div className="flex flex-row justify-between items-center gap-3 max-w-7xl mx-auto">
           <div>
@@ -788,20 +768,28 @@ export default function AdminResults() {
         </div>
       </div>
 
+      {/* Progress */}
       {recalculating && recalcProgress && (
         <div className="mx-4 mt-2 p-3 rounded-lg text-sm" style={{ background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.3)', color: '#10b981' }}>
           ⏳ {recalcProgress}
         </div>
       )}
 
-      <div className="md:hidden p-3">{renderStageChips(allButtons)}</div>
+      {/* Mobile chips */}
+      <div className="md:hidden p-3">
+        {renderStageChips(allButtons)}
+      </div>
 
+      {/* Desktop: sidebar + content */}
       <div className="hidden md:flex flex-row gap-4 p-4 max-w-7xl mx-auto" style={{ alignItems: 'flex-start' }}>
         {renderSidebar()}
         {renderContent()}
       </div>
 
-      <div className="md:hidden p-3">{renderContent()}</div>
+      {/* Mobile content */}
+      <div className="md:hidden p-3">
+        {renderContent()}
+      </div>
     </div>
   );
 }
