@@ -1,1072 +1,1008 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { BarChart3, Users, Target, Loader2, PieChart, ChevronDown, ChevronUp, TrendingUp, Award, AlertTriangle, Trophy } from "lucide-react";
-import { PieChart as RechartsPieChart, Pie, Cell, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
-import { Tooltip as UITooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Prediction, Question, Team, ValidationList, User, SystemSettings } from "@/entities/all";
 import { supabase } from '@/api/supabaseClient';
 import * as db from '@/api/entities';
+import { Users, Loader2, ChevronDown, ChevronUp, FileText, Trash2, AlertTriangle, Trophy, Pencil, Save, Download, Award, CheckCircle, Menu, X } from "lucide-react";
+import { useToast } from "@/components/ui/use-toast";
+import RoundTableReadOnly from "../components/predictions/RoundTableReadOnly";
+import { calculateQuestionScore, calculateLocationBonus } from "@/components/scoring/ScoreService";
+import StandingsTable from "../components/predictions/StandingsTable";
 import { useGame } from "@/components/contexts/GameContext";
 
-
-const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316', '#06b6d4', '#84cc16'];
-
-// 🔥 קבועי עולות
-const ADVANCING_CONFIG = { T4: { count: 8, bonus: 16 }, T5: { count: 4, bonus: 12 }, T6: { count: 2, bonus: 6 } };
-const QUALIFIER_TABLE_IDS = ['T4', 'T5', 'T6'];
-
-// 🚀 Cache גלובלי
-const NORMALIZE_CACHE = new Map();
-const CLEAN_CACHE = new Map();
-const PARSE_ID_CACHE = new Map();
-
-const normalizeTeamName = (name) => {
-  if (!name) return name;
-  if (NORMALIZE_CACHE.has(name)) return NORMALIZE_CACHE.get(name);
-  const result = name.replace(/קרבאך/g, 'קרבאח').replace(/קראבח/g, 'קרבאח').replace(/קראבך/g, 'קרבאח').trim();
-  NORMALIZE_CACHE.set(name, result);
-  return result;
-};
-
-const cleanTeamName = (name) => {
-  if (!name) return name;
-  if (CLEAN_CACHE.has(name)) return CLEAN_CACHE.get(name);
-  const result = name.replace(/\s*\([^)]+\)\s*$/, '').trim();
-  CLEAN_CACHE.set(name, result);
-  return result;
-};
-
-const normalizePrediction = (result) => {
-  if (!result) return '';
-  return result.replace(/\s+/g, '').trim();
-};
-
-const alternateSliceOrder = (data) => {
-  if (!data || data.length <= 2) return data;
-  const sorted = [...data].sort((a, b) => (b.value || b.count || 0) - (a.value || a.count || 0));
-  const midpoint = Math.ceil(sorted.length / 2);
-  const largerHalf = sorted.slice(0, midpoint);
-  const smallerHalf = sorted.slice(midpoint).reverse();
-  const result = [];
-  for (let i = 0; i < Math.max(largerHalf.length, smallerHalf.length); i++) {
-    if (i < largerHalf.length) result.push(largerHalf[i]);
-    if (i < smallerHalf.length) result.push(smallerHalf[i]);
-  }
-  return result;
-};
-
-const parseQuestionId = (id) => {
-  if (!id) return 0;
-  if (PARSE_ID_CACHE.has(id)) return PARSE_ID_CACHE.get(id);
-  const result = parseFloat(id.replace(/[^\d.]/g, '')) || 0;
-  PARSE_ID_CACHE.set(id, result);
-  return result;
-};
-
-const loadAllPredictions = async (gameId) => {
-  try {
-    const pageSize = 1000;
-    let all = [], from = 0;
-    while (true) {
-      const { data, error } = await supabase.from('game_predictions').select('*').eq('game_id', gameId).range(from, from + pageSize - 1);
-      if (error) throw error;
-      if (!data?.length) break;
-      all = all.concat(data);
-      if (data.length < pageSize) break;
-      from += pageSize;
-    }
-    if (all.length > 0) return all;
-  } catch (e) { console.warn('supabase fallback:', e.message); }
-
-  const batchSize = 1000;
-  let allFallback = [], offset = 0;
-  const seenIds = new Set();
-  let maxIter = 20;
-  while (maxIter-- > 0) {
-    const batch = await db.Prediction.filter({ game_id: gameId }, null, batchSize, offset);
-    if (!batch?.length) break;
-    const newItems = batch.filter(p => !seenIds.has(p.id));
-    if (newItems.length === 0) break;
-    newItems.forEach(p => seenIds.add(p.id));
-    allFallback = allFallback.concat(newItems);
-    if (batch.length < batchSize) break;
-    offset += batchSize;
-  }
-  return allFallback;
-};
-
-export default function Statistics() {
+function ParticipantTotalScore({ participantName, gameId }) {
+  const [totalScore, setTotalScore] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [selectedSection, setSelectedSection] = useState(null);
+
+  useEffect(() => {
+    const loadScore = async () => {
+      if (!participantName || !gameId) { setLoading(false); return; }
+      try {
+        const rankingData = await db.Ranking.filter({ game_id: gameId, participant_name: participantName }, null, 1);
+        if (rankingData && rankingData.length > 0) setTotalScore(rankingData[0].current_score);
+        else setTotalScore(null);
+      } catch (error) { setTotalScore(null); }
+      setLoading(false);
+    };
+    loadScore();
+  }, [participantName, gameId]);
+
+  if (loading) return <Loader2 className="w-4 h-4 animate-spin" style={{ color: 'var(--tp)' }} />;
+  if (totalScore === null) return null;
+  return (
+    <Badge className="text-white text-sm px-3 py-1 flex items-center gap-1.5" style={{ background: 'linear-gradient(135deg, var(--tp) 0%, var(--tp) 100%)', boxShadow: '0 0 10px var(--tp-40)' }}>
+      <Award className="w-4 h-4" />
+      סה"כ: {totalScore} נקודות
+    </Badge>
+  );
+}
+
+
+export default function ViewSubmissions() {
+  const [loading, setLoading] = useState(true);
+  const [loadingPredictions, setLoadingPredictions] = useState(false);
+  const [data, setData] = useState({ predictions: [], questions: [], teams: [], validationLists: [] });
+  const [selectedParticipant, setSelectedParticipant] = useState(null);
   const [openSections, setOpenSections] = useState({});
-  const [selectedRound, setSelectedRound] = useState(null);
-
-  const [allQuestions, setAllQuestions] = useState([]);
-  const [allPredictions, setAllPredictions] = useState([]);
-  const [teams, setTeams] = useState({});
-  const [validationLists, setValidationLists] = useState({});
-
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [deletingParticipant, setDeletingParticipant] = useState(null);
+  const [participantStats, setParticipantStats] = useState([]);
+  const [currentUser, setCurrentUser] = useState(null);
+  const [participantQuestions, setParticipantQuestions] = useState([]);
   const [roundTables, setRoundTables] = useState([]);
-  const [specialTables, setSpecialTables] = useState([]);
-  const [qualifierTables, setQualifierTables] = useState([]);
-  const [clickedSegment, setClickedSegment] = useState({}); // { [questionId]: { answer, participants } } // 🔥 חדש
-  const [locationTables, setLocationTables] = useState([]);
   const [israeliTable, setIsraeliTable] = useState(null);
-  const [playoffTable, setPlayoffTable] = useState(null);
+  const [specialTables, setSpecialTables] = useState([]);
+  const [locationTables, setLocationTables] = useState([]);
+  const [playoffWinnersTable, setPlayoffWinnersTable] = useState(null);
+  const [qualifiersTables, setQualifiersTables] = useState([]);
+  const [allParticipants, setAllParticipants] = useState([]);
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [editedPredictions, setEditedPredictions] = useState({});
+  const [savingChanges, setSavingChanges] = useState(false);
+  const [teamValidationList, setTeamValidationList] = useState([]);
+  const [exporting, setExporting] = useState(false);
+  const [showMissingReport, setShowMissingReport] = useState(false);
+  const [missingPredictions, setMissingPredictions] = useState([]);
+  const [loadingMissing, setLoadingMissing] = useState(false);
+  // 🆕 Mobile sidebar toggle
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
-  const [gameStats, setGameStats] = useState(null);
-  const [specialStats, setSpecialStats] = useState(null);
-  const [userStats, setUserStats] = useState(null);
-  const [userStatsLoading, setUserStatsLoading] = useState(false);
-  const [userStatsError, setUserStatsError] = useState(null);
-
+  const { toast } = useToast();
   const { currentGame } = useGame();
+  const isAdmin = currentUser?.role === 'admin' || currentUser?.user_metadata?.role === 'admin';
+  // זיהוי שלב הנוק-אאוט לפי שם המשחק — כדי להפריד לוגיקה בין שני המשחקים
+  const isKnockoutGame = !!(currentGame?.name?.includes('נוק-אאוט') || currentGame?.name?.includes('knock') || currentGame?.id === '9c9c1331-5184-406b-98b3-6becd9577567');
 
-  const formatResult = useCallback((result) => {
-    if (!result || result === '__CLEAR__') return '';
-    if (result.includes('-')) return result.split('-').map(x => x.trim()).join(' - ');
-    return result;
+  useEffect(() => {
+    const loadUser = async () => {
+      try {
+        const isAuth = await supabase.auth.getSession().then(r => !!r.data.session);
+        if (isAuth) { const user = await supabase.auth.getUser().then(r => r.data.user); setCurrentUser(user); }
+        else setCurrentUser(null);
+      } catch (error) { setCurrentUser(null); }
+    };
+    loadUser();
   }, []);
 
-  useEffect(() => { loadAllData(); }, [currentGame]);
+  useEffect(() => {
+    const loadData = async () => {
+      if (!currentGame) { setLoading(false); return; }
+      setLoading(true);
+      try {
+        const [samplePredictions, questions] = await Promise.all([
+          Prediction.filter({ game_id: currentGame.id }, null, 10000),
+          Question.filter({ game_id: currentGame.id }, "-created_at", 10000)
+        ]);
+        const teamsData = currentGame.teams_data || [];
+        const validationListsData = currentGame.validation_lists || [];
+        const teamsMap = teamsData.reduce((acc, team) => { acc[team.name] = team; return acc; }, {});
+        const listsMap = validationListsData.reduce((acc, list) => { acc[list.list_name] = list.options; return acc; }, {});
+        const teamListObj = validationListsData.find(list => list.list_name?.toLowerCase().includes('קבוצ') && !list.list_name?.toLowerCase().includes('מוקדמות'));
+        if (teamListObj) setTeamValidationList(teamListObj.options);
 
-  const loadAllData = async () => {
-    if (!currentGame) { setLoading(false); return; }
-    setLoading(true);
-    try {
-      const questions = await db.Question.filter({ game_id: currentGame.id }, null, 5000);
-      const predictions = await loadAllPredictions(currentGame.id);
-      setAllQuestions(questions);
-      setAllPredictions(predictions);
-
-      const allTeams = currentGame.teams_data || [];
-      setTeams(allTeams.reduce((acc, team) => { acc[normalizeTeamName(team.name)] = team; return acc; }, {}));
-
-      const lists = currentGame.validation_lists || [];
-      setValidationLists(lists.reduce((acc, list) => { acc[list.list_name] = list.options; return acc; }, {}));
-
-      const rTables = {}, sTables = {};
-      questions.forEach(q => {
-        if (!q.table_id) return;
-        if (q.table_id === 'T20' && q.question_text) {
-          let ts = null;
-          if (q.question_text.includes(' נגד ')) ts = q.question_text.split(' נגד ').map(t => t.trim());
-          else if (q.question_text.includes(' - ')) ts = q.question_text.split(' - ').map(t => t.trim());
-          if (ts && ts.length === 2) { q.home_team = normalizeTeamName(ts[0]); q.away_team = normalizeTeamName(ts[1]); }
+        // 🔥 טוען רשימת משתתפים מ-game_participants — לא מניחושים (db.filter מוגבל ל-1000)
+        const { data: gpData } = await supabase
+          .from('game_participants')
+          .select('participant_name')
+          .eq('game_id', currentGame.id)
+          .order('participant_name', { ascending: true });
+        const allParticipantNames = gpData && gpData.length > 0
+          ? [...new Set(gpData.map(r => r.participant_name).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'he'))
+          : [...new Set(samplePredictions.map(p => p.participant_name))].sort((a, b) => a.localeCompare(b, 'he'));
+        setAllParticipants(allParticipantNames);
+        const rTables = {}, sTables = {};
+        questions.forEach(q => {
+          if (!q.table_id) return;
+          if ((q.table_id === 'T20' || q.table_id === 'T3') && q.question_text && !q.home_team) {
+            let teams = null;
+            if (q.question_text.includes(' נגד ')) teams = q.question_text.split(' נגד ').map(t => t.trim());
+            else if (q.question_text.includes(' - ')) teams = q.question_text.split(' - ').map(t => t.trim());
+            if (teams && teams.length === 2) { q.home_team = teams[0]; q.away_team = teams[1]; }
+          }
+          const tableCollection = (q.home_team && q.away_team) ? rTables : sTables;
+          let tableId = q.table_id;
+          let tableDescription = q.table_description;
+          if (q.stage_name && q.stage_name.includes('בית')) { tableId = q.stage_name; tableDescription = q.stage_name; }
+          else if (q.table_description?.includes('שאלות מיוחדות') && q.stage_order && q.table_id !== 'T10') { tableId = `custom_order_${q.stage_order}`; tableDescription = q.stage_name || q.table_description; }
+          if (q.table_id === 'T12') tableDescription = 'שלב הליגה - פינת הגאווה הישראלית - 7 בוםםםםםםםםםם !!!';
+          else if (q.table_id === 'T13') tableDescription = 'שלב ראש בראש - "מבול מטאורים של כוכבים (*)"';
+          if (!tableCollection[tableId]) tableCollection[tableId] = { id: tableId, description: tableDescription || (q.home_team && q.away_team ? `מחזור ${tableId.replace('T','')}` : `שאלות ${tableId.replace('T','')}`), questions: [] };
+          tableCollection[tableId].questions.push(q);
+        });
+        const t20Table = rTables['T20']; delete rTables['T20']; setIsraeliTable(t20Table || null);
+        const participantQns = sTables['T1'] ? sTables['T1'].questions : [];
+        const uniqueParticipantQns = participantQns.reduce((acc, current) => { if (!acc.find(item => item.question_text === current.question_text)) acc.push(current); return acc; }, []);
+        setParticipantQuestions(uniqueParticipantQns);
+        delete sTables['T1'];
+        const sortedRoundTables = Object.values(rTables).sort((a,b) => {
+          const aIsGroup = a.id.includes('בית'), bIsGroup = b.id.includes('בית');
+          if (aIsGroup && !bIsGroup) return -1; if (!aIsGroup && bIsGroup) return 1;
+          if (aIsGroup && bIsGroup) return a.id.charAt(a.id.length-1).localeCompare(b.id.charAt(b.id.length-1), 'he');
+          return (parseInt(a.id.replace('T','')) || 0) - (parseInt(b.id.replace('T','')) || 0);
+        });
+        setRoundTables(sortedRoundTables);
+        const locationTableIds = ['T9', 'T14', 'T15', 'T16', 'T17'];
+        // זיהוי מיקומים: לפי ID קשיח OR לפי stage_type/תיאור — לתמוך בשלב הבתים
+        const isLocationTable = (t) => {
+          if (locationTableIds.includes(t.id)) return true;
+          const desc = (t.description || '').toLowerCase();
+          const stType = t.questions[0]?.stage_type || '';
+          return stType === 'locations' || desc.includes('מיקום') || desc.includes('מקומות') || desc.includes('מקום');
+        };
+        const detectedLocationTables = Object.values(sTables).filter(t => isLocationTable(t))
+          .sort((a,b) => (parseInt(a.id.replace('T','')) || 0) - (parseInt(b.id.replace('T','')) || 0));
+        const detectedLocationIds = new Set(detectedLocationTables.map(t => t.id));
+        setLocationTables(detectedLocationTables);
+        const t19Table = sTables['T19']; setPlayoffWinnersTable(t19Table || null);
+        const allSpecialTables = Object.values(sTables).filter(table => {
+          const desc = table.description?.trim(); const isGroup = table.id.includes('בית') || desc?.includes('בית'); const stageType = table.questions[0]?.stage_type;
+          return desc && !/^\d+$/.test(desc) && !detectedLocationIds.has(table.id) && table.id !== 'T19' && !isGroup && stageType !== 'qualifiers';
+        }).sort((a,b) => { const oa = a.questions[0]?.stage_order || 999, ob = b.questions[0]?.stage_order || 999; if (oa !== ob) return oa - ob; return (parseInt(a.id.replace('T','')) || 0) - (parseInt(b.id.replace('T','')) || 0); });
+        setSpecialTables(allSpecialTables);
+      // ── שינוי שם T3 — רק בשלב הנוק-אאוט ──────────────────────────────────────────
+      const gameIsKnockout = !!(currentGame?.name?.includes('נוק-אאוט') || currentGame?.name?.includes('knock') || currentGame?.id === '9c9c1331-5184-406b-98b3-6becd9577567');
+      if (gameIsKnockout) {
+        sortedRoundTables.forEach(t => {
+          if (t.id === 'T3') t.description = 'שלב שמינית הגמר - המשחקים!';
+        });
+        allSpecialTables.forEach(t => {
+          if (t.id === 'T3') t.description = 'שלב שמינית הגמר - המשחקים!';
+        });
+      }
+        const t10Special = sTables['T10'];
+        if (t10Special) {
+          const t10Round = Object.values(rTables).find(t => t.id === 'T10');
+          if (t10Round) {
+            // נוק-אאוט: T10 מחובר כשאלות מיוחדות לסבב
+            t10Round.specialQuestions = t10Special.questions;
+          } else if (!allSpecialTables.find(t => t.id === 'T10')) {
+            // שלב הבתים: T10 הוא שלב עצמאי — מוסיפים לרשימת המיוחדות
+            allSpecialTables.push(t10Special);
+          }
         }
-        if (q.home_team) q.home_team = normalizeTeamName(q.home_team);
-        if (q.away_team) q.away_team = normalizeTeamName(q.away_team);
+        setQualifiersTables(Object.values(sTables).filter(t => t.questions[0]?.stage_type === 'qualifiers').sort((a,b) => (a.questions[0]?.stage_order || 999) - (b.questions[0]?.stage_order || 999)));
+        setData(prev => ({ ...prev, questions, teams: teamsMap, validationLists: listsMap }));
+      } catch (error) { console.error("Error loading data:", error); }
+      setLoading(false);
+    };
+    loadData();
+  }, [currentGame]);
 
-        const col = (q.home_team && q.away_team) ? rTables : sTables;
-        let desc = q.table_description;
-        if (q.table_id === 'T12') desc = 'פינת הגאווה הישראלית';
-        else if (q.table_id === 'T13') desc = 'מבול מטאורים של כוכבים';
-        else if (q.table_id === 'T20') desc = 'המסלול הישראלי';
+  useEffect(() => {
+    const loadParticipantPredictions = async () => {
+      if (!selectedParticipant || !currentGame) { setData(prev => ({ ...prev, predictions: [] })); setEditedPredictions({}); setIsEditMode(false); return; }
+      setLoadingPredictions(true);
+      try {
+        // 🔥 Prediction.filter() עובד עם auth ועם entities — כל משתתף < 500 ניחושים
+        const predictions = await Prediction.filter(
+          { participant_name: selectedParticipant, game_id: currentGame.id },
+          "created_at",
+          5000
+        );
+        setData(prev => ({ ...prev, predictions })); setEditedPredictions({}); setIsEditMode(false);
+      } catch (error) { console.error("Error loading participant predictions:", error); }
+      setLoadingPredictions(false);
+    };
+    loadParticipantPredictions();
+  }, [selectedParticipant, currentUser, currentGame]);
 
-        if (!col[q.table_id]) col[q.table_id] = { id: q.table_id, description: desc || q.table_id, questions: [] };
-        col[q.table_id].questions.push(q);
-      });
+  const participantPredictions = useMemo(() => {
+    if (!selectedParticipant) return {};
+    const tempPreds = {};
+    data.predictions.forEach(p => {
+      const existing = tempPreds[p.question_id];
+      if (!existing || new Date(p.created_at) > new Date(existing.created_at)) tempPreds[p.question_id] = { text_prediction: p.text_prediction, home_prediction: p.home_prediction, away_prediction: p.away_prediction, created_at: p.created_at };
+    });
+    const predMap = {};
+    for (const [qid, pred] of Object.entries(tempPreds)) {
+      if (pred.home_prediction !== null && pred.home_prediction !== undefined && pred.away_prediction !== null && pred.away_prediction !== undefined) predMap[qid] = pred.home_prediction + '-' + pred.away_prediction;
+      else predMap[qid] = pred.text_prediction;
+    }
+    return predMap;
+  }, [selectedParticipant, data.predictions]);
 
-      const t20Table = rTables['T20']; delete rTables['T20'];
-      setIsraeliTable(t20Table || null);
-
-      const sortedRoundTables = Object.values(rTables).sort((a, b) => (parseInt(a.id.replace('T', '')) || 0) - (parseInt(b.id.replace('T', '')) || 0));
-      sortedRoundTables.forEach(t => { if (t.id === 'T3') t.description = 'שלב שמינית הגמר - המשחקים!'; });
-      setRoundTables(sortedRoundTables);
-      if (sortedRoundTables.length > 0) setSelectedRound(sortedRoundTables[0].id);
-
-      const locationTableIds = ['T14', 'T15', 'T16', 'T17'];
-      setLocationTables(Object.values(sTables).filter(t => locationTableIds.includes(t.id)).sort((a, b) => (parseInt(a.id.replace('T', '')) || 0) - (parseInt(b.id.replace('T', '')) || 0)));
-      setPlayoffTable(sTables['T19'] || null);
-
-      const allSpecialTables = Object.values(sTables).filter(table => {
-        const desc = table.description?.trim();
-        return desc && !/^\d+$/.test(desc) && !locationTableIds.includes(table.id) && table.id !== 'T19';
-      }).sort((a, b) => (parseInt(a.id.replace('T', '')) || 0) - (parseInt(b.id.replace('T', '')) || 0));
-
-      // 🔥 עולות = רק טבלאות עם "רשימת הקבוצות שיעלו" בתיאור
-      const qualifiers = allSpecialTables.filter(t => (t.description || '').includes('רשימת הקבוצות שיעלו'));
-      const regulars = allSpecialTables.filter(t => !(t.description || '').includes('רשימת הקבוצות שיעלו'));
-      setQualifierTables(qualifiers);
-      setSpecialTables(regulars);
-
-    } catch (error) { console.error("Error loading data:", error); }
-    setLoading(false);
+  const cleanTeamName = (name) => {
+    if (!name) return name;
+    return name.replace(/\s*\([^)]+\)\s*$/, '').trim();
   };
 
-  const calculateGameStats = useCallback(async (type, specificId = null) => {
+  const getCombinedPredictionsMap = useCallback(() => ({ ...participantPredictions, ...editedPredictions }), [participantPredictions, editedPredictions]);
+
+  const participantDetails = useMemo(() => {
+    if (!selectedParticipant) return {};
+    const details = { name: selectedParticipant };
+    participantQuestions.forEach(q => { const pred = data.predictions.find(p => p.question_id === q.id); if (pred) details[q.id] = pred.text_prediction; });
+    return details;
+  }, [selectedParticipant, participantQuestions, data.predictions]);
+
+  const loadParticipantStats = async () => {
+    if (!currentGame) return;
     try {
-      let tablesToProcess = [];
-      if (type === 'rounds') tablesToProcess = specificId ? roundTables.filter(t => t.id === specificId) : roundTables;
-      else if (type === 'israeli') tablesToProcess = israeliTable ? [israeliTable] : [];
-      if (!tablesToProcess.length) { setGameStats({}); return; }
+      const allPredictions = await Prediction.filter({ game_id: currentGame.id }, null, 10000);
+      const stats = {};
+      allPredictions.forEach(pred => { if (!stats[pred.participant_name]) stats[pred.participant_name] = 0; stats[pred.participant_name]++; });
+      setParticipantStats(Object.entries(stats).map(([name, count]) => ({ name, predictionsCount: count })).sort((a, b) => a.name.localeCompare(b.name, 'he')));
+    } catch (error) { toast({ title: "שגיאה", description: "טעינת נתוני משתתפים נכשלה.", variant: "destructive" }); }
+  };
 
-      const predByQ = new Map();
-      allPredictions.forEach(p => { if (!predByQ.has(p.question_id)) predByQ.set(p.question_id, []); predByQ.get(p.question_id).push(p); });
-
-      const gsd = {};
-      for (const table of tablesToProcess) {
-        for (const q of table.questions) {
-          const gamePredictions = predByQ.get(q.id) || [];
-          const resultCounts = gamePredictions.reduce((acc, pred) => { const r = pred.text_prediction || 'לא ניחש'; acc[r] = (acc[r] || 0) + 1; return acc; }, {});
-          const total = gamePredictions.length;
-          const tempChart = Object.entries(resultCounts).sort((a, b) => b[1] - a[1]).map(([result, count]) => ({ name: result, value: count, percentage: total > 0 ? ((count / total) * 100).toFixed(1) : 0 }));
-          gsd[q.id] = { question: q, table, totalPredictions: total, chartData: alternateSliceOrder(tempChart).map(e => ({ ...e, percentage: parseFloat(e.percentage) })), mostPopular: tempChart[0] || { name: '-', value: 0, percentage: 0 } };
-        }
-      }
-      setGameStats(gsd);
-    } catch (error) { console.error("Error calculating game stats:", error); }
-  }, [roundTables, israeliTable, allPredictions]);
-
-  const calculateSpecialStats = useCallback(async (tableGroup, specificTableId = null) => {
+  const handleDeleteParticipant = async (participantName) => {
+    if (!currentGame) return;
+    if (!window.confirm(`האם אתה בטוח שברצונך למחוק את כל הניחושים של "${participantName}"? פעולה זו אינה הפיכה!`)) return;
+    setDeletingParticipant(participantName);
     try {
-      let tablesToAnalyze = [];
-      if (tableGroup === 'special') tablesToAnalyze = specificTableId ? specialTables.filter(t => t.id === specificTableId) : specialTables;
-      else if (tableGroup === 'qualifier') tablesToAnalyze = specificTableId ? qualifierTables.filter(t => t.id === specificTableId) : qualifierTables;
-      else if (tableGroup === 'locations') tablesToAnalyze = locationTables;
-      else if (tableGroup === 'playoff') tablesToAnalyze = playoffTable ? [playoffTable] : [];
-      if (!tablesToAnalyze.length) { setSpecialStats(null); return; }
-
-      const ssd = {};
-      for (const table of tablesToAnalyze) {
-        const tableStats = { table, questions: [] };
-
-        // 🔥 עולות: גרף מרוכז אחד — כמה בחרו כל קבוצה, ללא תלות במיקום
-        if (tableGroup === 'qualifier') {
-          const cfg = ADVANCING_CONFIG[table.id];
-          // כל שאלות עם question_id שלם (slots), ללא תלות ב-advCount קשיח
-          const slots = table.questions.filter(q => { const n = parseFloat(q.question_id); return Number.isInteger(n) && n >= 1; });
-          const slotIds = new Set(slots.map(s => s.id));
-          const advCount = cfg ? cfg.count : slots.length;
-
-          const teamCounts = {};
-          const participantsByTeam = {};
-          allPredictions.forEach(p => {
-            if (!slotIds.has(p.question_id)) return;
-            if (!p.text_prediction?.trim()) return;
-            const team = cleanTeamName(normalizeTeamName(p.text_prediction.trim()));
-            if (!team || team.toLowerCase() === 'null') return;
-            teamCounts[team] = (teamCounts[team] || 0) + 1;
-            if (!participantsByTeam[team]) participantsByTeam[team] = new Set();
-            participantsByTeam[team].add(p.participant_name);
-          });
-
-          // Convert Sets → sorted arrays
-          const participantsMap = {};
-          Object.entries(participantsByTeam).forEach(([team, set]) => {
-            participantsMap[team] = [...set].sort((a, b) => a.localeCompare(b, 'he'));
-          });
-
-          tableStats.qualifierData = {
-            chartData: Object.entries(teamCounts).sort((a, b) => b[1] - a[1]).map(([team, count]) => ({ team, count })),
-            cfg, advCount, participantsMap
-          };
-
-        } else if (['T14', 'T15', 'T16', 'T17'].includes(table.id)) {
-          const allForTable = allPredictions.filter(p => table.questions.some(q => q.id === p.question_id));
-          const teamCounts = allForTable.reduce((acc, pred) => {
-            if (pred.text_prediction?.trim()) {
-              const t = cleanTeamName(normalizeTeamName(pred.text_prediction.trim()));
-              if (t && t.toLowerCase() !== 'null') acc[t] = (acc[t] || 0) + 1;
-            }
-            return acc;
-          }, {});
-          const chartData = Object.entries(teamCounts).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([team, count]) => ({ team, count, percentage: allForTable.length > 0 ? ((count / allForTable.length) * 100).toFixed(1) : 0 }));
-          tableStats.locationsData = { totalPredictions: allForTable.length, uniqueTeams: Object.keys(teamCounts).length, topTeams: chartData, mostPopular: chartData[0] || { team: '-', count: 0, percentage: 0 } };
-
-        } else {
-          if (table.id !== 'T1') {
-            for (const q of table.questions) {
-              const qPredictions = allPredictions.filter(p => p.question_id === q.id);
-              const answerCounts = qPredictions.reduce((acc, pred) => {
-                let answer = String(pred.text_prediction || '').trim();
-                if (!answer || answer === '__CLEAR__' || answer.toLowerCase() === 'null' || answer.toLowerCase() === 'undefined') return acc;
-                const isYesNo = ['כן', 'לא', 'yes', 'no'].includes(answer);
-                const isNumber = !isNaN(Number(answer));
-                if (!isYesNo && !isNumber && q.validation_list?.toLowerCase().includes('קבוצ')) answer = cleanTeamName(answer);
-                if (!answer.trim()) return acc;
-                acc[answer] = (acc[answer] || 0) + 1;
-                return acc;
-              }, {});
-              const total = Object.values(answerCounts).reduce((s, c) => s + c, 0);
-              const tempChart = Object.entries(answerCounts).sort((a, b) => b[1] - a[1]).map(([answer, count]) => ({ answer, count, percentage: total > 0 ? ((count / total) * 100).toFixed(1) : 0 }));
-              tableStats.questions.push({ question: q, totalAnswers: total, chartData: alternateSliceOrder(tempChart), mostPopular: tempChart[0] || { answer: '-', count: 0, percentage: 0 }, diversity: tempChart.length });
-            }
-          }
-        }
-        ssd[table.id] = tableStats;
+      const predictionsToDelete = await Prediction.filter({ participant_name: participantName, game_id: currentGame.id }, null, 10000);
+      const BATCH_SIZE = 10, DELAY_MS = 500;
+      for (let i = 0; i < predictionsToDelete.length; i += BATCH_SIZE) {
+        const batch = predictionsToDelete.slice(i, i + BATCH_SIZE);
+        await Promise.all(batch.map(pred => Prediction.delete(pred.id)));
+        toast({ title: "מוחק...", description: `נמחקו ${Math.min(i + BATCH_SIZE, predictionsToDelete.length)}/${predictionsToDelete.length}`, className: "bg-yellow-900/30 border-yellow-500 text-yellow-200" });
+        if (i + BATCH_SIZE < predictionsToDelete.length) await new Promise(resolve => setTimeout(resolve, DELAY_MS));
       }
-      setSpecialStats(ssd);
-    } catch (error) { console.error("Error calculating special stats:", error); }
-  }, [specialTables, qualifierTables, locationTables, playoffTable, allPredictions]);
+      toast({ title: "נמחק בהצלחה!", description: `נמחקו ${predictionsToDelete.length} ניחושים של ${participantName}.`, className: "bg-green-900/30 border-green-500 text-green-200" });
+      setAllParticipants(prev => prev.filter(p => p !== participantName));
+      if (selectedParticipant === participantName) setSelectedParticipant(null);
+      await loadParticipantStats();
+    } catch (error) { toast({ title: "שגיאה", description: "מחיקת המשתתף נכשלה: " + error.message, variant: "destructive" }); }
+    finally { setDeletingParticipant(null); }
+  };
 
-  const calculateUserStats = useCallback(async () => {
-    if (userStats) return;
-    setUserStatsLoading(true); setUserStatsError(null);
+  const handlePredictionEdit = (questionId, newValue) => {
+    if (!isEditMode) return;
+    const originalValue = participantPredictions[questionId] || '';
+    if (newValue === originalValue) { setEditedPredictions(prev => { const s = { ...prev }; delete s[questionId]; return s; }); }
+    else setEditedPredictions(prev => ({ ...prev, [questionId]: newValue }));
+  };
+
+  const handleSaveChanges = async () => {
+    const changedPredictions = Object.entries(editedPredictions);
+    if (changedPredictions.length === 0) { toast({ title: "אין שינויים", description: "לא בוצעו שינויים בניחושים", className: "bg-blue-900/30 border-blue-500 text-blue-200" }); return; }
+    setSavingChanges(true);
     try {
-      const t1Qs = allQuestions.filter(q => q.table_id === 'T1');
-      const profQ = t1Qs.find(q => q.question_text?.includes('מקצוע'));
-      const ageQ = t1Qs.find(q => q.question_text?.includes('גיל'));
-      if (!profQ && !ageQ) { setUserStatsError('no_questions'); setUserStatsLoading(false); return; }
-
-      const profPreds = profQ ? allPredictions.filter(p => p.question_id === profQ.id) : [];
-      const agePreds = ageQ ? allPredictions.filter(p => p.question_id === ageQ.id) : [];
-
-      const profCounts = profPreds.reduce((acc, pred) => {
-        const v = pred.text_prediction?.trim();
-        if (!v || v === '' || v === '0' || v.toLowerCase() === 'null' || v === '__CLEAR__') return acc;
-        acc[v] = (acc[v] || 0) + 1; return acc;
-      }, {});
-      const totalProf = Object.values(profCounts).reduce((s, c) => s + c, 0);
-      const professionData = Object.entries(profCounts).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([profession, count]) => ({ profession, count, percentage: totalProf > 0 ? ((count / totalProf) * 100).toFixed(1) : 0 }));
-
-      const ageGroups = { 'מתחת ל-20': 0, '21-25': 0, '26-30': 0, '31-35': 0, '36-40': 0, '41-45': 0, '46-50': 0, '51-55': 0, '56+': 0 };
-      let totalAge = 0;
-      agePreds.forEach(pred => {
-        const age = parseInt(pred.text_prediction?.trim(), 10);
-        if (isNaN(age) || age === 0) return; totalAge++;
-        if (age < 20) ageGroups['מתחת ל-20']++;
-        else if (age <= 25) ageGroups['21-25']++;
-        else if (age <= 30) ageGroups['26-30']++;
-        else if (age <= 35) ageGroups['31-35']++;
-        else if (age <= 40) ageGroups['36-40']++;
-        else if (age <= 45) ageGroups['41-45']++;
-        else if (age <= 50) ageGroups['46-50']++;
-        else if (age <= 55) ageGroups['51-55']++;
-        else ageGroups['56+']++;
-      });
-      const ageData = Object.entries(ageGroups).filter(([, c]) => c > 0).map(([group, count]) => ({ group, count, percentage: totalAge > 0 ? ((count / totalAge) * 100).toFixed(1) : 0 }));
-      const allParticipants = new Set([...profPreds.map(p => p.participant_name), ...agePreds.map(p => p.participant_name)]);
-      setUserStats({ totalUsers: allParticipants.size, professionData, ageData, totalWithProfession: totalProf, totalWithAge: totalAge });
-    } catch (error) {
-      setUserStatsError(error.message?.includes('Rate limit') ? 'rate_limit' : 'general_error');
-    } finally { setUserStatsLoading(false); }
-  }, [userStats, allQuestions, allPredictions]);
-
-  const analyzeGameOutcomes = useCallback((chartData) => {
-    return chartData.reduce((acc, entry) => {
-      const result = entry.name;
-      if (result?.includes('-')) {
-        const parts = result.split('-').map(x => parseInt(x.trim()));
-        if (!isNaN(parts[0]) && !isNaN(parts[1])) {
-          if (parts[0] > parts[1]) acc.homeWins += entry.value;
-          else if (parts[0] === parts[1]) acc.draws += entry.value;
-          else acc.awayWins += entry.value;
-        }
+      let updatedCount = 0;
+      for (const [questionId, newValue] of changedPredictions) {
+        const prediction = data.predictions.find(p => p.question_id === questionId);
+        if (prediction) { await Prediction.update(prediction.id, { text_prediction: newValue }); updatedCount++; }
+        else { await Prediction.create({ question_id: questionId, participant_name: selectedParticipant, text_prediction: newValue }); updatedCount++; }
       }
-      return acc;
-    }, { homeWins: 0, draws: 0, awayWins: 0 });
-  }, []);
-
-  const gameStatsArray = useMemo(() => Object.values(gameStats || {}), [gameStats]);
-  const uniqueParticipantsCount = useMemo(() => new Set(allPredictions.map(p => p.participant_name)).size, [allPredictions]);
-
-  const participantsByQuestionAndAnswer = useMemo(() => {
-    const index = new Map();
-    allPredictions.forEach(p => {
-      if (!p.text_prediction?.trim()) return;
-      const normalized = normalizePrediction(p.text_prediction.trim());
-      const key = `${p.question_id}_${normalized}`;
-      if (!index.has(key)) index.set(key, []);
-      index.get(key).push(p.participant_name);
-      const keyOriginal = `${p.question_id}_${p.text_prediction.trim()}`;
-      if (keyOriginal !== key) { if (!index.has(keyOriginal)) index.set(keyOriginal, []); index.get(keyOriginal).push(p.participant_name); }
-    });
-    index.forEach((participants, key) => index.set(key, [...new Set(participants)].sort((a, b) => a.localeCompare(b, 'he'))));
-    return index;
-  }, [allPredictions]);
-
-  const gameOutcomeParticipants = useMemo(() => {
-    if (!gameStats) return new Map();
-    const outcomeMap = new Map();
-    Object.values(gameStats).forEach(game => {
-      const q = game.question;
-      const results = { home: [], draw: [], away: [] };
-      game.chartData.forEach(entry => {
-        const result = entry.name;
-        if (result?.includes('-')) {
-          const parts = result.split('-').map(x => parseInt(x.trim()));
-          if (!isNaN(parts[0]) && !isNaN(parts[1])) {
-            const t = parts[0] > parts[1] ? 'home' : parts[0] === parts[1] ? 'draw' : 'away';
-            results[t].push(...(participantsByQuestionAndAnswer.get(`${q.id}_${normalizePrediction(result)}`) || []));
-          }
-        }
-      });
-      outcomeMap.set(q.id, {
-        homeWinParticipants: [...new Set(results.home)].sort((a, b) => a.localeCompare(b, 'he')),
-        drawParticipants: [...new Set(results.draw)].sort((a, b) => a.localeCompare(b, 'he')),
-        awayWinParticipants: [...new Set(results.away)].sort((a, b) => a.localeCompare(b, 'he'))
-      });
-    });
-    return outcomeMap;
-  }, [gameStats, participantsByQuestionAndAnswer]);
-
-  // 🔥 Sidebar — 4 קבוצות: תובנות | פלייאוף | מיוחדות | עולות
-  const sidebarGroups = useMemo(() => {
-    const groups = [];
-
-    // קבוצה 1: תובנות AI (סגול)
-    groups.push({
-      label: '🤖 תובנות', color: '#8b5cf6', activeBg: '#7c3aed',
-      buttons: [
-        { key: 'insights', description: 'תובנות AI ומחנות' },
-        { key: 'users', description: 'פרטי המנחשים' },
-      ]
-    });
-
-    // קבוצה 2: פלייאוף — משחקים (כחול)
-    const playoffButtons = [];
-    roundTables.forEach(table => playoffButtons.push({
-      key: `round_${table.id}`,
-      description: table.id === 'T3' ? 'שלב שמינית הגמר - המשחקים!' : table.description,
-    }));
-    if (israeliTable) playoffButtons.push({ key: `round_${israeliTable.id}`, description: israeliTable.description });
-    if (playoffButtons.length > 0) groups.push({ label: '⚽ פלייאוף', color: '#3b82f6', activeBg: '#2563eb', buttons: playoffButtons });
-
-    // קבוצה 3: שאלות מיוחדות (ציאן)
-    const specialButtons = [];
-    specialTables.forEach(table => {
-      if (table.id === 'T1' || table.description?.includes('פרטי מנחשים')) return;
-      specialButtons.push({ key: table.id, description: table.description });
-    });
-    if (locationTables.length > 0) specialButtons.push({ key: 'locations', description: 'מיקומים בסיום שלב הליגה' });
-    if (playoffTable) specialButtons.push({ key: playoffTable.id, description: playoffTable.description });
-    if (specialButtons.length > 0) groups.push({ label: '✨ מיוחדות', color: '#06b6d4', activeBg: '#0891b2', buttons: specialButtons });
-
-    // קבוצה 4: עולות T4/T5/T6 (כתום)
-    if (qualifierTables.length > 0) {
-      groups.push({
-        label: '📋 עולות', color: '#f97316', activeBg: '#ea580c',
-        buttons: qualifierTables.map(table => ({ key: `qual_${table.id}`, description: table.description }))
-      });
-    }
-
-    return groups;
-  }, [roundTables, specialTables, qualifierTables, locationTables, israeliTable, playoffTable]);
-
-  // useEffect: חישוב לפי section שנבחר
-  useEffect(() => {
-    if (!selectedSection || loading || !allQuestions.length) return;
-    if (selectedSection === 'insights') return;
-    if (selectedSection === 'users') { calculateUserStats(); return; }
-
-    if (selectedSection.startsWith('round_')) {
-      const tableId = selectedSection.replace('round_', '');
-      setSelectedRound(tableId);
-      if (israeliTable && tableId === israeliTable.id) calculateGameStats('israeli');
-      else calculateGameStats('rounds', tableId);
-      return;
-    }
-    if (selectedSection.startsWith('qual_')) {
-      const tableId = selectedSection.replace('qual_', '');
-      calculateSpecialStats('qualifier', tableId);
-      return;
-    }
-    if (selectedSection === 'locations') { calculateSpecialStats('locations'); return; }
-    if (selectedSection === playoffTable?.id) { calculateSpecialStats('playoff'); return; }
-    calculateSpecialStats('special', selectedSection);
-  }, [selectedSection, loading, allQuestions, allPredictions]);
+      toast({ title: "שינויים נשמרו!", description: `עודכנו ${updatedCount} ניחושים עבור ${selectedParticipant}`, className: "bg-green-900/30 border-green-500 text-green-200" });
+      const predictions = await Prediction.filter({ participant_name: selectedParticipant, game_id: currentGame.id }, null, 10000);
+      setData(prev => ({ ...prev, predictions })); setEditedPredictions({}); setIsEditMode(false);
+    } catch (error) { toast({ title: "שגיאה", description: "שמירת השינויים נכשלה", variant: "destructive" }); }
+    setSavingChanges(false);
+  };
 
   const toggleSection = (sectionId) => {
-    if (selectedSection === sectionId) { setSelectedSection(null); return; }
-    setSelectedSection(sectionId);
-    setSpecialStats(null);
-    setGameStats(null);
+    setOpenSections(prev => ({ ...prev, [sectionId]: !prev[sectionId] }));
+    setMobileSidebarOpen(false); // close mobile sidebar after selection
   };
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-screen" style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%)' }}>
-        <Loader2 className="w-8 h-8 animate-spin" style={{ color: '#06b6d4' }} />
-        <span className="mr-3" style={{ color: '#06b6d4' }}>טוען סטטיסטיקות...</span>
+  const handleExportData = async () => {
+    if (!currentGame) return;
+    setExporting(true);
+    try {
+      let allPredictions = [], skip = 0;
+      while (true) { const batch = await Prediction.filter({ game_id: currentGame.id }, null, 10000, skip); allPredictions = [...allPredictions, ...batch]; if (batch.length < 10000) break; skip += 10000; }
+      const participants = [...new Set(allPredictions.map(p => p.participant_name))].sort();
+      const headers = ['שלב', 'מס\' שאלה', 'שאלה', 'רשימת אימות', ...participants];
+      const predictionsByQuestion = {};
+      allPredictions.forEach(p => { if (!predictionsByQuestion[p.question_id]) predictionsByQuestion[p.question_id] = {}; predictionsByQuestion[p.question_id][p.participant_name] = p.text_prediction || ''; });
+      const sortedQuestions = [...data.questions].sort((a, b) => { const oa = a.stage_order || 0, ob = b.stage_order || 0; if (oa !== ob) return oa - ob; return (parseFloat(a.question_id) || 0) - (parseFloat(b.question_id) || 0); });
+      const rows = sortedQuestions.map(q => {
+        const questionText = q.question_text || `${q.home_team || ''} נגד ${q.away_team || ''}`;
+        const participantValues = participants.map(p => { let pred = predictionsByQuestion[q.id]?.[p] || ''; if (pred && pred.includes('-')) pred = "'" + pred; return pred; });
+        let safeQT = questionText; if (safeQT && safeQT.includes('-')) safeQT = "'" + safeQT;
+        return [q.stage_name || q.table_description || q.table_id || '', q.question_id || '', safeQT, q.validation_list || '', ...participantValues];
+      });
+      const csvContent = [headers, ...rows].map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
+      const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = `predictions_export_${currentGame.game_name}_${new Date().toISOString().split('T')[0]}.csv`; link.click();
+      toast({ title: "ייצוא הושלם!", description: `יוצאו ${sortedQuestions.length} שאלות עבור ${participants.length} משתתפים`, className: "bg-green-900/30 border-green-500 text-green-200" });
+    } catch (error) { toast({ title: "שגיאה", description: "ייצוא הנתונים נכשל", variant: "destructive" }); }
+    setExporting(false);
+  };
+
+  const findMatchedTeamName = useCallback((predictionName) => {
+    if (!predictionName || teamValidationList.length === 0) return predictionName;
+    const trimmedPrediction = predictionName.trim();
+    if (teamValidationList.includes(trimmedPrediction)) return trimmedPrediction;
+    const baseName = trimmedPrediction.split('(')[0].trim();
+    const normalizeTeamName = (name) => name.replace(/קרבאך/g, 'קרבאח').replace(/קראבח/g, 'קרבאח').replace(/קראבך/g, 'קרבאח').replace(/ת"א/g, 'תל אביב').replace(/ת.א/g, 'תל אביב');
+    const normalizedBaseName = normalizeTeamName(baseName);
+    for (const validName of teamValidationList) {
+      const validBaseName = validName.split('(')[0].trim();
+      if (normalizeTeamName(validBaseName) === normalizedBaseName) return validName;
+    }
+    return trimmedPrediction;
+  }, [teamValidationList]);
+
+  const getMaxPossibleScore = (question) => {
+    if (question.table_id === 'T20' && question.home_team && question.away_team) return 6;
+    if (question.possible_points != null && question.possible_points > 0) return question.possible_points;
+    if (question.actual_result != null && question.actual_result !== '') return 10;
+    if (question.table_id === 'T10') return question.possible_points || 10;
+    return 0;
+  };
+
+  const renderReadOnlySelect = (question, originalValue) => {
+    const isTeamsList = question.validation_list?.toLowerCase().includes('קבוצ');
+    const locationTableIds = ['T14', 'T15', 'T16', 'T17', 'T19'];
+    const isLocationQuestion = locationTableIds.includes(question.table_id);
+    let displayTeamNameForReadonly = originalValue;
+    if (isTeamsList && originalValue && isLocationQuestion) displayTeamNameForReadonly = findMatchedTeamName(originalValue);
+    if (isTeamsList && displayTeamNameForReadonly) displayTeamNameForReadonly = cleanTeamName(displayTeamNameForReadonly);
+    const team = isTeamsList ? data.teams[displayTeamNameForReadonly] : null;
+    const maxScore = getMaxPossibleScore(question);
+    const hasValue = originalValue && originalValue.trim() !== '';
+    const hasActualResult = question.actual_result && question.actual_result.trim() !== '' && question.actual_result !== '__CLEAR__';
+    const textColor = hasActualResult ? 'var(--tp)' : '#f8fafc';
+    const isQuestion11_1 = question.question_id === '11.1';
+    const isQuestion11_2 = question.question_id === '11.2';
+    const boxWidth = isQuestion11_1 ? 'min-w-[60px] max-w-[65px]' : isQuestion11_2 ? 'min-w-[145px] max-w-[150px]' : 'min-w-[135px] max-w-[140px]';
+
+    if (isEditMode && isAdmin && question.validation_list && data.validationLists[question.validation_list]) {
+      const options = data.validationLists[question.validation_list] || [];
+      const editedValue = editedPredictions[question.id];
+      const currentValue = editedValue !== undefined ? editedValue : originalValue;
+      const selectValue = currentValue || "__CLEAR__";
+      let displayCurrentTeamNameForEdit = currentValue;
+      if (isTeamsList && currentValue && isLocationQuestion) displayCurrentTeamNameForEdit = findMatchedTeamName(currentValue);
+      const currentTeam = isTeamsList ? data.teams[displayCurrentTeamNameForEdit] : null;
+      return (
+        <>
+          <Select value={selectValue} onValueChange={(val) => handlePredictionEdit(question.id, val === "__CLEAR__" ? "" : val)}>
+            <SelectTrigger className={`${boxWidth} h-10`} style={{ background: 'rgba(0,0,0,0.35)', border: '1px solid var(--tp-30)', color: '#f8fafc' }}>
+              {currentValue ? (<div className="flex items-center gap-2 w-full">{currentTeam?.logo_url && <img src={currentTeam.logo_url} alt={displayCurrentTeamNameForEdit} className="w-4 h-4 rounded-full" onError={(e) => e.target.style.display='none'} />}<span className="truncate">{displayCurrentTeamNameForEdit}</span></div>) : (<span className="text-slate-400">{isQuestion11_1 || isQuestion11_2 ? "" : "- בחר -"}</span>)}
+            </SelectTrigger>
+            <SelectContent style={{ background: 'var(--bg2)', border: '1px solid var(--tp-30)' }}>
+              <SelectItem value="__CLEAR__" className="hover:bg-cyan-700/20" style={{ color: '#94a3b8' }}>-</SelectItem>
+              {options.map(opt => { const cleanOpt = opt.replace(/\s*\([^)]+\)\s*$/, '').trim(); const optTeam = isTeamsList ? (data.teams[opt] || data.teams[cleanOpt]) : null; return (<SelectItem key={opt} value={opt} className="hover:bg-cyan-700/20" style={{ color: '#f8fafc' }}><div className="flex items-center gap-2">{optTeam?.logo_url && <img src={optTeam.logo_url} alt={cleanOpt} className="w-4 h-4 rounded-full" onError={(e) => e.target.style.display='none'} />}<span>{cleanOpt}</span></div></SelectItem>); })}
+            </SelectContent>
+          </Select>
+          <div className="w-12"></div>
+        </>
+      );
+    }
+
+    if (isEditMode && isAdmin && (!question.validation_list || !data.validationLists[question.validation_list])) {
+      const valueForInput = editedPredictions[question.id] !== undefined ? editedPredictions[question.id] : originalValue;
+      return (<div className="flex items-center gap-2"><input type="text" value={valueForInput} onChange={(e) => handlePredictionEdit(question.id, e.target.value)} className="rounded-md px-3 py-2 min-w-[120px] h-10" style={{ background: 'rgba(0,0,0,0.35)', border: '1px solid var(--tp-30)', color: '#f8fafc' }} /><Badge className="bg-slate-600 text-slate-300 text-xs px-1.5 py-0.5 min-w-[45px] justify-center">?/{maxScore}</Badge></div>);
+    }
+
+    if (!hasValue) return (
+      <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
+        <div className={`rounded-md px-2 py-2 ${boxWidth} flex items-center gap-1`} style={{ background: 'rgba(0,0,0,0.35)', border: '1px solid var(--tp-20)' }}>
+          <span style={{ color: '#94a3b8', fontSize: isQuestion11_1 ? '0.65rem' : '0.875rem' }}>-</span>
+        </div>
+        {maxScore > 0 ? (
+          <Badge className="bg-slate-700 text-slate-400 text-xs px-1.5 py-0.5 min-w-[45px] justify-center">?/{maxScore}</Badge>
+        ) : (
+          <div className="w-12"></div>
+        )}
       </div>
     );
-  }
 
-  // helpers לזיהוי סוג section
-  const isRoundsSection = selectedSection?.startsWith('round_');
-  const isQualifierSection = selectedSection?.startsWith('qual_');
-  const isSpecialSection = selectedSection && !isRoundsSection && !isQualifierSection
-    && selectedSection !== 'insights' && selectedSection !== 'users';
+    const score = calculateQuestionScore(question, originalValue);
+    // 🔥 Fixed: replaced yellow badge with blue for partial scores
+    let badgeColor = 'bg-slate-600 text-slate-300';
+    if (score !== null) {
+      if (score === maxScore && maxScore > 0) badgeColor = 'bg-green-700 text-green-100';
+      else if (score === 0) badgeColor = 'bg-red-700 text-red-100';
+      else if (maxScore > 0 && score >= maxScore * 0.7) badgeColor = 'bg-blue-600 text-blue-100';
+      else if (score > 0) badgeColor = 'bg-blue-800 text-blue-200'; // 🔥 was yellow, now blue
+    }
 
-  return (
-    <div className="min-h-screen p-6" dir="rtl" style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%)' }}>
-      <div className="max-w-7xl mx-auto">
-        <h1 className="text-4xl font-bold mb-2 flex items-center gap-3" style={{ color: '#f8fafc', textShadow: '0 0 10px rgba(6, 182, 212, 0.3)' }}>
-          <PieChart className="w-10 h-10" style={{ color: '#06b6d4' }} />
-          סטטיסטיקות ותובנות
-        </h1>
-        <p className="mb-8" style={{ color: '#94a3b8' }}>ניתוח מעמיק של ביצועי המשתתפים</p>
+    return (<div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}><div className={`rounded-md px-2 py-2 ${boxWidth} flex items-center gap-1`} style={{ background: hasActualResult ? 'var(--tp-20)' : 'rgba(0,0,0,0.35)', border: hasActualResult ? '1px solid var(--tp)' : '1px solid var(--tp-20)', boxShadow: hasActualResult ? '0 0 10px var(--tp-40)' : 'none' }}>{team?.logo_url && <img src={team.logo_url} alt={displayTeamNameForReadonly} className="w-4 h-4 rounded-full flex-shrink-0" onError={(e) => e.target.style.display='none'} />}<span style={{ color: textColor, fontSize: isQuestion11_1 ? '0.65rem' : '0.875rem', fontWeight: hasActualResult ? '700' : 'normal' }}>{displayTeamNameForReadonly}</span></div>{score !== null ? (<Badge className={`${badgeColor} text-xs font-bold px-1.5 py-0.5 min-w-[45px] justify-center`}>{score}/{maxScore}</Badge>) : (<Badge className="bg-slate-600 text-slate-300 text-xs px-1.5 py-0.5 min-w-[45px] justify-center">?/{maxScore}</Badge>)}</div>);
+  };
 
-        <div className="flex flex-col md:flex-row gap-4" style={{ alignItems: 'flex-start' }}>
-
-          {/* ── Sidebar מחולק ל-4 קבוצות ──────────────────────────────────── */}
-          <aside style={{ width: '215px', flexShrink: 0, position: 'sticky', top: '70px', alignSelf: 'flex-start', maxHeight: 'calc(100vh - 90px)', overflowY: 'auto', paddingBottom: '16px' }}>
-            <div style={{ fontSize: '0.58rem', fontWeight: '700', letterSpacing: '0.12em', textTransform: 'uppercase', color: '#475569', marginBottom: '10px' }}>בחר שלב</div>
-
-            {sidebarGroups.map(group => (
-              <div key={group.label} style={{ marginBottom: '10px' }}>
-                {/* כותרת קבוצה עם פס צבעוני */}
-                <div style={{ fontSize: '0.62rem', fontWeight: '700', color: group.color, letterSpacing: '0.06em', marginBottom: '5px', paddingRight: '6px', borderRight: `3px solid ${group.color}`, opacity: 0.95 }}>
-                  {group.label}
+  const renderT10Questions = (table) => {
+    const questions = table.questions;
+    const grouped = {};
+    questions.forEach(q => { const mainId = Math.floor(parseFloat(q.question_id)); if (!grouped[mainId]) grouped[mainId] = { main: null, subs: [] }; if (q.question_id.includes('.')) grouped[mainId].subs.push(q); else grouped[mainId].main = q; });
+    const sortedMainIds = Object.keys(grouped).sort((a, b) => Number(a) - Number(b));
+    const renderTeamPrediction = (questionId, originalValue) => {
+      const valueToDisplay = editedPredictions[questionId] !== undefined ? editedPredictions[questionId] : originalValue;
+      const q = questions.find(question => question.id === questionId);
+      const maxPts = getMaxPossibleScore(q || {});
+      if (!valueToDisplay || valueToDisplay.trim() === '') return (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
+          <div className="rounded-md px-2 py-2 min-w-[135px] max-w-[140px] flex items-center gap-1" style={{ background: 'rgba(0,0,0,0.35)', border: '1px solid var(--tp-20)' }}>
+            <span style={{ color: '#94a3b8', fontSize: '0.875rem' }}>-</span>
+          </div>
+          {maxPts > 0
+            ? <Badge className="bg-slate-700 text-slate-400 text-xs px-1.5 py-0.5 min-w-[45px] justify-center">?/{maxPts}</Badge>
+            : <div className="w-12"></div>
+          }
+        </div>
+      );
+      const matchedName = cleanTeamName(findMatchedTeamName(valueToDisplay));
+      const team = data.teams[matchedName] || data.teams[findMatchedTeamName(valueToDisplay)];
+      const hasActualResult = q?.actual_result && q.actual_result.trim() !== '' && q.actual_result !== '__CLEAR__';
+      const textColor = hasActualResult ? 'var(--tp)' : '#f8fafc';
+      const score = q ? calculateQuestionScore(q, valueToDisplay) : null;
+      let badgeColor = 'bg-slate-600 text-slate-300';
+      if (score !== null) {
+        if (score === maxPts && maxPts > 0) badgeColor = 'bg-green-700 text-green-100';
+        else if (score === 0) badgeColor = 'bg-red-700 text-red-100';
+        else if (score > 0) badgeColor = 'bg-blue-700 text-blue-100';
+      }
+      return (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
+          <div className="rounded-md px-2 py-2 min-w-[135px] max-w-[140px] flex items-center gap-1" style={{ background: hasActualResult ? 'var(--tp-20)' : 'rgba(0,0,0,0.35)', border: hasActualResult ? '1px solid var(--tp)' : '1px solid var(--tp-20)', boxShadow: hasActualResult ? '0 0 10px var(--tp-40)' : 'none' }}>
+            {team?.logo_url && <img src={team.logo_url} alt={matchedName} className="w-4 h-4 rounded-full flex-shrink-0" onError={(e) => e.target.style.display='none'} />}
+            <span style={{ color: textColor, fontSize: '0.875rem', fontWeight: hasActualResult ? '700' : 'normal' }}>{matchedName}</span>
+          </div>
+          {score !== null
+            ? <Badge className={`${badgeColor} text-xs font-bold px-1.5 py-0.5 min-w-[45px] justify-center`}>{score}/{maxPts}</Badge>
+            : <Badge className="bg-slate-700 text-slate-400 text-xs px-1.5 py-0.5 min-w-[45px] justify-center">?/{maxPts}</Badge>
+          }
+        </div>
+      );
+    };
+    return (
+      <Card className="bg-slate-800/40 border-slate-700 shadow-lg shadow-slate-900/20">
+        <CardHeader className="py-3"><CardTitle className="text-cyan-400">{table.description}</CardTitle></CardHeader>
+        <CardContent className="p-3">
+          <div className="space-y-3">
+            {sortedMainIds.map(mainId => {
+              const { main, subs } = grouped[mainId];
+              if (!main) return null;
+              const sortedSubs = [...subs].sort((a, b) => parseFloat(a.question_id) - parseFloat(b.question_id));
+              const isTeamQuestion = !!(main.home_team && main.away_team);
+              const mainValue = participantPredictions[main.id] || '';
+              const getSubValue = (sub) => { const subVal = participantPredictions[sub.id] || ''; if (sub.question_id === '1.1' && mainValue !== 'אחר') return ''; return subVal; };
+              // ── שורה אחת: ראשית + תתי-סעיפים ───────────────────────────
+              const mainVal1 = participantPredictions[main.id] || '';
+              const getSubVal1 = (sub) => { const v = participantPredictions[sub.id] || ''; if (sub.question_id === '1.1' && mainVal1 !== 'אחר') return ''; return v; };
+              return (
+                <div key={main.id} style={{ display: 'flex', alignItems: 'center', padding: '7px 10px', borderRadius: '8px', overflow: 'hidden', border: '1px solid var(--tp-12)', background: 'rgba(0,0,0,0.22)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: sortedSubs.length > 0 ? '1.4' : '1', minWidth: 0 }}>
+                    <Badge variant="outline" style={{ borderColor: 'var(--tp-50)', color: 'var(--tp)', minWidth: '44px', textAlign: 'center', flexShrink: 0, fontSize: '0.72rem' }}>{main.question_id}</Badge>
+                    <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '0.82rem', color: '#f1f5f9', fontWeight: '500', textAlign: 'right' }}>{main.question_text}</span>
+                    <div style={{ flexShrink: 0 }}>{isTeamQuestion ? renderTeamPrediction(main.id, mainVal1) : renderReadOnlySelect(main, mainVal1)}</div>
+                  </div>
+                  {sortedSubs.map((sub) => (
+                    <React.Fragment key={sub.id}>
+                      <div style={{ width: '1px', height: '26px', background: 'rgba(255,255,255,0.07)', flexShrink: 0, margin: '0 8px' }} />
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: '1', minWidth: 0 }}>
+                        <Badge variant="outline" style={{ borderColor: 'rgba(139,92,246,0.45)', color: '#a78bfa', minWidth: '44px', textAlign: 'center', flexShrink: 0, fontSize: '0.72rem' }}>{sub.question_id}</Badge>
+                        <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '0.82rem', color: '#cbd5e1', textAlign: 'right' }}>{sub.question_text}</span>
+                        <div style={{ flexShrink: 0 }}>{isTeamQuestion ? renderTeamPrediction(sub.id, getSubVal1(sub)) : renderReadOnlySelect(sub, getSubVal1(sub))}</div>
+                      </div>
+                    </React.Fragment>
+                  ))}
                 </div>
-                {group.buttons.map(button => {
-                  const active = selectedSection === button.key;
-                  return (
-                    <button key={button.key} onClick={() => toggleSection(button.key)} style={{
-                      display: 'block', width: '100%', textAlign: 'right',
-                      padding: '7px 10px', marginBottom: '3px', borderRadius: '8px',
-                      fontSize: '0.78rem', fontWeight: active ? '700' : '400',
-                      color: active ? 'white' : group.color,
-                      background: active ? group.activeBg : `${group.color}18`,
-                      border: `1px solid ${active ? group.color : `${group.color}50`}`,
-                      cursor: 'pointer', transition: 'all 0.15s',
-                      boxShadow: active ? `0 0 10px ${group.color}55` : 'none',
-                      fontFamily: 'Rubik, Heebo, sans-serif',
-                    }}>{button.description}</button>
-                  );
-                })}
-              </div>
-            ))}
-          </aside>
+              );
+            })}
+          </div>
+        </CardContent>
+      </Card>
+    );
+  };
 
-          {/* ── Content ─────────────────────────────────────────────────────── */}
-          <div style={{ flex: 1, minWidth: 0 }}>
+  // ── קונפיג לטבלאות עולות ─────────────────────────────────────────────────
+  const ADVANCING_CONFIG_VS = { T4: { count: 8, bonus: 16 }, T5: { count: 4, bonus: 12 }, T6: { count: 2, bonus: 6 } };
 
-        {/* 🧠 תובנות AI */}
-        {selectedSection === 'insights' && (
-          <Card style={{ background: 'rgba(30, 41, 59, 0.6)', border: '1px solid rgba(139,92,246,0.3)' }}>
-            <CardContent className="p-12 text-center">
-              <span style={{ fontSize: '2.5rem' }}>🧠</span>
-              <p className="text-lg font-bold mt-4 mb-2" style={{ color: '#a78bfa' }}>תובנות AI — בקרוב</p>
-              <p style={{ color: '#94a3b8' }}>מודול התובנות המתקדם בפיתוח</p>
-            </CardContent>
-          </Card>
-        )}
+  const renderQualifiersTable = (table) => {
+    const cfg = ADVANCING_CONFIG_VS[table.id];
+    // כשאין cfg (טבלאות מיקומים), advCount = מספר ה-slots בפועל (נחשב אחרי הפילטר)
+    // מגדירים maxSlot רחוק כדי לאסוף הכל, ונחשב advCount אחרי
 
-        {/* 📊 פרטי מנחשים */}
-        {selectedSection === 'users' && (
-          <div className="space-y-6">
-            {userStatsLoading ? (
-              <Card style={{ background: 'rgba(30, 41, 59, 0.6)', border: '1px solid rgba(6, 182, 212, 0.2)' }}>
-                <CardContent className="p-12 text-center">
-                  <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4" style={{ color: '#06b6d4' }} />
-                  <p style={{ color: '#94a3b8' }}>טוען נתוני מנחשים...</p>
-                </CardContent>
-              </Card>
-            ) : userStatsError ? (
-              <Card style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)' }}>
-                <CardContent className="p-8 text-center">
-                  <AlertTriangle className="w-12 h-12 mx-auto mb-4" style={{ color: '#ef4444' }} />
-                  <p className="text-xl font-bold mb-2" style={{ color: '#ef4444' }}>
-                    {userStatsError === 'no_questions' ? 'לא נמצאו שאלות פרטי מנחשים' : userStatsError === 'rate_limit' ? 'יותר מדי בקשות — נסה שוב' : 'שגיאה בטעינת הנתונים'}
-                  </p>
-                </CardContent>
-              </Card>
-            ) : userStats ? (
-              <div className="grid md:grid-cols-2 gap-6">
-                {[
-                  { title: 'מקצועות המנחשים', data: userStats.professionData, dataKey: 'profession', color: '#06b6d4', icon: BarChart3 },
-                  { title: 'קבוצות גיל המנחשים', data: userStats.ageData, dataKey: 'group', color: '#8b5cf6', icon: PieChart }
-                ].map(({ title, data, dataKey, color, icon: Icon }) => (
-                  <Card key={title} style={{ background: 'rgba(30, 41, 59, 0.6)', border: '1px solid rgba(6, 182, 212, 0.2)' }}>
-                    <CardHeader><CardTitle className="flex items-center gap-2" style={{ color }}><Icon className="w-5 h-5" />{title}</CardTitle></CardHeader>
-                    <CardContent>
-                      <ResponsiveContainer width="100%" height={450}>
-                        <BarChart data={data} margin={{ top: 10, right: 30, left: 20, bottom: 60 }}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                          <XAxis dataKey={dataKey} angle={0} textAnchor="middle" height={80} stroke="#94a3b8" interval={0}
-                            tick={({ x, y, payload }) => {
-                              const words = String(payload.value).split(' ');
-                              const lines = []; let cur = '';
-                              words.forEach(w => { const t = cur ? `${cur} ${w}` : w; if (t.length <= 8) cur = t; else { if (cur) lines.push(cur); cur = w; } });
-                              if (cur) lines.push(cur);
-                              return <g transform={`translate(${x},${y})`}>{lines.slice(0, 3).map((l, i) => <text key={i} x={0} y={i * 14 + 10} textAnchor="middle" fill="#94a3b8" fontSize="10px">{l}</text>)}</g>;
-                            }}
-                          />
-                          <YAxis stroke="#94a3b8" tick={{ fontSize: 12, fill: '#94a3b8' }} />
-                          <Tooltip wrapperStyle={{ zIndex: 1000, pointerEvents: 'auto' }} cursor={false} />
-                          <Bar dataKey="count" radius={[8, 8, 0, 0]} cursor={{ fill: 'transparent' }} activeBar={false}>
-                            {data.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-                          </Bar>
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            ) : null}
+    const seenIds = new Set();
+    const maxSlot = cfg ? cfg.count : 9999;
+    const slots = (table.questions || [])
+      .filter(q => {
+        const n = parseFloat(q.question_id);
+        if (!Number.isInteger(n) || n < 1 || n > maxSlot) return false;
+        if (seenIds.has(n)) return false;
+        seenIds.add(n);
+        return true;
+      })
+      .sort((a, b) => parseFloat(a.question_id) - parseFloat(b.question_id));
+    const advCount = cfg ? cfg.count : slots.length;
+
+    const actualSet = new Set(
+      slots.filter(q => q.actual_result && q.actual_result !== "__CLEAR__")
+           .map(q => q.actual_result.trim().toLowerCase())
+    );
+    const allResultsIn = slots.length > 0 && slots.every(q => q.actual_result && q.actual_result !== "__CLEAR__");
+
+    let stageBonusEarned = false;
+    if (selectedParticipant && allResultsIn && cfg) {
+      const predMap = getCombinedPredictionsMap();
+      const guessedSet = new Set(slots.map(q => (predMap[q.id] || "").trim().toLowerCase()).filter(Boolean));
+      stageBonusEarned = [...actualSet].every(t => guessedSet.has(t));
+    }
+
+    const pointsPerSlot = slots[0]?.possible_points || 0;
+    const totalPossible = slots.length * pointsPerSlot;
+
+    return (
+      <div style={{ background: "var(--bg3-60)", border: "1px solid rgba(249,115,22,0.3)", borderRadius: "12px", padding: "16px", backdropFilter: "blur(10px)" }}>
+        <h3 className="text-right font-bold text-base mb-3" style={{ color: "#f97316" }}>📋 {table.description}</h3>
+
+        {totalPossible > 0 && (
+          <div style={{ textAlign: "left", marginBottom: "8px" }}>
+            <span style={{ fontSize: "0.72rem", color: "#94a3b8" }}>
+              {pointsPerSlot} נק' לכל קבוצה נכונה • סה"כ אפשרי: {totalPossible} נק'
+              {cfg ? ` + בונוס שלב ${cfg.bonus} נק'` : ""}
+            </span>
           </div>
         )}
 
-        {/* ⚽ משחקי פלייאוף */}
-        {isRoundsSection && (
-          <div className="space-y-6">
-            {gameStats !== null ? (
-              <>
-                {selectedRound && (() => {
-                  const gamesByDate = {};
-                  gameStatsArray.sort((a, b) => parseQuestionId(a.question.question_id) - parseQuestionId(b.question.question_id)).forEach(game => {
-                    const date = game.question.game_date || 'ללא תאריך';
-                    if (!gamesByDate[date]) gamesByDate[date] = [];
-                    gamesByDate[date].push(game);
-                  });
-                  return (
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-6">
-                      {Object.keys(gamesByDate).sort().map((date, dateIdx) => (
-                        <Card key={dateIdx} style={{ background: 'linear-gradient(135deg, rgba(6,182,212,0.15) 0%, rgba(14,165,233,0.15) 100%)', border: '2px solid rgba(6,182,212,0.4)' }}>
-                          <CardHeader className="pb-2 px-2 py-2">
-                            <CardTitle className="flex items-center gap-2 text-sm" style={{ color: '#06b6d4' }}>
-                              <Trophy className="w-4 h-4" />יום {dateIdx + 1} - {date}
-                            </CardTitle>
-                          </CardHeader>
-                          <CardContent className="p-2">
-                            <TooltipProvider delayDuration={0}>
-                              <div className="overflow-x-auto">
-                                <table className="w-full border-collapse text-xs">
-                                  <thead>
-                                    <tr style={{ background: 'rgba(6,182,212,0.2)', borderBottom: '2px solid rgba(6,182,212,0.4)' }}>
-                                      <th className="py-1 px-1 text-right text-xs font-bold" style={{ color: '#06b6d4' }}>משחק</th>
-                                      <th className="py-1 px-0.5 text-center text-xs font-bold" style={{ color: '#10b981' }} colSpan="2">בית</th>
-                                      <th className="py-1 px-0.5 text-center text-xs font-bold" style={{ color: '#f59e0b' }} colSpan="2">תיקו</th>
-                                      <th className="py-1 px-0.5 text-center text-xs font-bold" style={{ color: '#ef4444' }} colSpan="2">חוץ</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody>
-                                    {gamesByDate[date].map((game, index) => {
-                                      const q = game.question;
-                                      const outcomes = analyzeGameOutcomes(game.chartData);
-                                      const od = gameOutcomeParticipants.get(q.id) || { homeWinParticipants: [], drawParticipants: [], awayWinParticipants: [] };
-                                      const tot = outcomes.homeWins + outcomes.draws + outcomes.awayWins;
-                                      const hp = tot > 0 ? Math.round((outcomes.homeWins / tot) * 100) : 0;
-                                      const dp = tot > 0 ? Math.round((outcomes.draws / tot) * 100) : 0;
-                                      const ap = tot > 0 ? Math.round((outcomes.awayWins / tot) * 100) : 0;
-                                      let actualOutcome = null;
-                                      if (q.actual_result?.trim() && q.actual_result !== '__CLEAR__') {
-                                        const parts = q.actual_result.split('-').map(x => parseInt(x.trim()));
-                                        if (!isNaN(parts[0]) && !isNaN(parts[1])) actualOutcome = parts[0] > parts[1] ? 'home' : parts[0] < parts[1] ? 'away' : 'draw';
-                                      }
-                                      const makeTooltip = (label, color, participants) => (
-                                        <TooltipContent side="top" style={{ background: '#0f172a', border: `2px solid ${color}`, borderRadius: '6px', padding: '8px', maxWidth: '240px' }}>
-                                          <p className="font-bold mb-1 text-xs" style={{ color }}>{label}</p>
-                                          {participants.length > 0
-                                            ? <div className="flex flex-wrap gap-1 max-h-32 overflow-y-auto">{participants.map((n, i) => <span key={i} className="text-xs px-1 py-0.5 rounded" style={{ background: '#1e293b', color: '#f8fafc' }}>{n}</span>)}</div>
-                                            : <p className="text-xs" style={{ color: '#94a3b8' }}>אין</p>}
-                                        </TooltipContent>
-                                      );
-                                      return (
-                                        <tr key={q.id} style={{ borderBottom: '1px solid rgba(6,182,212,0.1)', background: index % 2 === 0 ? 'rgba(15,23,42,0.3)' : 'transparent' }}>
-                                          <td className="py-1 px-1 text-xs font-medium" style={{ color: '#f8fafc' }}>{cleanTeamName(q.home_team)} - {cleanTeamName(q.away_team)}</td>
-                                          {[
-                                            { pct: hp, cnt: outcomes.homeWins, color: '#10b981', outcome: 'home', participants: od.homeWinParticipants, label: `ניצחון ${cleanTeamName(q.home_team)}` },
-                                            { pct: dp, cnt: outcomes.draws, color: '#f59e0b', outcome: 'draw', participants: od.drawParticipants, label: 'תיקו' },
-                                            { pct: ap, cnt: outcomes.awayWins, color: '#ef4444', outcome: 'away', participants: od.awayWinParticipants, label: `ניצחון ${cleanTeamName(q.away_team)}` }
-                                          ].map(({ pct, cnt, color, outcome, participants, label }, i) => (
-                                            <React.Fragment key={i}>
-                                              <UITooltip>
-                                                <TooltipTrigger asChild>
-                                                  <td className="py-1 px-0.5 text-center cursor-pointer" style={{ background: actualOutcome === outcome ? `${color}33` : 'transparent', borderLeft: actualOutcome === outcome ? `2px solid ${color}` : 'none' }}>
-                                                    <span className="text-xs font-bold" style={{ color }}>{pct}%</span>
-                                                  </td>
-                                                </TooltipTrigger>
-                                                {makeTooltip(label, color, participants)}
-                                              </UITooltip>
-                                              <UITooltip>
-                                                <TooltipTrigger asChild>
-                                                  <td className="py-1 px-0.5 text-center cursor-pointer" style={{ borderLeft: '1px solid rgba(6,182,212,0.2)' }}>
-                                                    <span className="text-xs" style={{ color: '#94a3b8' }}>{cnt}</span>
-                                                  </td>
-                                                </TooltipTrigger>
-                                                {makeTooltip(label, color, participants)}
-                                              </UITooltip>
-                                            </React.Fragment>
-                                          ))}
-                                        </tr>
-                                      );
-                                    })}
-                                  </tbody>
-                                </table>
-                              </div>
-                            </TooltipProvider>
-                          </CardContent>
-                        </Card>
-                      ))}
-                    </div>
-                  );
-                })()}
-
-                <div className="grid md:grid-cols-3 gap-4">
-                  {[
-                    { label: 'משחקים', val: gameStatsArray.length, c1: 'rgba(59,130,246,0.2)', c2: 'rgba(59,130,246,0.3)', tc: 'text-blue-200' },
-                    { label: 'משתתפים', val: uniqueParticipantsCount, c1: 'rgba(16,185,129,0.2)', c2: 'rgba(16,185,129,0.3)', tc: 'text-green-200' },
-                    { label: 'ניחושים', val: gameStatsArray.reduce((s, g) => s + g.totalPredictions, 0), c1: 'rgba(139,92,246,0.2)', c2: 'rgba(139,92,246,0.3)', tc: 'text-purple-200' }
-                  ].map(({ label, val, c1, c2, tc }) => (
-                    <Card key={label} style={{ background: `linear-gradient(135deg, ${c1}, ${c1})`, border: `1px solid ${c2}` }}>
-                      <CardHeader className="pb-2"><CardTitle className={`${tc} flex items-center gap-2 text-sm`}>{label}</CardTitle></CardHeader>
-                      <CardContent><p className="text-3xl font-bold text-white">{val}</p></CardContent>
-                    </Card>
-                  ))}
-                </div>
-
-                <div className="grid md:grid-cols-2 gap-6">
-                  {gameStatsArray.sort((a, b) => parseQuestionId(a.question.question_id) - parseQuestionId(b.question.question_id)).map(game => {
-                    const q = game.question;
-                    const homeTeam = teams[normalizeTeamName(q.home_team)];
-                    const awayTeam = teams[normalizeTeamName(q.away_team)];
-                    const hasActualResult = q.actual_result?.trim() && q.actual_result !== '__CLEAR__';
-                    const outcomes = analyzeGameOutcomes(game.chartData);
-                    const od = gameOutcomeParticipants.get(q.id) || { homeWinParticipants: [], drawParticipants: [], awayWinParticipants: [] };
+        <div className="grid grid-cols-1 gap-2">
+          {slots.map(q => {
+            const pred = (getCombinedPredictionsMap()[q.id] || "").trim();
+            const hasResult = q.actual_result && q.actual_result !== "__CLEAR__";
+            const isCorrect = hasResult && pred && actualSet.has(pred.toLowerCase());
+            const isWrong   = hasResult && pred && !actualSet.has(pred.toLowerCase());
+            const pts = isCorrect ? (q.possible_points || 0) : 0;
+            return (
+              <div key={q.id} style={{ display: "grid", gridTemplateColumns: "40px minmax(80px,1fr) 140px 46px", gap: "8px", alignItems: "center", padding: "7px 10px", borderRadius: "6px", background: isCorrect ? "rgba(16,185,129,0.10)" : isWrong ? "rgba(239,68,68,0.08)" : "rgba(0,0,0,0.22)", border: `1px solid ${isCorrect ? "rgba(16,185,129,0.30)" : isWrong ? "rgba(239,68,68,0.25)" : "rgba(249,115,22,0.15)"}` }}>
+                <Badge variant="outline" style={{ borderColor: "rgba(249,115,22,0.45)", color: "#fb923c", fontSize: "0.72rem", justifyContent: "center" }}>
+                  {q.question_id}
+                </Badge>
+                <span style={{ fontSize: "0.78rem", color: "#94a3b8", textAlign: "right", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {q.question_text || `קבוצה ${q.question_id} שעולה`}
+                </span>
+                <div style={{ display: "flex", alignItems: "center", gap: "6px", padding: "5px 8px", borderRadius: "6px", background: isCorrect ? "rgba(16,185,129,0.12)" : isWrong ? "rgba(239,68,68,0.10)" : "rgba(249,115,22,0.08)", border: `1px solid ${isCorrect ? "rgba(16,185,129,0.35)" : isWrong ? "rgba(239,68,68,0.30)" : "rgba(249,115,22,0.25)"}` }}>
+                  {pred ? (() => {
+                    const matched = findMatchedTeamName(pred);
+                    const teamObj = data.teams[matched] || data.teams[pred];
+                    const displayName = cleanTeamName(matched);
                     return (
-                      <Card key={q.id} className="bg-slate-800/40 border-slate-700">
-                        <CardHeader className="pb-3">
-                          <div className="flex items-center justify-between flex-wrap gap-2">
-                            <div className="flex items-center gap-2">
-                              <Badge variant="outline" style={{ borderColor: 'rgba(6,182,212,0.5)', color: '#06b6d4' }}>{q.question_id}</Badge>
-                              <div className="flex items-center gap-1">
-                                {homeTeam?.logo_url && <img src={homeTeam.logo_url} alt="" className="w-5 h-5 rounded-full" />}
-                                <span className="text-slate-200 text-sm">{cleanTeamName(q.home_team)}</span>
-                                <span className="text-slate-500 text-xs">נגד</span>
-                                <span className="text-slate-200 text-sm">{cleanTeamName(q.away_team)}</span>
-                                {awayTeam?.logo_url && <img src={awayTeam.logo_url} alt="" className="w-5 h-5 rounded-full" />}
-                              </div>
-                            </div>
-                            <div className="flex gap-2">
-                              {hasActualResult && <Badge style={{ background: 'linear-gradient(135deg,#f59e0b,#d97706)', color: 'white' }}>⭐ {formatResult(q.actual_result)}</Badge>}
-                              <Badge style={{ background: 'linear-gradient(135deg,#16a34a,#15803d)', color: 'white' }}>{game.totalPredictions} ניחושים</Badge>
-                            </div>
-                          </div>
-                        </CardHeader>
-                        <CardContent>
-                          <TooltipProvider>
-                            <div className="mb-4 rounded-lg p-3" style={{ background: 'rgba(6,182,212,0.1)', border: '1px solid rgba(6,182,212,0.2)' }}>
-                              <table className="w-full text-center">
-                                <thead>
-                                  <tr className="border-b border-cyan-500/30">
-                                    <th className="py-2 text-xs font-bold" style={{ color: '#10b981' }}>{cleanTeamName(q.home_team)}</th>
-                                    <th className="py-2 text-xs font-bold" style={{ color: '#94a3b8' }}>תיקו</th>
-                                    <th className="py-2 text-xs font-bold" style={{ color: '#ef4444' }}>{cleanTeamName(q.away_team)}</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  <tr>
-                                    {[
-                                      { cnt: outcomes.homeWins, p: od.homeWinParticipants, c: '#10b981', l: `ניצחון ${cleanTeamName(q.home_team)}` },
-                                      { cnt: outcomes.draws, p: od.drawParticipants, c: '#f59e0b', l: 'תיקו' },
-                                      { cnt: outcomes.awayWins, p: od.awayWinParticipants, c: '#ef4444', l: `ניצחון ${cleanTeamName(q.away_team)}` }
-                                    ].map(({ cnt, p, c, l }, i) => (
-                                      <td key={i}>
-                                        <UITooltip delayDuration={100}>
-                                          <TooltipTrigger asChild>
-                                            <div className="flex flex-col items-center cursor-pointer p-2">
-                                              <span className="text-2xl font-bold" style={{ color: c }}>{cnt}</span>
-                                              <span className="text-xs" style={{ color: '#94a3b8' }}>מנחשים</span>
-                                            </div>
-                                          </TooltipTrigger>
-                                          <TooltipContent side="top" style={{ background: '#0f172a', border: `2px solid ${c}`, borderRadius: '8px', padding: '12px', maxWidth: '280px' }}>
-                                            <p className="font-bold mb-2" style={{ color: c }}>{l}</p>
-                                            {p.length > 0 ? <><p className="text-xs mb-1" style={{ color: '#94a3b8' }}>({p.length} משתתפים)</p><div className="flex flex-wrap gap-1 max-h-36 overflow-y-auto">{p.map((n, idx) => <span key={idx} className="text-xs px-2 py-1 rounded" style={{ background: '#1e293b', color: '#f8fafc' }}>{n}</span>)}</div></> : <p className="text-xs" style={{ color: '#94a3b8' }}>אין</p>}
-                                          </TooltipContent>
-                                        </UITooltip>
-                                      </td>
-                                    ))}
-                                  </tr>
-                                </tbody>
-                              </table>
-                            </div>
-                          </TooltipProvider>
+                      <>
+                        {teamObj?.logo_url && <img src={teamObj.logo_url} alt={displayName} className="w-4 h-4 rounded-full flex-shrink-0" onError={(e) => e.target.style.display="none"} />}
+                        <span style={{ fontSize: "0.84rem", fontWeight: "600", color: isCorrect ? "#6ee7b7" : isWrong ? "#fca5a5" : "#f8fafc" }}>{displayName}</span>
+                      </>
+                    );
+                  })() : <span style={{ fontSize: "0.84rem", color: "#475569" }}>—</span>}
+                </div>
+                <Badge style={{ minWidth: "42px", justifyContent: "center", fontSize: "0.75rem", background: isCorrect ? "rgba(16,185,129,0.2)" : isWrong ? "rgba(239,68,68,0.15)" : "rgba(100,116,139,0.15)", color: isCorrect ? "#34d399" : isWrong ? "#f87171" : "#94a3b8", border: `1px solid ${isCorrect ? "rgba(16,185,129,0.35)" : isWrong ? "rgba(239,68,68,0.3)" : "rgba(100,116,139,0.3)"}` }}>
+                  {hasResult ? (isCorrect ? `+${pts}` : "0") : `?/${q.possible_points || 0}`}
+                </Badge>
+              </div>
+            );
+          })}
+        </div>
 
-                          <ResponsiveContainer width="100%" height={650}>
-                            <RechartsPieChart>
-                              <Pie data={game.chartData} cx="50%" cy="45%" startAngle={-60} endAngle={300} outerRadius={160} dataKey="value" labelLine={false}
-                                label={(entry) => {
-                                  const RADIAN = Math.PI / 180;
-                                  const pct = parseFloat(entry.percentage);
-                                  const displayName = formatResult(entry.name);
-                                  if (pct > 10) {
-                                    const r = entry.outerRadius * 0.65;
-                                    const x = entry.cx + r * Math.cos(-entry.midAngle * RADIAN), y = entry.cy + r * Math.sin(-entry.midAngle * RADIAN);
-                                    return <g><text x={x} y={y} fill="#ffffff" textAnchor="middle" dominantBaseline="middle" style={{ fontSize: '12px', fontWeight: 'bold' }}>{displayName}</text><text x={x} y={y + 15} fill="#ffffff" textAnchor="middle" dominantBaseline="middle" style={{ fontSize: '10px' }}>{pct}%</text></g>;
-                                  }
-                                  const lr = entry.outerRadius + 30, x = entry.cx + lr * Math.cos(-entry.midAngle * RADIAN), y = entry.cy + lr * Math.sin(-entry.midAngle * RADIAN);
-                                  return <g><text x={x} y={y} fill="#ffffff" textAnchor="middle" dominantBaseline="middle" style={{ fontSize: '10px', fontWeight: 'bold' }}>{displayName}</text><text x={x} y={y + 13} fill="#ffffff" textAnchor="middle" dominantBaseline="middle" style={{ fontSize: '9px' }}>{pct}%</text></g>;
-                                }}
-                              >
-                                {game.chartData.map((entry, index) => {
-                                  const isActual = hasActualResult && normalizePrediction(entry.name) === normalizePrediction(q.actual_result);
-                                  return <Cell key={index} fill={COLORS[index % COLORS.length]} stroke={isActual ? '#fbbf24' : 'rgba(15,23,42,0.8)'} strokeWidth={isActual ? 3 : 2} />;
-                                })}
-                              </Pie>
-                              <Tooltip cursor={false} content={({ payload }) => {
-                                if (!payload?.[0]) return null;
-                                const d = payload[0].payload;
-                                const key = `${q.id}_${normalizePrediction(d.name)}`;
-                                const participants = participantsByQuestionAndAnswer.get(key) || [];
-                                return (
-                                  <div style={{ background: '#0a0f1a', border: '2px solid #06b6d4', borderRadius: '8px', padding: '12px', maxWidth: '360px' }}>
-                                    <p style={{ color: '#06b6d4', fontWeight: 'bold', marginBottom: '6px' }}>{formatResult(d.name)}</p>
-                                    <p style={{ color: '#f8fafc', fontSize: '12px', marginBottom: '6px' }}>{d.value} משתתפים ({d.percentage}%)</p>
-                                    {participants.length > 0 && <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid #475569' }}><p style={{ color: '#94a3b8', fontSize: '11px', marginBottom: '6px' }}>המשתתפים ({participants.length}):</p><div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', maxHeight: '160px', overflowY: 'auto' }}>{participants.map((n, i) => <span key={i} style={{ background: '#1e293b', color: '#f8fafc', padding: '3px 7px', borderRadius: '4px', fontSize: '10px' }}>{n}</span>)}</div></div>}
-                                  </div>
-                                );
-                              }} />
-                            </RechartsPieChart>
-                          </ResponsiveContainer>
-                          {hasActualResult && <div className="mt-4 p-3 rounded-lg text-center" style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)' }}><p style={{ color: '#fde68a', fontWeight: 'bold' }}>⭐ תוצאת אמת: {formatResult(q.actual_result)}</p></div>}
-                        </CardContent>
-                      </Card>
+        {cfg && (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 16px", borderRadius: "8px", marginTop: "14px",
+            background: stageBonusEarned ? "linear-gradient(90deg,rgba(16,185,129,0.18),rgba(5,150,105,0.10))" : allResultsIn ? "linear-gradient(90deg,rgba(239,68,68,0.15),rgba(185,28,28,0.08))" : "linear-gradient(90deg,rgba(234,179,8,0.10),rgba(180,130,0,0.06))",
+            border: `1px solid ${stageBonusEarned ? "rgba(16,185,129,0.50)" : allResultsIn ? "rgba(239,68,68,0.45)" : "rgba(234,179,8,0.40)"}` }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+              <span style={{ fontSize: "1.3rem" }}>{stageBonusEarned ? "✅" : allResultsIn ? "❌" : "⏳"}</span>
+              <div>
+                <p style={{ fontSize: "0.82rem", fontWeight: "700", margin: 0,
+                  color: stageBonusEarned ? "#6ee7b7" : allResultsIn ? "#fca5a5" : "#fde68a" }}>
+                  {stageBonusEarned ? "בונוס שלב — הושג!" : allResultsIn ? "בונוס שלב — לא הושג" : "בונוס שלב — ממתין לתוצאות"}
+                </p>
+                <p style={{ fontSize: "0.70rem", color: "#94a3b8", margin: 0 }}>
+                  {stageBonusEarned
+                    ? `כל ${advCount} הקבוצות נכונות — +${cfg.bonus} נקודות!`
+                    : allResultsIn
+                      ? `נדרש לנחש נכון את כל ${advCount} הקבוצות`
+                      : `פגיעה בכל ${advCount} הקבוצות = +${cfg?.bonus || ""} נקודות בונוס`}
+                </p>
+              </div>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+              <span style={{ fontSize: "0.70rem", color: "#64748b" }}>בונוס</span>
+              <Badge style={{ fontSize: "1.05rem", fontWeight: "800", padding: "5px 14px",
+                background: stageBonusEarned ? "linear-gradient(135deg,#059669,#047857)" : allResultsIn ? "linear-gradient(135deg,#dc2626,#b91c1c)" : "rgba(100,116,139,0.35)",
+                color: "#fff",
+                border: stageBonusEarned ? "1px solid #10b981" : allResultsIn ? "1px solid #ef4444" : "1px solid rgba(100,116,139,0.5)",
+                boxShadow: stageBonusEarned ? "0 0 12px rgba(16,185,129,0.4)" : "none" }}>
+                {stageBonusEarned ? `+${cfg?.bonus || "?"}` : allResultsIn ? `0/${cfg?.bonus || "?"}` : `?/${cfg?.bonus || "?"}`}
+              </Badge>
+            </div>
+        </div>
+        )}
+      </div>
+    );
+  };
+
+    const renderSpecialQuestions = (table) => {
+    const isT10 = table.description.includes('T10') || table.id === 'T10' || table.id.includes('custom_order');
+    if (isT10) return renderT10Questions(table);
+    const grouped = {};
+    table.questions.forEach(q => { const mainId = Math.floor(parseFloat(q.question_id)); if (!grouped[mainId]) grouped[mainId] = { main: null, subs: [] }; if (q.question_id.includes('.')) grouped[mainId].subs.push(q); else grouped[mainId].main = q; });
+    const sortedMainIds = Object.keys(grouped).sort((a, b) => Number(a) - Number(b));
+    let bonusInfo = null;
+    const isLocationTable = ['T14', 'T15', 'T16', 'T17', 'T19'].includes(table.id);
+    if (selectedParticipant) { const predForBonus = {}; table.questions.forEach(q => { const editedValue = editedPredictions[q.id]; predForBonus[q.id] = editedValue !== undefined ? editedValue : (participantPredictions[q.id] || ""); }); bonusInfo = calculateLocationBonus(table.id, table.questions, predForBonus); }
+    let teamsBonusPotential = 0, orderBonusPotential = 0;
+    if (isLocationTable) { if (table.id === 'T17') { teamsBonusPotential = 30; orderBonusPotential = 50; } else if (table.id === 'T19') { teamsBonusPotential = 20; orderBonusPotential = 0; } else { teamsBonusPotential = 20; orderBonusPotential = 40; } }
+    return (
+      <Card style={{ background: 'var(--bg3-60)', border: '1px solid var(--tp-20)', backdropFilter: 'blur(10px)' }}>
+        <CardHeader className="py-3"><CardTitle style={{ color: 'var(--tp)' }}>{table.description}</CardTitle></CardHeader>
+        <CardContent className="p-3">
+          <div className="space-y-2">
+            {sortedMainIds.map(mainId => {
+              const { main, subs } = grouped[mainId];
+              if (!main) return null;
+              const sortedSubs = [...subs].sort((a, b) => parseFloat(a.question_id) - parseFloat(b.question_id));
+              const mainOriginalValue = participantPredictions[main.id] || '';
+              // ── שורה אחת: ראשית + תתי-סעיפים ──────────────────────────
+              return (
+                <div key={main.id} style={{ display: 'flex', alignItems: 'center', padding: '7px 10px', borderRadius: '8px', overflow: 'hidden', border: '1px solid var(--tp-12)', background: 'rgba(0,0,0,0.22)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: sortedSubs.length > 0 ? '1.4' : '1', minWidth: 0 }}>
+                    <Badge variant="outline" style={{ borderColor: 'var(--tp-50)', color: 'var(--tp)', minWidth: '44px', textAlign: 'center', flexShrink: 0, fontSize: '0.72rem' }}>{main.question_id}</Badge>
+                    <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '0.82rem', color: '#f1f5f9', fontWeight: '500', textAlign: 'right' }}>{main.question_text}</span>
+                    <div style={{ flexShrink: 0 }}>{renderReadOnlySelect(main, mainOriginalValue)}</div>
+                  </div>
+                  {sortedSubs.map((sub) => {
+                    const subOriginalValue = participantPredictions[sub.id] || '';
+                    return (
+                      <React.Fragment key={sub.id}>
+                        <div style={{ width: '1px', height: '26px', background: 'rgba(255,255,255,0.07)', flexShrink: 0, margin: '0 8px' }} />
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: '1', minWidth: 0 }}>
+                          <Badge variant="outline" style={{ borderColor: 'rgba(139,92,246,0.45)', color: '#a78bfa', minWidth: '44px', textAlign: 'center', flexShrink: 0, fontSize: '0.72rem' }}>{sub.question_id}</Badge>
+                          <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '0.82rem', color: '#cbd5e1', textAlign: 'right' }}>{sub.question_text}</span>
+                          <div style={{ flexShrink: 0 }}>{renderReadOnlySelect(sub, subOriginalValue)}</div>
+                        </div>
+                      </React.Fragment>
                     );
                   })}
                 </div>
-              </>
-            ) : (
-              <Card style={{ background: 'rgba(30,41,59,0.6)', border: '1px solid rgba(6,182,212,0.2)' }}>
-                <CardContent className="p-12 text-center">
-                  <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4" style={{ color: '#06b6d4' }} />
-                  <p style={{ color: '#94a3b8' }}>טוען נתונים...</p>
-                </CardContent>
-              </Card>
-            )}
+              );
+            })}
           </div>
-        )}
-
-        {/* 📋 עולות — גרף מרוכז יחיד */}
-        {isQualifierSection && (
-          <div className="space-y-6">
-            {specialStats ? (
-              Object.values(specialStats).map(tableStats => {
-                const { table, qualifierData } = tableStats;
-                if (!qualifierData) return null;
-                const { chartData, cfg, advCount } = qualifierData;
-                const totalSelections = chartData.reduce((s, d) => s + d.count, 0);
-
-                return (
-                  <Card key={table.id} style={{ background: 'rgba(30,41,59,0.6)', border: '1px solid rgba(249,115,22,0.35)' }}>
-                    <CardHeader>
-                      <CardTitle style={{ color: '#f97316' }}>📋 {table.description}</CardTitle>
-                      <p style={{ fontSize: '0.78rem', color: '#94a3b8', marginTop: '4px' }}>
-                        כמה משתתפים בחרו כל קבוצה כעולה — ללא תלות במיקום הרישום
-                        {cfg ? ` • ${advCount} קבוצות עולות • בונוס שלב: +${cfg.bonus} נק'` : ''}
-                      </p>
-                    </CardHeader>
-                    <CardContent className="px-2 pb-6">
-                      {chartData.length > 0 ? (
-                        <div dir="ltr">
-                        <ResponsiveContainer width="100%" height={Math.max(400, chartData.length * 34)}>
-                          <BarChart data={chartData} layout="vertical" margin={{ top: 10, right: 50, left: 0, bottom: 10 }}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="#334155" horizontal={false} />
-                            <XAxis type="number" stroke="#94a3b8" tick={{ fontSize: 11, fill: '#94a3b8' }} />
-                            <YAxis
-                              type="category"
-                              dataKey="team"
-                              width={190}
-                              stroke="#334155"
-                              tick={{ fontSize: 12, fill: '#f8fafc', fontFamily: 'Rubik, Heebo, sans-serif' }}
-                            />
-                            <Tooltip
-                              wrapperStyle={{ pointerEvents: 'auto' }}
-                              cursor={{ fill: 'rgba(249,115,22,0.08)' }}
-                              content={({ payload }) => {
-                                if (!payload?.[0]) return null;
-                                const d = payload[0].payload;
-                                const pct = totalSelections > 0 ? ((d.count / totalSelections) * 100).toFixed(1) : 0;
-                                const participants = qualifierData.participantsMap?.[d.team] || [];
-                                return (
-                                  <div style={{ background: '#0a0f1a', border: '2px solid #f97316', borderRadius: '8px', padding: '12px', minWidth: '180px', maxWidth: '320px', boxShadow: '0 4px 12px rgba(0,0,0,0.8)' }}>
-                                    <p style={{ color: '#f97316', fontWeight: 'bold', marginBottom: '4px', fontSize: '13px' }}>{d.team}</p>
-                                    <p style={{ color: '#f8fafc', fontSize: '12px', marginBottom: '6px' }}>{d.count} בחירות ({pct}%)</p>
-                                    {participants.length > 0 && (
-                                      <div style={{ marginTop: '6px', paddingTop: '6px', borderTop: '1px solid #475569' }}>
-                                        <p style={{ color: '#94a3b8', fontSize: '11px', marginBottom: '6px', fontWeight: 'bold' }}>המשתתפים ({participants.length}):</p>
-                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', maxHeight: '160px', overflowY: 'auto', pointerEvents: 'auto' }}>
-                                          {participants.map((n, i) => (
-                                            <span key={i} style={{ background: '#1e293b', color: '#f8fafc', padding: '3px 7px', borderRadius: '4px', fontSize: '10px' }}>{n}</span>
-                                          ))}
-                                        </div>
-                                      </div>
-                                    )}
-                                  </div>
-                                );
-                              }}
-                            />
-                            <Bar dataKey="count" radius={[0, 6, 6, 0]} label={{ position: 'right', fill: '#94a3b8', fontSize: 11, formatter: (v) => v }}>
-                              {chartData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-                            </Bar>
-                          </BarChart>
-                        </ResponsiveContainer>
-                        </div>
-                      ) : (
-                        <div className="text-center py-12" style={{ color: '#94a3b8' }}>אין נתונים עדיין</div>
-                      )}
-                    </CardContent>
-                  </Card>
-                );
-              })
-            ) : (
-              <Card style={{ background: 'rgba(30,41,59,0.6)', border: '1px solid rgba(249,115,22,0.2)' }}>
-                <CardContent className="p-12 text-center">
-                  <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4" style={{ color: '#f97316' }} />
-                  <p style={{ color: '#94a3b8' }}>טוען סטטיסטיקות...</p>
-                </CardContent>
-              </Card>
-            )}
-          </div>
-        )}
-
-        {/* ✨ שאלות מיוחדות */}
-        {isSpecialSection && !specialStats && (
-          <Card style={{ background: 'rgba(30,41,59,0.6)', border: '1px solid rgba(6,182,212,0.2)' }}>
-            <CardContent className="p-12 text-center">
-              <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4" style={{ color: '#06b6d4' }} />
-              <p style={{ color: '#94a3b8' }}>טוען סטטיסטיקות...</p>
-            </CardContent>
-          </Card>
-        )}
-
-        {isSpecialSection && specialStats && (
-          <div className="space-y-6">
-            {Object.values(specialStats).map(tableStats => (
-              <div key={tableStats.table.id}>
-                <h2 className="text-2xl font-bold text-white mb-4">{tableStats.table.description}</h2>
-
-                {tableStats.locationsData ? (
-                  <div className="space-y-4">
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                      <Card className="bg-slate-800/40 border-slate-700"><CardContent className="p-4"><p className="text-sm text-slate-400">סה"כ בחירות</p><p className="text-3xl font-bold text-cyan-400">{tableStats.locationsData.totalPredictions}</p></CardContent></Card>
-                      <Card className="bg-slate-800/40 border-slate-700"><CardContent className="p-4"><p className="text-sm text-slate-400">קבוצות ייחודיות</p><p className="text-3xl font-bold text-blue-400">{tableStats.locationsData.uniqueTeams}</p></CardContent></Card>
-                      <Card className="bg-slate-800/40 border-slate-700"><CardContent className="p-4"><p className="text-sm text-slate-400">הכי פופולרית</p><p className="text-lg font-bold text-green-400">{tableStats.locationsData.mostPopular.team}</p><p className="text-sm text-slate-400">{tableStats.locationsData.mostPopular.count} בחירות ({tableStats.locationsData.mostPopular.percentage}%)</p></CardContent></Card>
-                    </div>
-                    <Card className="bg-slate-800/40 border-slate-700">
-                      <CardHeader><CardTitle className="text-cyan-300">10 הקבוצות הפופולריות ביותר</CardTitle></CardHeader>
-                      <CardContent className="px-2 pb-3">
-                        <ResponsiveContainer width="100%" height={450}>
-                          <BarChart data={tableStats.locationsData.topTeams.slice(0, 10)} margin={{ top: 30, right: 0, left: 0, bottom: 130 }}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                            <XAxis dataKey="team" angle={0} textAnchor="middle" height={120} stroke="#94a3b8" interval={0}
-                              tick={({ x, y, payload }) => {
-                                const words = String(payload.value).split(' '); const lines = []; let cur = '';
-                                words.forEach(w => { const t = cur ? `${cur} ${w}` : w; if (t.length <= 10) cur = t; else { if (cur) lines.push(cur); cur = w; } }); if (cur) lines.push(cur);
-                                return <g transform={`translate(${x},${y})`}>{lines.slice(0, 3).map((l, i) => <text key={i} x={0} y={i * 14 + 10} textAnchor="middle" fill="#94a3b8" fontSize="10px">{l}</text>)}</g>;
-                              }}
-                            />
-                            <YAxis stroke="#94a3b8" tick={{ fontSize: 12, fill: '#94a3b8' }} />
-                            <Tooltip wrapperStyle={{ zIndex: 1000, pointerEvents: 'auto' }} cursor={false} />
-                            <Bar dataKey="count" radius={[8, 8, 0, 0]} cursor={{ fill: 'transparent' }} activeBar={false}>
-                              {tableStats.locationsData.topTeams.slice(0, 10).map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-                            </Bar>
-                          </BarChart>
-                        </ResponsiveContainer>
-                      </CardContent>
-                    </Card>
+          {isLocationTable && selectedParticipant && (
+            <div className="mt-4 grid grid-cols-2 gap-3">
+              <div className={`p-3 rounded-lg border ${bonusInfo?.allCorrect ? 'bg-gradient-to-r from-green-900/40 to-emerald-900/40 border-green-600/50' : bonusInfo !== null ? 'bg-gradient-to-r from-red-900/40 to-red-800/40 border-red-600/50' : 'bg-gradient-to-r from-slate-800/40 to-slate-700/40 border-slate-600/50'}`}>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2"><Trophy className={`w-5 h-5 ${bonusInfo?.allCorrect ? 'text-green-400' : bonusInfo !== null ? 'text-red-400' : 'text-slate-400'}`} /><div><p className={`font-bold text-sm ${bonusInfo?.allCorrect ? 'text-green-200' : bonusInfo !== null ? 'text-red-200' : 'text-slate-300'}`}>{bonusInfo?.allCorrect ? '✅' : bonusInfo !== null ? '❌' : '⏳'} בונוס עולות</p><p className={`text-xs ${bonusInfo?.allCorrect ? 'text-green-300' : bonusInfo !== null ? 'text-red-300' : 'text-slate-400'}`}>{bonusInfo?.allCorrect ? 'כל הקבוצות נכונות!' : bonusInfo !== null ? 'לא כל הקבוצות' : 'ממתין לתוצאות...'}</p></div></div>
+                  <Badge className={`text-lg font-bold px-3 py-1 ${bonusInfo?.allCorrect ? 'bg-green-600 text-white' : bonusInfo !== null ? 'bg-red-600 text-white' : 'bg-slate-600 text-slate-300'}`}>{bonusInfo?.allCorrect ? `+${bonusInfo.teamsBonus}` : bonusInfo !== null ? '0' : '?'}/{teamsBonusPotential}</Badge>
+                </div>
+              </div>
+              {table.id !== 'T19' && (
+                <div className={`p-3 rounded-lg border ${bonusInfo?.perfectOrder ? 'bg-gradient-to-r from-yellow-900/40 to-orange-900/40 border-yellow-600/50' : bonusInfo !== null ? 'bg-gradient-to-r from-red-900/40 to-red-800/40 border-red-600/50' : 'bg-gradient-to-r from-slate-800/40 to-slate-700/40 border-slate-600/50'}`}>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2"><Trophy className={`w-5 h-5 ${bonusInfo?.perfectOrder ? 'text-yellow-400' : bonusInfo !== null ? 'text-red-400' : 'text-slate-400'}`} /><div><p className={`font-bold text-sm ${bonusInfo?.perfectOrder ? 'text-yellow-200' : bonusInfo !== null ? 'text-red-200' : 'text-slate-300'}`}>{bonusInfo?.perfectOrder ? '✨' : bonusInfo !== null ? '❌' : '⏳'} בונוס מיקום</p><p className={`text-xs ${bonusInfo?.perfectOrder ? 'text-yellow-300' : bonusInfo !== null ? 'text-red-300' : 'text-slate-400'}`}>{bonusInfo?.perfectOrder ? 'סדר מושלם!' : bonusInfo?.allCorrect ? 'לא בסדר המדויק' : bonusInfo !== null ? 'לא כל הקבוצות' : 'ממתין לתוצאות...'}</p></div></div>
+                    <Badge className={`text-lg font-bold px-3 py-1 ${bonusInfo?.perfectOrder ? 'bg-yellow-600 text-white' : bonusInfo !== null ? 'bg-red-600 text-white' : 'bg-slate-600 text-slate-300'}`}>{bonusInfo?.perfectOrder ? `+${bonusInfo.orderBonus}` : bonusInfo !== null ? '0' : '?'}/{orderBonusPotential}</Badge>
                   </div>
+                </div>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    );
+  };
+
+  if (loading) return (<div className="flex items-center justify-center h-screen" style={{ background: 'linear-gradient(135deg, var(--bg1) 0%, var(--bg2) 50%, var(--bg1) 100%)' }}><Loader2 className="w-8 h-8 animate-spin" style={{ color: 'var(--tp)' }} /><span className="ml-3" style={{ color: 'var(--tp)' }}>טוען נתונים...</span></div>);
+
+  const TEXT_LENGTH_THRESHOLD = 18;
+
+  // ========= BUILD allButtons =========
+  const allButtons = [];
+  if (roundTables.length > 0) {
+    const allAreGroups = roundTables.every(table => table.id.includes('בית') || table.description?.includes('בית'));
+    if (allAreGroups) {
+      const firstRoundTableId = roundTables[0]?.id || 'T2';
+      allButtons.push({ numericId: parseInt(firstRoundTableId.replace('T', '').replace(/\D/g, ''), 10), key: 'rounds', description: 'שלב הבתים', sectionKey: 'rounds', stageType: 'rounds' });
+    } else {
+      roundTables.forEach(table => { allButtons.push({ numericId: parseInt(table.id.replace('T', '').replace(/\D/g, ''), 10) || 0, key: `round_${table.id}`, description: table.description || table.id, stageType: table.questions[0]?.stage_type || 'playoff', sectionKey: `round_${table.id}` }); });
+    }
+  }
+  specialTables.forEach(table => { allButtons.push({ numericId: table.questions[0]?.stage_order || parseInt(table.id.replace('T', '').replace(/\D/g, ''), 10), key: table.id, description: table.description, stageType: table.questions[0]?.stage_type || 'special', sectionKey: table.id }); });
+  if (locationTables.length > 0) { const firstLocationTableId = locationTables[0]?.id || 'T14'; allButtons.push({ numericId: parseInt(firstLocationTableId.replace('T', ''), 10), key: 'locations', description: 'מיקומים', stageType: 'qualifiers', sectionKey: 'locations' }); }
+  qualifiersTables.forEach(table => { allButtons.push({ numericId: table.questions[0]?.stage_order || parseInt(table.id.replace('T','')) || 0, key: `qual_${table.id}`, description: table.description || table.id, stageType: 'qualifiers', sectionKey: `qual_${table.id}` }); });
+  if (israeliTable) allButtons.push({ numericId: parseInt(israeliTable.id.replace('T', ''), 10), key: israeliTable.id, description: israeliTable.description, stageType: 'playoff', sectionKey: 'israeli' });
+  if (playoffWinnersTable) allButtons.push({ numericId: parseInt(playoffWinnersTable.id.replace('T', ''), 10), key: playoffWinnersTable.id, description: playoffWinnersTable.description, stageType: 'qualifiers', sectionKey: 'playoffWinners' });
+  allButtons.sort((a, b) => { if (a.sectionKey === 'rounds' && b.sectionKey !== 'rounds') return -1; if (b.sectionKey === 'rounds' && a.sectionKey !== 'rounds') return 1; return a.numericId - b.numericId; });
+
+  // ========= SIDEBAR RENDERER =========
+  const renderStageSidebar = (allButtonsList, openSectionsMap, toggleSectionFn) => {
+    const groupMap = {
+      playoff:    { label: '⚽ פלייאוף',   color: '#3b82f6', bg: 'rgba(59,130,246,0.10)',   border: 'rgba(59,130,246,0.30)',   activeBg: '#2563eb',     activeShadow: '0 2px 10px rgba(59,130,246,0.44)'   },
+      league:     { label: '⚽ ליגה',       color: '#3b82f6', bg: 'rgba(59,130,246,0.10)',   border: 'rgba(59,130,246,0.30)',   activeBg: '#2563eb',     activeShadow: '0 2px 10px rgba(59,130,246,0.44)'   },
+      groups:     { label: '🏠 בתים',       color: 'var(--tp)', bg: 'var(--tp-10)', border: 'var(--tp-30)', activeBg: 'var(--tp-dark)', activeShadow: 'var(--tp-glow-sm)' },
+      special:    { label: '✨ מיוחדות',    color: '#8b5cf6', bg: 'rgba(139,92,246,0.10)',  border: 'rgba(139,92,246,0.30)',  activeBg: '#7c3aed',     activeShadow: '0 2px 10px rgba(139,92,246,0.44)'  },
+      qualifiers: { label: '📋 עולות',      color: '#f97316', bg: 'rgba(249,115,22,0.10)',   border: 'rgba(249,115,22,0.30)',   activeBg: '#ea580c',     activeShadow: '0 2px 10px rgba(249,115,22,0.44)'   },
+      rounds:     { label: '⚽ מחזורים',    color: 'var(--tp)', bg: 'var(--tp-10)', border: 'var(--tp-30)', activeBg: 'var(--tp-dark)', activeShadow: 'var(--tp-glow-sm)' },
+    }};
+    const grouped = {};
+    allButtonsList.forEach(btn => {
+      let type = btn.stageType;
+      if (!type) { if (btn.sectionKey === 'rounds') type = 'rounds'; else if (btn.sectionKey.startsWith('round_')) type = 'playoff'; else if (btn.sectionKey.startsWith('qual_')) type = 'qualifiers'; else type = 'special'; }
+      if (!grouped[type]) grouped[type] = [];
+      grouped[type].push(btn);
+    });
+    const order = ['rounds','league','groups','playoff','special','qualifiers'];
+    const sortedGroups = order.filter(t => grouped[t]);
+    return (
+      <div style={{ background: 'rgba(13,18,30,0.9)', borderRadius: '12px', border: '1px solid var(--tp-12)', padding: '14px 10px', backdropFilter: 'blur(10px)' }}>
+        <div style={{ fontSize: '0.5rem', fontWeight: '800', letterSpacing: '0.18em', textTransform: 'uppercase', color: '#334155', marginBottom: '14px', paddingRight: '2px' }}>בחירת שלב</div>
+        {sortedGroups.map(type => {
+          const info = groupMap[type] || groupMap.other;
+          return (
+            <div key={type} style={{ marginBottom: '14px' }}>
+              <div style={{ fontSize: '0.55rem', fontWeight: '700', letterSpacing: '0.08em', textTransform: 'uppercase', color: info.color, marginBottom: '5px', paddingRight: '2px', opacity: 0.85 }}>{info.label}</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                {grouped[type].map(button => {
+                  const active = openSectionsMap[button.sectionKey];
+                  return (
+                    <button key={button.key} onClick={() => toggleSectionFn(button.sectionKey)} style={{ display: 'block', width: '100%', textAlign: 'right', padding: '7px 10px', borderRadius: '8px', fontSize: '0.72rem', fontWeight: active ? '700' : '400', color: active ? 'white' : info.color, background: active ? info.activeBg : info.bg, border: `1px solid ${active ? info.color : info.border}`, cursor: 'pointer', transition: 'all 0.15s', boxShadow: active ? (info.activeShadow || `0 2px 10px ${info.color}44`) : 'none', fontFamily: 'Rubik, Heebo, sans-serif', lineHeight: '1.3' }}>
+                      {button.description}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
+  // ========= HORIZONTAL CHIPS (mobile) =========
+  const renderStageChips = (allButtonsList, openSectionsMap, toggleSectionFn) => {
+    const groupMap = {
+      playoff:    { label: '⚽ פלייאוף',   color: '#3b82f6',  bg: 'rgba(59,130,246,0.10)',   border: 'rgba(59,130,246,0.30)',   activeBg: '#2563eb',     activeShadow: '0 2px 10px rgba(59,130,246,0.44)'  },
+      league:     { label: '⚽ ליגה',       color: '#3b82f6',  bg: 'rgba(59,130,246,0.10)',   border: 'rgba(59,130,246,0.30)',   activeBg: '#2563eb',     activeShadow: '0 2px 10px rgba(59,130,246,0.44)'  },
+      groups:     { label: '🏠 בתים',       color: 'var(--tp)', bg: 'var(--tp-10)', border: 'var(--tp-30)', activeBg: 'var(--tp-dark)', activeShadow: 'var(--tp-glow-sm)'                  },
+      rounds:     { label: '⚽ מחזורים',    color: 'var(--tp)', bg: 'var(--tp-10)', border: 'var(--tp-30)', activeBg: 'var(--tp-dark)', activeShadow: 'var(--tp-glow-sm)'                  },
+      special:    { label: '✨ מיוחדות',    color: '#8b5cf6',  bg: 'rgba(139,92,246,0.10)',   border: 'rgba(139,92,246,0.30)',   activeBg: '#7c3aed',     activeShadow: '0 2px 10px rgba(139,92,246,0.44)'  },
+      qualifiers: { label: '📋 עולות',      color: '#f97316',  bg: 'rgba(249,115,22,0.10)',   border: 'rgba(249,115,22,0.30)',   activeBg: '#ea580c',     activeShadow: '0 2px 10px rgba(249,115,22,0.44)'  },
+    }};
+    return (
+      <div style={{ padding: '12px', background: 'rgba(0,0,0,0.40)', borderRadius: '12px', border: '1px solid var(--tp-12)', marginBottom: '16px' }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+          {allButtonsList.map(button => {
+            const type = button.stageType || 'special';
+            const info = groupMap[type] || groupMap.other;
+            const active = openSectionsMap[button.sectionKey];
+            return (<button key={button.key} onClick={() => toggleSectionFn(button.sectionKey)} style={{ display: 'inline-flex', alignItems: 'center', padding: '5px 11px', borderRadius: '999px', fontSize: '0.78rem', fontWeight: active ? '700' : '400', color: active ? 'white' : info.color, background: active ? info.color : info.bg, border: `1px solid ${active ? info.color : info.border}`, cursor: 'pointer', transition: 'all 0.15s', boxShadow: active ? `0 0 10px ${info.color}66` : 'none', fontFamily: 'Rubik, Heebo, sans-serif', whiteSpace: 'nowrap' }}>{button.description}</button>);
+          })}
+        </div>
+      </div>
+    );
+  };
+
+  const hasStages = specialTables.length > 0 || roundTables.length > 0 || locationTables.length > 0 || israeliTable || playoffWinnersTable || qualifiersTables.length > 0;
+
+  const renderContent = () => {
+    if (!selectedParticipant || loadingPredictions) return null;
+    return allButtons.map(button => {
+      if (!openSections[button.sectionKey]) return null;
+      if (button.sectionKey === 'rounds') return (<div key="rounds-section" className="mb-6 space-y-6"><div className="grid grid-cols-1 md:grid-cols-2 gap-6">{roundTables.map(table => (<RoundTableReadOnly key={table.id} table={table} teams={data.teams} predictions={getCombinedPredictionsMap()} isEditMode={isEditMode && isAdmin} handlePredictionEdit={handlePredictionEdit} />))}</div><StandingsTable roundTables={roundTables} teams={data.teams} data={getCombinedPredictionsMap()} type="predictions" /></div>);
+      if (button.sectionKey.startsWith('round_')) {
+        const tableId = button.sectionKey.replace('round_', '');
+        const table = roundTables.find(t => t.id === tableId);
+        if (!table) return null;
+
+        // ── T3 בונוס שלב (שמינית הגמר) — רק בנוק-אאוט ──
+        let t3BonusBanner = null;
+        if (tableId === 'T3' && selectedParticipant && isKnockoutGame) {
+          const t3Qs = table.questions || [];
+          const allHaveResults = t3Qs.length > 0 && t3Qs.every(q => q.actual_result && q.actual_result.trim() !== '' && q.actual_result !== '__CLEAR__');
+          const predMap = getCombinedPredictionsMap();
+          const allScored = allHaveResults && t3Qs.every(q => {
+            const pred = predMap[q.id];
+            if (!pred) return false;
+            const sc = calculateQuestionScore(q, pred, t3Qs, predMap);
+            return sc !== null && sc > 0;
+          });
+          const bonusEarned = allHaveResults && allScored;
+          t3BonusBanner = (
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 16px", borderRadius: "8px", marginTop: "14px",
+              background: bonusEarned ? "linear-gradient(90deg,rgba(16,185,129,0.18),rgba(5,150,105,0.10))" : allHaveResults ? "linear-gradient(90deg,rgba(239,68,68,0.15),rgba(185,28,28,0.08))" : "linear-gradient(90deg,rgba(234,179,8,0.10),rgba(180,130,0,0.06))",
+              border: `1px solid ${bonusEarned ? "rgba(16,185,129,0.50)" : allHaveResults ? "rgba(239,68,68,0.45)" : "rgba(234,179,8,0.40)"}` }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                <span style={{ fontSize: "1.3rem" }}>{bonusEarned ? "✅" : allHaveResults ? "❌" : "⏳"}</span>
+                <div>
+                  <p style={{ fontSize: "0.82rem", fontWeight: "700", margin: 0,
+                    color: bonusEarned ? "#6ee7b7" : allHaveResults ? "#fca5a5" : "#fde68a" }}>
+                    {bonusEarned ? "בונוס שלב — הושג!" : allHaveResults ? "בונוס שלב — לא הושג" : "בונוס שלב — ממתין לתוצאות"}
+                  </p>
+                  <p style={{ fontSize: "0.70rem", color: "#94a3b8", margin: 0 }}>
+                    {bonusEarned
+                      ? "ניקוד בכל משחקי השמינית — +16 נקודות!"
+                      : allHaveResults
+                        ? "נדרש ניקוד (כלשהו) בכל משחקי השמינית"
+                        : "ניקוד בכל משחקי השמינית = +16 נקודות בונוס"}
+                  </p>
+                </div>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                <span style={{ fontSize: "0.70rem", color: "#64748b" }}>בונוס</span>
+                <Badge style={{ fontSize: "1.05rem", fontWeight: "800", padding: "5px 14px",
+                  background: bonusEarned ? "linear-gradient(135deg,#059669,#047857)" : allHaveResults ? "linear-gradient(135deg,#dc2626,#b91c1c)" : "rgba(100,116,139,0.35)",
+                  color: "#fff",
+                  border: bonusEarned ? "1px solid #10b981" : allHaveResults ? "1px solid #ef4444" : "1px solid rgba(100,116,139,0.5)",
+                  boxShadow: bonusEarned ? "0 0 12px rgba(16,185,129,0.4)" : "none" }}>
+                  {bonusEarned ? "+16" : allHaveResults ? "0/16" : "?/16"}
+                </Badge>
+              </div>
+            </div>
+          );
+        }
+
+        return (
+          <div key={button.sectionKey} className="mb-6">
+            <RoundTableReadOnly key={table.id} table={table} teams={data.teams} predictions={getCombinedPredictionsMap()} isEditMode={isEditMode && isAdmin} handlePredictionEdit={handlePredictionEdit} />
+            {t3BonusBanner}
+            {table.specialQuestions && table.specialQuestions.length > 0 && (
+              <div className="mt-4">{renderSpecialQuestions({ ...table, questions: table.specialQuestions })}</div>
+            )}
+          </div>
+        );
+      }
+      if (button.sectionKey.startsWith('qual_')) { const tableId = button.sectionKey.replace('qual_', ''); const table = qualifiersTables.find(t => t.id === tableId); if (!table) return null; return (<div key={button.sectionKey} className="mb-6">{renderQualifiersTable(table)}</div>); }
+      if (button.sectionKey === 'israeli' && israeliTable) return (<div key="israeli-section" className="mb-6"><RoundTableReadOnly table={israeliTable} teams={data.teams} predictions={getCombinedPredictionsMap()} isEditMode={isEditMode && isAdmin} handlePredictionEdit={handlePredictionEdit} /></div>);
+      if (button.sectionKey === 'locations') return (
+        <div key="locations-section" className="mb-6">
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {locationTables.map(table => {
+              const hasSlots = table.questions.some(q => { const n = parseFloat(q.question_id); return Number.isInteger(n) && n >= 1; });
+              return <div key={table.id}>{hasSlots ? renderQualifiersTable(table) : renderSpecialQuestions(table)}</div>;
+            })}
+          </div>
+        </div>
+      );
+      if (button.sectionKey === 'playoffWinners' && playoffWinnersTable) return (<div key="playoffWinners-section" className="mb-6">{renderSpecialQuestions(playoffWinnersTable)}</div>);
+      const specificSpecialTable = specialTables.find(t => t.id === button.key);
+      if (specificSpecialTable) return (<div key={specificSpecialTable.id} className="mb-6">{renderSpecialQuestions(specificSpecialTable)}</div>);
+      return null;
+    });
+  };
+
+  return (
+    <div className="min-h-screen" dir="rtl" style={{ background: 'linear-gradient(135deg, var(--bg1) 0%, var(--bg2) 50%, var(--bg1) 100%)' }}>
+
+      {/* ===== STICKY HEADER ===== */}
+      <div className="sticky top-0 z-30 backdrop-blur-sm shadow-lg" style={{ background: 'rgba(0,0,0,0.70)', borderBottom: '1px solid var(--tp-20)' }}>
+        <div className="p-3 md:p-5 max-w-7xl mx-auto">
+          <div className="flex flex-col md:flex-row justify-between items-start gap-2 md:gap-0 mb-3 md:mb-4">
+            <div>
+              <h1 className="text-xl md:text-2xl font-bold mb-1 flex items-center gap-2" style={{ color: '#f8fafc', textShadow: '0 0 10px var(--tp-30)' }}>
+                <Users className="w-5 h-5 md:w-7 md:h-7" style={{ color: 'var(--tp)' }} />
+                צפייה בניחושים
+              </h1>
+              {currentGame?.game_name && <p className="text-xs font-medium" style={{ color: 'var(--tp)' }}>{currentGame.game_name}</p>}
+              <p className="text-xs md:text-sm" style={{ color: '#94a3b8' }}>בחר משתתף כדי לראות את הניחושים שלו.</p>
+            </div>
+            <div className="flex gap-1.5 md:gap-2 flex-wrap w-full md:w-auto">
+              {isAdmin && selectedParticipant && !loadingPredictions && (
+                !isEditMode ? (
+                  <Button onClick={() => setIsEditMode(true)} variant="outline" size="sm" style={{ borderColor: 'var(--tp-50)', color: 'var(--tp)', background: 'rgba(255,255,255,0.04)' }} className="hover:bg-cyan-500/20"><Pencil className="w-4 h-4 ml-1.5" />ערוך</Button>
                 ) : (
-                  <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {tableStats.questions.filter(qs => qs.question.question_id !== '11.1').sort((a, b) => parseFloat(a.question.question_id) - parseFloat(b.question.question_id)).map(qStat => {
-                      const q = qStat.question;
-                      const usePieChart = qStat.chartData.length <= 3 && qStat.chartData.length > 0;
-                      const hasActualResult = q.actual_result?.trim() && q.actual_result !== '__CLEAR__';
-                      return (
-                        <Card key={q.id} className="bg-slate-800/40 border-slate-700 flex flex-col">
-                          <CardHeader className="pb-3">
-                            <div className="flex items-center justify-between mb-2">
-                              <Badge variant="outline" style={{ borderColor: 'rgba(6,182,212,0.5)', color: '#06b6d4', minWidth: '50px' }} className="justify-center">{q.question_id}</Badge>
-                              <Badge className="bg-gradient-to-r from-green-600 to-emerald-600 text-white text-xs">{qStat.totalAnswers} תשובות</Badge>
-                            </div>
-                            <p className="text-sm text-slate-200 leading-tight min-h-[40px]">{q.question_text}</p>
-                          </CardHeader>
-                          <CardContent className="px-2 pb-3 flex-1 flex flex-col">
-                            {qStat.chartData.length > 0 ? (
-                              <>
-                                <div className="flex-1 flex items-end" style={{ minHeight: '300px', maxHeight: '300px' }}>
-                                  <ResponsiveContainer width="100%" height="100%">
-                                    {usePieChart ? (
-                                      <RechartsPieChart>
-                                        <Pie data={qStat.chartData} cx="50%" cy="50%" labelLine={false}
-                                          label={({ cx, cy, midAngle, outerRadius, answer, percentage }) => {
-                                            const R = Math.PI / 180; const pct = parseFloat(percentage); const clean = answer.replace(':', '').trim();
-                                            if (pct > 15) { const r = outerRadius * 0.65; const x = cx + r * Math.cos(-midAngle * R), y = cy + r * Math.sin(-midAngle * R); return <g><text x={x} y={y} fill="#fff" textAnchor="middle" dominantBaseline="middle" style={{ fontSize: '11px', fontWeight: 'bold' }}>{clean}</text><text x={x} y={y + 13} fill="#fff" textAnchor="middle" dominantBaseline="middle" style={{ fontSize: '9px' }}>{percentage}%</text></g>; }
-                                            const lr = outerRadius + 25; const x = cx + lr * Math.cos(-midAngle * R), y = cy + lr * Math.sin(-midAngle * R);
-                                            return <g><text x={x} y={y} fill="#fff" textAnchor="middle" dominantBaseline="middle" style={{ fontSize: '10px', fontWeight: 'bold' }}>{clean}</text><text x={x} y={y + 12} fill="#fff" textAnchor="middle" dominantBaseline="middle" style={{ fontSize: '9px' }}>{percentage}%</text></g>;
-                                          }}
-                                          outerRadius={70} dataKey="count">
-                                          {qStat.chartData.map((entry, i) => {
-                                            const isActual = hasActualResult && entry.answer === q.actual_result;
-                                             return <Cell key={i} fill={COLORS[i % COLORS.length]} stroke={isActual ? '#fbbf24' : 'rgba(15,23,42,0.8)'} strokeWidth={isActual ? 3 : 2} style={{ cursor: 'pointer' }}
-                                               onClick={() => { const k1c = `${q.id}_${normalizePrediction(entry.answer.trim())}`; const pts = participantsByQuestionAndAnswer.get(k1c) || participantsByQuestionAndAnswer.get(`${q.id}_${entry.answer.trim()}`) || []; setClickedSegment(prev => ({ ...prev, [q.id]: prev[q.id]?.answer === entry.answer ? null : { answer: entry.answer, count: entry.count, percentage: entry.percentage, participants: pts } })); }} />;
-                                          })}
-                                        </Pie>
-                                         <Tooltip wrapperStyle={{ zIndex: 1000, pointerEvents: 'none' }} cursor={false}
-                                           content={({ payload }) => {
-                                             if (!payload?.[0]) return null;
-                                             const d = payload[0].payload;
-                                             return <div style={{ background: '#0a0f1a', border: '1px solid #06b6d4', borderRadius: '6px', padding: '8px', pointerEvents: 'none' }}><p style={{ color: '#06b6d4', fontWeight: 'bold', fontSize: '12px' }}>{d.answer}</p><p style={{ color: '#f8fafc', fontSize: '11px' }}>{d.count} תשובות ({d.percentage}%)</p><p style={{ color: '#94a3b8', fontSize: '9px', marginTop: '2px' }}>לחץ לרשימת מנחשים</p></div>;
-                                           }}
-                                         />
-                                      </RechartsPieChart>
-                                    ) : (
-                                      <BarChart data={qStat.chartData.slice(0, 10)} margin={{ top: 10, right: 5, left: 5, bottom: 60 }}>
-                                        <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                                        <XAxis dataKey="answer" angle={0} textAnchor="middle" height={60} stroke="#94a3b8" interval={0}
-                                          tick={({ x, y, payload }) => {
-                                            const ws = String(payload.value).split(' '); const ls = []; let cur = '';
-                                            ws.forEach(w => { const t = cur ? `${cur} ${w}` : w; if (t.length <= 8) cur = t; else { if (cur) ls.push(cur); cur = w; } }); if (cur) ls.push(cur);
-                                            return <g transform={`translate(${x},${y})`}>{ls.slice(0, 3).map((l, i) => <text key={i} x={0} y={i * 10 + 6} textAnchor="middle" fill="#94a3b8" fontSize="8px">{l}</text>)}</g>;
-                                          }} />
-                                        <YAxis stroke="#94a3b8" tick={{ fontSize: 10, fill: '#94a3b8' }} />
-                                         <Tooltip wrapperStyle={{ zIndex: 1000, pointerEvents: 'none' }} cursor={false} />
-                                        <Bar dataKey="count" radius={[6, 6, 0, 0]} cursor={{ fill: 'transparent' }} activeBar={false}>
-                                           {qStat.chartData.slice(0, 10).map((entry, i) => { const k1c = `${q.id}_${normalizePrediction(entry.answer.trim())}`; const pts = participantsByQuestionAndAnswer.get(k1c) || participantsByQuestionAndAnswer.get(`${q.id}_${entry.answer.trim()}`) || []; return <Cell key={i} fill={COLORS[i % COLORS.length]} style={{ cursor: 'pointer' }} onClick={() => setClickedSegment(prev => ({ ...prev, [q.id]: prev[q.id]?.answer === entry.answer ? null : { answer: entry.answer, count: entry.count, percentage: entry.percentage, participants: pts } }))} />; })}
-                                        </Bar>
-                                      </BarChart>
-                                    )}
-                                  </ResponsiveContainer>
-                                </div>
-                                 {clickedSegment[q.id] && (
-                                   <div style={{ background: 'rgba(6,182,212,0.08)', border: '1px solid rgba(6,182,212,0.3)', borderRadius: '8px', padding: '10px', margin: '8px 0' }}>
-                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                                       <p style={{ color: '#06b6d4', fontWeight: 'bold', fontSize: '13px' }}>{clickedSegment[q.id].answer} — {clickedSegment[q.id].count} תשובות ({clickedSegment[q.id].percentage}%)</p>
-                                       <button onClick={() => setClickedSegment(prev => ({ ...prev, [q.id]: null }))} style={{ color: '#94a3b8', background: 'none', border: 'none', cursor: 'pointer', fontSize: '16px' }}>✕</button>
-                                     </div>
-                                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', maxHeight: '140px', overflowY: 'auto' }}>
-                                       {clickedSegment[q.id].participants.map((n, i) => (
-                                         <span key={i} style={{ background: '#1e293b', color: '#f8fafc', padding: '3px 7px', borderRadius: '4px', fontSize: '10px' }}>{n}</span>
-                                       ))}
-                                     </div>
-                                   </div>
-                                 )}
-                                <div className="mt-3 pt-3 border-t border-slate-700 px-2">
-                                  <p className="text-xs text-slate-400 mb-1">התשובה הפופולרית:</p>
-                                  <p className="text-cyan-300 font-bold text-sm">{qStat.mostPopular.answer}</p>
-                                  <p className="text-slate-400 text-xs">{qStat.mostPopular.count} תשובות ({qStat.mostPopular.percentage}%)</p>
-                                  {hasActualResult && <div className="mt-2 p-2 rounded" style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)' }}><p className="text-yellow-300 font-bold text-xs">⭐ תוצאת אמת: {q.actual_result}</p></div>}
-                                  <p className="text-slate-500 text-xs mt-2">גיוון: {qStat.diversity} תשובות שונות</p>
-                                </div>
-                              </>
-                            ) : <div className="text-center py-8 text-slate-500">אין נתונים</div>}
-                          </CardContent>
-                        </Card>
-                      );
-                    })}
+                  <>
+                    <Button onClick={() => { setEditedPredictions({}); setIsEditMode(false); }} variant="outline" size="sm" style={{ borderColor: 'rgba(148, 163, 184, 0.5)', color: '#94a3b8', background: 'rgba(255,255,255,0.04)' }} className="hover:bg-slate-500/20" disabled={savingChanges}>ביטול</Button>
+                    <Button onClick={handleSaveChanges} size="sm" disabled={Object.keys(editedPredictions).length === 0 || savingChanges} style={{ background: Object.keys(editedPredictions).length > 0 ? 'linear-gradient(135deg, var(--tp) 0%, var(--tp) 100%)' : 'rgba(71, 85, 105, 0.5)', color: Object.keys(editedPredictions).length > 0 ? 'white' : '#64748b' }}>
+                      {savingChanges ? <><Loader2 className="w-4 h-4 animate-spin ml-1.5" />שומר...</> : <><Save className="w-4 h-4 ml-1.5" />שמור {Object.keys(editedPredictions).length > 0 && `(${Object.keys(editedPredictions).length})`}</>}
+                    </Button>
+                  </>
+                )
+              )}
+              {isAdmin && (
+                <>
+                  <Button onClick={handleExportData} disabled={exporting} variant="outline" size="sm" style={{ borderColor: 'rgba(34, 197, 94, 0.5)', color: '#86efac', background: 'rgba(255,255,255,0.04)' }} className="hover:bg-green-500/20">
+                    {exporting ? <><Loader2 className="w-4 h-4 ml-1.5 animate-spin" />מייצא...</> : <><Download className="w-4 h-4 ml-1.5" />ייצוא</>}
+                  </Button>
+                  <Button onClick={() => { loadParticipantStats(); setShowDeleteDialog(true); }} variant="outline" size="sm" style={{ borderColor: 'rgba(239, 68, 68, 0.5)', color: '#fca5a5', background: 'rgba(255,255,255,0.04)' }} className="hover:bg-red-500/20">
+                    <Trash2 className="w-4 h-4 ml-1.5" />ניהול
+                  </Button>
+                </>
+              )}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+            <Card style={{ background: 'var(--bg3-60)', border: '1px solid var(--tp-20)', backdropFilter: 'blur(10px)' }}>
+              <CardContent className="p-3 flex items-center gap-3">
+                <span className="text-sm font-medium" style={{ color: 'var(--tp)' }}>משתתף:</span>
+                <Select onValueChange={setSelectedParticipant} value={selectedParticipant || ''}>
+                  <SelectTrigger className="w-48 h-8 text-sm" style={{ background: 'rgba(0,0,0,0.35)', border: '1px solid var(--tp-30)', color: '#f8fafc' }}>
+                    <SelectValue placeholder="בחר שם..." />
+                  </SelectTrigger>
+                  <SelectContent style={{ background: 'var(--bg2)', border: '1px solid var(--tp-30)' }}>
+                    {allParticipants.map(p => (
+                      <SelectItem key={p} value={p} style={{ color: '#f8fafc' }}>{p}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </CardContent>
+            </Card>
+
+            {selectedParticipant && (
+              <Card style={{ background: 'var(--bg3-60)', border: '1px solid var(--tp-20)', backdropFilter: 'blur(10px)' }}>
+                <CardContent className="p-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm font-medium" style={{ color: 'var(--tp)' }}>פרטי המשתתף</span>
+                    <ParticipantTotalScore participantName={selectedParticipant} gameId={currentGame?.id} />
+                  </div>
+                  {participantQuestions.length > 0 && (
+                    <div className="grid grid-cols-3 gap-2">
+                      {participantQuestions.map(q => { const isNameField = q.question_text?.includes("שם"); const displayValue = isNameField ? selectedParticipant : (participantDetails[q.id] || '-'); return (<div key={q.id} className="text-right"><label className="text-xs font-medium mb-1 block" style={{ color: '#94a3b8' }}>{q.question_text}</label><div className="rounded-md px-2 py-1 text-sm text-right" style={{ background: 'rgba(0,0,0,0.35)', border: '1px solid var(--tp-20)' }}><span style={{ color: '#f8fafc' }}>{displayValue}</span></div></div>); })}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+          </div>
+
+          {loadingPredictions && (<div className="flex items-center justify-center py-3 mt-3"><Loader2 className="w-5 h-5 animate-spin ml-2" style={{ color: 'var(--tp)' }} /><span style={{ color: 'var(--tp)' }}>טוען ניחושים...</span></div>)}
+        </div>
+      </div>
+
+      {/* ===== BODY: SIDEBAR + CONTENT ===== */}
+      <div className="flex max-w-7xl mx-auto" style={{ alignItems: 'flex-start' }}>
+
+        {/* Desktop sidebar */}
+        {selectedParticipant && !loadingPredictions && hasStages && (
+          <aside className="hidden md:block flex-shrink-0 p-4" style={{ width: '260px', position: 'sticky', top: '70px', alignSelf: 'flex-start', maxHeight: 'calc(100vh - 80px)', overflowY: 'auto' }}>
+            {renderStageSidebar(allButtons, openSections, toggleSection)}
+          </aside>
+        )}
+
+        {/* Main content */}
+        <main className="flex-1 min-w-0 p-3 md:p-5">
+          {/* Mobile chips */}
+          {selectedParticipant && !loadingPredictions && hasStages && (
+            <div className="md:hidden mb-4">
+              {renderStageChips(allButtons, openSections, toggleSection)}
+            </div>
+          )}
+
+          {!selectedParticipant && !loadingPredictions && (
+            <Alert className="mt-2" style={{ background: 'var(--bg3-60)', border: '1px solid var(--tp-20)', color: '#f8fafc' }}>
+              <FileText className="w-4 h-4" style={{ color: 'var(--tp)' }} />
+              <AlertDescription style={{ color: '#94a3b8' }}>בחר משתתף כדי לראות את הניחושים שלו.</AlertDescription>
+            </Alert>
+          )}
+
+          {renderContent()}
+        </main>
+      </div>
+
+      {/* ===== DIALOGS ===== */}
+      {isAdmin && (
+        <>
+          <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+            <DialogContent className="max-w-2xl" dir="rtl" style={{ background: 'var(--bg2)', border: '1px solid var(--tp-30)' }}>
+              <DialogHeader>
+                <DialogTitle className="text-2xl font-bold flex items-center gap-2" style={{ color: '#f8fafc' }}><AlertTriangle className="w-6 h-6" style={{ color: '#ef4444' }} />ניהול משתתפים</DialogTitle>
+                <DialogDescription className="text-slate-300">לחץ על כפתור המחיקה כדי למחוק את כל הניחושים של משתתף.<strong className="text-red-300"> פעולה זו אינה הפיכה!</strong></DialogDescription>
+              </DialogHeader>
+              <div className="max-h-[60vh] overflow-y-auto">
+                {participantStats.length === 0 ? (<div className="text-center py-8 flex flex-col items-center justify-center"><Loader2 className="w-8 h-8 animate-spin mb-2" style={{ color: '#94a3b8' }} /><span style={{ color: '#94a3b8' }}>טוען נתונים...</span></div>) : (
+                  <div className="space-y-2">
+                    {participantStats.map(stat => (<div key={stat.name} className="flex items-center justify-between p-3 rounded-lg border hover:bg-slate-700/50" style={{ background: 'rgba(0,0,0,0.35)', border: '1px solid var(--tp-20)' }}><div><p className="font-medium" style={{ color: '#f8fafc' }}>{stat.name}</p><p className="text-sm" style={{ color: '#94a3b8' }}>{stat.predictionsCount} ניחושים</p></div><Button onClick={() => handleDeleteParticipant(stat.name)} disabled={deletingParticipant === stat.name} variant="destructive" size="sm">{deletingParticipant === stat.name ? <><Loader2 className="w-4 h-4 ml-2" />מוחק...</> : <><Trash2 className="w-4 h-4 ml-2" />מחק</>}</Button></div>))}
                   </div>
                 )}
               </div>
-            ))}
-          </div>
-        )}
-
-        {!selectedSection && (
-          <Card className="bg-slate-800/40 border-slate-700">
-            <CardContent className="p-12 text-center">
-              <PieChart className="w-20 h-20 text-slate-600 mx-auto mb-4" />
-              <p className="text-slate-400 text-lg">בחר שלב כדי לראות סטטיסטיקות מפורטות</p>
-            </CardContent>
-          </Card>
-        )}
-
-          </div> {/* end content */}
-        </div> {/* end flex */}
-      </div>
+            </DialogContent>
+          </Dialog>
+        </>
+      )}
     </div>
   );
 }
