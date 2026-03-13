@@ -174,24 +174,13 @@ export default function ViewSubmissions() {
       if (!selectedParticipant || !currentGame) { setData(prev => ({ ...prev, predictions: [] })); setEditedPredictions({}); setIsEditMode(false); return; }
       setLoadingPredictions(true);
       try {
-        // 🔥 עימוד — ללא מגבלת 1000
-        const PAGE = 1000;
-        let allPreds = [], from = 0, keepGoing = true, iter = 0;
-        while (keepGoing && iter < 20) {
-          const { data: chunk, error: chunkErr } = await supabase
-            .from("game_predictions")
-            .select("*")
-            .eq("game_id", currentGame.id)
-            .eq("participant_name", selectedParticipant)
-            .range(from, from + PAGE - 1)
-            .order("created_at", { ascending: true });
-          if (chunkErr || !chunk || chunk.length === 0) break;
-          allPreds = allPreds.concat(chunk);
-          keepGoing = chunk.length === PAGE;
-          from += PAGE;
-          iter++;
-        }
-        setData(prev => ({ ...prev, predictions: allPreds })); setEditedPredictions({}); setIsEditMode(false);
+        // 🔥 Prediction.filter() עובד עם auth ועם entities — כל משתתף < 500 ניחושים
+        const predictions = await Prediction.filter(
+          { participant_name: selectedParticipant, game_id: currentGame.id },
+          "created_at",
+          5000
+        );
+        setData(prev => ({ ...prev, predictions })); setEditedPredictions({}); setIsEditMode(false);
       } catch (error) { console.error("Error loading participant predictions:", error); }
       setLoadingPredictions(false);
     };
@@ -374,7 +363,18 @@ export default function ViewSubmissions() {
       return (<div className="flex items-center gap-2"><input type="text" value={valueForInput} onChange={(e) => handlePredictionEdit(question.id, e.target.value)} className="rounded-md px-3 py-2 min-w-[120px] h-10" style={{ background: 'rgba(0,0,0,0.35)', border: '1px solid var(--tp-30)', color: '#f8fafc' }} /><Badge className="bg-slate-600 text-slate-300 text-xs px-1.5 py-0.5 min-w-[45px] justify-center">?/{maxScore}</Badge></div>);
     }
 
-    if (!hasValue) return (<div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}><div className={`rounded-md px-2 py-2 ${boxWidth} flex items-center gap-1`} style={{ background: 'rgba(0,0,0,0.35)', border: '1px solid var(--tp-20)' }}><span style={{ color: '#94a3b8', fontSize: isQuestion11_1 ? '0.65rem' : '0.875rem' }}>-</span></div><div className="w-12"></div></div>);
+    if (!hasValue) return (
+      <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
+        <div className={`rounded-md px-2 py-2 ${boxWidth} flex items-center gap-1`} style={{ background: 'rgba(0,0,0,0.35)', border: '1px solid var(--tp-20)' }}>
+          <span style={{ color: '#94a3b8', fontSize: isQuestion11_1 ? '0.65rem' : '0.875rem' }}>-</span>
+        </div>
+        {maxScore > 0 ? (
+          <Badge className="bg-slate-700 text-slate-400 text-xs px-1.5 py-0.5 min-w-[45px] justify-center">?/{maxScore}</Badge>
+        ) : (
+          <div className="w-12"></div>
+        )}
+      </div>
+    );
 
     const score = calculateQuestionScore(question, originalValue);
     // 🔥 Fixed: replaced yellow badge with blue for partial scores
@@ -396,13 +396,42 @@ export default function ViewSubmissions() {
     const sortedMainIds = Object.keys(grouped).sort((a, b) => Number(a) - Number(b));
     const renderTeamPrediction = (questionId, originalValue) => {
       const valueToDisplay = editedPredictions[questionId] !== undefined ? editedPredictions[questionId] : originalValue;
-      if (!valueToDisplay || valueToDisplay.trim() === '') return (<div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}><div className="rounded-md px-2 py-2 min-w-[135px] max-w-[140px] flex items-center gap-1" style={{ background: 'rgba(0,0,0,0.35)', border: '1px solid var(--tp-20)' }}><span style={{ color: '#94a3b8', fontSize: '0.875rem' }}>-</span></div><div className="w-12"></div></div>);
+      const q = questions.find(question => question.id === questionId);
+      const maxPts = getMaxPossibleScore(q || {});
+      if (!valueToDisplay || valueToDisplay.trim() === '') return (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
+          <div className="rounded-md px-2 py-2 min-w-[135px] max-w-[140px] flex items-center gap-1" style={{ background: 'rgba(0,0,0,0.35)', border: '1px solid var(--tp-20)' }}>
+            <span style={{ color: '#94a3b8', fontSize: '0.875rem' }}>-</span>
+          </div>
+          {maxPts > 0
+            ? <Badge className="bg-slate-700 text-slate-400 text-xs px-1.5 py-0.5 min-w-[45px] justify-center">?/{maxPts}</Badge>
+            : <div className="w-12"></div>
+          }
+        </div>
+      );
       const matchedName = findMatchedTeamName(valueToDisplay);
       const team = data.teams[matchedName];
-      const q = questions.find(question => question.id === questionId);
       const hasActualResult = q?.actual_result && q.actual_result.trim() !== '' && q.actual_result !== '__CLEAR__';
       const textColor = hasActualResult ? 'var(--tp)' : '#f8fafc';
-      return (<div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}><div className="rounded-md px-2 py-2 min-w-[135px] max-w-[140px] flex items-center gap-1" style={{ background: hasActualResult ? 'var(--tp-20)' : 'rgba(0,0,0,0.35)', border: hasActualResult ? '1px solid var(--tp)' : '1px solid var(--tp-20)', boxShadow: hasActualResult ? '0 0 10px var(--tp-40)' : 'none' }}>{team?.logo_url && <img src={team.logo_url} alt={matchedName} className="w-4 h-4 rounded-full flex-shrink-0" onError={(e) => e.target.style.display='none'} />}<span style={{ color: textColor, fontSize: '0.875rem', fontWeight: hasActualResult ? '700' : 'normal' }}>{matchedName}</span></div><Badge className="bg-slate-600 text-slate-300 text-xs px-1.5 py-0.5 min-w-[45px] justify-center">?/10</Badge></div>);
+      const score = q ? calculateQuestionScore(q, valueToDisplay) : null;
+      let badgeColor = 'bg-slate-600 text-slate-300';
+      if (score !== null) {
+        if (score === maxPts && maxPts > 0) badgeColor = 'bg-green-700 text-green-100';
+        else if (score === 0) badgeColor = 'bg-red-700 text-red-100';
+        else if (score > 0) badgeColor = 'bg-blue-700 text-blue-100';
+      }
+      return (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
+          <div className="rounded-md px-2 py-2 min-w-[135px] max-w-[140px] flex items-center gap-1" style={{ background: hasActualResult ? 'var(--tp-20)' : 'rgba(0,0,0,0.35)', border: hasActualResult ? '1px solid var(--tp)' : '1px solid var(--tp-20)', boxShadow: hasActualResult ? '0 0 10px var(--tp-40)' : 'none' }}>
+            {team?.logo_url && <img src={team.logo_url} alt={matchedName} className="w-4 h-4 rounded-full flex-shrink-0" onError={(e) => e.target.style.display='none'} />}
+            <span style={{ color: textColor, fontSize: '0.875rem', fontWeight: hasActualResult ? '700' : 'normal' }}>{matchedName}</span>
+          </div>
+          {score !== null
+            ? <Badge className={`${badgeColor} text-xs font-bold px-1.5 py-0.5 min-w-[45px] justify-center`}>{score}/{maxPts}</Badge>
+            : <Badge className="bg-slate-700 text-slate-400 text-xs px-1.5 py-0.5 min-w-[45px] justify-center">?/{maxPts}</Badge>
+          }
+        </div>
+      );
     };
     return (
       <Card className="bg-slate-800/40 border-slate-700 shadow-lg shadow-slate-900/20">
