@@ -726,7 +726,7 @@ export default function ViewSubmissions() {
       special:    { label: '✨ מיוחדות',    color: '#8b5cf6', bg: 'rgba(139,92,246,0.10)',  border: 'rgba(139,92,246,0.30)',  activeBg: '#7c3aed',     activeShadow: '0 2px 10px rgba(139,92,246,0.44)'  },
       qualifiers: { label: '📋 עולות',      color: '#f97316', bg: 'rgba(249,115,22,0.10)',   border: 'rgba(249,115,22,0.30)',   activeBg: '#ea580c',     activeShadow: '0 2px 10px rgba(249,115,22,0.44)'   },
       rounds:     { label: '⚽ מחזורים',    color: 'var(--tp)', bg: 'var(--tp-10)', border: 'var(--tp-30)', activeBg: 'var(--tp-dark)', activeShadow: 'var(--tp-glow-sm)' },
-    }};
+    };
     const grouped = {};
     allButtonsList.forEach(btn => {
       let type = btn.stageType;
@@ -770,7 +770,7 @@ export default function ViewSubmissions() {
       rounds:     { label: '⚽ מחזורים',    color: 'var(--tp)', bg: 'var(--tp-10)', border: 'var(--tp-30)', activeBg: 'var(--tp-dark)', activeShadow: 'var(--tp-glow-sm)'                  },
       special:    { label: '✨ מיוחדות',    color: '#8b5cf6',  bg: 'rgba(139,92,246,0.10)',   border: 'rgba(139,92,246,0.30)',   activeBg: '#7c3aed',     activeShadow: '0 2px 10px rgba(139,92,246,0.44)'  },
       qualifiers: { label: '📋 עולות',      color: '#f97316',  bg: 'rgba(249,115,22,0.10)',   border: 'rgba(249,115,22,0.30)',   activeBg: '#ea580c',     activeShadow: '0 2px 10px rgba(249,115,22,0.44)'  },
-    }};
+    };
     return (
       <div style={{ padding: '12px', background: 'rgba(0,0,0,0.40)', borderRadius: '12px', border: '1px solid var(--tp-12)', marginBottom: '16px' }}>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
