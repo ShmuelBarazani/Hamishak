@@ -512,25 +512,6 @@ export default function ViewSubmissions() {
       <div style={{ background: "var(--bg3-60)", border: "1px solid rgba(249,115,22,0.3)", borderRadius: "12px", padding: "16px", backdropFilter: "blur(10px)" }}>
         <h3 className="text-right font-bold text-base mb-3" style={{ color: "#f97316" }}>📋 {table.description}</h3>
 
-        {cfg && (
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 14px", borderRadius: "8px", marginBottom: "10px", background: stageBonusEarned ? "rgba(16,185,129,0.12)" : "rgba(234,179,8,0.08)", border: `1px solid ${stageBonusEarned ? "rgba(16,185,129,0.45)" : "rgba(234,179,8,0.35)"}` }}>
-            <div className="flex items-center gap-2">
-              <span style={{ fontSize: "1rem" }}>🏆</span>
-              <div>
-                <p style={{ fontSize: "0.78rem", fontWeight: "700", color: stageBonusEarned ? "#6ee7b7" : "#fde68a" }}>
-                  {stageBonusEarned ? "✅ בונוס שלב!" : "🏆 בונוס שלב"}
-                </p>
-                <p style={{ fontSize: "0.70rem", color: "#94a3b8" }}>
-                  {stageBonusEarned ? `כל ${advCount} הקבוצות נכונות!` : allResultsIn ? `פגיעה בכל ${advCount} → +${cfg.bonus} נק'` : "ממתין לתוצאות..."}
-                </p>
-              </div>
-            </div>
-            <Badge style={{ fontSize: "0.95rem", fontWeight: "800", padding: "4px 12px", background: stageBonusEarned ? "#059669" : allResultsIn ? "#dc2626" : "rgba(100,116,139,0.3)", color: "#fff", border: stageBonusEarned ? "1px solid #10b981" : allResultsIn ? "1px solid #ef4444" : "1px solid rgba(100,116,139,0.4)" }}>
-              {stageBonusEarned ? `+${cfg.bonus}` : allResultsIn ? `0/${cfg.bonus}` : `?/${cfg.bonus}`}
-            </Badge>
-          </div>
-        )}
-
         {totalPossible > 0 && (
           <div style={{ textAlign: "left", marginBottom: "8px" }}>
             <span style={{ fontSize: "0.72rem", color: "#94a3b8" }}>
@@ -574,6 +555,39 @@ export default function ViewSubmissions() {
             );
           })}
         </div>
+
+        {cfg && (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 16px", borderRadius: "8px", marginTop: "14px",
+            background: stageBonusEarned ? "linear-gradient(90deg,rgba(16,185,129,0.18),rgba(5,150,105,0.10))" : allResultsIn ? "linear-gradient(90deg,rgba(239,68,68,0.15),rgba(185,28,28,0.08))" : "linear-gradient(90deg,rgba(234,179,8,0.10),rgba(180,130,0,0.06))",
+            border: `1px solid ${stageBonusEarned ? "rgba(16,185,129,0.50)" : allResultsIn ? "rgba(239,68,68,0.45)" : "rgba(234,179,8,0.40)"}` }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+              <span style={{ fontSize: "1.3rem" }}>{stageBonusEarned ? "✅" : allResultsIn ? "❌" : "⏳"}</span>
+              <div>
+                <p style={{ fontSize: "0.82rem", fontWeight: "700", margin: 0,
+                  color: stageBonusEarned ? "#6ee7b7" : allResultsIn ? "#fca5a5" : "#fde68a" }}>
+                  {stageBonusEarned ? "בונוס שלב — הושג!" : allResultsIn ? "בונוס שלב — לא הושג" : "בונוס שלב — ממתין לתוצאות"}
+                </p>
+                <p style={{ fontSize: "0.70rem", color: "#94a3b8", margin: 0 }}>
+                  {stageBonusEarned
+                    ? `כל ${advCount} הקבוצות נכונות — +${cfg.bonus} נקודות!`
+                    : allResultsIn
+                      ? `נדרש לנחש נכון את כל ${advCount} הקבוצות`
+                      : `פגיעה בכל ${advCount} הקבוצות = +${cfg.bonus} נקודות בונוס`}
+                </p>
+              </div>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+              <span style={{ fontSize: "0.70rem", color: "#64748b" }}>בונוס</span>
+              <Badge style={{ fontSize: "1.05rem", fontWeight: "800", padding: "5px 14px",
+                background: stageBonusEarned ? "linear-gradient(135deg,#059669,#047857)" : allResultsIn ? "linear-gradient(135deg,#dc2626,#b91c1c)" : "rgba(100,116,139,0.35)",
+                color: "#fff",
+                border: stageBonusEarned ? "1px solid #10b981" : allResultsIn ? "1px solid #ef4444" : "1px solid rgba(100,116,139,0.5)",
+                boxShadow: stageBonusEarned ? "0 0 12px rgba(16,185,129,0.4)" : "none" }}>
+                {stageBonusEarned ? `+${cfg.bonus}` : allResultsIn ? `0/${cfg.bonus}` : `?/${cfg.bonus}`}
+              </Badge>
+            </div>
+          </div>
+        )}
       </div>
     );
   };
@@ -746,7 +760,68 @@ export default function ViewSubmissions() {
     return allButtons.map(button => {
       if (!openSections[button.sectionKey]) return null;
       if (button.sectionKey === 'rounds') return (<div key="rounds-section" className="mb-6 space-y-6"><div className="grid grid-cols-1 md:grid-cols-2 gap-6">{roundTables.map(table => (<RoundTableReadOnly key={table.id} table={table} teams={data.teams} predictions={getCombinedPredictionsMap()} isEditMode={isEditMode && isAdmin} handlePredictionEdit={handlePredictionEdit} />))}</div><StandingsTable roundTables={roundTables} teams={data.teams} data={getCombinedPredictionsMap()} type="predictions" /></div>);
-      if (button.sectionKey.startsWith('round_')) { const tableId = button.sectionKey.replace('round_', ''); const table = roundTables.find(t => t.id === tableId); if (!table) return null; return (<div key={button.sectionKey} className="mb-6"><RoundTableReadOnly key={table.id} table={table} teams={data.teams} predictions={getCombinedPredictionsMap()} isEditMode={isEditMode && isAdmin} handlePredictionEdit={handlePredictionEdit} />{table.specialQuestions && table.specialQuestions.length > 0 && (<div className="mt-4">{renderSpecialQuestions({ ...table, questions: table.specialQuestions })}</div>)}</div>); }
+      if (button.sectionKey.startsWith('round_')) {
+        const tableId = button.sectionKey.replace('round_', '');
+        const table = roundTables.find(t => t.id === tableId);
+        if (!table) return null;
+
+        // ── T3 בונוס שלב (שמינית הגמר) ──
+        let t3BonusBanner = null;
+        if (tableId === 'T3' && selectedParticipant) {
+          const t3Qs = table.questions || [];
+          const allHaveResults = t3Qs.length > 0 && t3Qs.every(q => q.actual_result && q.actual_result.trim() !== '' && q.actual_result !== '__CLEAR__');
+          const predMap = getCombinedPredictionsMap();
+          const allScored = allHaveResults && t3Qs.every(q => {
+            const pred = predMap[q.id];
+            if (!pred) return false;
+            const sc = calculateQuestionScore(q, pred, t3Qs, predMap);
+            return sc !== null && sc > 0;
+          });
+          const bonusEarned = allHaveResults && allScored;
+          t3BonusBanner = (
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 16px", borderRadius: "8px", marginTop: "14px",
+              background: bonusEarned ? "linear-gradient(90deg,rgba(16,185,129,0.18),rgba(5,150,105,0.10))" : allHaveResults ? "linear-gradient(90deg,rgba(239,68,68,0.15),rgba(185,28,28,0.08))" : "linear-gradient(90deg,rgba(234,179,8,0.10),rgba(180,130,0,0.06))",
+              border: `1px solid ${bonusEarned ? "rgba(16,185,129,0.50)" : allHaveResults ? "rgba(239,68,68,0.45)" : "rgba(234,179,8,0.40)"}` }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                <span style={{ fontSize: "1.3rem" }}>{bonusEarned ? "✅" : allHaveResults ? "❌" : "⏳"}</span>
+                <div>
+                  <p style={{ fontSize: "0.82rem", fontWeight: "700", margin: 0,
+                    color: bonusEarned ? "#6ee7b7" : allHaveResults ? "#fca5a5" : "#fde68a" }}>
+                    {bonusEarned ? "בונוס שלב — הושג!" : allHaveResults ? "בונוס שלב — לא הושג" : "בונוס שלב — ממתין לתוצאות"}
+                  </p>
+                  <p style={{ fontSize: "0.70rem", color: "#94a3b8", margin: 0 }}>
+                    {bonusEarned
+                      ? "ניקוד בכל משחקי השמינית — +16 נקודות!"
+                      : allHaveResults
+                        ? "נדרש ניקוד (כלשהו) בכל משחקי השמינית"
+                        : "ניקוד בכל משחקי השמינית = +16 נקודות בונוס"}
+                  </p>
+                </div>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                <span style={{ fontSize: "0.70rem", color: "#64748b" }}>בונוס</span>
+                <Badge style={{ fontSize: "1.05rem", fontWeight: "800", padding: "5px 14px",
+                  background: bonusEarned ? "linear-gradient(135deg,#059669,#047857)" : allHaveResults ? "linear-gradient(135deg,#dc2626,#b91c1c)" : "rgba(100,116,139,0.35)",
+                  color: "#fff",
+                  border: bonusEarned ? "1px solid #10b981" : allHaveResults ? "1px solid #ef4444" : "1px solid rgba(100,116,139,0.5)",
+                  boxShadow: bonusEarned ? "0 0 12px rgba(16,185,129,0.4)" : "none" }}>
+                  {bonusEarned ? "+16" : allHaveResults ? "0/16" : "?/16"}
+                </Badge>
+              </div>
+            </div>
+          );
+        }
+
+        return (
+          <div key={button.sectionKey} className="mb-6">
+            <RoundTableReadOnly key={table.id} table={table} teams={data.teams} predictions={getCombinedPredictionsMap()} isEditMode={isEditMode && isAdmin} handlePredictionEdit={handlePredictionEdit} />
+            {t3BonusBanner}
+            {table.specialQuestions && table.specialQuestions.length > 0 && (
+              <div className="mt-4">{renderSpecialQuestions({ ...table, questions: table.specialQuestions })}</div>
+            )}
+          </div>
+        );
+      }
       if (button.sectionKey.startsWith('qual_')) { const tableId = button.sectionKey.replace('qual_', ''); const table = qualifiersTables.find(t => t.id === tableId); if (!table) return null; return (<div key={button.sectionKey} className="mb-6">{renderQualifiersTable(table)}</div>); }
       if (button.sectionKey === 'israeli' && israeliTable) return (<div key="israeli-section" className="mb-6"><RoundTableReadOnly table={israeliTable} teams={data.teams} predictions={getCombinedPredictionsMap()} isEditMode={isEditMode && isAdmin} handlePredictionEdit={handlePredictionEdit} /></div>);
       if (button.sectionKey === 'locations') return (<div key="locations-section" className="mb-6 grid grid-cols-1 md:grid-cols-2 gap-6">{locationTables.map(table => <div key={table.id}>{renderSpecialQuestions(table)}</div>)}</div>);
