@@ -600,16 +600,17 @@ export default function AdminResults() {
   // ── Stage chips (mobile) ──────────────────────────────────────────────────
   const renderStageChips = (buttons) => {
     const groupMap = {
-      playoff:    { label: '⚽ פלייאוף',   color: '#3b82f6',  bg: 'rgba(59,130,246,0.10)',   border: 'rgba(59,130,246,0.30)',   activeBg: '#2563eb',     activeShadow: '0 2px 10px rgba(59,130,246,0.44)'  },
-      league:     { label: '⚽ ליגה',       color: '#3b82f6',  bg: 'rgba(59,130,246,0.10)',   border: 'rgba(59,130,246,0.30)',   activeBg: '#2563eb',     activeShadow: '0 2px 10px rgba(59,130,246,0.44)'  },
-      groups:     { label: '🏠 בתים',       color: 'var(--tp)', bg: 'var(--tp-10)', border: 'var(--tp-30)', activeBg: 'var(--tp-dark)', activeShadow: 'var(--tp-glow-sm)'                  },
-      rounds:     { label: '⚽ מחזורים',    color: 'var(--tp)', bg: 'var(--tp-10)', border: 'var(--tp-30)', activeBg: 'var(--tp-dark)', activeShadow: 'var(--tp-glow-sm)'                  },
-      special:    { label: '✨ מיוחדות',    color: '#8b5cf6',  bg: 'rgba(139,92,246,0.10)',   border: 'rgba(139,92,246,0.30)',   activeBg: '#7c3aed',     activeShadow: '0 2px 10px rgba(139,92,246,0.44)'  },
-      qualifiers: { label: '📋 עולות',      color: '#f97316',  bg: 'rgba(249,115,22,0.10)',   border: 'rgba(249,115,22,0.30)',   activeBg: '#ea580c',     activeShadow: '0 2px 10px rgba(249,115,22,0.44)'  },
-    }};
+      playoff:    { label: '⚽ פלייאוף',    color: '#3b82f6', bg: 'rgba(59,130,246,0.12)',  border: 'rgba(59,130,246,0.35)',  activeBg: '#2563eb' },
+      league:     { label: '⚽ ליגה',        color: '#3b82f6', bg: 'rgba(59,130,246,0.12)',  border: 'rgba(59,130,246,0.35)',  activeBg: '#2563eb' },
+      groups:     { label: '🏠 בתים',        color: 'var(--tp)', bg: 'var(--tp-12)', border: 'var(--tp-35)', activeBg: 'var(--tp-dark)' },
+      rounds:     { label: '⚽ מחזורים',     color: 'var(--tp)', bg: 'var(--tp-12)', border: 'var(--tp-35)', activeBg: 'var(--tp-dark)' },
+      special:    { label: '✨ מיוחדות',     color: '#8b5cf6', bg: 'rgba(139,92,246,0.12)', border: 'rgba(139,92,246,0.35)', activeBg: '#7c3aed' },
+      qualifiers: { label: '📋 עולות',       color: '#f97316', bg: 'rgba(249,115,22,0.12)',  border: 'rgba(249,115,22,0.35)',  activeBg: '#ea580c' },
+      other:      { label: '📌 נוסף',        color: '#64748b', bg: 'rgba(100,116,139,0.10)', border: 'rgba(100,116,139,0.25)', activeBg: '#475569' },
+    };
     const grouped = {};
     buttons.forEach(btn => { const t = btn.stageType || 'special'; if (!grouped[t]) grouped[t] = []; grouped[t].push(btn); });
-    const order = ['rounds','league','groups','playoff','special','qualifiers'];
+    const order = ['playoff','league','groups','rounds','special','qualifiers','other'];
     return (
       <div style={{ padding: '14px 12px', background: 'rgba(0,0,0,0.40)', borderRadius: '12px', border: '1px solid var(--tp-12)', marginBottom: '16px' }}>
         <div style={{ fontSize: '0.6rem', fontWeight: '700', letterSpacing: '0.12em', textTransform: 'uppercase', color: '#475569', marginBottom: '10px' }}>בחירת שלב</div>
@@ -658,15 +659,15 @@ export default function AdminResults() {
   });
   specialTables.forEach(t => {
     const st = t.questions[0]?.stage_type;
-    const stageType = st && ['playoff','groups','rounds','league','qualifiers','special'].includes(st) ? st : 'special';
+    const stageType = st && ['playoff','groups','rounds','league','qualifiers','other'].includes(st) ? st : 'special';
     allButtons.push({ numericId: t.stage_order || parseInt(t.id.replace('T','').replace(/\D/g,''))||0, stageType, key: t.id, description: t.description, sectionKey: t.id });
   });
   // מיקומים → קבוצת עולות (כתום)
-  if (locationTables.length > 0) allButtons.push({ numericId: 99, stageType: 'qualifiers', key: 'locations', description: 'מיקומים', stageType: 'qualifiers', sectionKey: 'locations' });
-  if (israeliTable) allButtons.push({ numericId: parseInt(israeliTable.id.replace('T','')||'0'), stageType: 'playoff', key: israeliTable.id, description: israeliTable.description, sectionKey: 'israeli' });
+  if (locationTables.length > 0) allButtons.push({ numericId: 99, stageType: 'qualifiers', key: 'locations', description: 'מיקומים', sectionKey: 'locations' });
+  if (israeliTable) allButtons.push({ numericId: parseInt(israeliTable.id.replace('T','')||'0'), stageType: israeliTable.questions?.[0]?.stage_type || 'special', key: israeliTable.id, description: israeliTable.description, sectionKey: 'israeli' });
   if (playoffWinnersTable) allButtons.push({ numericId: parseInt(playoffWinnersTable.id.replace('T','')||'0'), stageType: 'qualifiers', key: playoffWinnersTable.id, description: playoffWinnersTable.description, sectionKey: 'playoffWinners' });
   allButtons.sort((a, b) => {
-    const order = ['rounds','league','groups','playoff','special','qualifiers'];
+    const order = ['rounds','league','groups','playoff','special','qualifiers','other'];
     const ai = order.indexOf(a.stageType), bi = order.indexOf(b.stageType);
     if (ai !== bi) return ai - bi;
     return a.numericId - b.numericId;
@@ -680,10 +681,11 @@ export default function AdminResults() {
       rounds:     { label: '⚽ מחזורים',    color: 'var(--tp)', bg: 'var(--tp-10)', border: 'var(--tp-30)', activeBg: 'var(--tp-dark)', activeShadow: 'var(--tp-glow-sm)' },
       special:    { label: '✨ מיוחדות',    color: '#8b5cf6',  bg: 'rgba(139,92,246,0.10)', border: 'rgba(139,92,246,0.30)', activeBg: '#7c3aed',  activeShadow: '0 2px 10px rgba(139,92,246,0.44)' },
       qualifiers: { label: '📋 עולות',      color: '#f97316',  bg: 'rgba(249,115,22,0.10)', border: 'rgba(249,115,22,0.30)', activeBg: '#ea580c',  activeShadow: '0 2px 10px rgba(249,115,22,0.44)' },
-    }};
+      other:      { label: '📌 נוסף',       color: '#64748b',  bg: 'rgba(100,116,139,0.08)', border: 'rgba(100,116,139,0.20)', activeBg: '#475569', activeShadow: '0 2px 8px rgba(100,116,139,0.30)' },
+    };
     const grouped = {};
-    allButtons.forEach(btn => { const t = btn.stageType || 'special'; if (!grouped[t]) grouped[t] = []; grouped[t].push(btn); });
-    const order = ['rounds','league','groups','playoff','special','qualifiers'];
+    allButtons.forEach(btn => { const t = btn.stageType || 'other'; if (!grouped[t]) grouped[t] = []; grouped[t].push(btn); });
+    const order = ['rounds','league','groups','playoff','special','qualifiers','other'];
     return (
       <aside style={{ width: '260px', flexShrink: 0, position: 'sticky', top: '70px', alignSelf: 'flex-start', maxHeight: 'calc(100vh - 90px)', overflowY: 'auto', paddingBottom: '16px' }}>
         <div style={{ background: 'rgba(13,18,30,0.9)', borderRadius: '12px', border: '1px solid var(--tp-12)', padding: '14px 10px', backdropFilter: 'blur(10px)' }}>
