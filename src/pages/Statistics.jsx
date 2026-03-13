@@ -157,6 +157,9 @@ export default function ViewSubmissions() {
         const detectedLocationTables = Object.values(sTables).filter(t => isLocationTable(t))
           .sort((a,b) => (parseInt(a.id.replace('T','')) || 0) - (parseInt(b.id.replace('T','')) || 0));
         const detectedLocationIds = new Set(detectedLocationTables.map(t => t.id));
+        console.log('[ViewSubmissions] sTables keys:', Object.keys(sTables));
+        console.log('[ViewSubmissions] detectedLocationTables:', detectedLocationTables.map(t => ({ id: t.id, desc: t.description, stageType: t.questions[0]?.stage_type })));
+        console.log('[ViewSubmissions] allSTables stageTypes:', Object.values(sTables).map(t => ({ id: t.id, desc: t.description?.slice(0,30), stageType: t.questions[0]?.stage_type })));
         setLocationTables(detectedLocationTables);
         const t19Table = sTables['T19']; setPlayoffWinnersTable(t19Table || null);
         const allSpecialTables = Object.values(sTables).filter(table => {
@@ -744,7 +747,7 @@ export default function ViewSubmissions() {
                 {grouped[type].map(button => {
                   const active = openSectionsMap[button.sectionKey];
                   return (
-                    <button key={button.key} onClick={() => toggleSectionFn(button.sectionKey)} style={{ display: 'block', width: '100%', textAlign: 'right', padding: '7px 10px', borderRadius: '8px', fontSize: '0.8rem', fontWeight: active ? '700' : '400', color: active ? 'white' : info.color, background: active ? info.activeBg : info.bg, border: `1px solid ${active ? info.color : info.border}`, cursor: 'pointer', transition: 'all 0.15s', boxShadow: active ? (info.activeShadow || `0 2px 10px ${info.color}44`) : 'none', fontFamily: 'Rubik, Heebo, sans-serif', lineHeight: '1.35' }}>
+                    <button key={button.key} onClick={() => toggleSectionFn(button.sectionKey)} style={{ display: 'block', width: '100%', textAlign: 'right', padding: '7px 10px', borderRadius: '8px', fontSize: '0.72rem', fontWeight: active ? '700' : '400', color: active ? 'white' : info.color, background: active ? info.activeBg : info.bg, border: `1px solid ${active ? info.color : info.border}`, cursor: 'pointer', transition: 'all 0.15s', boxShadow: active ? (info.activeShadow || `0 2px 10px ${info.color}44`) : 'none', fontFamily: 'Rubik, Heebo, sans-serif', lineHeight: '1.3' }}>
                       {button.description}
                     </button>
                   );
@@ -945,7 +948,7 @@ export default function ViewSubmissions() {
 
         {/* Desktop sidebar */}
         {selectedParticipant && !loadingPredictions && hasStages && (
-          <aside className="hidden md:block flex-shrink-0 p-4" style={{ width: '215px', position: 'sticky', top: '70px', alignSelf: 'flex-start', maxHeight: 'calc(100vh - 80px)', overflowY: 'auto' }}>
+          <aside className="hidden md:block flex-shrink-0 p-4" style={{ width: '260px', position: 'sticky', top: '70px', alignSelf: 'flex-start', maxHeight: 'calc(100vh - 80px)', overflowY: 'auto' }}>
             {renderStageSidebar(allButtons, openSections, toggleSection)}
           </aside>
         )}
