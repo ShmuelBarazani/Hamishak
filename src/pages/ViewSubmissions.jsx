@@ -171,16 +171,32 @@ export default function ViewSubmissions() {
 
   useEffect(() => {
     const loadParticipantPredictions = async () => {
-      if (!selectedParticipant) { setData(prev => ({ ...prev, predictions: [] })); setEditedPredictions({}); setIsEditMode(false); return; }
+      if (!selectedParticipant || !currentGame) { setData(prev => ({ ...prev, predictions: [] })); setEditedPredictions({}); setIsEditMode(false); return; }
       setLoadingPredictions(true);
       try {
-        const predictions = await Prediction.filter({ participant_name: selectedParticipant, game_id: currentGame.id }, null, 10000);
-        setData(prev => ({ ...prev, predictions })); setEditedPredictions({}); setIsEditMode(false);
+        // 🔥 עימוד — ללא מגבלת 1000
+        const PAGE = 1000;
+        let allPreds = [], from = 0, keepGoing = true, iter = 0;
+        while (keepGoing && iter < 20) {
+          const { data: chunk, error: chunkErr } = await supabase
+            .from("game_predictions")
+            .select("*")
+            .eq("game_id", currentGame.id)
+            .eq("participant_name", selectedParticipant)
+            .range(from, from + PAGE - 1)
+            .order("created_at", { ascending: true });
+          if (chunkErr || !chunk || chunk.length === 0) break;
+          allPreds = allPreds.concat(chunk);
+          keepGoing = chunk.length === PAGE;
+          from += PAGE;
+          iter++;
+        }
+        setData(prev => ({ ...prev, predictions: allPreds })); setEditedPredictions({}); setIsEditMode(false);
       } catch (error) { console.error("Error loading participant predictions:", error); }
       setLoadingPredictions(false);
     };
     loadParticipantPredictions();
-  }, [selectedParticipant, currentUser]);
+  }, [selectedParticipant, currentUser, currentGame]);
 
   const participantPredictions = useMemo(() => {
     if (!selectedParticipant) return {};
@@ -429,25 +445,105 @@ export default function ViewSubmissions() {
     );
   };
 
+  // ── קונפיג לטבלאות עולות ─────────────────────────────────────────────────
+  const ADVANCING_CONFIG_VS = { T4: { count: 8, bonus: 16 }, T5: { count: 4, bonus: 12 }, T6: { count: 2, bonus: 6 } };
+
   const renderQualifiersTable = (table) => {
-    const questions = table.questions || [];
+    const cfg = ADVANCING_CONFIG_VS[table.id];
+    const advCount = cfg ? cfg.count : 999;
+
+    const seenIds = new Set();
+    const slots = (table.questions || [])
+      .filter(q => {
+        const n = parseFloat(q.question_id);
+        if (!Number.isInteger(n) || n < 1 || n > advCount) return false;
+        if (seenIds.has(n)) return false;
+        seenIds.add(n);
+        return true;
+      })
+      .sort((a, b) => parseFloat(a.question_id) - parseFloat(b.question_id));
+
+    const actualSet = new Set(
+      slots.filter(q => q.actual_result && q.actual_result !== "__CLEAR__")
+           .map(q => q.actual_result.trim().toLowerCase())
+    );
+    const allResultsIn = slots.length > 0 && slots.every(q => q.actual_result && q.actual_result !== "__CLEAR__");
+
+    let stageBonusEarned = false;
+    if (selectedParticipant && allResultsIn && cfg) {
+      const predMap = getCombinedPredictionsMap();
+      const guessedSet = new Set(slots.map(q => (predMap[q.id] || "").trim().toLowerCase()).filter(Boolean));
+      stageBonusEarned = [...actualSet].every(t => guessedSet.has(t));
+    }
+
+    const pointsPerSlot = slots[0]?.possible_points || 0;
+    const totalPossible = slots.length * pointsPerSlot;
+
     return (
-      <div style={{ background: 'var(--bg3-60)', border: '1px solid rgba(249, 115, 22, 0.3)', borderRadius: '12px', padding: '16px', backdropFilter: 'blur(10px)' }}>
-        <h3 className="text-right font-bold text-base mb-4" style={{ color: '#f97316' }}>📋 {table.description}</h3>
+      <div style={{ background: "var(--bg3-60)", border: "1px solid rgba(249,115,22,0.3)", borderRadius: "12px", padding: "16px", backdropFilter: "blur(10px)" }}>
+        <h3 className="text-right font-bold text-base mb-3" style={{ color: "#f97316" }}>📋 {table.description}</h3>
+
+        {cfg && (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 14px", borderRadius: "8px", marginBottom: "10px", background: stageBonusEarned ? "rgba(16,185,129,0.12)" : "rgba(234,179,8,0.08)", border: `1px solid ${stageBonusEarned ? "rgba(16,185,129,0.45)" : "rgba(234,179,8,0.35)"}` }}>
+            <div className="flex items-center gap-2">
+              <span style={{ fontSize: "1rem" }}>🏆</span>
+              <div>
+                <p style={{ fontSize: "0.78rem", fontWeight: "700", color: stageBonusEarned ? "#6ee7b7" : "#fde68a" }}>
+                  {stageBonusEarned ? "✅ בונוס שלב!" : "🏆 בונוס שלב"}
+                </p>
+                <p style={{ fontSize: "0.70rem", color: "#94a3b8" }}>
+                  {stageBonusEarned ? `כל ${advCount} הקבוצות נכונות!` : allResultsIn ? `פגיעה בכל ${advCount} → +${cfg.bonus} נק'` : "ממתין לתוצאות..."}
+                </p>
+              </div>
+            </div>
+            <Badge style={{ fontSize: "0.95rem", fontWeight: "800", padding: "4px 12px", background: stageBonusEarned ? "#059669" : allResultsIn ? "#dc2626" : "rgba(100,116,139,0.3)", color: "#fff", border: stageBonusEarned ? "1px solid #10b981" : allResultsIn ? "1px solid #ef4444" : "1px solid rgba(100,116,139,0.4)" }}>
+              {stageBonusEarned ? `+${cfg.bonus}` : allResultsIn ? `0/${cfg.bonus}` : `?/${cfg.bonus}`}
+            </Badge>
+          </div>
+        )}
+
+        {totalPossible > 0 && (
+          <div style={{ textAlign: "left", marginBottom: "8px" }}>
+            <span style={{ fontSize: "0.72rem", color: "#94a3b8" }}>
+              {pointsPerSlot} נק' לכל קבוצה נכונה • סה"כ אפשרי: {totalPossible} נק'
+              {cfg ? ` + בונוס שלב ${cfg.bonus} נק'` : ""}
+            </span>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 gap-2">
-          {questions.map(q => {
-            const pred = getCombinedPredictionsMap()[q.id] || '';
-            const hasResult = q.actual_result && q.actual_result !== '__CLEAR__';
-            const isCorrect = hasResult && pred && pred.trim() === q.actual_result?.trim();
-            const isWrong = hasResult && pred && pred.trim() !== q.actual_result?.trim();
-            return (<div key={q.id} style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '8px', alignItems: 'center', padding: '8px 12px', borderRadius: '6px', background: isCorrect ? 'rgba(16, 185, 129, 0.1)' : isWrong ? 'rgba(239, 68, 68, 0.1)' : 'rgba(0,0,0,0.22)', border: `1px solid ${isCorrect ? 'rgba(16, 185, 129, 0.3)' : isWrong ? 'rgba(239, 68, 68, 0.3)' : 'rgba(249, 115, 22, 0.15)'}` }}><span className="text-right text-sm" style={{ color: '#f8fafc' }}>{q.question_text}</span><div className="flex items-center gap-2">{pred ? (<span className="text-sm font-medium px-2 py-1 rounded" style={{ background: 'rgba(249, 115, 22, 0.15)', color: '#f97316', border: '1px solid rgba(249, 115, 22, 0.3)' }}>{pred}</span>) : (<span className="text-sm" style={{ color: '#64748b' }}>—</span>)}{hasResult && (<span className="text-sm font-bold" style={{ color: isCorrect ? '#10b981' : '#ef4444' }}>{isCorrect ? '✓' : '✗'}</span>)}</div></div>);
+          {slots.map(q => {
+            const pred = (getCombinedPredictionsMap()[q.id] || "").trim();
+            const hasResult = q.actual_result && q.actual_result !== "__CLEAR__";
+            const isCorrect = hasResult && pred && actualSet.has(pred.toLowerCase());
+            const isWrong   = hasResult && pred && !actualSet.has(pred.toLowerCase());
+            const pts = isCorrect ? (q.possible_points || 0) : 0;
+            return (
+              <div key={q.id} style={{ display: "grid", gridTemplateColumns: "40px minmax(80px,1fr) 140px 46px", gap: "8px", alignItems: "center", padding: "7px 10px", borderRadius: "6px", background: isCorrect ? "rgba(16,185,129,0.10)" : isWrong ? "rgba(239,68,68,0.08)" : "rgba(0,0,0,0.22)", border: `1px solid ${isCorrect ? "rgba(16,185,129,0.30)" : isWrong ? "rgba(239,68,68,0.25)" : "rgba(249,115,22,0.15)"}` }}>
+                <Badge variant="outline" style={{ borderColor: "rgba(249,115,22,0.45)", color: "#fb923c", fontSize: "0.72rem", justifyContent: "center" }}>
+                  {q.question_id}
+                </Badge>
+                <span style={{ fontSize: "0.78rem", color: "#94a3b8", textAlign: "right", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {q.question_text || `קבוצה ${q.question_id} שעולה`}
+                </span>
+                <div style={{ padding: "5px 8px", borderRadius: "6px", background: isCorrect ? "rgba(16,185,129,0.12)" : isWrong ? "rgba(239,68,68,0.10)" : "rgba(249,115,22,0.08)", border: `1px solid ${isCorrect ? "rgba(16,185,129,0.35)" : isWrong ? "rgba(239,68,68,0.30)" : "rgba(249,115,22,0.25)"}`, textAlign: "right" }}>
+                  {pred
+                    ? <span style={{ fontSize: "0.84rem", fontWeight: "600", color: isCorrect ? "#6ee7b7" : isWrong ? "#fca5a5" : "#f8fafc" }}>{pred}</span>
+                    : <span style={{ fontSize: "0.84rem", color: "#475569" }}>—</span>
+                  }
+                </div>
+                <Badge style={{ minWidth: "42px", justifyContent: "center", fontSize: "0.75rem", background: isCorrect ? "rgba(16,185,129,0.2)" : isWrong ? "rgba(239,68,68,0.15)" : "rgba(100,116,139,0.15)", color: isCorrect ? "#34d399" : isWrong ? "#f87171" : "#94a3b8", border: `1px solid ${isCorrect ? "rgba(16,185,129,0.35)" : isWrong ? "rgba(239,68,68,0.3)" : "rgba(100,116,139,0.3)"}` }}>
+                  {hasResult ? (isCorrect ? `+${pts}` : "0") : `?/${q.possible_points || 0}`}
+                </Badge>
+              </div>
+            );
           })}
         </div>
       </div>
     );
   };
 
-  const renderSpecialQuestions = (table) => {
+    const renderSpecialQuestions = (table) => {
     const isT10 = table.description.includes('T10') || table.id === 'T10' || table.id.includes('custom_order');
     if (isT10) return renderT10Questions(table);
     const grouped = {};
