@@ -740,7 +740,7 @@ export default function ViewSubmissions() {
       <div style={{ background: 'rgba(13,18,30,0.9)', borderRadius: '12px', border: '1px solid var(--tp-12)', padding: '14px 10px', backdropFilter: 'blur(10px)' }}>
         <div style={{ fontSize: '0.5rem', fontWeight: '800', letterSpacing: '0.18em', textTransform: 'uppercase', color: '#334155', marginBottom: '14px', paddingRight: '2px' }}>בחירת שלב</div>
         {sortedGroups.map(type => {
-          const info = groupMap[type] || groupMap.other;
+          const info = groupMap[type] || groupMap.special;
           return (
             <div key={type} style={{ marginBottom: '14px' }}>
               <div style={{ fontSize: '0.55rem', fontWeight: '700', letterSpacing: '0.08em', textTransform: 'uppercase', color: info.color, marginBottom: '5px', paddingRight: '2px', opacity: 0.85 }}>{info.label}</div>
@@ -776,7 +776,7 @@ export default function ViewSubmissions() {
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
           {allButtonsList.map(button => {
             const type = button.stageType || 'special';
-            const info = groupMap[type] || groupMap.other;
+            const info = groupMap[type] || groupMap.special;
             const active = openSectionsMap[button.sectionKey];
             return (<button key={button.key} onClick={() => toggleSectionFn(button.sectionKey)} style={{ display: 'inline-flex', alignItems: 'center', padding: '5px 11px', borderRadius: '999px', fontSize: '0.78rem', fontWeight: active ? '700' : '400', color: active ? 'white' : info.color, background: active ? info.color : info.bg, border: `1px solid ${active ? info.color : info.border}`, cursor: 'pointer', transition: 'all 0.15s', boxShadow: active ? `0 0 10px ${info.color}66` : 'none', fontFamily: 'Rubik, Heebo, sans-serif', whiteSpace: 'nowrap' }}>{button.description}</button>);
           })}
