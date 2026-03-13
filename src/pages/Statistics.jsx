@@ -186,9 +186,9 @@ export default function Statistics() {
         return desc && !/^\d+$/.test(desc) && !locationTableIds.includes(table.id) && table.id !== 'T19';
       }).sort((a, b) => (parseInt(a.id.replace('T', '')) || 0) - (parseInt(b.id.replace('T', '')) || 0));
 
-      // 🔥 עולות = רק T4/T5/T6 לפי ADVANCING_CONFIG
-      const qualifiers = allSpecialTables.filter(t => QUALIFIER_TABLE_IDS.includes(t.id));
-      const regulars = allSpecialTables.filter(t => !QUALIFIER_TABLE_IDS.includes(t.id));
+      // 🔥 עולות = רק טבלאות עם "רשימת הקבוצות שיעלו" בתיאור
+      const qualifiers = allSpecialTables.filter(t => (t.description || '').includes('רשימת הקבוצות שיעלו'));
+      const regulars = allSpecialTables.filter(t => !(t.description || '').includes('רשימת הקבוצות שיעלו'));
       setQualifierTables(qualifiers);
       setSpecialTables(regulars);
 
