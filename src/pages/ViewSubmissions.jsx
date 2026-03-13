@@ -333,10 +333,10 @@ export default function ViewSubmissions() {
 
   useEffect(() => {
     const loadParticipantPredictions = async () => {
-      if (!selectedParticipant) {
+      if (!selectedParticipant || !currentGame) {
         setData(prev => ({ ...prev, predictions: [] }));
-        setEditedPredictions({}); // Reset edited predictions
-        setIsEditMode(false); // Exit edit mode
+        setEditedPredictions({});
+        setIsEditMode(false);
         return;
       }
       
@@ -371,7 +371,7 @@ export default function ViewSubmissions() {
     };
 
     loadParticipantPredictions();
-  }, [selectedParticipant, currentUser]);
+  }, [selectedParticipant, currentUser, currentGame]);
 
   // 🔥 useMemo חייב להיות לפני כל פונקציה שמשתמשת בו
   const participantPredictions = useMemo(() => {
@@ -1332,7 +1332,7 @@ export default function ViewSubmissions() {
     if (selectedParticipant && allResultsIn && cfg) {
       const predMap = getCombinedPredictionsMap();
       const guessedSet = new Set(
-        slots.map(q => (predMap[q.id] || '').trim().toLowerCase()).filter(Boolean)
+        slots.map(q => (predMap[q.id] ?? predMap[q.question_id] ?? '').toString().trim().toLowerCase()).filter(Boolean)
       );
       stageBonusEarned = [...actualSet].every(t => guessedSet.has(t));
     }
@@ -1390,7 +1390,9 @@ export default function ViewSubmissions() {
         {/* ── שורות שאלות ──────────────────────────────────────────────────── */}
         <div className="grid grid-cols-1 gap-2">
           {slots.map(q => {
-            const pred = (getCombinedPredictionsMap()[q.id] || '').trim();
+            const predMap = getCombinedPredictionsMap();
+            // lookup by q.id (UUID) first, then by q.question_id (string) as fallback
+            const pred = (predMap[q.id] ?? predMap[q.question_id] ?? '').toString().trim();
             const hasResult = q.actual_result && q.actual_result !== '__CLEAR__';
             // נוכחות — אין משמעות לסדר!
             const isCorrect = hasResult && pred && actualSet.has(pred.toLowerCase());
@@ -1399,7 +1401,7 @@ export default function ViewSubmissions() {
 
             return (
               <div key={q.id} style={{
-                display: 'grid', gridTemplateColumns: '44px 1fr auto auto',
+                display: 'grid', gridTemplateColumns: '44px 1fr 1fr auto auto',
                 gap: '8px', alignItems: 'center', padding: '7px 10px', borderRadius: '6px',
                 background: isCorrect ? 'rgba(16,185,129,0.10)' : isWrong ? 'rgba(239,68,68,0.08)' : 'rgba(15,23,42,0.4)',
                 border: `1px solid ${isCorrect ? 'rgba(16,185,129,0.30)' : isWrong ? 'rgba(239,68,68,0.25)' : 'rgba(249,115,22,0.15)'}`,
@@ -1408,6 +1410,10 @@ export default function ViewSubmissions() {
                 <Badge variant="outline" style={{ borderColor: 'rgba(249,115,22,0.45)', color: '#fb923c', fontSize: '0.72rem', justifyContent: 'center' }}>
                   {q.question_id}
                 </Badge>
+                {/* שם השאלה */}
+                <span style={{ fontSize: '0.80rem', color: '#94a3b8', textAlign: 'right', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>
+                  {q.question_text || `קבוצה ${q.question_id} שעולה`}
+                </span>
                 {/* ניחוש */}
                 {pred ? (
                   <span style={{ fontSize: '0.84rem', fontWeight: '500', color: '#f8fafc', textAlign: 'right' }}>{pred}</span>
@@ -2091,12 +2097,6 @@ export default function ViewSubmissions() {
             </div>
           )}
 
-          {selectedParticipant && !loadingPredictions && (specialTables.length > 0 || roundTables.length > 0 || locationTables.length > 0 || israeliTable || playoffWinnersTable || qualifiersTables.length > 0) && (
-            <div style={{ marginBottom: '20px' }}>
-              {renderStageChips(allButtons, openSections, toggleSection)}
-            </div>
-          )}
-
           {!selectedParticipant && !loadingPredictions && (
             <Alert className="mt-4" style={{ 
               background: 'rgba(30, 41, 59, 0.6)',
@@ -2114,7 +2114,22 @@ export default function ViewSubmissions() {
 
       <div className="p-3 md:p-6 max-w-7xl mx-auto">
         {selectedParticipant && !loadingPredictions ? (
-          <>
+          <div style={{ display: 'flex', gap: '20px', alignItems: 'flex-start' }}>
+            {/* ── Sidebar chips ── */}
+            {allButtons.length > 0 && (
+              <div style={{
+                width: '210px',
+                flexShrink: 0,
+                position: 'sticky',
+                top: '16px',
+                maxHeight: 'calc(100vh - 80px)',
+                overflowY: 'auto',
+              }}>
+                {renderStageChips(allButtons, openSections, toggleSection)}
+              </div>
+            )}
+            {/* ── Main content ── */}
+            <div style={{ flex: 1, minWidth: 0 }}>
             {allButtons.map(button => {
                 if (!openSections[button.sectionKey]) return null;
 
@@ -2213,7 +2228,8 @@ export default function ViewSubmissions() {
                 }
                 return null;
             })}
-          </>
+            </div>{/* /main content */}
+          </div>{/* /flex row */}
         ) : null}
       </div>
 
