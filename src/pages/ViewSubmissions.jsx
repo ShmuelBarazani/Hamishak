@@ -459,14 +459,29 @@ export default function ViewSubmissions() {
       </div>
     );
 
-    const score = calculateQuestionScore(question, originalValue);
+    // ── ניקוד שאלות מיקומים: נוכחות (האם הקבוצה ברשימה) ────────────────────
+    const isLocQ = ['T14', 'T15', 'T16', 'T17', 'T19'].includes(question.table_id);
+    let score;
+    if (isLocQ && hasActualResult && originalValue) {
+      // בנה Set של כל הקבוצות שבאמת נמצאות בטבלה
+      const stripC = s => s ? s.replace(/\s*\([^)]+\)\s*$/, '').trim().toLowerCase() : '';
+      const qTable = locationTables.find(t => t.id === question.table_id) ||
+                     playoffWinnersTable;
+      const actualTeams = qTable 
+        ? new Set(qTable.questions.filter(q => q.actual_result && q.actual_result !== '__CLEAR__').map(q => stripC(q.actual_result)))
+        : new Set();
+      const predClean = stripC(originalValue);
+      score = actualTeams.has(predClean) ? (question.possible_points || 0) : 0;
+    } else {
+      score = calculateQuestionScore(question, originalValue);
+    }
     // 🔥 Fixed: replaced yellow badge with blue for partial scores
     let badgeColor = 'bg-slate-600 text-slate-300';
-    if (score !== null) {
+    if (score !== null && score !== undefined) {
       if (score === maxScore && maxScore > 0) badgeColor = 'bg-green-700 text-green-100';
       else if (score === 0) badgeColor = 'bg-red-700 text-red-100';
       else if (maxScore > 0 && score >= maxScore * 0.7) badgeColor = 'bg-blue-600 text-blue-100';
-      else if (score > 0) badgeColor = 'bg-blue-800 text-blue-200'; // 🔥 was yellow, now blue
+      else if (score > 0) badgeColor = 'bg-blue-800 text-blue-200';
     }
 
     return (<div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}><div className={`rounded-md px-2 py-2 ${boxWidth} flex items-center gap-1`} style={{ background: hasActualResult ? 'var(--tp-20)' : 'rgba(0,0,0,0.35)', border: hasActualResult ? '1px solid var(--tp)' : '1px solid var(--tp-20)', boxShadow: hasActualResult ? '0 0 10px var(--tp-40)' : 'none' }}>{team?.logo_url && <img src={team.logo_url} alt={displayTeamNameForReadonly} className="w-4 h-4 rounded-full flex-shrink-0" onError={(e) => e.target.style.display='none'} />}<span style={{ color: textColor, fontSize: isQuestion11_1 ? '0.65rem' : '0.875rem', fontWeight: hasActualResult ? '700' : 'normal' }}>{displayTeamNameForReadonly}</span></div>{score !== null ? (<Badge className={`${badgeColor} text-xs font-bold px-1.5 py-0.5 min-w-[45px] justify-center`}>{score}/{maxScore}</Badge>) : (<Badge className="bg-slate-600 text-slate-300 text-xs px-1.5 py-0.5 min-w-[45px] justify-center">?/{maxScore}</Badge>)}</div>);
