@@ -150,9 +150,13 @@ export default function ViewSubmissions() {
         // זיהוי מיקומים: לפי ID קשיח OR לפי stage_type/תיאור — לתמוך בשלב הבתים
         const isLocationTable = (t) => {
           if (locationTableIds.includes(t.id)) return true;
-          const desc = (t.description || '').toLowerCase();
           const stType = t.questions[0]?.stage_type || '';
-          return stType === 'locations' || desc.includes('מיקום') || desc.includes('מקומות') || desc.includes('מקום');
+          if (stType === 'locations') return true;
+          // זיהוי לפי תיאור — רק אם stage_type הוא qualifiers/special (לא playoff/groups)
+          // כדי למנוע זיהוי שגוי של שאלות "מקומות 9-24 בפלייאוף"
+          if (stType === 'playoff' || stType === 'groups' || stType === 'rounds') return false;
+          const desc = (t.description || '').toLowerCase();
+          return desc.includes('מיקום') || desc.includes('מקומות') || desc.includes('מקום');
         };
         const detectedLocationTables = Object.values(sTables).filter(t => isLocationTable(t))
           .sort((a,b) => (parseInt(a.id.replace('T','')) || 0) - (parseInt(b.id.replace('T','')) || 0));
@@ -713,7 +717,7 @@ export default function ViewSubmissions() {
   specialTables.forEach(table => { allButtons.push({ numericId: table.questions[0]?.stage_order || parseInt(table.id.replace('T', '').replace(/\D/g, ''), 10), key: table.id, description: table.description, stageType: table.questions[0]?.stage_type || 'special', sectionKey: table.id }); });
   if (locationTables.length > 0) { const firstLocationTableId = locationTables[0]?.id || 'T14'; allButtons.push({ numericId: parseInt(firstLocationTableId.replace('T', ''), 10), key: 'locations', description: 'מיקומים', stageType: 'qualifiers', sectionKey: 'locations' }); }
   qualifiersTables.forEach(table => { allButtons.push({ numericId: table.questions[0]?.stage_order || parseInt(table.id.replace('T','')) || 0, key: `qual_${table.id}`, description: table.description || table.id, stageType: 'qualifiers', sectionKey: `qual_${table.id}` }); });
-  if (israeliTable) allButtons.push({ numericId: parseInt(israeliTable.id.replace('T', ''), 10), key: israeliTable.id, description: israeliTable.description, stageType: 'playoff', sectionKey: 'israeli' });
+  if (israeliTable) allButtons.push({ numericId: parseInt(israeliTable.id.replace('T', ''), 10), key: israeliTable.id, description: israeliTable.description, stageType: 'special', sectionKey: 'israeli' });
   if (playoffWinnersTable) allButtons.push({ numericId: parseInt(playoffWinnersTable.id.replace('T', ''), 10), key: playoffWinnersTable.id, description: playoffWinnersTable.description, stageType: 'qualifiers', sectionKey: 'playoffWinners' });
   allButtons.sort((a, b) => { if (a.sectionKey === 'rounds' && b.sectionKey !== 'rounds') return -1; if (b.sectionKey === 'rounds' && a.sectionKey !== 'rounds') return 1; return a.numericId - b.numericId; });
 
@@ -860,10 +864,7 @@ export default function ViewSubmissions() {
         <div key="locations-section" className="mb-6">
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {locationTables.map(table => {
-              const hasSlots = table.questions.some(q => { const n = parseFloat(q.question_id); return Number.isInteger(n) && n >= 1; });
-              return <div key={table.id}>{hasSlots ? renderQualifiersTable(table) : renderSpecialQuestions(table)}</div>;
-            })}
+            {locationTables.map(table => <div key={table.id}>{renderSpecialQuestions(table)}</div>)}
           </div>
         </div>
       );
