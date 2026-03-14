@@ -155,8 +155,11 @@ export default function ViewSubmissions() {
           // זיהוי לפי תיאור — רק אם stage_type הוא qualifiers/special (לא playoff/groups)
           // כדי למנוע זיהוי שגוי של שאלות "מקומות 9-24 בפלייאוף"
           if (stType === 'playoff' || stType === 'groups' || stType === 'rounds') return false;
+          // שאלת מיקומים אמיתית: התיאור מתחיל ב"מקומות" (לא מכיל "פלייאוף", "משחקים", "מי תעפיל")
           const desc = (t.description || '').toLowerCase();
-          return desc.includes('מיקום') || desc.includes('מקומות') || desc.includes('מקום');
+          const hasPlayoffKeywords = desc.includes('פלייאוף') || desc.includes('משחקים') || desc.includes('מי תעפיל') || desc.includes('שמינית') || desc.includes('שאלות');
+          if (hasPlayoffKeywords) return false;
+          return desc.includes('מיקום') || (desc.startsWith('מקומות') && !desc.includes('שלב'));
         };
         const detectedLocationTables = Object.values(sTables).filter(t => isLocationTable(t))
           .sort((a,b) => (parseInt(a.id.replace('T','')) || 0) - (parseInt(b.id.replace('T','')) || 0));
@@ -189,7 +192,20 @@ export default function ViewSubmissions() {
             allSpecialTables.push(t10Special);
           }
         }
-        setQualifiersTables(Object.values(sTables).filter(t => t.questions[0]?.stage_type === 'qualifiers').sort((a,b) => (a.questions[0]?.stage_order || 999) - (b.questions[0]?.stage_order || 999)));
+        const qualTables = Object.values(sTables)
+          .filter(t => t.questions[0]?.stage_type === 'qualifiers')
+          .sort((a,b) => (a.questions[0]?.stage_order || 999) - (b.questions[0]?.stage_order || 999));
+        // תיקון תיאור שאלות T5: "שעולה לגמר" → "שעולה לחצי הגמר"
+        qualTables.forEach(t => {
+          if (t.id === 'T5') {
+            t.questions.forEach(q => {
+              if (q.question_text && q.question_text.includes('שעולה לגמר')) {
+                q.question_text = q.question_text.replace('שעולה לגמר', 'שעולה לחצי הגמר');
+              }
+            });
+          }
+        });
+        setQualifiersTables(qualTables);
         setData(prev => ({ ...prev, questions, teams: teamsMap, validationLists: listsMap }));
       } catch (error) { console.error("Error loading data:", error); }
       setLoading(false);
@@ -571,7 +587,7 @@ export default function ViewSubmissions() {
                   {q.question_id}
                 </Badge>
                 <span style={{ fontSize: "0.78rem", color: "#94a3b8", textAlign: "right", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {q.question_text || `קבוצה ${q.question_id} שעולה`}
+                  {(q.table_id === 'T5' && q.question_text ? q.question_text.replace('שעולה לגמר','שעולה לחצי הגמר') : q.question_text) || `קבוצה ${q.question_id} שעולה`}
                 </span>
                 <div style={{ display: "flex", alignItems: "center", gap: "6px", padding: "5px 8px", borderRadius: "6px", background: isCorrect ? "rgba(16,185,129,0.12)" : isWrong ? "rgba(239,68,68,0.10)" : "rgba(249,115,22,0.08)", border: `1px solid ${isCorrect ? "rgba(16,185,129,0.35)" : isWrong ? "rgba(239,68,68,0.30)" : "rgba(249,115,22,0.25)"}` }}>
                   {pred ? (() => {
