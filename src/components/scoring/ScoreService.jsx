@@ -45,7 +45,6 @@ function cleanText(text) {
 function normalizeResult(text) {
   if (!text) return '';
   return String(text)
-    .replace(/^(דקות?|מינוט[וס]?)\s*/i, '')
     .replace(/\s*\([^)]+\)\s*$/, '') // הסרת "(מדינה)" מסוף השם
     .replace(/\s+/g, ' ')
     .trim();
@@ -217,10 +216,19 @@ export function calculateQuestionScore(question, prediction, allQuestionsInTable
     return null; // לא מחשבים ניקוד ברמת שאלה בודדת
   }
 
-  // ── שאלות טקסט רגילות ────────────────────────────────────────────────────
-  const cleanActual = cleanText(normalizedActual).toLowerCase();
-  const cleanPred   = cleanText(normalizedPred).toLowerCase();
+  // ── שאלות טקסט רגילות (כולל תשובות מרובות עם |||) ─────────────────────
+  const cleanPred = cleanText(normalizedPred).toLowerCase();
 
+  // תמיכה בתשובות מרובות (לדוגמה: "0-2|||2-1|||3-2")
+  if (actualResult.includes('|||')) {
+    const multipleAnswers = actualResult
+      .split('|||')
+      .map(a => cleanText(normalizeResult(a.trim())).toLowerCase())
+      .filter(Boolean);
+    return multipleAnswers.includes(cleanPred) ? (question.possible_points || 0) : 0;
+  }
+
+  const cleanActual = cleanText(normalizedActual).toLowerCase();
   return cleanActual === cleanPred ? (question.possible_points || 0) : 0;
 }
 
