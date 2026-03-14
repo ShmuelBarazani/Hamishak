@@ -59,20 +59,22 @@ export default function AdminResults() {
 
   // ── Helpers ───────────────────────────────────────────────────────────────
   const loadAllQuestions = async (gameId) => {
-    // db.Question.filter עובד עם RLS כמו שאר ה-entities
-    const PAGE = 5000;
-    try {
-      const batch1 = await db.Question.filter({ game_id: gameId }, null, PAGE, 0);
-      console.log(`   📋 שאלות batch1: ${batch1?.length}`);
-      if (!batch1?.length) return [];
-      if (batch1.length < PAGE) return batch1;
-      // אם יש יותר מ-5000 (לא צפוי)
-      const batch2 = await db.Question.filter({ game_id: gameId }, null, PAGE, PAGE);
-      return [...batch1, ...(batch2 || [])];
-    } catch(err) {
-      console.error('questions fetch error:', err);
-      return [];
+    // טוען שאלות ישירות מ-Supabase כדי לקבל את כל השדות כולל actual_result ו-question_text
+    const all = {};
+    let from = 0;
+    while (true) {
+      const { data, error } = await supabase
+        .from('questions')
+        .select('*')
+        .eq('game_id', gameId)
+        .range(from, from + 999);
+      if (error || !data?.length) break;
+      data.forEach(q => { all[q.id] = q; });
+      console.log(`   📋 שאלות batch1: ${Object.keys(all).length}`);
+      if (data.length < 1000) break;
+      from += 1000;
     }
+    return Object.values(all);
   };
 
   const loadAllPredictions = async (gameId) => {
@@ -264,43 +266,7 @@ export default function AdminResults() {
       let qs = await loadAllQuestions(currentGame.id);
       qs = qs.filter(q => q.table_id && q.table_id !== 'T1');
 
-      // ── טעינת actual_result ישירות מ-Supabase (db.Question לא מחזיר אותו) ──
-      setRecalcProgress('טוען תוצאות אמת...');
-      const actualResultMap = {};
-      let arFrom = 0;
-      while (true) {
-        const { data: arData } = await supabase
-          .from('questions')
-          .select('id, actual_result, home_team, away_team, stage_type, question_text')
-          .eq('game_id', currentGame.id)
-          .range(arFrom, arFrom + 999);
-        if (!arData?.length) break;
-        arData.forEach(q => { actualResultMap[q.id] = q; });
-        if (arData.length < 1000) break;
-        arFrom += 1000;
-      }
-      // מזג actual_result לשאלות
-      qs.forEach(q => {
-        const ar = actualResultMap[q.id];
-        if (ar) {
-          q.actual_result = ar.actual_result;
-          if (!q.stage_type) q.stage_type = ar.stage_type;
-          // T20: home/away לא נשמרים ב-DB — מפרסרים מ-question_text
-          const qtext = q.question_text || ar.question_text || '';
-          if (!q.home_team || !q.away_team) {
-            if (ar.home_team) q.home_team = ar.home_team;
-            if (ar.away_team) q.away_team = ar.away_team;
-            // אם עדיין חסר — מנסה לפרסר מ-question_text
-            if (!q.home_team && !q.away_team && qtext) {
-              let ts = null;
-              if (qtext.includes(' נגד ')) ts = qtext.split(' נגד ').map(t => t.trim());
-              else if (qtext.includes(' - ')) ts = qtext.split(' - ').map(t => t.trim());
-              if (ts && ts.length === 2) { q.home_team = ts[0]; q.away_team = ts[1]; }
-            }
-          }
-        }
-      });
-      console.log('   📋 actual_results loaded:', Object.keys(actualResultMap).length);
+      // actual_result ו-question_text נטענים ב-loadAllQuestions ישירות
       qs.forEach(q => {
         // T20: parse home/away from question_text (not stored in DB)
         if (q.table_id === 'T20' && q.question_text && !q.home_team) {
