@@ -59,21 +59,17 @@ export default function AdminResults() {
 
   // ── Helpers ───────────────────────────────────────────────────────────────
   const loadAllQuestions = async (gameId) => {
-    let all = [], offset = 0;
+    let all = [], from = 0;
     const PAGE = 1000;
-    const seenIds = new Set();
     while (true) {
-      try {
-        const batch = await db.Question.filter({ game_id: gameId }, null, PAGE, offset);
-        if (!batch || batch.length === 0) break;
-        const newItems = batch.filter(q => !seenIds.has(q.id));
-        if (newItems.length === 0) break;
-        newItems.forEach(q => seenIds.add(q.id));
-        all = [...all, ...newItems];
-        console.log(`   📋 שאלות: ${all.length} סה"כ`);
-        if (batch.length < PAGE) break;
-        offset += PAGE;
-      } catch(err) { console.error('questions fetch error:', err); break; }
+      const { data, error } = await supabase
+        .from('questions').select('*').eq('game_id', gameId).range(from, from + PAGE - 1);
+      if (error) { console.error('questions fetch error:', error); break; }
+      if (!data || data.length === 0) break;
+      all = [...all, ...data];
+      console.log(`   📋 שאלות: ${all.length} סה"כ`);
+      if (data.length < PAGE) break;
+      from += PAGE;
     }
     return all;
   };
@@ -310,21 +306,11 @@ export default function AdminResults() {
         }
       });
 
-      // ── שלב 2: מחיקת כל הרשומות הקיימות (מונע כפילויות) ────────────────
-      setRecalcProgress('מנקה דירוג קיים...');
-      if (existingRankings.length > 0) {
-        const { error: delErr } = await supabase
-          .from('rankings')
-          .delete()
-          .eq('game_id', currentGame.id);
-        if (delErr) console.error('שגיאה במחיקת rankings:', delErr);
-      }
-
-      // ── שלב 3: יצירת רשומות חדשות ─────────────────────────────────────
-      setRecalcProgress(`שומר ${scores.length} משתתפים...`);
-      const newRankings = scores.map(s => {
+      // ── שלב 2: עדכון/יצירה דרך db layer (עובד עם RLS) ──────────────────
+      let saved = 0;
+      for (const s of scores) {
         const base = baselineMap[s.participant_name];
-        return {
+        const data = {
           participant_name: s.participant_name,
           game_id: currentGame.id,
           current_score: s.current_score,
@@ -338,24 +324,12 @@ export default function AdminResults() {
           last_updated: new Date().toISOString(),
           last_baseline_set: base?.last_baseline_set || null
         };
-      });
-
-      // insert ב-Supabase ישיר — בקבוצות של 50
-      const BATCH = 50;
-      let saved = 0;
-      for (let i = 0; i < newRankings.length; i += BATCH) {
-        const batch = newRankings.slice(i, i + BATCH);
-        const { error: insErr } = await supabase.from('rankings').insert(batch);
-        if (insErr) {
-          console.error('שגיאה ב-insert:', insErr);
-          // fallback אחד אחד
-          for (const r of batch) {
-            const { error: e2 } = await supabase.from('rankings').insert([r]);
-            if (e2) console.error('שגיאה:', r.participant_name, e2);
-          }
-        }
-        saved += batch.length;
-        setRecalcProgress(`שמור ${saved}/${newRankings.length}...`);
+        setRecalcProgress(`שומר ${++saved}/${scores.length}: ${s.participant_name}`);
+        try {
+          if (base) await db.Ranking.update(base.id, data);
+          else await db.Ranking.create(data);
+        } catch (err) { console.error('שגיאה:', s.participant_name, err); }
+        await new Promise(r => setTimeout(r, 50));
       }
 
       setRecalcProgress('');
