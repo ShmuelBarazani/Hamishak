@@ -74,25 +74,20 @@ export default function AdminResults() {
   };
 
   const loadAllPredictions = async (gameId) => {
-    // משתמש ב-entity layer (db.Prediction) שמתמפה לטבלה הנכונה
-    let all = [], offset = 0;
+    let all = [], from = 0;
     const PAGE = 1000;
-    const seenIds = new Set();
     while (true) {
-      try {
-        const batch = await db.Prediction.filter({ game_id: gameId }, null, PAGE, offset);
-        if (!batch || batch.length === 0) break;
-        const newItems = batch.filter(p => !seenIds.has(p.id));
-        if (newItems.length === 0) break;
-        newItems.forEach(p => seenIds.add(p.id));
-        all = [...all, ...newItems];
-        console.log(`   📊 ניחושים: ${all.length} סה"כ`);
-        if (batch.length < PAGE) break;
-        offset += PAGE;
-      } catch(err) {
-        console.error('predictions fetch error:', err);
-        break;
-      }
+      const { data, error } = await supabase
+        .from('predictions')
+        .select('*')
+        .eq('game_id', gameId)
+        .range(from, from + PAGE - 1);
+      if (error) { console.error('predictions fetch error:', error); break; }
+      if (!data || data.length === 0) break;
+      all = [...all, ...data];
+      console.log(`   📊 ניחושים: ${all.length} סה"כ`);
+      if (data.length < PAGE) break;
+      from += PAGE;
     }
     return all;
   };
