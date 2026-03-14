@@ -277,7 +277,10 @@ export default function AdminResults() {
         if (!byParticipant[p.participant_name]) byParticipant[p.participant_name] = [];
         byParticipant[p.participant_name].push(p);
       });
-      const participants = Object.keys(byParticipant);
+      // סינון משתתפים עם פחות מ-10 ניחושים — כנראה כפילויות עם שמות שבורים
+      const participants = Object.keys(byParticipant).filter(name =>
+        byParticipant[name].length >= 10
+      );
 
       setRecalcProgress(`מחשב ניקוד עבור ${participants.length} משתתפים...`);
       const scores = participants.map(name => ({
