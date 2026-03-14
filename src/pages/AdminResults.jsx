@@ -290,6 +290,13 @@ export default function AdminResults() {
       });
       console.log('   📋 actual_results loaded:', Object.keys(actualResultMap).length);
       qs.forEach(q => {
+        // T20: parse home/away from question_text (not stored in DB)
+        if (q.table_id === 'T20' && q.question_text && !q.home_team) {
+          let ts = null;
+          if (q.question_text.includes(' נגד ')) ts = q.question_text.split(' נגד ').map(t => t.trim());
+          else if (q.question_text.includes(' - ')) ts = q.question_text.split(' - ').map(t => t.trim());
+          if (ts && ts.length === 2) { q.home_team = ts[0]; q.away_team = ts[1]; }
+        }
         if (!q.home_team && !q.away_team && q.question_text) {
           const sep = q.question_text.includes(' נגד ') ? ' נגד ' : q.question_text.includes(' - ') ? ' - ' : null;
           if (sep) { const p = q.question_text.split(sep).map(t => t.trim()); if (p.length === 2) { q.home_team = p[0]; q.away_team = p[1]; } }
