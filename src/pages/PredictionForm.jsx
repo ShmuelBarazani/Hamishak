@@ -223,7 +223,19 @@ export default function PredictionForm() {
         else if (!allSpecialTables.find(t => t.id === 'T10')) allSpecialTables.push(t10Special);
       }
 
-      setQualifiersTables(Object.values(sTables).filter(table => table.questions[0]?.stage_type === 'qualifiers').sort((a,b) => (a.questions[0]?.stage_order || 999) - (b.questions[0]?.stage_order || 999)));
+      const qualTablesPF = Object.values(sTables)
+          .filter(table => table.questions[0]?.stage_type === 'qualifiers')
+          .sort((a,b) => (a.questions[0]?.stage_order || 999) - (b.questions[0]?.stage_order || 999));
+        qualTablesPF.forEach(t => {
+          if (t.id === 'T5') {
+            t.questions.forEach(q => {
+              if (q.question_text && q.question_text.includes('שעולה לגמר')) {
+                q.question_text = q.question_text.replace('שעולה לגמר', 'שעולה לחצי הגמר');
+              }
+            });
+          }
+        });
+        setQualifiersTables(qualTablesPF);
 
       if (user && !participantRecord) {
         const fallbackName = user.user_metadata?.full_name || user.email;
