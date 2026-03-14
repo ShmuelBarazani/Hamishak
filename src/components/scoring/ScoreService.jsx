@@ -208,6 +208,19 @@ export function calculateQuestionScore(question, prediction, allQuestionsInTable
     return actualTeams.includes(cleanPred) ? (question.possible_points || 0) : 0;
   }
 
+  // ── טבלאות מיקומים — ניקוד לפי נוכחות (לא מיקום) ──────────────────────
+  if (isLocationTable(question.table_id, allQuestionsInTable)) {
+    const actualTeamsSet = new Set(
+      allQuestionsInTable
+        .filter(q => q.actual_result && q.actual_result !== '__CLEAR__')
+        .map(q => cleanText(normalizeResult(q.actual_result)).toLowerCase())
+    );
+    const cleanPredLoc = cleanText(normalizedPred).toLowerCase();
+    return (cleanPredLoc && actualTeamsSet.has(cleanPredLoc))
+      ? (question.possible_points || 0)
+      : 0;
+  }
+
   // ── שאלות טקסט רגילות ────────────────────────────────────────────────────
   const cleanActual = cleanText(normalizedActual).toLowerCase();
   const cleanPred   = cleanText(normalizedPred).toLowerCase();
@@ -244,16 +257,27 @@ export function calculateLocationBonus(tableId, questions, predictions) {
   );
   if (!allHaveResults) return null;
 
+  // ניקוד לפי נוכחות — האם הקבוצה מופיעה בטבלה, ללא תלות במיקום
+  const actualTeams = new Set(
+    mainQuestions
+      .map(q => cleanText(normalizeResult(q.actual_result)).toLowerCase())
+      .filter(Boolean)
+  );
+
   let correctTeams = 0;
   let perfectOrder = true;
 
   for (const q of mainQuestions) {
-    const pred        = predictions[q.id];
-    const actualClean = cleanText(normalizeResult(q.actual_result));
-    const predClean   = cleanText(normalizeResult(pred || ''));
-    if (actualClean === predClean) {
+    const pred     = predictions[q.id];
+    const predClean = cleanText(normalizeResult(pred || '')).toLowerCase();
+    const actClean  = cleanText(normalizeResult(q.actual_result)).toLowerCase();
+
+    // נוכחות: האם הניחוש מופיע בין הקבוצות האמיתיות
+    if (predClean && actualTeams.has(predClean)) {
       correctTeams++;
-    } else {
+    }
+    // סדר מדויק: האם הניחוש תואם לאותו מיקום בדיוק
+    if (predClean !== actClean) {
       perfectOrder = false;
     }
   }
