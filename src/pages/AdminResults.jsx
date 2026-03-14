@@ -263,6 +263,32 @@ export default function AdminResults() {
     try {
       let qs = await loadAllQuestions(currentGame.id);
       qs = qs.filter(q => q.table_id && q.table_id !== 'T1');
+
+      // ── טעינת actual_result ישירות מ-Supabase (db.Question לא מחזיר אותו) ──
+      setRecalcProgress('טוען תוצאות אמת...');
+      const actualResultMap = {};
+      let arFrom = 0;
+      while (true) {
+        const { data: arData } = await supabase
+          .from('questions')
+          .select('id, actual_result, home_team, away_team, stage_type')
+          .eq('game_id', currentGame.id)
+          .range(arFrom, arFrom + 999);
+        if (!arData?.length) break;
+        arData.forEach(q => { actualResultMap[q.id] = q; });
+        if (arData.length < 1000) break;
+        arFrom += 1000;
+      }
+      // מזג actual_result לשאלות
+      qs.forEach(q => {
+        if (actualResultMap[q.id]) {
+          q.actual_result = actualResultMap[q.id].actual_result;
+          if (!q.home_team) q.home_team = actualResultMap[q.id].home_team;
+          if (!q.away_team) q.away_team = actualResultMap[q.id].away_team;
+          if (!q.stage_type) q.stage_type = actualResultMap[q.id].stage_type;
+        }
+      });
+      console.log('   📋 actual_results loaded:', Object.keys(actualResultMap).length);
       qs.forEach(q => {
         if (!q.home_team && !q.away_team && q.question_text) {
           const sep = q.question_text.includes(' נגד ') ? ' נגד ' : q.question_text.includes(' - ') ? ' - ' : null;
