@@ -166,7 +166,9 @@ export default function AdminResults() {
         if (stType === 'locations') return true;
         if (stType === 'playoff' || stType === 'groups' || stType === 'rounds') return false;
         const desc = (t.description || '').toLowerCase();
-        return desc.includes('מיקום') || desc.includes('מקומות') || desc.includes('מקום');
+        const hasPlayoffKeywords = desc.includes('פלייאוף') || desc.includes('משחקים') || desc.includes('מי תעפיל') || desc.includes('שמינית') || desc.includes('שאלות');
+        if (hasPlayoffKeywords) return false;
+        return desc.includes('מיקום') || (desc.startsWith('מקומות') && !desc.includes('שלב'));
       };
       const detectedLocationTables = Object.values(sTables)
         .filter(t => isLocationTable(t))
