@@ -328,16 +328,18 @@ export default function AdminResults() {
         };
       });
 
-      // bulkCreate בקבוצות של 50
+      // insert ב-Supabase ישיר — בקבוצות של 50
       const BATCH = 50;
       let saved = 0;
       for (let i = 0; i < newRankings.length; i += BATCH) {
         const batch = newRankings.slice(i, i + BATCH);
-        try { await db.Ranking.bulkCreate(batch); }
-        catch (err) {
-          // fallback: אחד אחד
+        const { error: insErr } = await supabase.from('rankings').insert(batch);
+        if (insErr) {
+          console.error('שגיאה ב-insert:', insErr);
+          // fallback אחד אחד
           for (const r of batch) {
-            try { await db.Ranking.create(r); } catch(e2) { console.error('שגיאה:', r.participant_name, e2); }
+            const { error: e2 } = await supabase.from('rankings').insert([r]);
+            if (e2) console.error('שגיאה:', r.participant_name, e2);
           }
         }
         saved += batch.length;
