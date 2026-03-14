@@ -46,6 +46,7 @@ function normalizeResult(text) {
   if (!text) return '';
   return String(text)
     .replace(/^(דקות?|מינוט[וס]?)\s*/i, '')
+    .replace(/\s*\([^)]+\)\s*$/, '') // הסרת "(מדינה)" מסוף השם
     .replace(/\s+/g, ' ')
     .trim();
 }
