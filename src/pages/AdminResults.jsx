@@ -287,16 +287,32 @@ export default function AdminResults() {
         s.current_position = pos;
       });
 
+      // ── שלב 1: טעינת baseline קיים (לפני מחיקה) ──────────────────────────
       setRecalcProgress('טוען דירוג קיים...');
       const existingRankings = await loadAllRankings(currentGame.id);
       const baselineMap = {};
-      existingRankings.forEach(r => { baselineMap[r.participant_name] = r; });
+      existingRankings.forEach(r => {
+        const key = r.participant_name;
+        if (!baselineMap[key] || new Date(r.last_updated) > new Date(baselineMap[key].last_updated)) {
+          baselineMap[key] = r;
+        }
+      });
 
-      let saved = 0;
-      for (const s of scores) {
+      // ── שלב 2: מחיקת כל הרשומות הקיימות (מונע כפילויות) ────────────────
+      setRecalcProgress('מנקה דירוג קיים...');
+      if (existingRankings.length > 0) {
+        const { error: delErr } = await supabase
+          .from('rankings')
+          .delete()
+          .eq('game_id', currentGame.id);
+        if (delErr) console.error('שגיאה במחיקת rankings:', delErr);
+      }
+
+      // ── שלב 3: יצירת רשומות חדשות ─────────────────────────────────────
+      setRecalcProgress(`שומר ${scores.length} משתתפים...`);
+      const newRankings = scores.map(s => {
         const base = baselineMap[s.participant_name];
-        setRecalcProgress(`שומר ${++saved}/${scores.length}: ${s.participant_name}`);
-        const data = {
+        return {
           participant_name: s.participant_name,
           game_id: currentGame.id,
           current_score: s.current_score,
@@ -310,11 +326,22 @@ export default function AdminResults() {
           last_updated: new Date().toISOString(),
           last_baseline_set: base?.last_baseline_set || null
         };
-        try {
-          if (base) await db.Ranking.update(base.id, data);
-          else await db.Ranking.create(data);
-        } catch (err) { console.error('שגיאה בדירוג', s.participant_name, err); }
-        await new Promise(r => setTimeout(r, 100));
+      });
+
+      // bulkCreate בקבוצות של 50
+      const BATCH = 50;
+      let saved = 0;
+      for (let i = 0; i < newRankings.length; i += BATCH) {
+        const batch = newRankings.slice(i, i + BATCH);
+        try { await db.Ranking.bulkCreate(batch); }
+        catch (err) {
+          // fallback: אחד אחד
+          for (const r of batch) {
+            try { await db.Ranking.create(r); } catch(e2) { console.error('שגיאה:', r.participant_name, e2); }
+          }
+        }
+        saved += batch.length;
+        setRecalcProgress(`שמור ${saved}/${newRankings.length}...`);
       }
 
       setRecalcProgress('');
