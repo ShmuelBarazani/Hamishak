@@ -105,7 +105,7 @@ export default function ViewSubmissions() {
         while (true) {
           const { data: arData } = await supabase
             .from('questions')
-            .select('id, actual_result, home_team, away_team, stage_type')
+            .select('*')
             .eq('game_id', currentGame.id)
             .range(arFrom, arFrom + 999);
           if (!arData?.length) break;
