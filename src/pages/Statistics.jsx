@@ -173,7 +173,8 @@ export default function Statistics() {
       setIsraeliTable(t20Table || null);
 
       const sortedRoundTables = Object.values(rTables).sort((a, b) => (parseInt(a.id.replace('T', '')) || 0) - (parseInt(b.id.replace('T', '')) || 0));
-      sortedRoundTables.forEach(t => { if (t.id === 'T3') t.description = 'שלב שמינית הגמר - המשחקים!'; });
+      const isKnockout = !!(currentGame?.name?.includes('נוק-אאוט') || currentGame?.name?.includes('knock') || currentGame?.id === '9c9c1331-5184-406b-98b3-6becd9577567');
+      if (isKnockout) sortedRoundTables.forEach(t => { if (t.id === 'T3') t.description = 'שלב שמינית הגמר - המשחקים!'; });
       setRoundTables(sortedRoundTables);
       if (sortedRoundTables.length > 0) setSelectedRound(sortedRoundTables[0].id);
 
@@ -420,9 +421,9 @@ export default function Statistics() {
     const playoffButtons = [];
     roundTables.forEach(table => playoffButtons.push({
       key: `round_${table.id}`,
-      description: table.id === 'T3' ? 'שלב שמינית הגמר - המשחקים!' : table.description,
+      description: (table.id === 'T3' && isKnockout) ? 'שלב שמינית הגמר - המשחקים!' : table.description,
     }));
-    if (israeliTable) playoffButtons.push({ key: `round_${israeliTable.id}`, description: israeliTable.description });
+    // israeliTable goes to מיוחדות, not פלייאוף
     if (playoffButtons.length > 0) groups.push({ label: '⚽ פלייאוף', color: '#3b82f6', activeBg: '#2563eb', buttons: playoffButtons });
 
     // קבוצה 3: שאלות מיוחדות (ציאן)
@@ -431,7 +432,7 @@ export default function Statistics() {
       if (table.id === 'T1' || table.description?.includes('פרטי מנחשים')) return;
       specialButtons.push({ key: table.id, description: table.description });
     });
-    if (locationTables.length > 0) specialButtons.push({ key: 'locations', description: 'מיקומים בסיום שלב הליגה' });
+    if (israeliTable) specialButtons.push({ key: `round_${israeliTable.id}`, description: israeliTable.description });
     if (playoffTable) specialButtons.push({ key: playoffTable.id, description: playoffTable.description });
     if (specialButtons.length > 0) groups.push({ label: '✨ מיוחדות', color: '#06b6d4', activeBg: '#0891b2', buttons: specialButtons });
 
@@ -439,7 +440,7 @@ export default function Statistics() {
     if (qualifierTables.length > 0) {
       groups.push({
         label: '📋 עולות', color: '#f97316', activeBg: '#ea580c',
-        buttons: qualifierTables.map(table => ({ key: `qual_${table.id}`, description: table.description }))
+        buttons: [...(locationTables.length > 0 ? [{ key: 'locations', description: 'מיקומים' }] : []), ...qualifierTables.map(table => ({ key: `qual_${table.id}`, description: table.description }))]
       });
     }
 
