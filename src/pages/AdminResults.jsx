@@ -59,7 +59,7 @@ export default function AdminResults() {
 
   // ── Helpers ───────────────────────────────────────────────────────────────
   const loadAllQuestions = async (gameId) => {
-    // טוען שאלות ישירות מ-Supabase כדי לקבל את כל השדות כולל actual_result ו-question_text
+    // טוען שאלות ישירות מ-Supabase עם כל השדות
     const all = {};
     let from = 0;
     while (true) {
@@ -68,14 +68,26 @@ export default function AdminResults() {
         .select('*')
         .eq('game_id', gameId)
         .range(from, from + 999);
-      if (error || !data?.length) break;
+      if (error) {
+        console.error('❌ questions error:', error.message, '— trying db.Question fallback');
+        break;
+      }
+      if (!data?.length) break;
       data.forEach(q => { all[q.id] = q; });
-      console.log(`   📋 שאלות batch1: ${Object.keys(all).length}`);
       if (data.length < 1000) break;
       from += 1000;
     }
-    const result = Object.values(all);
-    // Debug: check if actual_result is present
+    let result = Object.values(all);
+
+    // fallback: db.Question.filter אם supabase החזיר 0
+    if (result.length === 0) {
+      console.log('   📋 fallback to db.Question.filter...');
+      try {
+        const batch = await db.Question.filter({ game_id: gameId }, null, 5000, 0);
+        result = batch || [];
+      } catch(e) { console.error('fallback error:', e); }
+    }
+
     const withResult = result.filter(q => q.actual_result && q.actual_result !== '' && q.actual_result !== null);
     const withMultiple = result.filter(q => q.actual_result?.includes('|||'));
     console.log(`   📋 שאלות סה"כ: ${result.length}, עם actual_result: ${withResult.length}, עם |||: ${withMultiple.length}`);
