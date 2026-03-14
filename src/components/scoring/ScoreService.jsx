@@ -23,7 +23,7 @@ const ADVANCING_TEAM_TABLES = {
 
 // ── מזהי טבלאות מיקומים ──────────────────────────────────────────────────────
 // כולל תמיכה דינמית: כל טבלה עם stage_type==='locations' תיחשב כטבלת מיקום
-const LOCATION_TABLE_IDS = ['T9', 'T14', 'T15', 'T16', 'T17', 'T19'];
+const LOCATION_TABLE_IDS = ['T14', 'T15', 'T16', 'T17'];
 
 // ── ניקוד בונוס לטבלת מיקומים לפי מספר שאלות ──────────────────────────────
 // T17: 30 קבוצות + 50 סדר / T19: 20 קבוצות בלבד / שאר: 20 קבוצות + 40 סדר
@@ -85,6 +85,8 @@ function isAdvancingTeamSlot(question) {
 
 // ── בדיקה האם טבלה היא טבלת מיקומים ─────────────────────────────────────────
 function isLocationTable(tableId, questions = []) {
+  // לא טבלת מיקומים אם יש home_team (זו טבלת משחקים)
+  if (questions.length > 0 && questions[0]?.home_team) return false;
   if (LOCATION_TABLE_IDS.includes(tableId)) return true;
   // תמיכה דינמית: stage_type==='locations'
   if (questions.length > 0 && questions[0]?.stage_type === 'locations') return true;
@@ -394,7 +396,8 @@ export function calculateTotalScore(questions, predictions) {
   const locationTableIds = new Set([
     ...LOCATION_TABLE_IDS,
     ...Object.keys(tableQuestions).filter(tid =>
-      tableQuestions[tid]?.[0]?.stage_type === 'locations'
+      tableQuestions[tid]?.[0]?.stage_type === 'locations' &&
+      !tableQuestions[tid]?.[0]?.home_team  // אל תכלול טבלאות משחקים
     )
   ]);
 
