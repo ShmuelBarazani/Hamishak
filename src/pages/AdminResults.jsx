@@ -59,16 +59,21 @@ export default function AdminResults() {
 
   // ── Helpers ───────────────────────────────────────────────────────────────
   const loadAllQuestions = async (gameId) => {
-    let all = [], from = 0;
+    let all = [], offset = 0;
     const PAGE = 1000;
+    const seenIds = new Set();
     while (true) {
-      const { data, error } = await supabase
-        .from('questions').select('*').eq('game_id', gameId).range(from, from + PAGE - 1);
-      if (error) { console.error('questions fetch error:', error); break; }
-      if (!data || data.length === 0) break;
-      all = [...all, ...data];
-      if (data.length < PAGE) break;
-      from += PAGE;
+      try {
+        const batch = await db.Question.filter({ game_id: gameId }, null, PAGE, offset);
+        if (!batch || batch.length === 0) break;
+        const newItems = batch.filter(q => !seenIds.has(q.id));
+        if (newItems.length === 0) break;
+        newItems.forEach(q => seenIds.add(q.id));
+        all = [...all, ...newItems];
+        console.log(`   📋 שאלות: ${all.length} סה"כ`);
+        if (batch.length < PAGE) break;
+        offset += PAGE;
+      } catch(err) { console.error('questions fetch error:', err); break; }
     }
     return all;
   };
