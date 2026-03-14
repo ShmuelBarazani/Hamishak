@@ -74,7 +74,12 @@ export default function AdminResults() {
       if (data.length < 1000) break;
       from += 1000;
     }
-    return Object.values(all);
+    const result = Object.values(all);
+    // Debug: check if actual_result is present
+    const withResult = result.filter(q => q.actual_result && q.actual_result !== '' && q.actual_result !== null);
+    const withMultiple = result.filter(q => q.actual_result?.includes('|||'));
+    console.log(`   📋 שאלות סה"כ: ${result.length}, עם actual_result: ${withResult.length}, עם |||: ${withMultiple.length}`);
+    return result;
   };
 
   const loadAllPredictions = async (gameId) => {
