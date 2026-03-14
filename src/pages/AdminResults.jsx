@@ -271,7 +271,7 @@ export default function AdminResults() {
       while (true) {
         const { data: arData } = await supabase
           .from('questions')
-          .select('id, actual_result, home_team, away_team, stage_type')
+          .select('id, actual_result, home_team, away_team, stage_type, question_text')
           .eq('game_id', currentGame.id)
           .range(arFrom, arFrom + 999);
         if (!arData?.length) break;
@@ -281,11 +281,23 @@ export default function AdminResults() {
       }
       // מזג actual_result לשאלות
       qs.forEach(q => {
-        if (actualResultMap[q.id]) {
-          q.actual_result = actualResultMap[q.id].actual_result;
-          if (!q.home_team) q.home_team = actualResultMap[q.id].home_team;
-          if (!q.away_team) q.away_team = actualResultMap[q.id].away_team;
-          if (!q.stage_type) q.stage_type = actualResultMap[q.id].stage_type;
+        const ar = actualResultMap[q.id];
+        if (ar) {
+          q.actual_result = ar.actual_result;
+          if (!q.stage_type) q.stage_type = ar.stage_type;
+          // T20: home/away לא נשמרים ב-DB — מפרסרים מ-question_text
+          const qtext = q.question_text || ar.question_text || '';
+          if (!q.home_team || !q.away_team) {
+            if (ar.home_team) q.home_team = ar.home_team;
+            if (ar.away_team) q.away_team = ar.away_team;
+            // אם עדיין חסר — מנסה לפרסר מ-question_text
+            if (!q.home_team && !q.away_team && qtext) {
+              let ts = null;
+              if (qtext.includes(' נגד ')) ts = qtext.split(' נגד ').map(t => t.trim());
+              else if (qtext.includes(' - ')) ts = qtext.split(' - ').map(t => t.trim());
+              if (ts && ts.length === 2) { q.home_team = ts[0]; q.away_team = ts[1]; }
+            }
+          }
         }
       });
       console.log('   📋 actual_results loaded:', Object.keys(actualResultMap).length);
