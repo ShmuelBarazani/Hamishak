@@ -162,9 +162,11 @@ export default function AdminResults() {
       const locationTableIds = ['T9','T14','T15','T16','T17'];
       const isLocationTable = (t) => {
         if (locationTableIds.includes(t.id)) return true;
-        const desc = (t.description || '').toLowerCase();
         const stType = t.questions[0]?.stage_type || '';
-        return stType === 'locations' || desc.includes('מיקום') || desc.includes('מקומות') || desc.includes('מקום');
+        if (stType === 'locations') return true;
+        if (stType === 'playoff' || stType === 'groups' || stType === 'rounds') return false;
+        const desc = (t.description || '').toLowerCase();
+        return desc.includes('מיקום') || desc.includes('מקומות') || desc.includes('מקום');
       };
       const detectedLocationTables = Object.values(sTables)
         .filter(t => isLocationTable(t))
@@ -663,7 +665,7 @@ export default function AdminResults() {
   });
   // מיקומים → קבוצת עולות (כתום)
   if (locationTables.length > 0) allButtons.push({ numericId: 99, stageType: 'qualifiers', key: 'locations', description: 'מיקומים', stageType: 'qualifiers', sectionKey: 'locations' });
-  if (israeliTable) allButtons.push({ numericId: parseInt(israeliTable.id.replace('T','')||'0'), stageType: 'playoff', key: israeliTable.id, description: israeliTable.description, sectionKey: 'israeli' });
+  if (israeliTable) allButtons.push({ numericId: parseInt(israeliTable.id.replace('T','')||'0'), stageType: 'special', key: israeliTable.id, description: israeliTable.description, sectionKey: 'israeli' });
   if (playoffWinnersTable) allButtons.push({ numericId: parseInt(playoffWinnersTable.id.replace('T','')||'0'), stageType: 'qualifiers', key: playoffWinnersTable.id, description: playoffWinnersTable.description, sectionKey: 'playoffWinners' });
   allButtons.sort((a, b) => {
     const order = ['rounds','league','groups','playoff','special','qualifiers'];
