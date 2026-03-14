@@ -99,13 +99,13 @@ export default function ViewSubmissions() {
           Question.filter({ game_id: currentGame.id }, "-created_at", 10000)
         ]);
 
-        // ── טעינת actual_result מ-Supabase (Question.filter לא מחזיר אותו) ──
+        // ── טעינת actual_result מ-Supabase ──
         const arMap = {};
         let arFrom = 0;
         while (true) {
           const { data: arData } = await supabase
             .from('questions')
-            .select('*')
+            .select('id, actual_result, home_team, away_team, stage_type')
             .eq('game_id', currentGame.id)
             .range(arFrom, arFrom + 999);
           if (!arData?.length) break;
@@ -568,16 +568,17 @@ export default function ViewSubmissions() {
       .sort((a, b) => parseFloat(a.question_id) - parseFloat(b.question_id));
     const advCount = cfg ? cfg.count : slots.length;
 
+    const stripCountry = s => s ? s.replace(/\s*\([^)]+\)\s*$/, '').replace(/\s+/g, ' ').trim().toLowerCase() : '';
     const actualSet = new Set(
       slots.filter(q => q.actual_result && q.actual_result !== "__CLEAR__")
-           .map(q => q.actual_result.trim().toLowerCase())
+           .map(q => stripCountry(q.actual_result))
     );
     const allResultsIn = slots.length > 0 && slots.every(q => q.actual_result && q.actual_result !== "__CLEAR__");
 
     let stageBonusEarned = false;
     if (selectedParticipant && allResultsIn && cfg) {
       const predMap = getCombinedPredictionsMap();
-      const guessedSet = new Set(slots.map(q => (predMap[q.id] || "").trim().toLowerCase()).filter(Boolean));
+      const guessedSet = new Set(slots.map(q => stripCountry(predMap[q.id] || '')).filter(Boolean));
       stageBonusEarned = [...actualSet].every(t => guessedSet.has(t));
     }
 
@@ -601,8 +602,9 @@ export default function ViewSubmissions() {
           {slots.map(q => {
             const pred = (getCombinedPredictionsMap()[q.id] || "").trim();
             const hasResult = q.actual_result && q.actual_result !== "__CLEAR__";
-            const isCorrect = hasResult && pred && actualSet.has(pred.toLowerCase());
-            const isWrong   = hasResult && pred && !actualSet.has(pred.toLowerCase());
+            const predNorm = stripCountry(pred);
+            const isCorrect = hasResult && predNorm && actualSet.has(predNorm);
+            const isWrong   = hasResult && predNorm && !actualSet.has(predNorm);
             const pts = isCorrect ? (q.possible_points || 0) : 0;
             return (
               <div key={q.id} style={{ display: "grid", gridTemplateColumns: "40px minmax(80px,1fr) 140px 46px", gap: "8px", alignItems: "center", padding: "7px 10px", borderRadius: "6px", background: isCorrect ? "rgba(16,185,129,0.10)" : isWrong ? "rgba(239,68,68,0.08)" : "rgba(0,0,0,0.22)", border: `1px solid ${isCorrect ? "rgba(16,185,129,0.30)" : isWrong ? "rgba(239,68,68,0.25)" : "rgba(249,115,22,0.15)"}` }}>
