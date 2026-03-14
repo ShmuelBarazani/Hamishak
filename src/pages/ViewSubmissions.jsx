@@ -98,6 +98,29 @@ export default function ViewSubmissions() {
           Prediction.filter({ game_id: currentGame.id }, null, 10000),
           Question.filter({ game_id: currentGame.id }, "-created_at", 10000)
         ]);
+
+        // ── טעינת actual_result מ-Supabase (Question.filter לא מחזיר אותו) ──
+        const arMap = {};
+        let arFrom = 0;
+        while (true) {
+          const { data: arData } = await supabase
+            .from('questions')
+            .select('id, actual_result, home_team, away_team, stage_type')
+            .eq('game_id', currentGame.id)
+            .range(arFrom, arFrom + 999);
+          if (!arData?.length) break;
+          arData.forEach(q => { arMap[q.id] = q; });
+          if (arData.length < 1000) break;
+          arFrom += 1000;
+        }
+        questions.forEach(q => {
+          if (arMap[q.id]) {
+            q.actual_result = arMap[q.id].actual_result;
+            if (!q.home_team) q.home_team = arMap[q.id].home_team;
+            if (!q.away_team) q.away_team = arMap[q.id].away_team;
+            if (!q.stage_type) q.stage_type = arMap[q.id].stage_type;
+          }
+        });
         const teamsData = currentGame.teams_data || [];
         const validationListsData = currentGame.validation_lists || [];
         const teamsMap = teamsData.reduce((acc, team) => { acc[team.name] = team; return acc; }, {});
