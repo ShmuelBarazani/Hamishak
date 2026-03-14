@@ -78,7 +78,7 @@ export default function AdminResults() {
     const PAGE = 1000;
     while (true) {
       const { data, error } = await supabase
-        .from('predictions').select('*').eq('game_id', gameId).range(from, from + PAGE - 1);
+        .from('game_predictions').select('*').eq('game_id', gameId).range(from, from + PAGE - 1);
       if (error) { console.error('predictions fetch error:', error); break; }
       if (!data || data.length === 0) break;
       all = [...all, ...data];
