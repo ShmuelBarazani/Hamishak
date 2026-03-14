@@ -280,13 +280,18 @@ export default function AdminResults() {
     setRecalculating(true);
     setRecalcProgress('טוען שאלות...');
     try {
-      // ✅ משתמש ב-allQuestions שכבר יש לו actual_result מה-state
-      // (נטעין מ-DB רק אם ה-state ריק)
-      let qs = allQuestions.length > 0 
-        ? allQuestions 
-        : await loadAllQuestions(currentGame.id);
+      // טוען שאלות — משתמש ב-allQuestions state אם יש actual_result, אחרת טוען מ-Supabase
+      let qs;
+      const stateHasResults = allQuestions.length > 0 && allQuestions.some(q => q.actual_result);
+      if (stateHasResults) {
+        qs = allQuestions;
+        console.log(`   📋 שאלות מה-state: ${qs.length}, עם actual_result: ${qs.filter(q=>q.actual_result).length}, עם |||: ${qs.filter(q=>q.actual_result?.includes('|||')).length}`);
+      } else {
+        console.log('   📋 טוען שאלות עם actual_result מ-Supabase...');
+        qs = await loadAllQuestions(currentGame.id);
+        console.log(`   📋 שאלות מ-Supabase: ${qs.length}, עם actual_result: ${qs.filter(q=>q.actual_result).length}, עם |||: ${qs.filter(q=>q.actual_result?.includes('|||')).length}`);
+      }
       qs = qs.filter(q => q.table_id && q.table_id !== 'T1');
-      console.log(`   📋 שאלות מה-state: ${qs.length}, עם actual_result: ${qs.filter(q => q.actual_result).length}, עם |||: ${qs.filter(q => q.actual_result?.includes('|||')).length}`);
 
       // actual_result ו-question_text נטענים ב-loadAllQuestions ישירות
       qs.forEach(q => {
