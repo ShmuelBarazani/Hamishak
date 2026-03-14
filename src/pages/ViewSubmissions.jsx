@@ -2281,8 +2281,8 @@ export default function ViewSubmissions() {
                 }
                 return null;
             })}
-            </div>{/* end content */}
-          </div>{/* end flex */}
+            </div>
+          </div>
         ) : null}
       </div>
 
