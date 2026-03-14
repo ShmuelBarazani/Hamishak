@@ -123,6 +123,11 @@ export default function Statistics() {
   const [userStatsError, setUserStatsError] = useState(null);
 
   const { currentGame } = useGame();
+  const isKnockout = !!(
+    currentGame?.name?.includes('נוק-אאוט') ||
+    currentGame?.name?.includes('knock') ||
+    currentGame?.id === '9c9c1331-5184-406b-98b3-6becd9577567'
+  );
 
   const formatResult = useCallback((result) => {
     if (!result || result === '__CLEAR__') return '';
@@ -173,18 +178,28 @@ export default function Statistics() {
       setIsraeliTable(t20Table || null);
 
       const sortedRoundTables = Object.values(rTables).sort((a, b) => (parseInt(a.id.replace('T', '')) || 0) - (parseInt(b.id.replace('T', '')) || 0));
-      const isKnockout = !!(currentGame?.name?.includes('נוק-אאוט') || currentGame?.name?.includes('knock') || currentGame?.id === '9c9c1331-5184-406b-98b3-6becd9577567');
       if (isKnockout) sortedRoundTables.forEach(t => { if (t.id === 'T3') t.description = 'שלב שמינית הגמר - המשחקים!'; });
       setRoundTables(sortedRoundTables);
       if (sortedRoundTables.length > 0) setSelectedRound(sortedRoundTables[0].id);
 
       const locationTableIds = ['T14', 'T15', 'T16', 'T17'];
-      setLocationTables(Object.values(sTables).filter(t => locationTableIds.includes(t.id)).sort((a, b) => (parseInt(a.id.replace('T', '')) || 0) - (parseInt(b.id.replace('T', '')) || 0)));
+      const isLocTable = (t) => {
+        if (locationTableIds.includes(t.id)) return true;
+        const stType = t.questions[0]?.stage_type || '';
+        return stType === 'locations';
+      };
+      setLocationTables(Object.values(sTables).filter(t => isLocTable(t)).sort((a, b) => (parseInt(a.id.replace('T', '')) || 0) - (parseInt(b.id.replace('T', '')) || 0)));
       setPlayoffTable(sTables['T19'] || null);
 
+      const detectedLocationIds = new Set(Object.values(sTables).filter(t => isLocTable(t)).map(t => t.id));
       const allSpecialTables = Object.values(sTables).filter(table => {
         const desc = table.description?.trim();
-        return desc && !/^\d+$/.test(desc) && !locationTableIds.includes(table.id) && table.id !== 'T19';
+        const stType = table.questions[0]?.stage_type || '';
+        if (stType === 'playoff' || stType === 'groups' || stType === 'rounds') {
+          // "מקומות 9-24" type — belongs to מיוחדות NOT מיקומים
+          return desc && !/^\d+$/.test(desc) && table.id !== 'T19' && !detectedLocationIds.has(table.id);
+        }
+        return desc && !/^\d+$/.test(desc) && !detectedLocationIds.has(table.id) && table.id !== 'T19';
       }).sort((a, b) => (parseInt(a.id.replace('T', '')) || 0) - (parseInt(b.id.replace('T', '')) || 0));
 
       // 🔥 עולות = רק טבלאות עם "רשימת הקבוצות שיעלו" בתיאור
@@ -240,7 +255,8 @@ export default function Statistics() {
           // כל שאלות עם question_id שלם (slots), ללא תלות ב-advCount קשיח
           const slots = table.questions.filter(q => { const n = parseFloat(q.question_id); return Number.isInteger(n) && n >= 1; });
           const slotIds = new Set(slots.map(s => s.id));
-          const advCount = cfg ? cfg.count : slots.length;
+          // advCount = מספר ה-slots בפועל (לא מה שמוגדר ב-ADVANCING_CONFIG)
+          const advCount = slots.length || (cfg ? cfg.count : 0);
 
           const teamCounts = {};
           const participantsByTeam = {};
@@ -424,7 +440,15 @@ export default function Statistics() {
       description: (table.id === 'T3' && isKnockout) ? 'שלב שמינית הגמר - המשחקים!' : table.description,
     }));
     // israeliTable goes to מיוחדות, not פלייאוף
-    if (playoffButtons.length > 0) groups.push({ label: '⚽ פלייאוף', color: '#3b82f6', activeBg: '#2563eb', buttons: playoffButtons });
+    if (playoffButtons.length > 0) {
+      const allGroupStage = roundTables.every(t => t.id.includes('בית') || t.description?.includes('בית'));
+      groups.push({
+        label: allGroupStage ? '🏠 בתים' : '⚽ פלייאוף',
+        color: allGroupStage ? 'var(--tp)' : '#3b82f6',
+        activeBg: allGroupStage ? 'var(--tp-dark)' : '#2563eb',
+        buttons: playoffButtons
+      });
+    }
 
     // קבוצה 3: שאלות מיוחדות (ציאן)
     const specialButtons = [];
@@ -436,16 +460,17 @@ export default function Statistics() {
     if (playoffTable) specialButtons.push({ key: playoffTable.id, description: playoffTable.description });
     if (specialButtons.length > 0) groups.push({ label: '✨ מיוחדות', color: '#06b6d4', activeBg: '#0891b2', buttons: specialButtons });
 
-    // קבוצה 4: עולות T4/T5/T6 (כתום)
-    if (qualifierTables.length > 0) {
-      groups.push({
-        label: '📋 עולות', color: '#f97316', activeBg: '#ea580c',
-        buttons: [...(locationTables.length > 0 ? [{ key: 'locations', description: 'מיקומים' }] : []), ...qualifierTables.map(table => ({ key: `qual_${table.id}`, description: table.description }))]
-      });
+    // קבוצה 4: עולות (כתום) — T4/T5/T6 + מיקומים
+    const qualiferButtons = [
+      ...(locationTables.length > 0 ? [{ key: 'locations', description: 'מיקומים' }] : []),
+      ...qualifierTables.map(table => ({ key: `qual_${table.id}`, description: table.description }))
+    ];
+    if (qualiferButtons.length > 0) {
+      groups.push({ label: '📋 עולות', color: '#f97316', activeBg: '#ea580c', buttons: qualiferButtons });
     }
 
     return groups;
-  }, [roundTables, specialTables, qualifierTables, locationTables, israeliTable, playoffTable]);
+  }, [roundTables, specialTables, qualifierTables, locationTables, israeliTable, playoffTable, isKnockout]);
 
   // useEffect: חישוב לפי section שנבחר
   useEffect(() => {
