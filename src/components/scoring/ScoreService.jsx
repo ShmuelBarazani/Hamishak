@@ -197,8 +197,9 @@ export function calculateQuestionScore(question, prediction, allQuestionsInTable
     return advancingActuals.includes(cleanPred) ? (question.possible_points || 0) : 0;
   }
 
-  // ── ניקוד לפי נוכחות — שאלות "מי עלה" בטבלאות אחרות ───────────────────
-  const isPresenceStage  = ['T_TOP_FINISHERS', 'T11', 'T12', 'T13'].includes(question.table_id);
+  // ── ניקוד לפי נוכחות — שאלות "מי עלה" בטבלאות T_TOP_FINISHERS/T_THIRD_PLACE ──
+  // T11/T12/T13 נשקלות לפי השוואה מדויקת (לא נוכחות) — בשלב הבתים הן כן/לא
+  const isPresenceStage  = ['T_TOP_FINISHERS'].includes(question.table_id);
   const isThirdPlaceMain = question.table_id === 'T_THIRD_PLACE' && !question.question_id.includes('.');
 
   if (isPresenceStage || isThirdPlaceMain) {
