@@ -116,14 +116,20 @@ export default function ViewSubmissions() {
           }
           const arCount = Object.values(arMap).filter(q => q.actual_result).length;
           console.log('ViewSubmissions arMap loaded:', Object.keys(arMap).length, 'with actual_result:', arCount);
-          questions.forEach(q => {
-            if (arMap[q.id]) {
-              q.actual_result = arMap[q.id].actual_result;
-              if (!q.home_team) q.home_team = arMap[q.id].home_team;
-              if (!q.away_team) q.away_team = arMap[q.id].away_team;
-              if (!q.stage_type) q.stage_type = arMap[q.id].stage_type;
+          // מעדכן את האובייקטים עם actual_result — spread כדי להתגבר על frozen objects
+          for (let i = 0; i < questions.length; i++) {
+            const ar = arMap[questions[i].id];
+            if (ar) {
+              questions[i] = {
+                ...questions[i],
+                actual_result: ar.actual_result,
+                home_team: questions[i].home_team || ar.home_team,
+                away_team: questions[i].away_team || ar.away_team,
+                stage_type: questions[i].stage_type || ar.stage_type,
+              };
             }
-          });
+          }
+          console.log('sample T14 q actual_result:', questions.find(q=>q.table_id==='T14')?.actual_result);
         }
         const teamsData = currentGame.teams_data || [];
         const validationListsData = currentGame.validation_lists || [];
