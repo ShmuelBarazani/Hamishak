@@ -211,17 +211,10 @@ export function calculateQuestionScore(question, prediction, allQuestionsInTable
     return actualTeams.includes(cleanPred) ? (question.possible_points || 0) : 0;
   }
 
-  // ── טבלאות מיקומים — ניקוד לפי נוכחות (לא מיקום) ──────────────────────
+  // ── טבלאות מיקומים — ניקוד מחושב ברמת הטבלה בלבד (כמו BASE44) ──────────
+  // calculateLocationBonus מחשב הכל: ניקוד בסיסי + בונוסים
   if (isLocationTable(question.table_id, allQuestionsInTable)) {
-    const actualTeamsSet = new Set(
-      allQuestionsInTable
-        .filter(q => q.actual_result && q.actual_result !== '__CLEAR__')
-        .map(q => cleanText(normalizeResult(q.actual_result)).toLowerCase())
-    );
-    const cleanPredLoc = cleanText(normalizedPred).toLowerCase();
-    return (cleanPredLoc && actualTeamsSet.has(cleanPredLoc))
-      ? (question.possible_points || 0)
-      : 0;
+    return null; // לא מחשבים ניקוד ברמת שאלה בודדת
   }
 
   // ── שאלות טקסט רגילות ────────────────────────────────────────────────────
@@ -286,22 +279,30 @@ export function calculateLocationBonus(tableId, questions, predictions) {
   }
 
   const allCorrect = correctTeams === mainQuestions.length;
-  const bonusCfg   = getLocationBonusConfig(tableId, mainQuestions.length);
 
+  // ניקוד בסיסי: נוכחות לכל קבוצה נכונה (20 נקודות לכל קבוצה, 30 ב-T19)
+  const pointsPerTeam = tableId === 'T19' ? 30 : 20;
+  const basicScore = correctTeams * pointsPerTeam;
+
+  // בונוס עולות: רק אם כל הקבוצות נכונות
   let teamsBonus = 0;
-  let orderBonus = 0;
-
   if (allCorrect) {
-    teamsBonus = bonusCfg.teamsBonus;
-    if (perfectOrder && tableId !== 'T19') {
-      orderBonus = bonusCfg.orderBonus;
-    }
+    if (tableId === 'T17') teamsBonus = 30;
+    else teamsBonus = 20; // T14, T15, T16, T19
+  }
+
+  // בונוס מיקום: רק אם כל הקבוצות נכונות ובמיקום מדויק (לא T19)
+  let orderBonus = 0;
+  if (allCorrect && perfectOrder && tableId !== 'T19') {
+    if (tableId === 'T17') orderBonus = 50;
+    else orderBonus = 40; // T14, T15, T16
   }
 
   return {
+    basicScore,
     teamsBonus,
     orderBonus,
-    total: teamsBonus + orderBonus,
+    total: basicScore + teamsBonus + orderBonus,
     allCorrect,
     perfectOrder,
     correctTeams,
@@ -409,6 +410,12 @@ export function calculateTotalScore(questions, predictions) {
     const bonus = calculateLocationBonus(tableId, tQuestions, predictions);
     if (bonus && bonus.total > 0) {
       total += bonus.total;
+      if (bonus.basicScore > 0) {
+        breakdown.push({
+          question_id: `${tableId}_BASIC`, question_id_text: 'ניקוד מיקומים',
+          table_id: tableId, score: bonus.basicScore, max_score: bonus.basicScore, isBonus: false,
+        });
+      }
       if (bonus.teamsBonus > 0) {
         breakdown.push({
           question_id: `${tableId}_TEAMS`, question_id_text: 'בונוס קבוצות',
