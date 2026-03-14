@@ -59,19 +59,20 @@ export default function AdminResults() {
 
   // ── Helpers ───────────────────────────────────────────────────────────────
   const loadAllQuestions = async (gameId) => {
-    let all = [], from = 0;
-    const PAGE = 1000;
-    while (true) {
-      const { data, error } = await supabase
-        .from('questions').select('*').eq('game_id', gameId).range(from, from + PAGE - 1);
-      if (error) { console.error('questions fetch error:', error); break; }
-      if (!data || data.length === 0) break;
-      all = [...all, ...data];
-      console.log(`   📋 שאלות: ${all.length} סה"כ`);
-      if (data.length < PAGE) break;
-      from += PAGE;
+    // db.Question.filter עובד עם RLS כמו שאר ה-entities
+    const PAGE = 5000;
+    try {
+      const batch1 = await db.Question.filter({ game_id: gameId }, null, PAGE, 0);
+      console.log(`   📋 שאלות batch1: ${batch1?.length}`);
+      if (!batch1?.length) return [];
+      if (batch1.length < PAGE) return batch1;
+      // אם יש יותר מ-5000 (לא צפוי)
+      const batch2 = await db.Question.filter({ game_id: gameId }, null, PAGE, PAGE);
+      return [...batch1, ...(batch2 || [])];
+    } catch(err) {
+      console.error('questions fetch error:', err);
+      return [];
     }
-    return all;
   };
 
   const loadAllPredictions = async (gameId) => {
