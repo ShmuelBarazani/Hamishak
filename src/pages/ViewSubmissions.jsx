@@ -637,7 +637,7 @@ export default function ViewSubmissions() {
     table.questions.forEach(q => { const mainId = Math.floor(parseFloat(q.question_id)); if (!grouped[mainId]) grouped[mainId] = { main: null, subs: [] }; if (q.question_id.includes('.')) grouped[mainId].subs.push(q); else grouped[mainId].main = q; });
     const sortedMainIds = Object.keys(grouped).sort((a, b) => Number(a) - Number(b));
     let bonusInfo = null;
-    const isLocationTable = ['T14', 'T15', 'T16', 'T17', 'T19'].includes(table.id);
+    const isLocationTable = ['T14', 'T15', 'T16', 'T17', 'T19'].includes(table.id) || locationTables.some(lt => lt.id === table.id);
     if (selectedParticipant) { const predForBonus = {}; table.questions.forEach(q => { const editedValue = editedPredictions[q.id]; predForBonus[q.id] = editedValue !== undefined ? editedValue : (participantPredictions[q.id] || ""); }); bonusInfo = calculateLocationBonus(table.id, table.questions, predForBonus); }
     let teamsBonusPotential = 0, orderBonusPotential = 0;
     if (isLocationTable) { if (table.id === 'T17') { teamsBonusPotential = 30; orderBonusPotential = 50; } else if (table.id === 'T19') { teamsBonusPotential = 20; orderBonusPotential = 0; } else { teamsBonusPotential = 20; orderBonusPotential = 40; } }
