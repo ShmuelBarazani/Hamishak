@@ -651,44 +651,55 @@ export default function Statistics() {
   const allButtons = useMemo(() => {
     const buttons = [];
 
-    // תובנות ופרטי מנחשים — תמיד ראשונים, stageType=special
-    buttons.push({ numericId: -2, key: 'insights', description: 'תובנות AI ומחנות', stageType: 'special', icon: PieChart });
-    buttons.push({ numericId: -1, key: 'users',    description: 'פרטי המנחשים',        stageType: 'special', icon: Users });
+    buttons.push({ numericId: 0, key: 'insights', description: 'תובנות AI ומחנות', icon: PieChart });
+    buttons.push({ numericId: 0.5, key: 'users', description: 'פרטי המנחשים', icon: Users });
 
-    // טבלאות משחקים
     if (roundTables.length > 0) {
-      const allAreGroups = roundTables.every(t => t.id.includes('בית') || t.description?.includes('בית'));
-      if (allAreGroups) {
-        buttons.push({ numericId: parseInt(roundTables[0].id.replace('T',''),10), key: 'rounds', description: 'שלב הבתים', stageType: 'rounds', icon: Target });
-      } else {
-        roundTables.forEach(t => {
-          const st = t.questions[0]?.stage_type || 'playoff';
-          buttons.push({ numericId: parseInt(t.id.replace('T',''),10)||0, key: `round_${t.id}`, description: t.description || t.id, stageType: st, icon: Target });
-        });
-      }
+      const firstRoundTableId = roundTables[0]?.id || 'T2';
+      buttons.push({
+        numericId: parseInt(firstRoundTableId.replace('T', ''), 10),
+        key: 'rounds',
+        description: firstRoundTableId === 'T3' ? 'שלב שמינית הגמר - המשחקים!' : 'סטטיסטיקות משחקי הליגה',
+        icon: Target
+      });
     }
 
-    // שאלות מיוחדות
     specialTables.forEach(table => {
       if (table.id === 'T1' || (table.description && table.description.includes('פרטי מנחשים'))) return;
-      const st = table.questions[0]?.stage_type || 'special';
-      const stageType = ['playoff','groups','rounds','league','qualifiers','other'].includes(st) ? st : 'special';
-      buttons.push({ numericId: parseInt(table.id.replace('T',''),10)||0, key: table.id, description: table.description, stageType, icon: TrendingUp });
+      buttons.push({
+        numericId: parseInt(table.id.replace('T', ''), 10),
+        key: table.id,
+        description: table.description,
+        icon: TrendingUp
+      });
     });
 
-    // מיקומים
     if (locationTables.length > 0) {
-      buttons.push({ numericId: parseInt((locationTables[0]?.id||'T14').replace('T',''),10), key: 'locations', description: 'מיקומים בסיום שלב הליגה', stageType: 'other', icon: Award });
+      const firstLocationTableId = locationTables[0]?.id || 'T14';
+      buttons.push({
+        numericId: parseInt(firstLocationTableId.replace('T', ''), 10),
+        key: 'locations',
+        description: 'מיקומים בסיום שלב הליגה',
+        icon: Award
+      });
     }
 
-    // T19 — עולות לשמינית הגמר
     if (playoffTable) {
-      buttons.push({ numericId: parseInt(playoffTable.id.replace('T',''),10)||0, key: playoffTable.id, description: playoffTable.description, stageType: 'qualifiers', icon: Award });
+      buttons.push({
+        numericId: parseInt(playoffTable.id.replace('T', ''), 10),
+        key: playoffTable.id,
+        description: playoffTable.description,
+        icon: Award
+      });
     }
 
-    // Israeli table
     if (israeliTable) {
-      buttons.push({ numericId: parseInt(israeliTable.id.replace('T',''),10)||0, key: israeliTable.id, description: israeliTable.description, stageType: 'league', icon: Target });
+      buttons.push({
+        numericId: parseInt(israeliTable.id.replace('T', ''), 10),
+        key: israeliTable.id,
+        description: israeliTable.description,
+        icon: Target
+      });
     }
 
     return buttons.sort((a, b) => a.numericId - b.numericId);
@@ -698,7 +709,7 @@ export default function Statistics() {
     if (selectedSection && !loading && allQuestions.length > 0) {
       const buttonInfo = allButtons.find(btn => btn.key === selectedSection);
       if (!buttonInfo) return;
-      if (buttonInfo.key === 'rounds' || buttonInfo.key.startsWith('round_')) {
+      if (buttonInfo.key === 'rounds') {
         calculateGameStats('rounds', selectedRound);
       } else if (buttonInfo.key === 'israeli' || buttonInfo.key === israeliTable?.id) {
         calculateGameStats('israeli');
@@ -770,56 +781,23 @@ export default function Statistics() {
             overflowY: 'auto',
             paddingBottom: '16px'
           }}>
-            <div style={{ background: 'rgba(13,18,30,0.9)', borderRadius: '12px', border: '1px solid rgba(6,182,212,0.12)', padding: '14px 10px', backdropFilter: 'blur(10px)' }}>
             <div style={{
-              fontSize: '0.5rem', fontWeight: '800', letterSpacing: '0.18em',
-              textTransform: 'uppercase', color: '#334155', marginBottom: '14px'
-            }}>בחירת שלב</div>
-            {(() => {
-              const groupMap = {
-                playoff:    { label: '⚽ משחקי פלייאוף', color: '#3b82f6', bg: 'rgba(59,130,246,0.10)',  border: 'rgba(59,130,246,0.30)',  activeBg: '#2563eb',  activeShadow: '0 2px 10px rgba(59,130,246,0.44)' },
-                league:     { label: '⚽ משחקי ליגה',    color: '#3b82f6', bg: 'rgba(59,130,246,0.10)',  border: 'rgba(59,130,246,0.30)',  activeBg: '#2563eb',  activeShadow: '0 2px 10px rgba(59,130,246,0.44)' },
-                groups:     { label: '🏠 שלב הבתים',     color: '#06b6d4', bg: 'rgba(6,182,212,0.10)',   border: 'rgba(6,182,212,0.30)',   activeBg: '#0891b2',  activeShadow: '0 2px 10px rgba(6,182,212,0.44)'  },
-                rounds:     { label: '⚽ מחזורים',        color: '#06b6d4', bg: 'rgba(6,182,212,0.10)',   border: 'rgba(6,182,212,0.30)',   activeBg: '#0891b2',  activeShadow: '0 2px 10px rgba(6,182,212,0.44)'  },
-                special:    { label: '✨ שאלות מיוחדות', color: '#8b5cf6', bg: 'rgba(139,92,246,0.10)', border: 'rgba(139,92,246,0.30)', activeBg: '#7c3aed',  activeShadow: '0 2px 10px rgba(139,92,246,0.44)' },
-                qualifiers: { label: '📋 רשימות עולות',  color: '#f97316', bg: 'rgba(249,115,22,0.10)',  border: 'rgba(249,115,22,0.30)',  activeBg: '#ea580c',  activeShadow: '0 2px 10px rgba(249,115,22,0.44)' },
-                other:      { label: '📌 מיקומים',        color: '#64748b', bg: 'rgba(100,116,139,0.08)', border: 'rgba(100,116,139,0.20)', activeBg: '#475569',  activeShadow: '0 2px 8px rgba(100,116,139,0.30)'  },
-              };
-              const grouped = {};
-              allButtons.forEach(btn => {
-                const t = btn.stageType || 'special';
-                if (!grouped[t]) grouped[t] = [];
-                grouped[t].push(btn);
-              });
-              const order = ['rounds','league','groups','playoff','special','qualifiers','other'];
-              const sortedGroups = order.filter(t => grouped[t]);
-              return sortedGroups.map(type => {
-                const info = groupMap[type] || groupMap.other;
-                return (
-                  <div key={type} style={{ marginBottom: '14px' }}>
-                    <div style={{ fontSize: '0.55rem', fontWeight: '700', letterSpacing: '0.08em', textTransform: 'uppercase', color: info.color, marginBottom: '5px', paddingRight: '2px', opacity: 0.85 }}>{info.label}</div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
-                      {grouped[type].map(btn => {
-                        const active = selectedSection === btn.key;
-                        return (
-                          <button key={btn.key} onClick={() => toggleSection(btn.key)} style={{
-                            display: 'block', width: '100%', textAlign: 'right', padding: '7px 10px',
-                            borderRadius: '8px', fontSize: '0.8rem', fontWeight: active ? '700' : '400',
-                            color: active ? 'white' : info.color,
-                            background: active ? info.activeBg : info.bg,
-                            border: `1px solid ${active ? info.color : info.border}`,
-                            cursor: 'pointer', transition: 'all 0.15s',
-                            boxShadow: active ? info.activeShadow : 'none',
-                            fontFamily: 'Rubik, Heebo, sans-serif', lineHeight: '1.35',
-                          }}>{btn.description}</button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                );
-              });
-            })()}
-            </div>
+              fontSize: '0.58rem', fontWeight: '700', letterSpacing: '0.12em',
+              textTransform: 'uppercase', color: '#475569', marginBottom: '10px'
+            }}>בחר שלב</div>
+
+            {allButtons.map(button => {
+              const active = selectedSection === button.key;
+              const { color, activeBg, border } = getSidebarColors(button.key);
+              return (
+                <button
+                  key={button.key}
+                  onClick={() => toggleSection(button.key)}
+                  style={{
+                    display: 'block', width: '100%', textAlign: 'right',
+                    padding: '8px 12px', marginBottom: '4px', borderRadius: '8px',
+                    fontSize: '0.8rem', fontWeight: active ? '700' : '400',
+                    color: active ? 'white' : color,
 
           </aside>
 
