@@ -344,10 +344,10 @@ export default function ViewSubmissions() {
       
       setLoadingPredictions(true);
       try {
-        // כל משתתף עם מקסימום ~200 ניחושים — Prediction.filter מספיק
+        // 🔥 טוען ניחושים של משתתף מכל המשחקים — כי שאלות מיקומים (T14-T17,T19)
+        // שייכות למשחק שלב הבתים (game_id שונה מהמשחק הנוכחי)
         const predictions = await Prediction.filter({
           participant_name: selectedParticipant,
-          game_id: currentGame.id
         }, "-created_at", 5000);
         setData(prev => ({ ...prev, predictions }));
         setEditedPredictions({});
@@ -585,9 +585,9 @@ export default function ViewSubmissions() {
       });
 
       // טען מחדש את הניחושים
+      // 🔥 טוען ניחושים מכל המשחקים (כולל שלב בתים)
       const reloadPreds = await Prediction.filter({
         participant_name: selectedParticipant,
-        game_id: currentGame.id
       }, "-created_at", 5000);
       setData(prev => ({ ...prev, predictions: reloadPreds }));
       setEditedPredictions({});
