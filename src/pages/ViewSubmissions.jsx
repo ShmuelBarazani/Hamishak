@@ -350,29 +350,39 @@ export default function ViewSubmissions() {
           participant_name: selectedParticipant,
         }, "-created_at", 5000);
 
-        // 🔥 בנה מיפוי משני: "{table_id}_{question_id_number}" → ניחוש
-        // משמש כ-fallback עבור שאלות מיקומים שה-UUID שלהן שונה בין המשחקים
+        // 🔥 בנה מיפוי: "{table_id}_{question_id_number}" → text_prediction
+        // פתרון UUID mismatch: שאלות מיקומים קיימות בשני המשחקים עם UUID שונה.
+        // Question.filter עובר דרך GameContext ומחזיר רק שאלות המשחק הנוכחי —
+        // לכן משתמשים ב-supabase ישיר שמביא שאלות מיקומים מכל המשחקים.
         const locationTableIds = ['T14', 'T15', 'T16', 'T17', 'T19'];
         const locationPredsByTableQ = {};
-        if (predictions.length > 0) {
-          // בנה map של UUID שאלות מכל המשחקים (כולל שלב הבתים)
-          const allQuestionsRaw = await Question.filter({}, null, 10000);
-          const qUuidToTableQ = {};
-          allQuestionsRaw.forEach(q => {
-            if (locationTableIds.includes(q.table_id)) {
-              qUuidToTableQ[q.id] = `${q.table_id}_${q.question_id}`;
-            }
-          });
-          // מפה ניחוש לפי table_id_question_id
-          predictions.forEach(p => {
-            const key = qUuidToTableQ[p.question_id];
-            if (key) {
-              // שמור רק את הניחוש האחרון
-              if (!locationPredsByTableQ[key] || new Date(p.created_at) > new Date(locationPredsByTableQ[key].created_at)) {
-                locationPredsByTableQ[key] = p;
+        try {
+          // שלב 1: UUID של כל שאלות המיקומים בכל המשחקים (supabase ישיר — ללא GameContext)
+          const { data: locQuestions } = await supabase
+            .from('questions')
+            .select('id, table_id, question_id')
+            .in('table_id', locationTableIds);
+
+          if (locQuestions && locQuestions.length > 0) {
+            // שלב 2: בנה map UUID → "T14_1", "T14_2" ...
+            const uuidToKey = {};
+            locQuestions.forEach(q => {
+              uuidToKey[q.id] = `${q.table_id}_${q.question_id}`;
+            });
+
+            // שלב 3: מפה ניחושים לפי מפתח סמנטי
+            predictions.forEach(p => {
+              const key = uuidToKey[p.question_id];
+              if (key) {
+                if (!locationPredsByTableQ[key] ||
+                    new Date(p.created_at) > new Date(locationPredsByTableQ[key].created_at)) {
+                  locationPredsByTableQ[key] = { text_prediction: p.text_prediction, created_at: p.created_at };
+                }
               }
-            }
-          });
+            });
+          }
+        } catch (e) {
+          console.error('Error building locationPredsByTableQ:', e);
         }
 
         setData(prev => ({ ...prev, predictions, locationPredsByTableQ }));
