@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, startTransition } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -168,13 +168,7 @@ export default function AdminResults() {
         return desc && !/^\d+$/.test(desc) && !locationTableIds.includes(t.id) && t.id !== 'T19' && !t.id.includes('בית') && t.id !== 'T1' && t.id !== 'T9';
       }).sort((a,b) => ((a.stage_order||0) - (b.stage_order||0)) || (parseInt(a.id.replace('T','').replace(/\D/g,'')) - parseInt(b.id.replace('T','').replace(/\D/g,''))));
       setSpecialTables(allSpecialTables);
-      // ── שינוי שם T3 ──────────────────────────────────────────
-      sortedRoundTables.forEach(t => {
-        if (t.id === 'T3') t.description = 'שלב שמינית הגמר - המשחקים!';
-      });
-      allSpecialTables.forEach(t => {
-        if (t.id === 'T3') t.description = 'שלב שמינית הגמר - המשחקים!';
-      });
+      // ✅ שמות טבלאות מגיעים מה-DB (table_description) לפי game_id — ללא override קשיח
 
       const t10Special = sTables['T10'];
       if (t10Special) {
@@ -365,7 +359,7 @@ export default function AdminResults() {
     setSaving(false);
   };
 
-  const toggleSection = (sectionId) => setOpenSections(prev => ({ ...prev, [sectionId]: !prev[sectionId] }));
+  const toggleSection = (sectionId) => { startTransition(() => { setOpenSections(prev => ({ ...prev, [sectionId]: !prev[sectionId] })); }); };
 
   const findTeam = (name) => {
     if (!name) return null;
@@ -644,7 +638,7 @@ export default function AdminResults() {
     const stageType = st && ['playoff','groups','rounds','league','qualifiers','other'].includes(st) ? st : 'special';
     allButtons.push({ numericId: t.stage_order || parseInt(t.id.replace('T','').replace(/\D/g,''))||0, stageType, key: t.id, description: t.description, sectionKey: t.id });
   });
-  if (locationTables.length > 0) allButtons.push({ numericId: 99, stageType: 'other', key: 'locations', description: 'מיקומים', sectionKey: 'locations' });
+  if (locationTables.length > 0) allButtons.push({ numericId: 99, stageType: 'qualifiers', key: 'locations', description: 'מיקומים בתום שלב הבתים', sectionKey: 'locations' });
   if (israeliTable) allButtons.push({ numericId: parseInt(israeliTable.id.replace('T','')||'0'), stageType: israeliTable.questions?.[0]?.stage_type || 'special', key: israeliTable.id, description: israeliTable.description, sectionKey: 'israeli' });
   if (playoffWinnersTable) allButtons.push({ numericId: parseInt(playoffWinnersTable.id.replace('T','')||'0'), stageType: 'qualifiers', key: playoffWinnersTable.id, description: playoffWinnersTable.description, sectionKey: 'playoffWinners' });
   allButtons.sort((a, b) => {
