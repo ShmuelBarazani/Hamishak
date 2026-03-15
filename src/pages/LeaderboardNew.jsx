@@ -91,7 +91,7 @@ export default function LeaderboardNew() {
     let all = [], from = 0;
     const PAGE = 1000;
     while (true) {
-      let query = supabase.from('game_predictions').select('*').eq('game_id', gameId).range(from, from + PAGE - 1);
+      let query = supabase.from('predictions').select('*').eq('game_id', gameId).range(from, from + PAGE - 1);
       if (participantName) query = query.eq('participant_name', participantName);
       const { data, error } = await query;
       if (error) { console.error('predictions fetch error:', error); break; }
