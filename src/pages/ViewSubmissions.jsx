@@ -1110,6 +1110,8 @@ export default function ViewSubmissions() {
       const locKey = `${question.table_id}_${question.question_id}`;
       const crossGameActual = data.locationActualsByTableQ?.[locKey];
       if (crossGameActual) effectiveActualResult = crossGameActual;
+      // 🐛 DEBUG
+      console.log(`🔍 renderReadOnlySelect ${locKey}: pred="${originalValue}" actual_q="${question.actual_result}" crossActual="${crossGameActual}" effective="${effectiveActualResult}" mapSize=${Object.keys(data.locationActualsByTableQ||{}).length}`);
     }
     const scoreValue = isLocQ ? stripParens(originalValue) : originalValue;
     const scoreQuestion = isLocQ ? {
