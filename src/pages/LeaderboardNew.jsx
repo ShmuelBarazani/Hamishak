@@ -91,7 +91,7 @@ export default function LeaderboardNew() {
     let all = [], from = 0;
     const PAGE = 1000;
     while (true) {
-      let query = supabase.from('predictions').select('*').eq('game_id', gameId).range(from, from + PAGE - 1);
+      let query = supabase.from('game_predictions').select('*').eq('game_id', gameId).range(from, from + PAGE - 1);
       if (participantName) query = query.eq('participant_name', participantName);
       const { data, error } = await query;
       if (error) { console.error('predictions fetch error:', error); break; }
@@ -200,26 +200,67 @@ export default function LeaderboardNew() {
 
       const { total: totalScore, breakdown } = calcScore(allQuestions, allPredictions);
 
-      const enriched = breakdown.map(item => {
-        const q = allQuestions.find(x => x.id === item.question_id);
-        if (!q) return null;
-        const pred = allPredictions.find(p => p.question_id === item.question_id);
-        return {
-          score: item.score,
-          max_score: item.max_score,
-          table_id: item.table_id || '?',
-          question_id_display: item.question_id_text || q.question_id || '?',
-          question_text: q.question_text || '',
-          home_team: q.home_team,
-          away_team: q.away_team,
-          actual_result: formatScore(q.actual_result || ''),
-          prediction: formatScore(pred?.text_prediction || ''),
-          home_team_display: q.home_team?.replace(/\s*\([^)]+\)\s*$/, '').trim() || null,
-          away_team_display: q.away_team?.replace(/\s*\([^)]+\)\s*$/, '').trim() || null,
-          home_team_logo: q.home_team ? (teamsMap[q.home_team]?.logo_url || teamsMap[q.home_team.replace(/\s*\([^)]+\)\s*$/, '').trim()]?.logo_url) : null,
-          away_team_logo: q.away_team ? (teamsMap[q.away_team]?.logo_url || teamsMap[q.away_team.replace(/\s*\([^)]+\)\s*$/, '').trim()]?.logo_url) : null,
-        };
-      }).filter(s => s !== null && s.score > 0);
+      // ── קיבוץ שאלות רגילות לפי טבלה, ומיקומים — שורה אחת לטבלה ──
+      const LOCATION_TABLE_IDS = ['T9', 'T14', 'T15', 'T16', 'T17', 'T19'];
+      // שמות ברירת מחדל לטבלאות מיקומים (גיבוי אם table_description ריק)
+      const LOCATION_DEFAULTS = {
+        T9:  'מקומות 9-24 — פלייאוף',
+        T14: 'מקומות 1-8 — שלב הבתים',
+        T15: 'מקומות 9-16 — שלב הבתים',
+        T16: 'מקומות 17-24 — שלב הבתים',
+        T17: 'מקומות 1-24 — טבלה כוללת',
+        T19: 'רשימת העולות לשמינית הגמר',
+      };
+      const locationTableDescriptions = { ...LOCATION_DEFAULTS };
+      allQuestions.forEach(q => {
+        if (LOCATION_TABLE_IDS.includes(q.table_id) && q.table_description && q.table_description.trim()) {
+          locationTableDescriptions[q.table_id] = q.table_description.trim();
+        }
+      });
+
+      // מיקומים: קבץ לפי table_id → שורה אחת
+      const locationSums = {};
+      const regularBreakdown = [];
+
+      breakdown.forEach(item => {
+        if (LOCATION_TABLE_IDS.includes(item.table_id)) {
+          if (!locationSums[item.table_id]) locationSums[item.table_id] = 0;
+          locationSums[item.table_id] += item.score;
+        } else if (item.score > 0) {
+          const q = allQuestions.find(x => x.id === item.question_id);
+          if (!q) return;
+          const pred = allPredictions.find(p => p.question_id === item.question_id);
+          regularBreakdown.push({
+            score: item.score,
+            max_score: item.max_score,
+            table_id: item.table_id || '?',
+            question_id_display: item.question_id_text || q.question_id || '?',
+            question_text: q.question_text || '',
+            home_team: q.home_team,
+            away_team: q.away_team,
+            actual_result: formatScore(q.actual_result || ''),
+            prediction: formatScore(pred?.text_prediction || ''),
+            home_team_display: q.home_team?.replace(/\s*\([^)]+\)\s*$/, '').trim() || null,
+            away_team_display: q.away_team?.replace(/\s*\([^)]+\)\s*$/, '').trim() || null,
+            home_team_logo: q.home_team ? (teamsMap[q.home_team]?.logo_url || teamsMap[q.home_team.replace(/\s*\([^)]+\)\s*$/, '').trim()]?.logo_url) : null,
+            away_team_logo: q.away_team ? (teamsMap[q.away_team]?.logo_url || teamsMap[q.away_team.replace(/\s*\([^)]+\)\s*$/, '').trim()]?.logo_url) : null,
+            isLocationSummary: false,
+          });
+        }
+      });
+
+      // הוסף שורת מיקומים לכל טבלה (אם יש ניקוד)
+      const locationRows = Object.entries(locationSums)
+        .filter(([, s]) => s > 0)
+        .map(([tid, s]) => ({
+          score: s, max_score: null, table_id: tid,
+          question_id_display: '', question_text: locationTableDescriptions[tid] || tid,
+          home_team: null, away_team: null, actual_result: '', prediction: '',
+          home_team_display: null, away_team_display: null, home_team_logo: null, away_team_logo: null,
+          isLocationSummary: true,
+        }));
+
+      const enriched = [...regularBreakdown, ...locationRows];
 
       enriched.sort((a, b) => {
         const tA = parseInt(a.table_id.replace('T', '')) || 999;
@@ -480,6 +521,31 @@ export default function LeaderboardNew() {
               </thead>
               <tbody>
                 {participantDetails?.scores?.map((s, i) => {
+                  // ── שורת מיקומים — שורה מיוחדת עם תיאור + ניקוד בלבד ──
+                  if (s.isLocationSummary) {
+                    return (
+                      <tr key={i} className="hover:bg-white/5" style={{ backgroundColor: 'rgba(249,115,22,0.08)', borderRight: '3px solid #f97316' }}>
+                        <td className="text-center p-1.5">
+                          <Badge variant="outline" className="rounded-full px-1.5 py-0.5 text-[10px]"
+                            style={{ borderColor: '#f97316', color: '#f97316', background: 'rgba(249,115,22,0.1)' }}>
+                            {s.table_id}
+                          </Badge>
+                        </td>
+                        <td className="text-center p-1.5">
+                          <span className="text-[10px]" style={{ color: '#94a3b8' }}>📋</span>
+                        </td>
+                        <td className="text-right p-1.5" colSpan={3}>
+                          <span className="text-xs font-semibold" style={{ color: '#fdba74' }}>{s.question_text}</span>
+                        </td>
+                        <td className="text-center p-1.5">
+                          <Badge className="bg-orange-600 text-white text-xs font-bold px-2 py-0.5 rounded-full">
+                            +{s.score}
+                          </Badge>
+                        </td>
+                      </tr>
+                    );
+                  }
+
                   let badgeColor = 'bg-slate-600 text-white';
                   if (s.score === s.max_score && s.max_score > 0) badgeColor = 'bg-green-600 text-white';
                   else if (s.score >= 7) badgeColor = 'bg-blue-600 text-white';
