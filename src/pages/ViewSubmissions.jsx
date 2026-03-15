@@ -1119,6 +1119,7 @@ export default function ViewSubmissions() {
       actual_result: stripParens(effectiveActualResult)
     } : question;
     const score = calculateQuestionScore(scoreQuestion, scoreValue);
+    if (isLocQ) console.log(`🎯 SCORE: key=T${question.table_id.replace('T','')}_${question.question_id} pred="${scoreValue}" actual="${scoreQuestion.actual_result}" score=${score} allQInTable=${0}`);
 
     let badgeColor = 'bg-slate-600 text-slate-300';
     if (score !== null) {
