@@ -344,12 +344,24 @@ export default function ViewSubmissions() {
       
       setLoadingPredictions(true);
       try {
-        // כל משתתף עם מקסימום ~200 ניחושים — Prediction.filter מספיק
-        const predictions = await Prediction.filter({
-          participant_name: selectedParticipant,
-          game_id: currentGame.id
-        }, "-created_at", 5000);
-        setData(prev => ({ ...prev, predictions }));
+        // 🔥 טען ניחושי משתתף בעימוד — ללא מגבלת 1000
+        const PAGE = 1000;
+        let allPreds = [], from = 0, keepGoing = true, iter = 0;
+        while (keepGoing && iter < 20) {
+          const { data: chunk, error: chunkErr } = await supabase
+            .from('game_predictions')
+            .select('*')
+            .eq('game_id', currentGame.id)
+            .eq('participant_name', selectedParticipant)
+            .range(from, from + PAGE - 1)
+            .order('created_at', { ascending: true });
+          if (chunkErr || !chunk || chunk.length === 0) break;
+          allPreds = allPreds.concat(chunk);
+          keepGoing = chunk.length === PAGE;
+          from += PAGE;
+          iter++;
+        }
+        setData(prev => ({ ...prev, predictions: allPreds }));
         setEditedPredictions({});
         setIsEditMode(false);
       } catch (error) {
@@ -584,11 +596,23 @@ export default function ViewSubmissions() {
         className: "bg-green-900/30 border-green-500 text-green-200"
       });
 
-      // טען מחדש את הניחושים
-      const reloadPreds = await Prediction.filter({
-        participant_name: selectedParticipant,
-        game_id: currentGame.id
-      }, "-created_at", 5000);
+      // טען מחדש את הניחושים (בעימוד — ללא מגבלת 1000)
+      const PAGE2 = 1000;
+      let reloadPreds = [], from2 = 0, go2 = true, iter2 = 0;
+      while (go2 && iter2 < 20) {
+        const { data: chunk2 } = await supabase
+          .from('game_predictions')
+          .select('*')
+          .eq('game_id', currentGame.id)
+          .eq('participant_name', selectedParticipant)
+          .range(from2, from2 + PAGE2 - 1)
+          .order('created_at', { ascending: true });
+        if (!chunk2 || chunk2.length === 0) break;
+        reloadPreds = reloadPreds.concat(chunk2);
+        go2 = chunk2.length === PAGE2;
+        from2 += PAGE2;
+        iter2++;
+      }
       setData(prev => ({ ...prev, predictions: reloadPreds }));
       setEditedPredictions({});
       setIsEditMode(false);
@@ -1308,7 +1332,7 @@ export default function ViewSubmissions() {
     if (selectedParticipant && allResultsIn && cfg) {
       const predMap = getCombinedPredictionsMap();
       const guessedSet = new Set(
-        slots.map(q => (predMap[q.id] ?? predMap[q.question_id] ?? '').trim().toLowerCase()).filter(Boolean)
+        slots.map(q => (predMap[q.id] || '').trim().toLowerCase()).filter(Boolean)
       );
       stageBonusEarned = [...actualSet].every(t => guessedSet.has(t));
     }
@@ -1366,9 +1390,7 @@ export default function ViewSubmissions() {
         {/* ── שורות שאלות ──────────────────────────────────────────────────── */}
         <div className="grid grid-cols-1 gap-2">
           {slots.map(q => {
-            const _predMap = getCombinedPredictionsMap();
-            // נסה q.id (UUID) ואז q.question_id (מספרי) כ-fallback
-            const _predRaw = _predMap[q.id] ?? _predMap[q.question_id] ?? '';
+            const _predRaw = getCombinedPredictionsMap()[q.id];
             const pred = (typeof _predRaw === 'string' ? _predRaw : (_predRaw?.text_prediction || '')).trim();
             const hasResult = q.actual_result && q.actual_result !== '__CLEAR__';
             // נוכחות — אין משמעות לסדר!
@@ -2129,8 +2151,7 @@ export default function ViewSubmissions() {
           )}
 
           {/* ── בחירת שלב — מובייל בלבד ── */}
-          <div className="vs-mobile-chips" style={{ display: "block" }}>
-            <style>{`@media (min-width: 768px) { .vs-mobile-chips { display: none !important; } }`}</style>
+          <div className="md:hidden">
             {selectedParticipant && !loadingPredictions && (specialTables.length > 0 || roundTables.length > 0 || locationTables.length > 0 || israeliTable || playoffWinnersTable || qualifiersTables.length > 0) && (
               <div style={{ marginBottom: '20px' }}>
                 {renderStageChips(allButtons, openSections, toggleSection)}
@@ -2157,10 +2178,9 @@ export default function ViewSubmissions() {
         {selectedParticipant && !loadingPredictions ? (
           <div style={{ display: 'flex', gap: '20px', alignItems: 'flex-start' }}>
             {/* Sidebar — desktop only */}
-            <div style={{ display: 'none' }} className="vs-sidebar-desktop">
+            <div className="hidden md:block">
               {renderSidebar()}
             </div>
-            <style>{`@media (min-width: 768px) { .vs-sidebar-desktop { display: block !important; } }`}</style>
             {/* Content */}
             <div style={{ flex: 1, minWidth: 0 }}>
             {allButtons.map(button => {
