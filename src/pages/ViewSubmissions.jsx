@@ -361,7 +361,7 @@ export default function ViewSubmissions() {
           // שלב 1: UUID של כל שאלות המיקומים בכל המשחקים (supabase ישיר — ללא GameContext)
           const { data: locQuestions } = await supabase
             .from('questions')
-            .select('id, table_id, question_id')
+            .select('id, table_id, question_id, actual_result')
             .in('table_id', locationTableIds);
 
           if (locQuestions && locQuestions.length > 0) {
