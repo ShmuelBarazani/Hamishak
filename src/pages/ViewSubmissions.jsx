@@ -1116,10 +1116,13 @@ export default function ViewSubmissions() {
       if (!effectiveActual || effectiveActual === '__CLEAR__' || !originalValue) {
         score = null; // אין תוצאה עדיין
       } else {
-        const predClean   = stripParens(originalValue).trim().toLowerCase();
-        const actualClean = stripParens(effectiveActual).trim().toLowerCase();
-        // ניקוד per-slot: תואם לאותו מיקום בדיוק
-        score = predClean === actualClean ? (question.possible_points || 0) : 0;
+        const predClean = stripParens(originalValue).trim().toLowerCase();
+        // ניקוד לפי נוכחות — האם הקבוצה קיימת בכלל בטבלה (ללא קשר למיקום)
+        const allActualsInTable = Object.entries(data.locationActualsByTableQ || {})
+          .filter(([k]) => k.startsWith(question.table_id + '_'))
+          .map(([, v]) => stripParens(v).trim().toLowerCase())
+          .filter(Boolean);
+        score = allActualsInTable.includes(predClean) ? (question.possible_points || 0) : 0;
       }
     } else {
       score = calculateQuestionScore(question, originalValue);
