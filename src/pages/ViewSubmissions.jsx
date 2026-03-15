@@ -69,6 +69,8 @@ function ParticipantTotalScore({ participantName, gameId }) {
 }
 
 export default function ViewSubmissions() {
+  // 🔴 VERSION CHECK — DELETE AFTER DIAGNOSIS
+  console.error('🔴 ViewSubmissions VERSION: 2025-03-15-v7-DEBUG');
   const [loading, setLoading] = useState(true);
   const [loadingPredictions, setLoadingPredictions] = useState(false);
   const [data, setData] = useState({ predictions: [], questions: [], teams: [], validationLists: [], locationPredsByTableQ: {} });
