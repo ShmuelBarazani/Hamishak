@@ -69,11 +69,10 @@ function ParticipantTotalScore({ participantName, gameId }) {
 }
 
 export default function ViewSubmissions() {
-  // 🔴 VERSION CHECK — DELETE AFTER DIAGNOSIS
-  console.error('🔴 ViewSubmissions VERSION: 2025-03-15-v7-DEBUG');
+
   const [loading, setLoading] = useState(true);
   const [loadingPredictions, setLoadingPredictions] = useState(false);
-  const [data, setData] = useState({ predictions: [], questions: [], teams: [], validationLists: [], locationPredsByTableQ: {} });
+  const [data, setData] = useState({ predictions: [], questions: [], teams: [], validationLists: [], locationPredsByTableQ: {}, locationActualsByTableQ: {} });
   const [selectedParticipant, setSelectedParticipant] = useState(null);
   const [openSections, setOpenSections] = useState({});
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
@@ -382,20 +381,24 @@ export default function ViewSubmissions() {
                 }
               }
             });
+
+            // שלב 4: מפה actual_results מכל המשחקים (פותר: T14-T17 בנוקאאוט ללא actual_result)
+            const locationActualsByTableQ = {};
+            locQuestions.forEach(q => {
+              if (q.actual_result && q.actual_result.trim() !== '' && q.actual_result !== '__CLEAR__') {
+                const key = `${q.table_id}_${q.question_id}`;
+                locationActualsByTableQ[key] = q.actual_result;
+              }
+            });
+            setData(prev => ({ ...prev, predictions, locationPredsByTableQ, locationActualsByTableQ }));
+          } else {
+            setData(prev => ({ ...prev, predictions, locationPredsByTableQ, locationActualsByTableQ: {} }));
           }
         } catch (e) {
           console.error('Error building locationPredsByTableQ:', e);
         }
 
-        // 🐛 DEBUG — יש למחוק אחרי אבחון
-        console.log('🔍 DEBUG loadParticipantPredictions:');
-        console.log('  total predictions loaded:', predictions.length);
-        console.log('  locationPredsByTableQ keys:', Object.keys(locationPredsByTableQ));
-        const t14preds = Object.entries(locationPredsByTableQ).filter(([k]) => k.startsWith('T14'));
-        console.log('  T14 predictions sample:', t14preds.slice(0,3));
-        // END DEBUG
-
-        setData(prev => ({ ...prev, predictions, locationPredsByTableQ }));
+        // setData already called inside try block above with locationActualsByTableQ
         setEditedPredictions({});
         setIsEditMode(false);
       } catch (error) {
@@ -458,9 +461,6 @@ export default function ViewSubmissions() {
     // ניסיון 2: cross-game lookup לפי table_id + question_id_number
     const key = `${question.table_id}_${question.question_id}`;
     const fallback = data.locationPredsByTableQ?.[key];
-    // 🐛 DEBUG
-    console.log(`🔍 getLocationPred(${key}): direct="${direct}" fallback="${fallback?.text_prediction}" mapSize=${Object.keys(data.locationPredsByTableQ||{}).length}`);
-    // END DEBUG
     return fallback ? (fallback.text_prediction || '') : '';
   }, [participantPredictions, data.locationPredsByTableQ]);
 
@@ -1101,13 +1101,20 @@ export default function ViewSubmissions() {
       );
     }
 
-    // 🔥 לשאלות מיקומים: הסר (מדינה) לפני חישוב ניקוד — actual_result יכול להכיל "(אנגליה)" וכד'
+    // 🔥 לשאלות מיקומים: השתמש ב-actual_result מכלל המשחקים (פותר UUID mismatch)
+    // ומסיר (מדינה) לפני השוואה
     const stripParens = (s) => s ? s.replace(/\s*\([^)]*\)/g, '').replace(/\s+/g, ' ').trim() : '';
     const isLocQ = ['T14', 'T15', 'T16', 'T17', 'T19'].includes(question.table_id);
+    let effectiveActualResult = question.actual_result;
+    if (isLocQ) {
+      const locKey = `${question.table_id}_${question.question_id}`;
+      const crossGameActual = data.locationActualsByTableQ?.[locKey];
+      if (crossGameActual) effectiveActualResult = crossGameActual;
+    }
     const scoreValue = isLocQ ? stripParens(originalValue) : originalValue;
     const scoreQuestion = isLocQ ? {
       ...question,
-      actual_result: stripParens(question.actual_result)
+      actual_result: stripParens(effectiveActualResult)
     } : question;
     const score = calculateQuestionScore(scoreQuestion, scoreValue);
 
@@ -1529,7 +1536,13 @@ export default function ViewSubmissions() {
             predForBonus[q.id] = participantPredictions[q.id] || "";
           }
       });
-      bonusInfo = calculateLocationBonus(table.id, table.questions, predForBonus);
+      // 🔥 העשר שאלות עם actual_results מכלל המשחקים לפני חישוב בונוס
+      const enrichedQuestions = isLocationTable ? table.questions.map(q => {
+        const locKey = `${q.table_id}_${q.question_id}`;
+        const crossActual = data.locationActualsByTableQ?.[locKey];
+        return crossActual ? { ...q, actual_result: crossActual } : q;
+      }) : table.questions;
+      bonusInfo = calculateLocationBonus(table.id, enrichedQuestions, predForBonus);
     }
 
     let teamsBonusPotential = 0;
