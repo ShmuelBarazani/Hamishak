@@ -1506,7 +1506,7 @@ export default function ViewSubmissions() {
                   >
                     <Badge variant="outline" className="justify-center text-xs h-6 w-full" style={{ borderColor: '#06b6d4', color: '#06b6d4' }}>{main.question_id}</Badge>
                     <span className="text-right font-medium text-sm truncate" style={{ color: '#f8fafc' }}>{main.question_text}</span>
-                    <div className="flex items-center gap-2">{renderReadOnlySelect(main, mainOriginalValue)}</div>
+                    <div className="contents">{renderReadOnlySelect(main, mainOriginalValue)}</div>
                   </div>
                 );
               }
@@ -1859,7 +1859,7 @@ export default function ViewSubmissions() {
       numericId: parseInt(firstLocationTableId.replace('T', ''), 10),
       key: 'locations',
       description: description,
-      stageType: 'other',
+      stageType: 'qualifiers',
       sectionKey: 'locations',
       isLongText: description.length > TEXT_LENGTH_THRESHOLD
     });
