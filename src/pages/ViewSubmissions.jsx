@@ -1101,25 +1101,29 @@ export default function ViewSubmissions() {
       );
     }
 
-    // 🔥 לשאלות מיקומים: השתמש ב-actual_result מכלל המשחקים (פותר UUID mismatch)
-    // ומסיר (מדינה) לפני השוואה
+    // 🔥 חישוב ניקוד
     const stripParens = (s) => s ? s.replace(/\s*\([^)]*\)/g, '').replace(/\s+/g, ' ').trim() : '';
     const isLocQ = ['T14', 'T15', 'T16', 'T17', 'T19'].includes(question.table_id);
-    let effectiveActualResult = question.actual_result;
+
+    let score;
     if (isLocQ) {
+      // ScoreService מחזיר null עבור שאלות מיקומים (ניקוד מחושב ברמת הטבלה).
+      // כאן נחשב ניקוד per-question לצורך הצגה: השוואה ישירה אחרי הסרת (מדינה)
       const locKey = `${question.table_id}_${question.question_id}`;
       const crossGameActual = data.locationActualsByTableQ?.[locKey];
-      if (crossGameActual) effectiveActualResult = crossGameActual;
-      // 🐛 DEBUG
-      console.log(`🔍 renderReadOnlySelect ${locKey}: pred="${originalValue}" actual_q="${question.actual_result}" crossActual="${crossGameActual}" effective="${effectiveActualResult}" mapSize=${Object.keys(data.locationActualsByTableQ||{}).length}`);
+      const effectiveActual = crossGameActual || question.actual_result || '';
+
+      if (!effectiveActual || effectiveActual === '__CLEAR__' || !originalValue) {
+        score = null; // אין תוצאה עדיין
+      } else {
+        const predClean   = stripParens(originalValue).trim().toLowerCase();
+        const actualClean = stripParens(effectiveActual).trim().toLowerCase();
+        // ניקוד per-slot: תואם לאותו מיקום בדיוק
+        score = predClean === actualClean ? (question.possible_points || 0) : 0;
+      }
+    } else {
+      score = calculateQuestionScore(question, originalValue);
     }
-    const scoreValue = isLocQ ? stripParens(originalValue) : originalValue;
-    const scoreQuestion = isLocQ ? {
-      ...question,
-      actual_result: stripParens(effectiveActualResult)
-    } : question;
-    const score = calculateQuestionScore(scoreQuestion, scoreValue);
-    if (isLocQ) console.log(`🎯 SCORE: key=T${question.table_id.replace('T','')}_${question.question_id} pred="${scoreValue}" actual="${scoreQuestion.actual_result}" score=${score} allQInTable=${0}`);
 
     let badgeColor = 'bg-slate-600 text-slate-300';
     if (score !== null) {
