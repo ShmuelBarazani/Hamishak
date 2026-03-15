@@ -385,6 +385,14 @@ export default function ViewSubmissions() {
           console.error('Error building locationPredsByTableQ:', e);
         }
 
+        // 🐛 DEBUG — יש למחוק אחרי אבחון
+        console.log('🔍 DEBUG loadParticipantPredictions:');
+        console.log('  total predictions loaded:', predictions.length);
+        console.log('  locationPredsByTableQ keys:', Object.keys(locationPredsByTableQ));
+        const t14preds = Object.entries(locationPredsByTableQ).filter(([k]) => k.startsWith('T14'));
+        console.log('  T14 predictions sample:', t14preds.slice(0,3));
+        // END DEBUG
+
         setData(prev => ({ ...prev, predictions, locationPredsByTableQ }));
         setEditedPredictions({});
         setIsEditMode(false);
@@ -448,6 +456,9 @@ export default function ViewSubmissions() {
     // ניסיון 2: cross-game lookup לפי table_id + question_id_number
     const key = `${question.table_id}_${question.question_id}`;
     const fallback = data.locationPredsByTableQ?.[key];
+    // 🐛 DEBUG
+    console.log(`🔍 getLocationPred(${key}): direct="${direct}" fallback="${fallback?.text_prediction}" mapSize=${Object.keys(data.locationPredsByTableQ||{}).length}`);
+    // END DEBUG
     return fallback ? (fallback.text_prediction || '') : '';
   }, [participantPredictions, data.locationPredsByTableQ]);
 
