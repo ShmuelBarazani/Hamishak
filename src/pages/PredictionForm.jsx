@@ -158,9 +158,7 @@ export default function PredictionForm() {
         let tableId = q.table_id, tableDescription = q.table_description;
         if (q.stage_name && q.stage_name.includes('בית')) { tableId = q.stage_name; tableDescription = q.stage_name; }
         else if (q.table_description?.includes('שאלות מיוחדות') && q.stage_order && q.table_id !== 'T10') { tableId = `custom_order_${q.stage_order}`; tableDescription = q.stage_name || q.table_description; }
-        if (q.table_id === 'T12') tableDescription = 'שלב הליגה - פינת הגאווה הישראלית - 7 בוםםםםםםםםםם !!!';
-        else if (q.table_id === 'T13') tableDescription = 'שלב ראש בראש - "מבול מטאורים של כוכבים (*)"';
-        else if (q.table_id === 'T20') tableDescription = 'המסלול "הישראלי" - פצצת אנרגיה (אירופית) צהובה';
+        // ✅ שם הטבלה מגיע מה-DB (table_description) — ללא override קשיח לפי table_id
         if (!tableCollection[tableId]) tableCollection[tableId] = { id: tableId, description: tableDescription || (q.home_team && q.away_team ? `מחזור ${tableId.replace('T','')}` : `שאלות ${tableId.replace('T','')}`), questions: [] };
         tableCollection[tableId].questions.push(q);
       });
@@ -195,13 +193,7 @@ export default function PredictionForm() {
         return desc && !/^\d+$/.test(desc) && !locationTableIds.includes(table.id) && table.id !== 'T19' && !isGroupTable && table.id !== 'T1' && stageType !== 'qualifiers';
       }).sort((a,b) => { const oa = a.questions[0]?.stage_order || 999, ob = b.questions[0]?.stage_order || 999; if (oa !== ob) return oa - ob; return (parseInt(a.id.replace('T','')) || 0) - (parseInt(b.id.replace('T','')) || 0); });
       setSpecialTables(allSpecialTables);
-      // ── שינוי שם T3 ──────────────────────────────────────────
-      sortedRoundTables.forEach(t => {
-        if (t.id === 'T3') t.description = 'שלב שמינית הגמר - המשחקים!';
-      });
-      allSpecialTables.forEach(t => {
-        if (t.id === 'T3') t.description = 'שלב שמינית הגמר - המשחקים!';
-      });
+      // ✅ שמות טבלאות מגיעים מה-DB (table_description) לפי game_id — ללא override קשיח
 
       const t10Special = sTables['T10'];
       if (t10Special) { const t10Round = Object.values(rTables).find(t => t.id === 'T10'); if (t10Round) t10Round.specialQuestions = t10Special.questions; }
