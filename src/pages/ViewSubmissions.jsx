@@ -71,7 +71,7 @@ function ParticipantTotalScore({ participantName, gameId }) {
 export default function ViewSubmissions() {
   const [loading, setLoading] = useState(true);
   const [loadingPredictions, setLoadingPredictions] = useState(false);
-  const [data, setData] = useState({ predictions: [], questions: [], teams: [], validationLists: [] });
+  const [data, setData] = useState({ predictions: [], questions: [], teams: [], validationLists: [], locationPredsByTableQ: {} });
   const [selectedParticipant, setSelectedParticipant] = useState(null);
   const [openSections, setOpenSections] = useState({});
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
@@ -344,12 +344,38 @@ export default function ViewSubmissions() {
       
       setLoadingPredictions(true);
       try {
-        // 🔥 טוען ניחושים של משתתף מכל המשחקים — כי שאלות מיקומים (T14-T17,T19)
-        // שייכות למשחק שלב הבתים (game_id שונה מהמשחק הנוכחי)
+        // 🔥 טוען ניחושים מכל המשחקים (ללא סינון game_id) כדי לכסות שאלות מיקומים
+        // ששייכות למשחק שלב הבתים עם UUID שונה מהמשחק הנוכחי
         const predictions = await Prediction.filter({
           participant_name: selectedParticipant,
         }, "-created_at", 5000);
-        setData(prev => ({ ...prev, predictions }));
+
+        // 🔥 בנה מיפוי משני: "{table_id}_{question_id_number}" → ניחוש
+        // משמש כ-fallback עבור שאלות מיקומים שה-UUID שלהן שונה בין המשחקים
+        const locationTableIds = ['T14', 'T15', 'T16', 'T17', 'T19'];
+        const locationPredsByTableQ = {};
+        if (predictions.length > 0) {
+          // בנה map של UUID שאלות מכל המשחקים (כולל שלב הבתים)
+          const allQuestionsRaw = await Question.filter({}, null, 10000);
+          const qUuidToTableQ = {};
+          allQuestionsRaw.forEach(q => {
+            if (locationTableIds.includes(q.table_id)) {
+              qUuidToTableQ[q.id] = `${q.table_id}_${q.question_id}`;
+            }
+          });
+          // מפה ניחוש לפי table_id_question_id
+          predictions.forEach(p => {
+            const key = qUuidToTableQ[p.question_id];
+            if (key) {
+              // שמור רק את הניחוש האחרון
+              if (!locationPredsByTableQ[key] || new Date(p.created_at) > new Date(locationPredsByTableQ[key].created_at)) {
+                locationPredsByTableQ[key] = p;
+              }
+            }
+          });
+        }
+
+        setData(prev => ({ ...prev, predictions, locationPredsByTableQ }));
         setEditedPredictions({});
         setIsEditMode(false);
       } catch (error) {
@@ -400,6 +426,20 @@ export default function ViewSubmissions() {
       ? editedPredictions[questionId]
       : participantPredictions[questionId];
   }, [editedPredictions, participantPredictions]);
+
+  // 🔥 פונקציה לקבלת ניחוש עבור שאלות מיקומים — עם fallback ל-cross-game lookup
+  // פותרת UUID mismatch: אותו table_id/question_id אבל UUID שונה בין משחקים
+  const getLocationPred = useCallback((question) => {
+    const locationTableIds = ['T14', 'T15', 'T16', 'T17', 'T19'];
+    if (!locationTableIds.includes(question.table_id)) return null;
+    // ניסיון 1: UUID ישיר (אם אותו משחק)
+    const direct = participantPredictions[question.id];
+    if (direct !== undefined && direct !== '') return direct;
+    // ניסיון 2: cross-game lookup לפי table_id + question_id_number
+    const key = `${question.table_id}_${question.question_id}`;
+    const fallback = data.locationPredsByTableQ?.[key];
+    return fallback ? (fallback.text_prediction || '') : '';
+  }, [participantPredictions, data.locationPredsByTableQ]);
 
   // 🆕 Function to combine original and edited predictions for components that need a full map
   const getCombinedPredictionsMap = useCallback(() => {
@@ -1038,7 +1078,15 @@ export default function ViewSubmissions() {
       );
     }
 
-    const score = calculateQuestionScore(question, originalValue);
+    // 🔥 לשאלות מיקומים: הסר (מדינה) לפני חישוב ניקוד — actual_result יכול להכיל "(אנגליה)" וכד'
+    const stripParens = (s) => s ? s.replace(/\s*\([^)]*\)/g, '').replace(/\s+/g, ' ').trim() : '';
+    const isLocQ = ['T14', 'T15', 'T16', 'T17', 'T19'].includes(question.table_id);
+    const scoreValue = isLocQ ? stripParens(originalValue) : originalValue;
+    const scoreQuestion = isLocQ ? {
+      ...question,
+      actual_result: stripParens(question.actual_result)
+    } : question;
+    const score = calculateQuestionScore(scoreQuestion, scoreValue);
 
     let badgeColor = 'bg-slate-600 text-slate-300';
     if (score !== null) {
@@ -1446,11 +1494,17 @@ export default function ViewSubmissions() {
     let bonusInfo = null;
     const isLocationTable = ['T14', 'T15', 'T16', 'T17', 'T19'].includes(table.id);
     if (selectedParticipant) {
-      // 🔥 לחישוב בונוס - שלב את הניחושים המקוריים עם העריכות
+      // 🔥 לחישוב בונוס — עבור שאלות מיקומים: השתמש ב-getLocationPred לפתרון UUID mismatch
       const predForBonus = {};
       table.questions.forEach(q => {
           const editedValue = editedPredictions[q.id];
-          predForBonus[q.id] = editedValue !== undefined ? editedValue : (participantPredictions[q.id] || "");
+          if (editedValue !== undefined) {
+            predForBonus[q.id] = editedValue;
+          } else if (isLocationTable) {
+            predForBonus[q.id] = getLocationPred(q) || "";
+          } else {
+            predForBonus[q.id] = participantPredictions[q.id] || "";
+          }
       });
       bonusInfo = calculateLocationBonus(table.id, table.questions, predForBonus);
     }
@@ -1486,7 +1540,11 @@ export default function ViewSubmissions() {
               if (!main) return null;
 
               const sortedSubs = [...subs].sort((a, b) => parseFloat(a.question_id) - parseFloat(b.question_id));
-              const mainOriginalValue = participantPredictions[main.id] || '';
+              // 🔥 לשאלות מיקומים — השתמש ב-getLocationPred לפתרון UUID mismatch בין משחקים
+              const isLocTable = ['T14', 'T15', 'T16', 'T17', 'T19'].includes(table.id);
+              const mainOriginalValue = editedPredictions[main.id] !== undefined
+                ? editedPredictions[main.id]
+                : (isLocTable ? (getLocationPred(main) || '') : (participantPredictions[main.id] || ''));
 
               // שאלה ללא תתי-שאלות - 4 עמודות
               if (sortedSubs.length === 0) {
@@ -1513,7 +1571,9 @@ export default function ViewSubmissions() {
 
               // שאלה עם תת-שאלה אחת - 9 עמודות
               if (sortedSubs.length === 1) {
-                const subOriginalValue = participantPredictions[sortedSubs[0].id] || '';
+                const subOriginalValue = editedPredictions[sortedSubs[0].id] !== undefined
+                  ? editedPredictions[sortedSubs[0].id]
+                  : (isLocTable ? (getLocationPred(sortedSubs[0]) || '') : (participantPredictions[sortedSubs[0].id] || ''));
                 return (
                   <div 
                     key={main.id} 
@@ -1561,7 +1621,9 @@ export default function ViewSubmissions() {
                   <div className="flex items-center gap-2">{renderReadOnlySelect(main, mainOriginalValue)}</div>
 
                   {sortedSubs.map(sub => {
-                    const subOriginalValue = participantPredictions[sub.id] || '';
+                    const subOriginalValue = editedPredictions[sub.id] !== undefined
+                      ? editedPredictions[sub.id]
+                      : (isLocTable ? (getLocationPred(sub) || '') : (participantPredictions[sub.id] || ''));
                     return (
                       <React.Fragment key={sub.id}>
                         <Badge variant="outline" className="justify-center text-xs h-6 w-full" style={{ borderColor: '#06b6d4', color: '#06b6d4' }}>{sub.question_id}</Badge>
