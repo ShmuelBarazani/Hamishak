@@ -200,27 +200,13 @@ export function calculateQuestionScore(question, prediction, allQuestionsInTable
       .map(a => cleanText(normalizeResult(a.trim())).toLowerCase())
       .filter(Boolean);
     const cleanPred = cleanText(normalizedPred).toLowerCase();
-    // בדיקה ישירה
     if (multipleAnswers.includes(cleanPred)) return question.possible_points || 0;
-    // בדיקת תוצאה הפוכה: "1-2" ≡ "2-1" (אותה תבנית, שני כיוונים)
-    const reversedPred = cleanPred.includes('-')
-      ? cleanPred.split('-').reverse().join('-')
-      : null;
-    if (reversedPred && multipleAnswers.includes(reversedPred)) return question.possible_points || 0;
     return 0;
   }
 
   // ── שאלות טקסט רגילות ────────────────────────────────────────────────────
   const cleanActual = cleanText(normalizedActual).toLowerCase();
   const cleanPred   = cleanText(normalizedPred).toLowerCase();
-
-  // גם כאן: תמיכה בתוצאה הפוכה עבור שאלות תוצאה שכיחה וכד'
-  if (cleanActual !== cleanPred) {
-    const reversedPred = cleanPred.includes('-')
-      ? cleanPred.split('-').reverse().join('-')
-      : null;
-    if (reversedPred && reversedPred === cleanActual) return question.possible_points || 0;
-  }
 
   return cleanActual === cleanPred ? (question.possible_points || 0) : 0;
 }
