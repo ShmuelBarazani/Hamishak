@@ -218,7 +218,20 @@ export default function LeaderboardNew() {
       const teamsMap = (currentGame.teams_data || [])
         .reduce((acc, t) => { acc[t.name] = t; return acc; }, {});
 
-      const { total: totalScore, breakdown } = calcScore(allQuestions, allPredictions);
+      const { total: calcTotal, breakdown } = calcScore(allQuestions, allPredictions);
+
+      // ✅ ניקוד אמיתי — קרא מטבלת rankings (סמכותית, כולל בונוסים מיוחדים כמו T5)
+      // calcScore מחמיץ לוגיקת bonus מיוחדת (qualifiers, מיקומים) → השתמש בDB
+      let totalScore = calcTotal;
+      try {
+        const { data: rankRow } = await supabase
+          .from('rankings')
+          .select('current_score')
+          .eq('game_id', currentGame.id)
+          .eq('participant_name', participantName)
+          .single();
+        if (rankRow?.current_score != null) totalScore = rankRow.current_score;
+      } catch { /* fallback to calcTotal */ }
 
       const LOCATION_TABLE_IDS = ['T14', 'T15', 'T16', 'T17', 'T19'];
       const LOCATION_DEFAULTS  = {
@@ -523,8 +536,8 @@ export default function LeaderboardNew() {
         <DialogContent
           dir="rtl"
           style={{
-            maxWidth: '75vw',
-            width: '75vw',
+            maxWidth: '52vw',
+            width: '52vw',
             maxHeight: '82vh',
             height: '82vh',
             display: 'flex',
