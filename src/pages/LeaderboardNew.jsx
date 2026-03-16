@@ -72,7 +72,6 @@ export default function LeaderboardNew() {
 
   // ── Helper: load all questions (supabase direct) ──────────────────────────
   const loadAllQuestions = async (gameId) => {
-    // שלב 1: שאלות המשחק הנוכחי
     let all = [], from = 0;
     const PAGE = 1000;
     while (true) {
@@ -84,34 +83,15 @@ export default function LeaderboardNew() {
       if (data.length < PAGE) break;
       from += PAGE;
     }
-    // שלב 2: שאלות מיקומים מכל המשחקים (UUID שונה בין הבתים לנוקאאוט)
-    // נטען אותן ממשחקים אחרים רק אם אינן כבר קיימות לפי table_id+question_id
-    const existingKeys = new Set(all.map(q => `${q.table_id}_${q.question_id}`));
-    const LOCATION_TABLE_IDS = ['T14', 'T15', 'T16', 'T17', 'T19'];
-    const { data: locQs } = await supabase
-      .from('questions').select('*')
-      .in('table_id', LOCATION_TABLE_IDS)
-      .neq('game_id', gameId); // רק משחקים אחרים
-    if (locQs) {
-      locQs.forEach(q => {
-        const key = `${q.table_id}_${q.question_id}`;
-        if (!existingKeys.has(key)) {
-          existingKeys.add(key);
-          all.push(q);
-        }
-      });
-    }
     return all.filter(q => q.table_id && q.table_id !== 'T1');
   };
 
   // ── Helper: load all predictions (supabase direct) ────────────────────────
   const loadAllPredictions = async (gameId, participantName = null) => {
-    // 🔥 לא מסננים לפי game_id — שאלות מיקומים (T14-T17,T19) שייכות למשחק הבתים
-    // עם game_id שונה. הניחושים נטענים מכל המשחקים ומתאמים לפי question_id (UUID).
     let all = [], from = 0;
     const PAGE = 1000;
     while (true) {
-      let query = supabase.from('predictions').select('*').range(from, from + PAGE - 1);
+      let query = supabase.from('predictions').select('*').eq('game_id', gameId).range(from, from + PAGE - 1);
       if (participantName) query = query.eq('participant_name', participantName);
       const { data, error } = await query;
       if (error) { console.error('predictions fetch error:', error); break; }
