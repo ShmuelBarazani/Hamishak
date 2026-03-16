@@ -266,11 +266,33 @@ export default function LeaderboardNew() {
 
       const locationSums     = {};
       const regularBreakdown = [];
+      const bonusRows        = []; // שורות בונוס שלב (T3/T4/T5/T6_STAGE_BONUS)
 
       breakdown.forEach(item => {
         if (LOCATION_TABLE_IDS.includes(item.table_id)) {
+          // ── מיקומים: קבץ לסכום לפי טבלה ──
           locationSums[item.table_id] = (locationSums[item.table_id] || 0) + item.score;
+
+        } else if (item.isBonus === true || !allQuestions.find(x => x.id === item.question_id)) {
+          // ── בונוס שלב (question_id סינתטי כמו 'T5_STAGE_BONUS') ──
+          if (item.score > 0) {
+            bonusRows.push({
+              score:               item.score,
+              max_score:           item.max_score || item.score,
+              table_id:            item.table_id || '?',
+              question_id_display: '',
+              question_text:       item.question_id_text || item.bonusDescription || `בונוס שלב ${item.table_id}`,
+              home_team: null, away_team: null,
+              actual_result: '', prediction: '',
+              home_team_display: null, away_team_display: null,
+              home_team_logo: null, away_team_logo: null,
+              isLocationSummary: false,
+              isStageBonusRow:   true,
+            });
+          }
+
         } else if (item.score > 0) {
+          // ── שאלה רגילה ──
           const q = allQuestions.find(x => x.id === item.question_id);
           if (!q) return;
           regularBreakdown.push({
@@ -292,6 +314,7 @@ export default function LeaderboardNew() {
               ? (teamsMap[q.away_team]?.logo_url || teamsMap[q.away_team.replace(/\s*\([^)]+\)\s*$/, '').trim()]?.logo_url)
               : null,
             isLocationSummary: false,
+            isStageBonusRow:   false,
           });
         }
       });
@@ -309,7 +332,7 @@ export default function LeaderboardNew() {
           isLocationSummary: true,
         }));
 
-      const enriched = [...regularBreakdown, ...locationRows];
+      const enriched = [...regularBreakdown, ...locationRows, ...bonusRows];
       enriched.sort((a, b) => {
         const tA = parseInt(a.table_id.replace('T', '')) || 999;
         const tB = parseInt(b.table_id.replace('T', '')) || 999;
@@ -445,7 +468,7 @@ export default function LeaderboardNew() {
             <CardTitle className="text-sm md:text-lg" style={{ color: 'var(--tp)' }}>הדירוג הנוכחי</CardTitle>
           </CardHeader>
           <CardContent className="p-0">
-            <div style={{ maxHeight: '600px', overflow: 'auto' }}>
+            <div style={{ maxHeight: '600px', overflowY: 'auto', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
               <table className="w-full" style={{ borderCollapse: 'collapse' }}>
                 <thead style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--bg3)' }}>
                   <tr style={{ borderBottom: '2px solid var(--tp-30)' }}>
@@ -624,6 +647,42 @@ export default function LeaderboardNew() {
                 </thead>
                 <tbody>
                   {participantDetails?.scores?.map((s, i) => {
+
+                    // ── שורת בונוס שלב (T3/T4/T5/T6) ─────────────────────
+                    if (s.isStageBonusRow) {
+                      return (
+                        <tr key={i} style={{
+                          background: 'rgba(16,185,129,0.08)',
+                          borderRight: '3px solid #10b981',
+                        }}>
+                          <td style={{ padding: '8px 6px', textAlign: 'center' }}>
+                            <span style={{
+                              display: 'inline-block', borderRadius: '999px',
+                              padding: '2px 8px', fontSize: '0.72rem',
+                              border: '1px solid #10b981', color: '#10b981',
+                              background: 'rgba(16,185,129,0.1)',
+                            }}>
+                              {s.table_id}
+                            </span>
+                          </td>
+                          <td style={{ padding: '8px 6px', textAlign: 'center', fontSize: '0.85rem' }}>🏆</td>
+                          <td colSpan={3} style={{ padding: '8px 6px', textAlign: 'right' }}>
+                            <span style={{ color: '#6ee7b7', fontSize: '0.88rem', fontWeight: 600 }}>
+                              {s.question_text}
+                            </span>
+                          </td>
+                          <td style={{ padding: '8px 6px', textAlign: 'center' }}>
+                            <span style={{
+                              display: 'inline-block', background: '#059669', color: 'white',
+                              fontSize: '0.85rem', fontWeight: 700,
+                              padding: '3px 10px', borderRadius: '999px',
+                            }}>
+                              +{s.score}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    }
 
                     // ── שורת מיקומים ──────────────────────────────────────
                     if (s.isLocationSummary) {
