@@ -414,9 +414,8 @@ export default function Layout({ children, currentPageName }) {
 //  GLOBAL STYLES — כל CSS גלובלי כולל btn system, cards, ו-theme variables
 // ═════════════════════════════════════════════════════════════════════════════
 const GLOBAL_STYLES = `
-
-  /* ── Font import fallback (Rubik default) ─────────── */
-  @import url('https://fonts.googleapis.com/css2?family=Rubik:wght@300;400;500;600;700;800;900&family=Heebo:wght@300;400;500;700;900&display=swap');
+  /* ThemeContext מטפל ב-font injection + רקעים + CSS vars.
+     כאן רק layout, components, ו-utilities. */
 
   /* ══════════════════════════════════════════════════
      CSS VARIABLES — כל הערכים מגיעים מ-ThemeContext
@@ -462,16 +461,10 @@ const GLOBAL_STYLES = `
   }
 
   /* ── Reset ─────────────────────────────────────── */
-  *, *::before, *::after {
-    box-sizing: border-box;
-    /* Use theme font everywhere */
-    font-family: var(--font-main) !important;
-  }
+  *, *::before, *::after { box-sizing: border-box; }
   html, body {
     margin: 0; padding: 0;
     width: 100%; height: 100%;
-    background: var(--bg1) !important;
-    color: var(--text);
     transition: background 0.4s ease, color 0.3s ease;
   }
   #root { height: 100%; }
@@ -702,11 +695,11 @@ const GLOBAL_STYLES = `
     background: var(--tp-03);
   }
   .lm-sec-label {
-    font-size: 0.6rem; font-weight: 700; letter-spacing: 0.15em;
-    text-transform: uppercase; color: var(--text-sub); padding: 0 2px 6px;
+    font-size: 0.7rem; font-weight: 800; letter-spacing: 0.12em;
+    text-transform: uppercase; color: var(--text-sub); padding: 0 4px 7px;
   }
-  .lm-sec-label--primary { color: var(--tp); opacity: 0.9; }
-  .lm-sec-label--admin   { color: var(--gold); opacity: 0.8; margin-top: 14px; }
+  .lm-sec-label--primary { color: var(--tp); opacity: 1; font-size: 0.72rem; }
+  .lm-sec-label--admin   { color: var(--gold); opacity: 0.9; margin-top: 16px; font-size: 0.7rem; }
 
   .lm-select-trigger {
     background: var(--bg1) !important; border: 1px solid var(--tp-20) !important;
@@ -737,7 +730,7 @@ const GLOBAL_STYLES = `
   .lm-nav-item {
     position: relative; display: flex; align-items: center; gap: 10px;
     padding: 10px 13px; border-radius: 10px; text-decoration: none;
-    font-size: 0.92rem; font-weight: 500; color: var(--text-muted);
+    font-size: 0.96rem; font-weight: 500; color: var(--text-muted);
     transition: background 0.18s, color 0.18s, transform 0.14s;
     cursor: pointer;
   }
