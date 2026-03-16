@@ -944,6 +944,111 @@ const GLOBAL_STYLES = `
     .mobile-topbar  { display: none !important; }
   }
 
+  /* ═══════════════════════════════════════════════════
+     MOBILE GLOBAL FIXES
+     מניעת גלילת רוחב + הגדלת פונטים בסלולאר
+  ═══════════════════════════════════════════════════ */
+  @media (max-width: 768px) {
+
+    /* ── מניעת גלילת רוחב מוחלטת ── */
+    html, body, #root { overflow-x: hidden !important; max-width: 100vw !important; }
+
+    .lm-root, .lm-main, .lm-page {
+      overflow-x: hidden !important;
+      max-width: 100vw !important;
+    }
+
+    /* ── גדלי פונטים גדולים יותר ── */
+    body, * { font-size: 14px; }
+
+    h1 { font-size: 1.4rem !important; }
+    h2 { font-size: 1.2rem !important; }
+    h3 { font-size: 1.05rem !important; }
+
+    /* כרטיסים ו-badge */
+    .card, [class*="card"], [class*="Card"] {
+      border-radius: 10px !important;
+    }
+
+    /* ── טבלאות: גלול לרוחב בתוך wrapper בלבד ── */
+    table {
+      font-size: 0.85rem !important;
+    }
+    th, td {
+      font-size: 0.82rem !important;
+      padding: 6px 4px !important;
+    }
+
+    /* ── Grid רשתות בשאלות: מובייל-first ── */
+    /* שאלות בודדות — הפוך ל-flex column */
+    .vs-question-row {
+      display: flex !important;
+      flex-direction: column !important;
+      gap: 6px !important;
+      padding: 10px !important;
+    }
+
+    /* ── טבלת דירוג ── */
+    .leaderboard-table th,
+    .leaderboard-table td {
+      font-size: 0.8rem !important;
+      padding: 5px 3px !important;
+    }
+
+    /* ── Select triggers ── */
+    [class*="SelectTrigger"],
+    .lm-select-trigger {
+      font-size: 0.9rem !important;
+      height: 40px !important;
+    }
+
+    /* ── Badge ── */
+    [class*="badge"], .badge {
+      font-size: 0.75rem !important;
+      padding: 3px 8px !important;
+    }
+
+    /* ── Buttons ── */
+    .btn { font-size: 0.85rem !important; padding: 8px 14px !important; }
+    .btn-sm { font-size: 0.78rem !important; }
+
+    /* ── ViewSubmissions chips ── */
+    .vs-mobile-chips button {
+      font-size: 0.82rem !important;
+      padding: 6px 14px !important;
+    }
+
+    /* ── Sidebar nav ── */
+    .lm-nav-item { font-size: 1rem !important; padding: 11px 14px !important; }
+    .lm-sec-label { font-size: 0.72rem !important; }
+
+    /* ── אזורי תוכן ── */
+    .min-h-screen { padding: 8px !important; }
+    .p-3 { padding: 8px !important; }
+    .p-6 { padding: 12px !important; }
+    .gap-4 { gap: 8px !important; }
+    .gap-6 { gap: 10px !important; }
+    .mb-8 { margin-bottom: 16px !important; }
+
+    /* ── Dialog: מלא מסך במובייל ── */
+    [role="dialog"] {
+      max-width: 96vw !important;
+      width: 96vw !important;
+      max-height: 88vh !important;
+      margin: 0 auto !important;
+      border-radius: 12px !important;
+    }
+  }
+
+  /* ── Extra small (phones < 480px) ── */
+  @media (max-width: 480px) {
+    body, * { font-size: 13px; }
+    h1 { font-size: 1.2rem !important; }
+    .lm-topbar { height: 50px !important; }
+    .lm-topbar-brand { font-size: 0.85rem !important; }
+    .lm-topbar-img { width: 28px !important; height: 28px !important; }
+  }
+
   /* ── Global overrides (Radix, shadcn, Tailwind) ─ */
   thead tr th, thead tr td { background: var(--bg2) !important; }
 
