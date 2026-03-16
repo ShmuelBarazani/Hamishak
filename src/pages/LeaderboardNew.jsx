@@ -88,16 +88,17 @@ export default function LeaderboardNew() {
 
   // ── Helper: load all predictions (supabase direct) ────────────────────────
   const loadAllPredictions = async (gameId, participantName = null) => {
+    // 🔥 לא מסננים לפי game_id — שאלות מיקומים (T14-T17,T19) שייכות למשחק הבתים
+    // עם game_id שונה. הניחושים נטענים מכל המשחקים ומתאמים לפי question_id (UUID).
     let all = [], from = 0;
     const PAGE = 1000;
     while (true) {
-      let query = supabase.from('predictions').select('*').eq('game_id', gameId).range(from, from + PAGE - 1);
+      let query = supabase.from('predictions').select('*').range(from, from + PAGE - 1);
       if (participantName) query = query.eq('participant_name', participantName);
       const { data, error } = await query;
       if (error) { console.error('predictions fetch error:', error); break; }
       if (!data || data.length === 0) break;
       all = [...all, ...data];
-      console.log('   ניחושים סה"כ:', all.length);
       if (data.length < PAGE) break;
       from += PAGE;
     }
