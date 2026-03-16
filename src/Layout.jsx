@@ -242,18 +242,29 @@ function LayoutContent({ children }) {
 
       {/* ── Logo ── */}
       <div className="lm-logo-area">
-        <div className="lm-logo-img-wrap">
-          <img
-            src={currentGame?.game_icon || "https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/6909e559d350b14a5fc224bb/755e92965_2025-11-06120813.png"}
-            alt="logo"
-            className="lm-logo-img"
-          />
-          <div className="lm-logo-glow" />
-        </div>
+        {currentGame?.game_icon ? (
+          <div className="lm-logo-img-wrap">
+            <img
+              src={currentGame.game_icon}
+              alt={currentGame.game_name || 'לוגו משחק'}
+              className="lm-logo-img"
+            />
+            <div className="lm-logo-glow" />
+          </div>
+        ) : (
+          <div className="lm-logo-placeholder">⚽</div>
+        )}
         <div className="lm-logo-text">
-          <div className="lm-logo-title">טוטו ליגת אלופות</div>
-          <div className="lm-logo-season">2025–2026</div>
-          <div className="lm-logo-stage">שלב הנוק-אאוט</div>
+          {currentGame ? (
+            <>
+              <div className="lm-logo-title">{currentGame.game_name}</div>
+              {currentGame.game_subtitle && (
+                <div className="lm-logo-season">{currentGame.game_subtitle}</div>
+              )}
+            </>
+          ) : (
+            <div className="lm-logo-title lm-logo-title--dim">בחר משחק</div>
+          )}
         </div>
       </div>
 
@@ -394,12 +405,10 @@ function LayoutContent({ children }) {
             <span /><span /><span />
           </button>
           <div className="lm-topbar-brand">
-            <img
-              src={currentGame?.game_icon || "https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/6909e559d350b14a5fc224bb/755e92965_2025-11-06120813.png"}
-              alt="logo"
-              className="lm-topbar-img"
-            />
-            <span>{currentGame?.game_name || 'טוטו ליגת אלופות'}</span>
+            {currentGame?.game_icon && (
+              <img src={currentGame.game_icon} alt="logo" className="lm-topbar-img" />
+            )}
+            <span>{currentGame?.game_name || 'בחר משחק'}</span>
           </div>
           <div style={{ width: 30 }} />
         </header>
@@ -778,13 +787,13 @@ const GLOBAL_STYLES = `
   }
   .lm-logo-img-wrap { position: relative; flex-shrink: 0; }
   .lm-logo-img {
-    width: 58px; height: 58px;
-    object-fit: contain; border-radius: 13px;
+    width: 72px; height: 72px;
+    object-fit: contain; border-radius: 14px;
     border: 1px solid var(--tp-20);
     display: block;
   }
   .lm-logo-glow {
-    position: absolute; inset: -6px; border-radius: 17px;
+    position: absolute; inset: -7px; border-radius: 19px;
     background: radial-gradient(circle, var(--tp-15) 0%, transparent 70%);
     pointer-events: none;
     animation: lm-pulse 3.5s ease-in-out infinite;
@@ -793,14 +802,25 @@ const GLOBAL_STYLES = `
     0%, 100% { opacity: 0.4; transform: scale(1); }
     50%       { opacity: 0.9; transform: scale(1.08); }
   }
+  .lm-logo-placeholder {
+    width: 72px; height: 72px; border-radius: 14px;
+    border: 1px dashed var(--tp-25);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 28px; flex-shrink: 0; background: var(--tp-05);
+  }
   .lm-logo-text { flex: 1; min-width: 0; }
   .lm-logo-title {
-    font-size: 0.96rem; font-weight: 900; color: #f1f5f9;
-    line-height: 1.2;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    font-size: 1rem; font-weight: 800; color: #f1f5f9;
+    line-height: 1.25; white-space: normal; word-break: break-word;
+    display: -webkit-box; -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical; overflow: hidden;
   }
-  .lm-logo-season { font-size: 0.72rem; font-weight: 700; color: var(--tp); margin-top: 2px; }
-  .lm-logo-stage  { font-size: 0.65rem; color: #64748b; margin-top: 1px; }
+  .lm-logo-title--dim { color: #475569; font-weight: 500; }
+  .lm-logo-season {
+    font-size: 0.74rem; font-weight: 700; color: var(--tp);
+    margin-top: 4px; line-height: 1.3;
+    white-space: normal; word-break: break-word;
+  }
 
   /* ── Stars ───────────────────────────────────── */
   .lm-stars {
