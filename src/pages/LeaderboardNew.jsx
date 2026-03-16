@@ -72,6 +72,7 @@ export default function LeaderboardNew() {
 
   // ── Helper: load all questions (supabase direct) ──────────────────────────
   const loadAllQuestions = async (gameId) => {
+    // שלב 1: שאלות המשחק הנוכחי
     let all = [], from = 0;
     const PAGE = 1000;
     while (true) {
@@ -83,11 +84,32 @@ export default function LeaderboardNew() {
       if (data.length < PAGE) break;
       from += PAGE;
     }
+    // שלב 2: שאלות מיקומים ממשחקים אחרים (cross-game)
+    // T14-T17/T19 שייכות למשחק שלב הבתים עם game_id שונה
+    try {
+      const LOCATION_IDS = ['T14', 'T15', 'T16', 'T17', 'T19'];
+      const existingTableQKeys = new Set(all.map(q => q.table_id + '_' + q.question_id));
+      const { data: locQs } = await supabase
+        .from('questions')
+        .select('*')
+        .in('table_id', LOCATION_IDS)
+        .neq('game_id', gameId);
+      if (locQs) {
+        locQs.forEach(q => {
+          const key = q.table_id + '_' + q.question_id;
+          if (!existingTableQKeys.has(key)) {
+            existingTableQKeys.add(key);
+            all.push(q);
+          }
+        });
+      }
+    } catch(e) { console.error('cross-game location questions error:', e); }
     return all.filter(q => q.table_id && q.table_id !== 'T1');
   };
 
   // ── Helper: load all predictions (supabase direct) ────────────────────────
   const loadAllPredictions = async (gameId, participantName = null) => {
+    // שלב 1: ניחושים של המשחק הנוכחי
     let all = [], from = 0;
     const PAGE = 1000;
     while (true) {
@@ -99,6 +121,37 @@ export default function LeaderboardNew() {
       all = [...all, ...data];
       if (data.length < PAGE) break;
       from += PAGE;
+    }
+    // שלב 2: ניחושי מיקומים ממשחקים אחרים (cross-game location predictions)
+    // שאלות T14-T17/T19 שייכות למשחק שלב הבתים עם game_id שונה
+    if (participantName) {
+      try {
+        const LOCATION_IDS = ['T14', 'T15', 'T16', 'T17', 'T19'];
+        // מצא את UUIDs של שאלות מיקומים ממשחקים אחרים
+        const { data: locQs } = await supabase
+          .from('questions')
+          .select('id')
+          .in('table_id', LOCATION_IDS)
+          .neq('game_id', gameId);
+        if (locQs && locQs.length > 0) {
+          const locQIds = locQs.map(q => q.id);
+          // טען ניחושים לפי question_id (לא game_id) של שאלות המיקומים
+          const { data: locPreds } = await supabase
+            .from('predictions')
+            .select('*')
+            .in('question_id', locQIds)
+            .eq('participant_name', participantName);
+          if (locPreds && locPreds.length > 0) {
+            // הוסף רק ניחושים שלא קיימים כבר
+            const existingQIds = new Set(all.map(p => p.question_id));
+            locPreds.forEach(p => {
+              if (!existingQIds.has(p.question_id)) {
+                all.push(p);
+              }
+            });
+          }
+        }
+      } catch(e) { console.error('cross-game location predictions error:', e); }
     }
     return all;
   };
