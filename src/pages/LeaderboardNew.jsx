@@ -14,18 +14,18 @@ import { useGame } from "@/components/contexts/GameContext";
 import { calculateTotalScore } from "@/components/scoring/ScoreService";
 
 export default function LeaderboardNew() {
-  const [rankings,           setRankings          ] = useState([]);
-  const [loading,            setLoading           ] = useState(true);
-  const [settingBaseline,    setSettingBaseline   ] = useState(false);
-  const [selectedParticipant,setSelectedParticipant] = useState(null);
-  const [participantDetails, setParticipantDetails ] = useState(null);
-  const [loadingDetails,     setLoadingDetails    ] = useState(false);
-  const [currentUser,        setCurrentUser       ] = useState(null);
-  const [avgScore,           setAvgScore          ] = useState(0);
-  const [maxScore,           setMaxScore          ] = useState(0);
-  const [minScore,           setMinScore          ] = useState(0);
-  const [sortColumn,         setSortColumn        ] = useState('current_position');
-  const [sortDirection,      setSortDirection     ] = useState('asc');
+  const [rankings,            setRankings           ] = useState([]);
+  const [loading,             setLoading            ] = useState(true);
+  const [settingBaseline,     setSettingBaseline    ] = useState(false);
+  const [selectedParticipant, setSelectedParticipant] = useState(null);
+  const [participantDetails,  setParticipantDetails ] = useState(null);
+  const [loadingDetails,      setLoadingDetails     ] = useState(false);
+  const [currentUser,         setCurrentUser        ] = useState(null);
+  const [avgScore,            setAvgScore           ] = useState(0);
+  const [maxScore,            setMaxScore           ] = useState(0);
+  const [minScore,            setMinScore           ] = useState(0);
+  const [sortColumn,          setSortColumn         ] = useState('current_position');
+  const [sortDirection,       setSortDirection      ] = useState('asc');
   const { toast }       = useToast();
   const { currentGame } = useGame();
 
@@ -53,18 +53,15 @@ export default function LeaderboardNew() {
   // ═══════════════════════════════════════════════════════════════════════════
   //  DB HELPERS — STRICT GAME ISOLATION
   //  כל פונקציה מסננת אך ורק לפי game_id הנוכחי.
-  //  אין cross-game fallback — אם שאלה לא קיימת במשחק הנוכחי היא לא מופיעה.
+  //  אין cross-game fallback מכל סוג שהוא.
   // ═══════════════════════════════════════════════════════════════════════════
 
-  /** דירוג — מסונן לפי game_id בלבד */
   const loadAllRankings = async (gameId, orderBy = '-current_score') => {
     let all = [], from = 0;
     const PAGE = 1000;
     while (true) {
-      let q = supabase
-        .from('rankings').select('*')
-        .eq('game_id', gameId)
-        .range(from, from + PAGE - 1);
+      let q = supabase.from('rankings').select('*')
+        .eq('game_id', gameId).range(from, from + PAGE - 1);
       if (orderBy === '-current_score')
         q = q.order('current_score', { ascending: false });
       else if (orderBy)
@@ -79,8 +76,7 @@ export default function LeaderboardNew() {
   };
 
   /**
-   * שאלות — מסונן לפי game_id בלבד, ללא שום fallback למשחק אחר.
-   * אם שאלות T14-T19 לא קיימות במשחק הנוכחי — הן לא מופיעות.
+   * שאלות של המשחק הנוכחי בלבד — ללא שום fallback למשחק אחר.
    */
   const loadQuestionsForGame = async (gameId) => {
     let all = [], from = 0;
@@ -95,21 +91,15 @@ export default function LeaderboardNew() {
       if (data.length < PAGE) break;
       from += PAGE;
     }
-    // סנן T1 (פרטי משתתף) — לא שאלות ניקוד
     return all.filter(q => q.table_id && q.table_id !== 'T1');
   };
 
   /**
-   * ניחושים — מסונן לפי game_id + participant_name.
-   * מחזיר רק ניחושים ששייכים לשאלות המשחק הנוכחי (allQuestions).
-   *
-   * הגנה כפולה:
-   *   1. סינון לפי game_id בשאילתת ה-DB
-   *   2. סינון לפי question_id ידוע (מה-allQuestions) בצד הלקוח
+   * ניחושים של המשחק הנוכחי בלבד.
+   * הגנה כפולה: סינון DB + סינון לפי question_id ידוע.
    */
   const loadPredictionsForGame = async (gameId, participantName, allQuestions) => {
-    const knownQuestionIds = new Set(allQuestions.map(q => q.id));
-
+    const knownIds = new Set(allQuestions.map(q => q.id));
     let all = [], from = 0;
     const PAGE = 1000;
     while (true) {
@@ -123,18 +113,14 @@ export default function LeaderboardNew() {
       if (data.length < PAGE) break;
       from += PAGE;
     }
-
-    // הגנה נוספת: השאר רק ניחושים לשאלות הידועות של המשחק הנוכחי
-    return all.filter(p => knownQuestionIds.has(p.question_id));
+    // ✅ רק ניחושים לשאלות המשחק הנוכחי
+    return all.filter(p => knownIds.has(p.question_id));
   };
 
   /**
-   * חישוב ניקוד — תיקון קריטי:
-   * שאלות משחק מאוחסנות ב-home_prediction + away_prediction (לא text_prediction).
-   * predMap חייב לטפל בשניהם.
+   * חישוב ניקוד — תיקון: home_prediction + away_prediction → "X-Y"
    */
   const calcScore = (allQuestions, predictions) => {
-    // dedup — קח רק את הניחוש האחרון לכל שאלה
     const latest = {};
     predictions.forEach(pred => {
       const ex = latest[pred.question_id];
@@ -148,13 +134,11 @@ export default function LeaderboardNew() {
         pred.home_prediction !== null && pred.home_prediction !== undefined &&
         pred.away_prediction !== null && pred.away_prediction !== undefined
       ) {
-        // ✅ שאלות משחק: פורמט "X-Y" כמו ViewSubmissions
         predMap[qid] = `${pred.home_prediction}-${pred.away_prediction}`;
       } else {
         predMap[qid] = pred.text_prediction;
       }
     }
-
     return calculateTotalScore(allQuestions, predMap);
   };
 
@@ -176,9 +160,7 @@ export default function LeaderboardNew() {
         setAvgScore(scores.reduce((a, b) => a + b, 0) / scores.length);
         setMaxScore(Math.max(...scores));
         setMinScore(Math.min(...scores));
-      } else {
-        setRankings([]);
-      }
+      } else setRankings([]);
     } catch (error) {
       console.error("Error loading rankings:", error);
       toast({ title: "שגיאה", description: "טעינת הדירוג נכשלה", variant: "destructive" });
@@ -225,57 +207,48 @@ export default function LeaderboardNew() {
   // ─── Load participant popup ────────────────────────────────────────────────
   const loadParticipantDetails = async (participantName) => {
     if (!currentGame) return;
-
-    // פתח dialog מיד עם spinner
     setSelectedParticipant(participantName);
     setParticipantDetails(null);
     setLoadingDetails(true);
 
     try {
-      // ═══ הפרדה מלאה: רק שאלות המשחק הנוכחי ═══
-      const allQuestions = await loadQuestionsForGame(currentGame.id);
+      const allQuestions   = await loadQuestionsForGame(currentGame.id);
+      const allPredictions = await loadPredictionsForGame(currentGame.id, participantName, allQuestions);
 
-      // ═══ רק ניחושים של המשחק הנוכחי ═══
-      const allPredictions = await loadPredictionsForGame(
-        currentGame.id, participantName, allQuestions
-      );
+      const teamsMap = (currentGame.teams_data || [])
+        .reduce((acc, t) => { acc[t.name] = t; return acc; }, {});
 
-      const allTeams = currentGame.teams_data || [];
-      const teamsMap = allTeams.reduce((acc, t) => { acc[t.name] = t; return acc; }, {});
-
-      // ═══ חישוב ניקוד עם home/away תיקון ═══
       const { total: totalScore, breakdown } = calcScore(allQuestions, allPredictions);
 
-      // ─── בניית breakdown לתצוגה ───────────────────────────────────────────
       const LOCATION_TABLE_IDS = ['T14', 'T15', 'T16', 'T17', 'T19'];
-      const LOCATION_DEFAULTS = {
+      const LOCATION_DEFAULTS  = {
         T14: 'מקומות 1-8 — שלב הבתים',
         T15: 'מקומות 9-16 — שלב הבתים',
         T16: 'מקומות 17-24 — שלב הבתים',
         T17: 'מקומות 1-24 — טבלה כוללת',
         T19: 'רשימת העולות לשמינית הגמר',
       };
-      const locationTableDescriptions = { ...LOCATION_DEFAULTS };
+      const locationDesc = { ...LOCATION_DEFAULTS };
       allQuestions.forEach(q => {
         if (LOCATION_TABLE_IDS.includes(q.table_id) && q.table_description?.trim())
-          locationTableDescriptions[q.table_id] = q.table_description.trim();
+          locationDesc[q.table_id] = q.table_description.trim();
       });
 
-      // dedup predictions לצורך הצגת ניחוש
-      const latestPredByQId = {};
+      // dedup predictions for display
+      const latestPred = {};
       allPredictions.forEach(p => {
-        const ex = latestPredByQId[p.question_id];
+        const ex = latestPred[p.question_id];
         if (!ex || new Date(p.created_at) > new Date(ex.created_at))
-          latestPredByQId[p.question_id] = p;
+          latestPred[p.question_id] = p;
       });
 
-      const getPredDisplay = (questionId) => {
-        const pred = latestPredByQId[questionId];
-        if (!pred) return '';
-        if (pred.home_prediction !== null && pred.home_prediction !== undefined &&
-            pred.away_prediction !== null && pred.away_prediction !== undefined)
-          return formatScore(`${pred.home_prediction}-${pred.away_prediction}`);
-        return formatScore(pred.text_prediction || '');
+      const getPredDisplay = (qid) => {
+        const p = latestPred[qid];
+        if (!p) return '';
+        if (p.home_prediction !== null && p.home_prediction !== undefined &&
+            p.away_prediction !== null && p.away_prediction !== undefined)
+          return formatScore(`${p.home_prediction}-${p.away_prediction}`);
+        return formatScore(p.text_prediction || '');
       };
 
       const locationSums     = {};
@@ -283,8 +256,7 @@ export default function LeaderboardNew() {
 
       breakdown.forEach(item => {
         if (LOCATION_TABLE_IDS.includes(item.table_id)) {
-          if (!locationSums[item.table_id]) locationSums[item.table_id] = 0;
-          locationSums[item.table_id] += item.score;
+          locationSums[item.table_id] = (locationSums[item.table_id] || 0) + item.score;
         } else if (item.score > 0) {
           const q = allQuestions.find(x => x.id === item.question_id);
           if (!q) return;
@@ -316,8 +288,9 @@ export default function LeaderboardNew() {
         .map(([tid, s]) => ({
           score: s, max_score: null, table_id: tid,
           question_id_display: '',
-          question_text: locationTableDescriptions[tid] || tid,
-          home_team: null, away_team: null, actual_result: '', prediction: '',
+          question_text: locationDesc[tid] || tid,
+          home_team: null, away_team: null,
+          actual_result: '', prediction: '',
           home_team_display: null, away_team_display: null,
           home_team_logo: null, away_team_logo: null,
           isLocationSummary: true,
@@ -345,8 +318,7 @@ export default function LeaderboardNew() {
     else {
       setSortColumn(column);
       setSortDirection(
-        ['current_score','previous_score','score_change','position_change'].includes(column)
-          ? 'desc' : 'asc'
+        ['current_score','previous_score','score_change','position_change'].includes(column) ? 'desc' : 'asc'
       );
     }
   };
@@ -372,15 +344,15 @@ export default function LeaderboardNew() {
 
   const getPositionIcon = (p) => {
     if (p === 1) return <Crown  className="w-5 h-5 text-yellow-400" />;
-    if (p === 2) return <Trophy className="w-5 h-5 text-gray-400" />;
+    if (p === 2) return <Trophy className="w-5 h-5 text-gray-400"   />;
     if (p === 3) return <Trophy className="w-5 h-5 text-orange-400" />;
     return null;
   };
 
   const getPositionChangeIcon = (c) => {
     if (c > 0) return <TrendingUp   className="w-3 h-3 md:w-4 md:h-4 text-green-400" />;
-    if (c < 0) return <TrendingDown className="w-3 h-3 md:w-4 md:h-4 text-red-400" />;
-    return          <Minus         className="w-3 h-3 md:w-4 md:h-4 text-gray-400" />;
+    if (c < 0) return <TrendingDown className="w-3 h-3 md:w-4 md:h-4 text-red-400"   />;
+    return          <Minus         className="w-3 h-3 md:w-4 md:h-4 text-gray-400"  />;
   };
 
   if (loading) {
@@ -465,13 +437,13 @@ export default function LeaderboardNew() {
                 <thead style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--bg3)' }}>
                   <tr style={{ borderBottom: '2px solid var(--tp-30)' }}>
                     {[
-                      { key: 'current_position', label: '#',           mobile: '#',   align: 'center' },
-                      { key: 'participant_name',  label: 'שם',          mobile: 'שם',  align: 'right'  },
-                      { key: 'current_score',     label: "נק'",         mobile: "נק'", align: 'center' },
-                      { key: 'previous_position', label: 'מיקום קודם', mobile: null,  align: 'center' },
-                      { key: 'previous_score',    label: 'ניקוד קודם', mobile: null,  align: 'center' },
-                      { key: 'score_change',      label: 'שינוי בניקוד',mobile: '+/-',align: 'center' },
-                      { key: 'position_change',   label: 'שינוי במיקום',mobile: '↕',  align: 'center' },
+                      { key: 'current_position', label: '#',            mobile: '#',   align: 'center' },
+                      { key: 'participant_name',  label: 'שם',           mobile: 'שם',  align: 'right'  },
+                      { key: 'current_score',     label: "נק'",          mobile: "נק'", align: 'center' },
+                      { key: 'previous_position', label: 'מיקום קודם',  mobile: null,  align: 'center' },
+                      { key: 'previous_score',    label: 'ניקוד קודם',  mobile: null,  align: 'center' },
+                      { key: 'score_change',      label: 'שינוי בניקוד', mobile: '+/-', align: 'center' },
+                      { key: 'position_change',   label: 'שינוי במיקום', mobile: '↕',  align: 'center' },
                     ].map(col => (
                       <th
                         key={col.key}
@@ -496,7 +468,9 @@ export default function LeaderboardNew() {
                       <td className="text-center p-1 md:p-2">
                         <div className="flex items-center justify-center gap-0.5 md:gap-1.5">
                           <span className="hidden md:inline">{getPositionIcon(rank.current_position)}</span>
-                          <span className="font-bold text-xs md:text-base" style={{ color: '#f8fafc' }}>{rank.current_position}</span>
+                          <span className="font-bold text-xs md:text-base" style={{ color: '#f8fafc' }}>
+                            {rank.current_position}
+                          </span>
                         </div>
                       </td>
                       <td
@@ -539,7 +513,8 @@ export default function LeaderboardNew() {
       </div>
 
       {/* ════════════════════════════════════════════════════════════════════════
-          PARTICIPANT DETAIL DIALOG — גדול יותר + פונטים גדולים
+          PARTICIPANT DETAIL DIALOG
+          גודל: 75vw רוחב, 80vh גובה — סביר, לא מסך מלא
       ════════════════════════════════════════════════════════════════════════ */}
       <Dialog
         open={selectedParticipant !== null}
@@ -548,56 +523,51 @@ export default function LeaderboardNew() {
         <DialogContent
           dir="rtl"
           style={{
-            /* ── גודל מסך ── */
-            maxWidth: '92vw',
-            width: '92vw',
-            maxHeight: '90vh',
-            height: '90vh',
+            maxWidth: '75vw',
+            width: '75vw',
+            maxHeight: '82vh',
+            height: '82vh',
             display: 'flex',
             flexDirection: 'column',
-            /* ── עיצוב ── */
             background: 'linear-gradient(135deg, var(--bg1) 0%, var(--bg3) 100%)',
             border: '1px solid var(--tp-20)',
-            boxShadow: '0 0 40px var(--tp-30)',
-            borderRadius: '16px',
+            boxShadow: '0 0 30px var(--tp-25)',
+            borderRadius: '14px',
             padding: '0',
+            overflow: 'hidden',
           }}
         >
-          {/* Header */}
+          {/* ── Header ── */}
           <DialogHeader style={{
-            padding: '20px 28px 16px',
-            borderBottom: '1px solid var(--tp-25)',
+            padding: '16px 24px 14px',
+            borderBottom: '1px solid var(--tp-20)',
             flexShrink: 0,
           }}>
             <DialogTitle style={{
-              fontSize: '1.6rem',
+              fontSize: '1.35rem',
               fontWeight: 800,
               color: '#f8fafc',
               textAlign: 'right',
-              marginBottom: '10px',
+              marginBottom: '8px',
             }}>
               {selectedParticipant}
             </DialogTitle>
-            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '14px' }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '12px' }}>
               {loadingDetails ? (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <Loader2 style={{ width: 18, height: 18, color: 'var(--tp)', animation: 'spin 1s linear infinite' }} />
-                  <span style={{ fontSize: '1rem', color: 'var(--tp)' }}>מחשב ניקוד עדכני...</span>
+                  <Loader2 className="animate-spin" style={{ width: 16, height: 16, color: 'var(--tp)' }} />
+                  <span style={{ fontSize: '0.9rem', color: 'var(--tp)' }}>מחשב ניקוד עדכני...</span>
                 </div>
               ) : (
                 <>
                   <Badge style={{
-                    background: 'var(--tp)',
-                    color: 'white',
-                    fontSize: '1.1rem',
-                    fontWeight: 700,
-                    padding: '6px 18px',
-                    borderRadius: '999px',
-                    letterSpacing: '0.02em',
+                    background: 'var(--tp)', color: 'white',
+                    fontSize: '1rem', fontWeight: 700,
+                    padding: '5px 16px', borderRadius: '999px',
                   }}>
                     סה"כ: {participantDetails?.totalScore} נקודות
                   </Badge>
-                  <span style={{ fontSize: '0.95rem', color: '#94a3b8' }}>
+                  <span style={{ fontSize: '0.85rem', color: '#94a3b8' }}>
                     {participantDetails?.scores?.length || 0} שאלות עם ניקוד
                   </span>
                 </>
@@ -605,34 +575,34 @@ export default function LeaderboardNew() {
             </div>
           </DialogHeader>
 
-          {/* Body — scrollable */}
-          <div style={{ flex: 1, overflow: 'auto', padding: '0 8px 8px' }}>
+          {/* ── Body ── */}
+          <div style={{ flex: 1, overflow: 'auto', padding: '4px 0 8px' }}>
             {loadingDetails ? (
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '200px' }}>
-                <Loader2 style={{ width: 36, height: 36, color: 'var(--tp)' }} className="animate-spin" />
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '180px' }}>
+                <Loader2 className="animate-spin" style={{ width: 32, height: 32, color: 'var(--tp)' }} />
               </div>
             ) : (
-              <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: '0 5px' }}>
+              <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: '0 3px' }}>
                 <thead style={{ position: 'sticky', top: 0, zIndex: 10 }}>
                   <tr>
                     {[
-                      { label: 'טבלה',  width: '70px'  },
-                      { label: 'מס׳',   width: '60px'  },
-                      { label: 'שאלה',  width: 'auto'  },
-                      { label: 'ניחוש', width: '120px' },
-                      { label: 'תוצאה', width: '90px'  },
-                      { label: 'ניקוד', width: '80px'  },
+                      { label: 'טבלה',  w: '64px'  },
+                      { label: 'מס׳',   w: '54px'  },
+                      { label: 'שאלה',  w: 'auto'  },
+                      { label: 'ניחוש', w: '110px' },
+                      { label: 'תוצאה', w: '80px'  },
+                      { label: 'ניקוד', w: '74px'  },
                     ].map(h => (
                       <th key={h.label} style={{
-                        backgroundColor: 'var(--bg1)',
+                        width: h.w,
+                        background: 'var(--bg1)',
                         color: '#64748b',
-                        fontSize: '0.8rem',
+                        fontSize: '0.75rem',
                         fontWeight: 600,
                         textAlign: 'center',
-                        padding: '10px 8px',
+                        padding: '8px 6px',
                         letterSpacing: '0.04em',
-                        width: h.width,
-                        borderBottom: '1px solid var(--tp-20)',
+                        borderBottom: '1px solid var(--tp-15)',
                       }}>
                         {h.label}
                       </th>
@@ -641,111 +611,115 @@ export default function LeaderboardNew() {
                 </thead>
                 <tbody>
                   {participantDetails?.scores?.map((s, i) => {
-                    // ── שורת מיקומים ──
+
+                    // ── שורת מיקומים ──────────────────────────────────────
                     if (s.isLocationSummary) {
                       return (
                         <tr key={i} style={{
-                          backgroundColor: 'rgba(249,115,22,0.09)',
+                          background: 'rgba(249,115,22,0.08)',
                           borderRight: '3px solid #f97316',
                         }}>
-                          <td style={{ padding: '10px 8px', textAlign: 'center' }}>
-                            <Badge style={{
-                              borderRadius: '999px', padding: '3px 10px',
-                              fontSize: '0.78rem', border: '1px solid #f97316',
-                              color: '#f97316', background: 'rgba(249,115,22,0.12)',
+                          <td style={{ padding: '8px 6px', textAlign: 'center' }}>
+                            <span style={{
+                              display: 'inline-block', borderRadius: '999px',
+                              padding: '2px 8px', fontSize: '0.72rem',
+                              border: '1px solid #f97316', color: '#f97316',
+                              background: 'rgba(249,115,22,0.1)',
                             }}>
                               {s.table_id}
-                            </Badge>
+                            </span>
                           </td>
-                          <td style={{ padding: '10px 8px', textAlign: 'center', color: '#94a3b8', fontSize: '0.9rem' }}>📋</td>
-                          <td colSpan={3} style={{ padding: '10px 8px', textAlign: 'right' }}>
-                            <span style={{ color: '#fdba74', fontSize: '0.95rem', fontWeight: 600 }}>
+                          <td style={{ padding: '8px 6px', textAlign: 'center', color: '#94a3b8', fontSize: '0.85rem' }}>📋</td>
+                          <td colSpan={3} style={{ padding: '8px 6px', textAlign: 'right' }}>
+                            <span style={{ color: '#fdba74', fontSize: '0.88rem', fontWeight: 600 }}>
                               {s.question_text}
                             </span>
                           </td>
-                          <td style={{ padding: '10px 8px', textAlign: 'center' }}>
-                            <Badge style={{
-                              background: '#ea580c', color: 'white',
-                              fontSize: '0.9rem', fontWeight: 700,
-                              padding: '4px 12px', borderRadius: '999px',
+                          <td style={{ padding: '8px 6px', textAlign: 'center' }}>
+                            <span style={{
+                              display: 'inline-block', background: '#ea580c', color: 'white',
+                              fontSize: '0.85rem', fontWeight: 700,
+                              padding: '3px 10px', borderRadius: '999px',
                             }}>
                               +{s.score}
-                            </Badge>
+                            </span>
                           </td>
                         </tr>
                       );
                     }
 
-                    // ── שורת שאלה רגילה ──
+                    // ── שורת שאלה רגילה ───────────────────────────────────
                     let badgeBg = '#475569';
                     if (s.score === s.max_score && s.max_score > 0) badgeBg = '#16a34a';
-                    else if (s.score >= 7) badgeBg = '#2563eb';
-                    else if (s.score > 0) badgeBg = '#ca8a04';
+                    else if (s.score >= 7)  badgeBg = '#2563eb';
+                    else if (s.score > 0)   badgeBg = '#ca8a04';
 
                     return (
-                      <tr key={i} style={{
-                        backgroundColor: 'rgba(30,41,59,0.55)',
-                        transition: 'background 0.15s',
-                      }}
-                        onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)'}
-                        onMouseLeave={e => e.currentTarget.style.backgroundColor = 'rgba(30,41,59,0.55)'}
+                      <tr key={i}
+                        style={{ background: 'rgba(30,41,59,0.5)', transition: 'background 0.12s' }}
+                        onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.045)'}
+                        onMouseLeave={e => e.currentTarget.style.background = 'rgba(30,41,59,0.5)'}
                       >
                         {/* טבלה */}
-                        <td style={{ padding: '10px 8px', textAlign: 'center' }}>
-                          <Badge style={{
-                            borderRadius: '999px', padding: '3px 10px',
-                            fontSize: '0.78rem', border: '1px solid var(--tp)',
-                            color: 'var(--tp)', background: 'var(--tp-10)',
+                        <td style={{ padding: '8px 6px', textAlign: 'center' }}>
+                          <span style={{
+                            display: 'inline-block', borderRadius: '999px',
+                            padding: '2px 8px', fontSize: '0.72rem',
+                            border: '1px solid var(--tp)', color: 'var(--tp)',
+                            background: 'var(--tp-10)',
                           }}>
                             {s.table_id}
-                          </Badge>
+                          </span>
                         </td>
-                        {/* מס' שאלה */}
-                        <td style={{ padding: '10px 8px', textAlign: 'center' }}>
-                          <Badge style={{
-                            borderRadius: '999px', padding: '3px 10px',
-                            fontSize: '0.78rem', border: '1px solid var(--tp)',
-                            color: 'var(--tp)', background: 'var(--tp-10)',
+                        {/* מס' */}
+                        <td style={{ padding: '8px 6px', textAlign: 'center' }}>
+                          <span style={{
+                            display: 'inline-block', borderRadius: '999px',
+                            padding: '2px 8px', fontSize: '0.72rem',
+                            border: '1px solid var(--tp)', color: 'var(--tp)',
+                            background: 'var(--tp-10)',
                           }}>
                             {s.question_id_display}
-                          </Badge>
+                          </span>
                         </td>
                         {/* שאלה */}
-                        <td style={{ padding: '10px 8px', textAlign: 'right' }}>
+                        <td style={{ padding: '8px 6px', textAlign: 'right' }}>
                           {s.home_team && s.away_team ? (
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.95rem', color: '#f1f5f9' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '0.88rem', color: '#f1f5f9' }}>
                               <span>{s.home_team_display || s.home_team}</span>
                               {s.home_team_logo && (
-                                <img src={s.home_team_logo} alt="" style={{ width: 20, height: 20, borderRadius: '50%' }} onError={e => e.target.style.display='none'} />
+                                <img src={s.home_team_logo} alt="" style={{ width: 18, height: 18, borderRadius: '50%' }}
+                                  onError={e => e.target.style.display = 'none'} />
                               )}
-                              <span style={{ color: '#64748b' }}>נגד</span>
+                              <span style={{ color: '#475569', fontSize: '0.78rem' }}>נגד</span>
                               {s.away_team_logo && (
-                                <img src={s.away_team_logo} alt="" style={{ width: 20, height: 20, borderRadius: '50%' }} onError={e => e.target.style.display='none'} />
+                                <img src={s.away_team_logo} alt="" style={{ width: 18, height: 18, borderRadius: '50%' }}
+                                  onError={e => e.target.style.display = 'none'} />
                               )}
                               <span>{s.away_team_display || s.away_team}</span>
                             </div>
                           ) : (
-                            <span style={{ fontSize: '0.95rem', color: '#f1f5f9' }}>{s.question_text}</span>
+                            <span style={{ fontSize: '0.88rem', color: '#f1f5f9' }}>{s.question_text}</span>
                           )}
                         </td>
                         {/* ניחוש */}
-                        <td style={{ padding: '10px 8px', textAlign: 'center', fontSize: '0.95rem', color: '#94a3b8' }}>
+                        <td style={{ padding: '8px 6px', textAlign: 'center', fontSize: '0.88rem', color: '#94a3b8' }}>
                           {s.prediction || '—'}
                         </td>
                         {/* תוצאה */}
-                        <td style={{ padding: '10px 8px', textAlign: 'center', fontSize: '0.95rem', color: '#f1f5f9', fontWeight: 600 }}>
+                        <td style={{ padding: '8px 6px', textAlign: 'center', fontSize: '0.88rem', color: '#f1f5f9', fontWeight: 600 }}>
                           {s.actual_result || '—'}
                         </td>
                         {/* ניקוד */}
-                        <td style={{ padding: '10px 8px', textAlign: 'center' }}>
-                          <Badge style={{
-                            background: badgeBg, color: 'white',
-                            fontSize: '0.9rem', fontWeight: 700,
-                            padding: '4px 12px', borderRadius: '999px',
-                            minWidth: '56px', display: 'inline-block', textAlign: 'center',
+                        <td style={{ padding: '8px 6px', textAlign: 'center' }}>
+                          <span style={{
+                            display: 'inline-block', background: badgeBg, color: 'white',
+                            fontSize: '0.85rem', fontWeight: 700,
+                            padding: '3px 10px', borderRadius: '999px',
+                            minWidth: '52px', textAlign: 'center',
                           }}>
                             {s.score}/{s.max_score}
-                          </Badge>
+                          </span>
                         </td>
                       </tr>
                     );
