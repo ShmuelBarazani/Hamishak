@@ -740,6 +740,7 @@ export default function ViewSubmissions() {
       <Card className="bg-slate-800/40 border-slate-700 shadow-lg shadow-slate-900/20">
         <CardHeader className="py-3"><CardTitle className="text-cyan-400">{table.description}</CardTitle></CardHeader>
         <CardContent className="p-3">
+          <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
           <div className="space-y-3">
             {sortedMainIds.map(mainId => {
               const { main, subs } = grouped[mainId];
@@ -792,7 +793,8 @@ export default function ViewSubmissions() {
                 </div>
               );
             })}
-          </div>
+          </div>{/* end space-y-3 */}
+          </div>{/* end overflow-x wrapper */}
         </CardContent>
       </Card>
     );
@@ -922,6 +924,7 @@ export default function ViewSubmissions() {
       <Card style={{ background: 'rgba(30,41,59,0.6)', border: '1px solid rgba(6,182,212,0.2)', backdropFilter: 'blur(10px)' }}>
         <CardHeader className="py-3"><CardTitle style={{ color: '#06b6d4' }}>{table.description}</CardTitle></CardHeader>
         <CardContent className="p-3">
+          <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
           <div className="space-y-2">
             {sortedMainIds.map(mainId => {
               const { main, subs } = grouped[mainId];
@@ -987,7 +990,8 @@ export default function ViewSubmissions() {
                 </div>
               );
             })}
-          </div>
+          </div>{/* end space-y-2 */}
+          </div>{/* end overflow-x wrapper */}
 
           {isLocationTable && selectedParticipant && (
             <div className="mt-4 grid grid-cols-2 gap-3">
@@ -1183,7 +1187,50 @@ export default function ViewSubmissions() {
   });
 
   return (
-    <div className="min-h-screen" dir="rtl" style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%)' }}>
+    <div className="min-h-screen" dir="rtl" style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%)', overflowX: 'hidden', maxWidth: '100vw' }}>
+      <style>{`
+        /* ── ViewSubmissions mobile fixes ── */
+        @media (max-width: 768px) {
+
+          /* שורות grid — גלילה אופקית מקומית */
+          .vs-grid-row {
+            overflow-x: auto !important;
+            -webkit-overflow-scrolling: touch !important;
+            padding-bottom: 4px !important;
+          }
+
+          /* כרטיס שאלה פשוטה (4 עמודות) — הפוך לכרטיס */
+          .vs-simple-row {
+            display: flex !important;
+            flex-wrap: wrap !important;
+            align-items: center !important;
+            gap: 6px !important;
+            padding: 10px 12px !important;
+          }
+          .vs-simple-row .vs-q-id   { flex: 0 0 auto; }
+          .vs-simple-row .vs-q-text { flex: 1 1 100%; font-size: 0.88rem !important; }
+          .vs-simple-row .vs-q-val  { flex: 1 1 auto; }
+          .vs-simple-row .vs-score  { flex: 0 0 auto; }
+
+          /* פונטים */
+          .vs-q-text  { font-size: 0.88rem !important; }
+          .vs-score   { font-size: 0.8rem !important; }
+
+          /* Sidebar: הסתר במובייל */
+          .vs-sidebar-desktop { display: none !important; }
+
+          /* Header buttons — smaller */
+          .sticky .btn, .sticky button {
+            font-size: 0.78rem !important;
+            padding: 6px 10px !important;
+          }
+        }
+
+        /* Extra small */
+        @media (max-width: 480px) {
+          .vs-simple-row .vs-q-text { font-size: 0.82rem !important; }
+        }
+      `}</style>
       <div className="sticky top-0 z-30 backdrop-blur-sm shadow-lg" style={{ background: 'rgba(15,23,42,0.95)', borderBottom: '1px solid rgba(6,182,212,0.2)' }}>
         <div className="p-3 md:p-6 max-w-7xl mx-auto">
           <div className="flex flex-col md:flex-row justify-between items-start gap-2 md:gap-0 mb-3 md:mb-4">
