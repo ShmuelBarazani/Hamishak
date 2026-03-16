@@ -661,7 +661,9 @@ export default function ViewSubmissions() {
         score = allActualsInTable.includes(predClean) ? (question.possible_points || 0) : 0;
       }
     } else {
-      score = calculateQuestionScore(question, originalValue);
+      // ✅ מעביר את כל שאלות הטבלה — נדרש עבור T4/T5/T6 (isAdvancingTeamSlot)
+      const questionsInTable = data.questions.filter(q => q.table_id === question.table_id);
+      score = calculateQuestionScore(question, originalValue, questionsInTable);
     }
 
     let badgeColor = 'bg-slate-600 text-slate-300';
