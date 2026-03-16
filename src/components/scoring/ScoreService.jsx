@@ -217,7 +217,17 @@ export function calculateQuestionScore(question, prediction, allQuestionsInTable
       .split('|||')
       .map(a => cleanText(normalizeResult(a.trim())).toLowerCase())
       .filter(Boolean);
-    return multipleAnswers.includes(cleanPred) ? (question.possible_points || 0) : 0;
+    // בדיקה ישירה
+    if (multipleAnswers.includes(cleanPred)) return question.possible_points || 0;
+    // בדיקת תוצאה הפוכה — רק לתוצאות X-Y ("1-2" = "2-1") ורק בבלוק |||
+    if (cleanPred.includes('-')) {
+      const pts = cleanPred.split('-');
+      if (pts.length === 2 && !isNaN(parseInt(pts[0])) && !isNaN(parseInt(pts[1]))) {
+        const reversedPred = pts[1] + '-' + pts[0];
+        if (multipleAnswers.includes(reversedPred)) return question.possible_points || 0;
+      }
+    }
+    return 0;
   }
 
   const cleanActual = cleanText(normalizedActual).toLowerCase();
