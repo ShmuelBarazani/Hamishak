@@ -727,17 +727,15 @@ export default function Statistics() {
       const locIds=['T14','T15','T16','T17'];
       const isLoc=t=>locIds.includes(t.id)||(t.questions[0]?.stage_type==='locations');
       setLocationTables(Object.values(sT).filter(t=>isLoc(t)).sort((a,b)=>(parseInt(a.id.replace('T',''))||0)-(parseInt(b.id.replace('T',''))||0)));
-      setPlayoffTable(sT['T19']||null);
+      setPlayoffTable(null); // T19 יטופל ע"י qualifier detection
 
       const detectedLoc=new Set(Object.values(sT).filter(t=>isLoc(t)).map(t=>t.id));
       const allSpecial=Object.values(sT).filter(t=>{
         const desc=t.description?.trim();
-        return desc&&!/^\d+$/.test(desc)&&!detectedLoc.has(t.id)&&t.id!=='T19';
+        return desc&&!/^\d+$/.test(desc)&&!detectedLoc.has(t.id); // ✅ הסרת &t.id!=='T19'
       }).sort((a,b)=>(parseInt(a.id.replace('T',''))||0)-(parseInt(b.id.replace('T',''))||0));
 
-      // ✅ זיהוי qualifier: לפי תיאור OR לפי table_id (T4/T5/T6)
       // ✅ Qualifier = stage_type='qualifiers' OR תיאור מפורש של רשימת עולות
-      // (בשלב הבתים הטבלה "שתנצחנה" עשויה להיות stage_type שונה)
       const QUAL_DESC_PATTERNS = ['שתנצחנה','שיעלו','שתעפלנה','שתעפל'];
       const isQualTable = t =>
         t.questions[0]?.stage_type === 'qualifiers' ||
@@ -978,7 +976,7 @@ export default function Statistics() {
       if(t.id!=='T1') specialBtns.push({key:t.id,description:t.description});
     });
     if(israeliTable) specialBtns.push({key:`round_${israeliTable.id}`,description:israeliTable.description});
-    if(playoffTable) specialBtns.push({key:playoffTable.id,description:playoffTable.description});
+    // playoffTable הוסר — T19 מטופל ע"י qualifierTables
     if(specialBtns.length>0) groups.push({label:'✨ שאלות מיוחדות',color:'#8b5cf6',activeBg:'#7c3aed',buttons:specialBtns});
 
     // 5. רשימות עולות (כתום) — qualifiers ואחר כך מיקומים
