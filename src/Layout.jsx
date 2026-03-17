@@ -243,21 +243,59 @@ function LayoutContent({ children }) {
     <div className="lm-sidebar-inner">
 
       {/* ── Logo ── */}
-      <div className="lm-logo-area">
-        {currentGame?.game_icon
-          ? <div className="lm-logo-img-wrap"><img src={currentGame.game_icon} alt={currentGame.game_name} className="lm-logo-img"/><div className="lm-logo-glow"/></div>
-          : <div className="lm-logo-placeholder">⚽</div>
-        }
-        <div className="lm-logo-text">
+      <div style={{
+        display:'flex', alignItems:'center', gap:'14px',
+        padding:'20px 16px 14px', flexDirection:'row-reverse', justifyContent:'flex-end'
+      }}>
+        {/* לוגו — inline style מבטיח גודל נכון */}
+        {currentGame?.game_icon ? (
+          <div style={{position:'relative', flexShrink:0}}>
+            <img
+              src={currentGame.game_icon}
+              alt={currentGame.game_name}
+              style={{
+                width:'130px', height:'130px',
+                objectFit:'contain', borderRadius:'16px',
+                border:'1px solid var(--tp-20)', display:'block',
+              }}
+            />
+            <div style={{
+              position:'absolute', inset:'-10px', borderRadius:'24px',
+              background:'radial-gradient(circle, var(--tp-18) 0%, transparent 70%)',
+              pointerEvents:'none',
+            }}/>
+          </div>
+        ) : (
+          <div style={{
+            width:'130px', height:'130px', borderRadius:'16px', flexShrink:0,
+            border:'1px dashed var(--tp-25)', background:'var(--tp-05)',
+            display:'flex', alignItems:'center', justifyContent:'center', fontSize:'48px',
+          }}>⚽</div>
+        )}
+
+        {/* טקסט — שתי שורות ברורות */}
+        <div style={{flex:1, minWidth:0, display:'flex', flexDirection:'column', gap:'6px'}}>
           {currentGame ? (
             <>
-              <div className="lm-logo-title">{currentGame.game_name}</div>
+              <div style={{
+                fontSize:'1.05rem', fontWeight:900, color:'var(--text)',
+                lineHeight:1.3, wordBreak:'break-word',
+              }}>
+                {currentGame.game_name}
+              </div>
               {currentGame.game_subtitle && (
-                <div className="lm-logo-season">{currentGame.game_subtitle}</div>
+                <div style={{
+                  fontSize:'1rem', fontWeight:800, color:'var(--tp)',
+                  lineHeight:1.2, wordBreak:'break-word',
+                }}>
+                  {currentGame.game_subtitle}
+                </div>
               )}
             </>
           ) : (
-            <div className="lm-logo-title lm-logo-title--dim">בחר משחק</div>
+            <div style={{fontSize:'1rem', fontWeight:500, color:'var(--text-muted)'}}>
+              בחר משחק
+            </div>
           )}
         </div>
       </div>
@@ -590,7 +628,7 @@ const GLOBAL_STYLES = `
 
   /* ── Sidebar ──────────────────────────────────── */
   .lm-sidebar {
-    width: 300px; flex-shrink: 0;
+    width: 300px !important; flex-shrink: 0;
     height: 100dvh;
     display: flex; flex-direction: column;
     background: var(--sidebar);
@@ -653,7 +691,7 @@ const GLOBAL_STYLES = `
   }
   .lm-logo-img-wrap { position: relative; flex-shrink: 0; }
   .lm-logo-img {
-    width: 110px; height: 110px;
+    width: 130px; height: 130px;
     object-fit: contain; border-radius: 16px;
     border: 1px solid var(--tp-20); display: block;
   }
@@ -668,9 +706,9 @@ const GLOBAL_STYLES = `
     50%      { opacity: 1.0; transform: scale(1.08); }
   }
   .lm-logo-placeholder {
-    width: 110px; height: 110px; border-radius: 16px; flex-shrink: 0;
+    width: 130px; height: 130px; border-radius: 16px; flex-shrink: 0;
     border: 1px dashed var(--tp-25); background: var(--tp-05);
-    display: flex; align-items: center; justify-content: center; font-size: 40px;
+    display: flex; align-items: center; justify-content: center; font-size: 48px;
   }
   .lm-logo-text {
     flex: 1; min-width: 0;
