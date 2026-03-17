@@ -340,7 +340,55 @@ export default function LeaderboardNew() {
         return (parseFloat(a.question_id_display) || 999) - (parseFloat(b.question_id_display) || 999);
       });
 
-      setParticipantDetails({ name: participantName, scores: enriched, totalScore });
+      // ✅ בניית qualifying sections (T4/T5/T6) — לפי זהות קבוצה, לא מיקום
+      const normT = n => (n || '').replace(/\s*\([^)]+\)\s*$/, '').replace(/\s+/g, ' ').trim().toLowerCase();
+      const QUAL_TABLES = { T4: { count:8, bonus:16 }, T5: { count:4, bonus:12 }, T6: { count:2, bonus:6 } };
+      const qualifyingSections = [];
+
+      for (const [tableId, cfg] of Object.entries(QUAL_TABLES)) {
+        const tSlots = allQuestions.filter(q =>
+          q.table_id === tableId &&
+          q.stage_type === 'qualifiers' &&
+          Number.isInteger(parseFloat(q.question_id)) &&
+          parseFloat(q.question_id) >= 1 &&
+          parseFloat(q.question_id) <= cfg.count
+        ).sort((a,b) => parseFloat(a.question_id) - parseFloat(b.question_id));
+        if (tSlots.length === 0) continue;
+
+        const advSet = new Set(
+          tSlots.filter(q => q.actual_result && q.actual_result !== '__CLEAR__')
+                .map(q => normT(q.actual_result))
+        );
+        const t3Qs = allQuestions.filter(q => q.table_id === 'T3' && q.home_team && q.away_team);
+        const elimSet = new Set();
+        advSet.forEach(adv => {
+          t3Qs.forEach(q => {
+            const h = normT(q.home_team), a = normT(q.away_team);
+            if (h === adv && !advSet.has(a)) elimSet.add(a);
+            if (a === adv && !advSet.has(h)) elimSet.add(h);
+          });
+        });
+
+        const preds = tSlots.map(q => {
+          const disp = getPredDisplay(q.id);
+          const norm = normT(disp);
+          const isAdv  = disp && advSet.has(norm);
+          const isElim = disp && !isAdv && elimSet.has(norm);
+          return { pred: disp, isAdv, isElim, pts: q.possible_points || 0 };
+        });
+
+        qualifyingSections.push({
+          tableId,
+          tableDesc: tSlots[0]?.table_description || tableId,
+          preds,
+          advSet,
+          cfg,
+          hasAnyResult: advSet.size > 0,
+          allResultsIn: tSlots.every(q => q.actual_result && q.actual_result !== '__CLEAR__'),
+        });
+      }
+
+      setParticipantDetails({ name: participantName, scores: enriched, totalScore, qualifyingSections });
     } catch (error) {
       console.error("Error loading participant details:", error);
       toast({ title: "שגיאה", description: "טעינת הפרטים נכשלה", variant: "destructive" });
@@ -618,6 +666,43 @@ export default function LeaderboardNew() {
                 <Loader2 className="animate-spin" style={{ width: 32, height: 32, color: 'var(--tp)' }} />
               </div>
             ) : (
+              <>
+              {/* ✅ טבלאות עולות — לפי זהות קבוצה */}
+              {participantDetails?.qualifyingSections?.length > 0 && (
+                <div style={{ padding:'8px 16px 4px' }}>
+                  {participantDetails.qualifyingSections.map(sec => {
+                    const normT = n => (n||'').replace(/\s*\([^)]+\)\s*$/,'').replace(/\s+/g,' ').trim().toLowerCase();
+                    const guessedSet = new Set(sec.preds.map(p => normT(p.pred)).filter(Boolean));
+                    const bonusEarned = sec.allResultsIn && [...sec.advSet].every(t => guessedSet.has(t));
+                    return (
+                      <div key={sec.tableId} style={{ marginBottom:'12px', background:'rgba(249,115,22,0.06)', border:'1px solid rgba(249,115,22,0.25)', borderRadius:'10px', padding:'10px 12px' }}>
+                        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'8px' }}>
+                          <span style={{ fontSize:'0.82rem', fontWeight:700, color:'#f97316' }}>📋 {sec.tableDesc}</span>
+                          <span style={{ fontSize:'0.75rem', padding:'2px 8px', borderRadius:'999px', background: bonusEarned ? '#059669' : sec.allResultsIn ? '#dc2626' : 'rgba(100,116,139,0.3)', color:'white', fontWeight:700 }}>
+                            {bonusEarned ? `🏆 +${sec.cfg.bonus}` : sec.allResultsIn ? `בונוס: 0/${sec.cfg.bonus}` : `בונוס: ?/${sec.cfg.bonus}`}
+                          </span>
+                        </div>
+                        <div style={{ display:'grid', gridTemplateColumns:'repeat(2, 1fr)', gap:'4px' }}>
+                          {sec.preds.map((p, i) => {
+                            const icon  = p.pred ? (p.isAdv ? '✅' : p.isElim ? '❌' : '❓') : '—';
+                            const color = p.isAdv ? '#34d399' : p.isElim ? '#f87171' : '#94a3b8';
+                            const bg    = p.isAdv ? 'rgba(16,185,129,0.10)' : p.isElim ? 'rgba(239,68,68,0.08)' : 'rgba(15,23,42,0.3)';
+                            const score = !p.pred ? `?/${p.pts}` : sec.hasAnyResult ? (p.isAdv ? `+${p.pts}` : p.isElim ? '0' : `?/${p.pts}`) : `?/${p.pts}`;
+                            return (
+                              <div key={i} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'5px 8px', borderRadius:'6px', background: bg, border:`1px solid ${p.isAdv ? 'rgba(16,185,129,0.25)' : p.isElim ? 'rgba(239,68,68,0.20)' : 'rgba(249,115,22,0.10)'}` }}>
+                                <span style={{ fontSize:'0.82rem', color, fontWeight: p.isAdv ? 700 : 400 }}>{icon} {p.pred || <span style={{color:'#475569'}}>—</span>}</span>
+                                <span style={{ fontSize:'0.72rem', fontWeight:700, color: p.isAdv ? '#34d399' : p.isElim ? '#f87171' : '#64748b', marginRight:'6px' }}>{score}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                  <div style={{ height:'1px', background:'var(--tp-15)', margin:'4px 0 8px' }}/>
+                </div>
+              )}
+
               <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: '0 3px' }}>
                 <thead style={{ position: 'sticky', top: 0, zIndex: 10 }}>
                   <tr>
@@ -798,6 +883,7 @@ export default function LeaderboardNew() {
                   })}
                 </tbody>
               </table>
+              </>
             )}
           </div>
         </DialogContent>
