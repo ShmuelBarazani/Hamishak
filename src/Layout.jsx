@@ -1,958 +1,1271 @@
-import React, { useState, useEffect, useCallback, startTransition } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import React, { useState, useEffect } from "react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
+import { createPageUrl } from "@/utils";
+import {
+  Users, FileText, BarChart3, Database, Award, PieChart,
+  LogOut, Shield, Edit, Upload, Lock, X, Sun, Moon,
+} from "lucide-react";
+import { supabase } from "@/api/supabaseClient";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
-import { supabase } from '@/api/supabaseClient';
-import * as db from '@/api/entities';
-import { Trophy, FileText, Save, Loader2, Plus, X } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { UploadStatusProvider } from '@/components/contexts/UploadStatusContext';
+import { GameProvider, useGame } from '@/components/contexts/GameContext';
+import { ThemeProvider, useTheme, THEMES } from '@/components/contexts/ThemeContext';
+import UploadStatusIndicator from '@/components/layout/UploadStatusIndicator';
 import { useToast } from "@/components/ui/use-toast";
-import RoundTableResults from "@/components/predictions/RoundTableResults";
-import { useGame } from "@/components/contexts/GameContext";
-import { calculateTotalScore } from "@/components/scoring/ScoreService";
 
-// ── שאלות שתומכות בריבוי תשובות (||| separator) ──────────────────────────────
-// question_id שייך לשאלות שבהן יכולים להיות מספר זוכים/תשובות נכונות
-const MULTI_ANSWER_QUESTIONS = new Set([
-  'T2_1',   // מלך השערים
-  'T2_2',   // קבוצה הכי הרבה שערים
-  'T2_3',   // קבוצה הכי הרבה פנדלים
-  'T2_8',   // תוצאת תיקו שכיחה
-  'T2_10',  // תוצאה שכיחה ביותר
-]);
-
-const isMultiAnswerQuestion = (q) => {
-  const key = `${q.table_id}_${q.question_id}`;
-  return MULTI_ANSWER_QUESTIONS.has(key);
+// ─── Route access ─────────────────────────────────────────────────────────────
+const ROUTE_ACCESS = {
+  LeaderboardNew: 'public', ViewSubmissions: 'public',
+  AdminResults: 'public',   Statistics: 'public',
+  PredictionForm: 'user',   JoinGame: 'user',
+  AdminImport: 'admin', ManageGameParticipants: 'admin',
+  UserManagement: 'admin',  FormBuilder: 'admin',
+  SystemOverview: 'admin',  CreateGame: 'admin',
 };
 
-export default function AdminResults() {
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [recalculating, setRecalculating] = useState(false);
-  const [recalcProgress, setRecalcProgress] = useState('');
-  const [results, setResults] = useState({});
-  const [teams, setTeams] = useState({});
-  const [validationLists, setValidationLists] = useState({});
-  const [openSections, setOpenSections] = useState({});
+function getPageName(pathname) {
+  const map = {
+    'leaderboard':'LeaderboardNew','view-submissions':'ViewSubmissions',
+    'admin-results':'AdminResults','statistics':'Statistics',
+    'prediction-form':'PredictionForm','join-game':'JoinGame',
+    'admin-import':'AdminImport','manage-game':'ManageGameParticipants',
+    'user-management':'UserManagement','form-builder':'FormBuilder',
+    'system-overview':'SystemOverview','create-game':'CreateGame',
+  };
+  const lower = pathname.toLowerCase();
+  for (const [k,v] of Object.entries(map)) if (lower.includes(k)) return v;
+  return null;
+}
 
-  const [allQuestions, setAllQuestions] = useState([]);
-  const [roundTables, setRoundTables] = useState([]);
-  const [israeliTable, setIsraeliTable] = useState(null);
-  const [specialTables, setSpecialTables] = useState([]);
-  const [locationTables, setLocationTables] = useState([]);
-  const [playoffWinnersTable, setPlayoffWinnersTable] = useState(null);
-
-  const [currentUser, setCurrentUser] = useState(null);
-  const [selectedT11Teams, setSelectedT11Teams] = useState(new Set());
-  const [selectedT12Teams, setSelectedT12Teams] = useState(new Set());
-  const [selectedT13Teams, setSelectedT13Teams] = useState(new Set());
-
+function RouteGuard({ children, currentUser, isAdmin, loading }) {
+  const location = useLocation(), navigate = useNavigate();
   const { toast } = useToast();
-  const { currentGame } = useGame();
-
   useEffect(() => {
-    const loadUser = async () => {
-      try {
-        const isAuth = await supabase.auth.getSession().then(r => !!r.data.session);
-        if (isAuth) setCurrentUser(await supabase.auth.getUser().then(r => r.data.user));
-      } catch (e) { console.error("Failed to load user:", e); }
-    };
-    loadUser();
-  }, []);
-
-  const isAdmin = currentUser?.role === 'admin' || currentUser?.user_metadata?.role === 'admin';
-
-  // ── Helpers ───────────────────────────────────────────────────────────────
-  const loadAllQuestions = async (gameId) => {
-    let all = [], from = 0;
-    const PAGE = 1000;
-    while (true) {
-      const { data, error } = await supabase
-        .from('questions').select('*').eq('game_id', gameId).range(from, from + PAGE - 1);
-      if (error) { console.error('questions fetch error:', error); break; }
-      if (!data || data.length === 0) break;
-      all = [...all, ...data];
-      if (data.length < PAGE) break;
-      from += PAGE;
+    if (loading) return;
+    const page = getPageName(location.pathname);
+    if (!page) return;
+    const req = ROUTE_ACCESS[page] || 'public';
+    if (req === 'admin' && !isAdmin) {
+      toast({ title:"אין הרשאה", description:"דף זה מיועד למנהלים בלבד.", variant:"destructive", duration:3000 });
+      navigate(createPageUrl("LeaderboardNew"), { replace:true });
+    } else if (req === 'user' && !currentUser) {
+      toast({ title:"נדרשת התחברות", description:"יש להתחבר כדי לגשת לדף זה.", variant:"destructive", duration:3000 });
+      navigate('/login', { replace:true });
     }
-    return all;
-  };
+  }, [location.pathname, currentUser, isAdmin, loading]);
+  return <>{children}</>;
+}
 
-  const loadAllPredictions = async (gameId) => {
-    let all = [], from = 0;
-    const PAGE = 1000;
-    while (true) {
-      const { data, error } = await supabase
-        .from('predictions').select('*').eq('game_id', gameId).range(from, from + PAGE - 1);
-      if (error) { console.error('predictions fetch error:', error); break; }
-      if (!data || data.length === 0) break;
-      all = [...all, ...data];
-      if (data.length < PAGE) break;
-      from += PAGE;
-    }
-    return all;
-  };
+// ─── Theme Picker ─────────────────────────────────────────────────────────────
+function ThemePicker() {
+  const { themeId, setTheme, allThemes, isDark, setIsDark } = useTheme();
+  const [open, setOpen] = useState(false);
 
-  const loadAllRankings = async (gameId) => {
-    let all = [], from = 0;
-    const PAGE = 500;
-    while (true) {
-      const { data, error } = await supabase
-        .from('rankings').select('*').eq('game_id', gameId).range(from, from + PAGE - 1);
-      if (error) { console.error('rankings fetch error:', error); break; }
-      if (!data || data.length === 0) break;
-      all = [...all, ...data];
-      if (data.length < PAGE) break;
-      from += PAGE;
-    }
-    return all;
-  };
+  return (
+    <div className="lm-theme-section">
 
-  // ── Load page data ────────────────────────────────────────────────────────
-  const loadData = useCallback(async () => {
-    if (!currentGame) { setLoading(false); return; }
-    setLoading(true);
-    try {
-      const questions = await loadAllQuestions(currentGame.id);
-      setAllQuestions(questions);
+      {/* Dark / Light toggle */}
+      <button
+        className="lm-darkmode-btn"
+        onClick={() => setIsDark(!isDark)}
+        title={isDark ? 'עבור למצב בהיר' : 'עבור למצב כהה'}
+      >
+        <span className="lm-darkmode-track">
+          <span className={`lm-darkmode-knob${isDark ? '' : ' light'}`}>
+            {isDark ? <Moon size={11}/> : <Sun size={11}/>}
+          </span>
+        </span>
+        <span className="lm-darkmode-label">
+          {isDark ? 'מצב כהה' : 'מצב בהיר'}
+        </span>
+      </button>
 
-      const teamsData = currentGame.teams_data || [];
-      const teamsMap = teamsData.reduce((acc, t) => { acc[t.name] = t; return acc; }, {});
-      setTeams(teamsMap);
-
-      const listsData = currentGame.validation_lists || [];
-      const listsMap = listsData.reduce((acc, l) => { acc[l.list_name] = l.options; return acc; }, {});
-      listsMap['כן/לא'] = ['כן', 'לא'];
-      setValidationLists(listsMap);
-
-      const rTables = {}, sTables = {};
-      questions.forEach(q => {
-        if (!q.table_id) return;
-        if (q.table_id === 'T3' && q.question_text && !q.home_team) {
-          const parts = q.question_text.split(' - ');
-          if (parts.length === 2) { q.home_team = parts[0].trim(); q.away_team = parts[1].trim(); }
-        }
-        if (q.table_id === 'T20' && q.question_text && !q.home_team) {
-          const sep = q.question_text.includes(' נגד ') ? ' נגד ' : q.question_text.includes(' - ') ? ' - ' : null;
-          if (sep) { const p = q.question_text.split(sep).map(t => t.trim()); if (p.length === 2) { q.home_team = p[0]; q.away_team = p[1]; } }
-        }
-
-        const isKnockoutMatch = q.table_id === 'T3' && q.home_team && q.away_team;
-        const collection = (q.stage_name?.includes('בית') || q.table_description?.includes('בית') || isKnockoutMatch || (q.home_team && q.away_team)) ? rTables : sTables;
-
-        let tableId = q.table_id;
-        let tableDesc = q.table_description;
-        if (q.stage_name?.includes('בית')) { tableId = q.stage_name; tableDesc = q.stage_name; }
-        else if (q.table_description?.includes('שאלות מיוחדות') && q.stage_order) { tableId = `custom_order_${q.stage_order}`; tableDesc = q.stage_name || q.table_description; }
-
-        if (!collection[tableId]) collection[tableId] = { id: tableId, description: tableDesc || tableId, questions: [], stage_order: q.stage_order || 0 };
-        collection[tableId].questions.push(q);
-      });
-
-      const t20Table = rTables['T20']; delete rTables['T20'];
-      setIsraeliTable(t20Table || null);
-      delete sTables['T1'];
-
-      const sortedRoundTables = Object.values(rTables).sort((a, b) => {
-        const aG = a.id.includes('בית'), bG = b.id.includes('בית');
-        if (aG && !bG) return -1; if (!aG && bG) return 1;
-        if (aG && bG) return a.id.localeCompare(b.id, 'he');
-        return (parseInt(a.id.replace('T','').replace(/\D/g,'')) || 0) - (parseInt(b.id.replace('T','').replace(/\D/g,'')) || 0);
-      });
-      setRoundTables(sortedRoundTables);
-
-      const locationTableIds = ['T9','T14','T15','T16','T17'];
-      setLocationTables(Object.values(sTables).filter(t => locationTableIds.includes(t.id)).sort((a,b) => parseInt(a.id.replace('T','')) - parseInt(b.id.replace('T',''))));
-      setPlayoffWinnersTable(sTables['T19'] || null);
-
-      // ✅ תיקון: T10 כבר לא מוחרג — מופיע ב-special tables
-      const allSpecialTables = Object.values(sTables).filter(t => {
-        const desc = t.description?.trim();
-        return desc && !/^\d+$/.test(desc)
-          && !locationTableIds.includes(t.id)
-          && t.id !== 'T19'
-          && !t.id.includes('בית')
-          && t.id !== 'T1'
-          && t.id !== 'T9';
-      }).sort((a,b) => ((a.stage_order||0) - (b.stage_order||0)) || (parseInt(a.id.replace('T','').replace(/\D/g,'')) - parseInt(b.id.replace('T','').replace(/\D/g,''))));
-      setSpecialTables(allSpecialTables);
-
-      const initialResults = questions.reduce((acc, q) => {
-        const r = q.actual_result;
-        acc[q.id] = (!r || r === '__CLEAR__' || r.toLowerCase().includes('null')) ? '__CLEAR__' : r;
-        return acc;
-      }, {});
-      setResults(initialResults);
-    } catch (error) {
-      console.error("שגיאה בטעינה:", error);
-      toast({ title: "שגיאה", description: "טעינת הנתונים נכשלה.", variant: "destructive" });
-    }
-    setLoading(false);
-  }, [currentGame, toast]);
-
-  useEffect(() => { loadData(); }, [loadData]);
-
-  useEffect(() => {
-    const filter = (include, exclude=[]) => {
-      const qs = allQuestions.filter(q => {
-        const sn = q.stage_name || '', td = q.table_description || '';
-        return include.some(k => sn.includes(k) || td.includes(k)) && !exclude.some(k => sn.includes(k) || td.includes(k));
-      });
-      const s = new Set();
-      qs.forEach(q => { const r = results[q.id]; if (r && r.trim() && r !== '__CLEAR__') s.add(r); });
-      return s;
-    };
-    setSelectedT11Teams(filter(['רבע גמר']));
-    setSelectedT12Teams(filter(['חצי גמר']));
-    setSelectedT13Teams(filter(['גמר'],['רבע','חצי']));
-  }, [results, allQuestions]);
-
-  const handleResultChange = (questionId, value) => {
-    if (!isAdmin) return;
-    setResults(prev => ({ ...prev, [questionId]: value === '' ? '__CLEAR__' : value }));
-  };
-
-  // ── Multi-answer: מוסיף/מסיר תשובה מהרשימה |||  ────────────────────────
-  const handleMultiAnswerAdd = (questionId, newAnswer, currentValue) => {
-    if (!newAnswer.trim()) return;
-    const existing = (currentValue && currentValue !== '__CLEAR__')
-      ? currentValue.split('|||').map(v => v.trim()).filter(Boolean)
-      : [];
-    if (existing.includes(newAnswer.trim())) return; // כבר קיים
-    const updated = [...existing, newAnswer.trim()].join('|||');
-    handleResultChange(questionId, updated);
-  };
-
-  const handleMultiAnswerRemove = (questionId, removeAnswer, currentValue) => {
-    const existing = (currentValue && currentValue !== '__CLEAR__')
-      ? currentValue.split('|||').map(v => v.trim()).filter(Boolean)
-      : [];
-    const updated = existing.filter(v => v !== removeAnswer);
-    handleResultChange(questionId, updated.length > 0 ? updated.join('|||') : '__CLEAR__');
-  };
-
-  // ── Calculate score ───────────────────────────────────────────────────────
-  const calcParticipantScore = (qs, predictions) => {
-    const latest = {};
-    predictions.forEach(p => {
-      const ex = latest[p.question_id];
-      if (!ex || new Date(p.created_at) > new Date(ex.created_at)) latest[p.question_id] = p;
-    });
-    const predMap = {};
-    for (const [qid, p] of Object.entries(latest)) predMap[qid] = p.text_prediction;
-    const { total } = calculateTotalScore(qs, predMap);
-    return total;
-  };
-
-  // ── Recalculate rankings ──────────────────────────────────────────────────
-  const recalculateRankings = async () => {
-    if (!currentGame) return;
-    setRecalculating(true);
-    setRecalcProgress('טוען שאלות...');
-    try {
-      let qs = await loadAllQuestions(currentGame.id);
-      qs = qs.filter(q => q.table_id && q.table_id !== 'T1');
-      qs.forEach(q => {
-        if (!q.home_team && !q.away_team && q.question_text) {
-          const sep = q.question_text.includes(' נגד ') ? ' נגד ' : q.question_text.includes(' - ') ? ' - ' : null;
-          if (sep) { const p = q.question_text.split(sep).map(t => t.trim()); if (p.length === 2) { q.home_team = p[0]; q.away_team = p[1]; } }
-        }
-      });
-      setRecalcProgress('טוען ניחושים...');
-      const preds = await loadAllPredictions(currentGame.id);
-      const byParticipant = {};
-      preds.forEach(p => {
-        if (!p.participant_name?.trim()) return;
-        if (!byParticipant[p.participant_name]) byParticipant[p.participant_name] = [];
-        byParticipant[p.participant_name].push(p);
-      });
-      const participants = Object.keys(byParticipant);
-      setRecalcProgress(`מחשב ניקוד עבור ${participants.length} משתתפים...`);
-      const scores = participants.map(name => ({
-        participant_name: name,
-        current_score: calcParticipantScore(qs, byParticipant[name])
-      }));
-      scores.sort((a, b) => b.current_score - a.current_score);
-      let pos = 1;
-      scores.forEach((s, i) => {
-        if (i > 0 && scores[i].current_score !== scores[i-1].current_score) pos = i + 1;
-        s.current_position = pos;
-      });
-      setRecalcProgress('טוען דירוג קיים...');
-      const existingRankings = await loadAllRankings(currentGame.id);
-      const baselineMap = {};
-      existingRankings.forEach(r => { baselineMap[r.participant_name] = r; });
-      let saved = 0;
-      for (const s of scores) {
-        const base = baselineMap[s.participant_name];
-        setRecalcProgress(`שומר ${++saved}/${scores.length}: ${s.participant_name}`);
-        const data = {
-          participant_name: s.participant_name,
-          game_id: currentGame.id,
-          current_score: s.current_score,
-          current_position: s.current_position,
-          previous_score: base?.current_score || 0,
-          previous_position: base?.current_position || 0,
-          baseline_score: base?.baseline_score || 0,
-          baseline_position: base?.baseline_position || 0,
-          score_change: s.current_score - (base?.baseline_score || 0),
-          position_change: (base?.baseline_position || 0) - s.current_position,
-          last_updated: new Date().toISOString(),
-          last_baseline_set: base?.last_baseline_set || null
-        };
-        try {
-          if (base) await db.Ranking.update(base.id, data);
-          else await db.Ranking.create(data);
-        } catch (err) { console.error('שגיאה בדירוג', s.participant_name, err); }
-        await new Promise(r => setTimeout(r, 100));
-      }
-      setRecalcProgress('');
-      toast({ title: "✅ דירוג עודכן!", description: `חושב ניקוד עבור ${scores.length} משתתפים`, className: "bg-green-900/30 border-green-500 text-green-200", duration: 4000 });
-    } catch (error) {
-      console.error("שגיאה בחישוב דירוג:", error);
-      setRecalcProgress('');
-      toast({ title: "שגיאה בדירוג", description: error.message, variant: "destructive" });
-    }
-    setRecalculating(false);
-  };
-
-  // ── Save results ──────────────────────────────────────────────────────────
-  const handleSaveResults = async () => {
-    setSaving(true);
-    try {
-      const changedQuestions = allQuestions.filter(q => {
-        const nv = (results[q.id] === '__CLEAR__' || !results[q.id]) ? null : results[q.id];
-        const ov = q.actual_result || null;
-        return nv !== ov;
-      });
-      if (changedQuestions.length === 0) {
-        toast({ title: "לא בוצעו שינויים", description: "אין שינויים לשמור" });
-        setSaving(false);
-        return;
-      }
-      for (let i = 0; i < changedQuestions.length; i++) {
-        const q = changedQuestions[i];
-        const val = (results[q.id] === '__CLEAR__' || !results[q.id]) ? null : results[q.id];
-        await db.Question.update(q.id, { actual_result: val });
-        if ((i + 1) % 3 === 0) await new Promise(r => setTimeout(r, 300));
-      }
-      toast({ title: "נשמר!", description: `עודכנו ${changedQuestions.length} תוצאות — מחשב דירוג...`, className: "bg-cyan-900/30 border-cyan-500 text-cyan-200", duration: 3000 });
-      await loadData();
-      await recalculateRankings();
-    } catch (error) {
-      console.error("שגיאה בשמירה:", error);
-      toast({ title: "שגיאה", description: error.message, variant: "destructive" });
-    }
-    setSaving(false);
-  };
-
-  const toggleSection = (sectionId) => { startTransition(() => { setOpenSections(prev => ({ ...prev, [sectionId]: !prev[sectionId] })); }); };
-
-  const findTeam = (name) => {
-    if (!name) return null;
-    if (teams[name]) return teams[name];
-    const base = name.replace(/\s*\([^)]*\)\s*$/, '').trim();
-    return teams[base] || null;
-  };
-
-  // ── Multi-answer widget ────────────────────────────────────────────────────
-  const renderMultiAnswerInput = (question, value) => {
-    const currentAnswers = (value && value !== '__CLEAR__')
-      ? value.split('|||').map(v => v.trim()).filter(Boolean)
-      : [];
-    const options = validationLists[question.validation_list] || [];
-    const hasOptions = options.length > 0;
-
-    const toggle = (opt) => {
-      if (currentAnswers.includes(opt)) {
-        handleMultiAnswerRemove(question.id, opt, value);
-      } else {
-        handleMultiAnswerAdd(question.id, opt, value);
-      }
-    };
-
-    const clearAll = () => handleResultChange(question.id, '__CLEAR__');
-
-    // תצוגת הכפתור המרכזי
-    const triggerLabel = currentAnswers.length === 0
-      ? 'בחר...'
-      : currentAnswers.map(a => a.replace(/\s*\([^)]+\)\s*$/, '').trim()).join(', ');
-
-    if (!hasOptions) {
-      // טקסט חופשי עם ריבוי תשובות
-      return (
-        <div style={{ minWidth: '220px' }}>
-          {currentAnswers.length > 0 && (
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginBottom: '6px' }}>
-              {currentAnswers.map((ans, i) => (
-                <div key={i} style={{
-                  display: 'inline-flex', alignItems: 'center', gap: '4px',
-                  background: 'var(--tp-20)', border: '1px solid var(--tp)',
-                  borderRadius: '999px', padding: '2px 8px', fontSize: '0.78rem', color: 'var(--tp)',
-                }}>
-                  <span>{ans}</span>
-                  {isAdmin && (
-                    <button onClick={() => handleMultiAnswerRemove(question.id, ans, value)}
-                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', padding: 0, lineHeight: 1 }}>✕</button>
-                  )}
-                </div>
-              ))}
-              {isAdmin && (
-                <button onClick={clearAll} style={{ background: 'none', border: '1px solid #ef4444', borderRadius: '999px', padding: '2px 8px', fontSize: '0.72rem', color: '#ef4444', cursor: 'pointer' }}>
-                  נקה הכל
-                </button>
-              )}
-            </div>
-          )}
-          {isAdmin && (
-            <MultiAnswerTextInput currentAnswers={currentAnswers} onAdd={(ans) => handleMultiAnswerAdd(question.id, ans, value)} />
-          )}
+      {/* Theme trigger */}
+      <button className="lm-theme-trigger" onClick={() => setOpen(o => !o)}>
+        <div className="lm-theme-dots">
+          {allThemes[themeId]?.previewColors?.map((c, i) => (
+            <span key={i} style={{ background: c, width:10, height:10, borderRadius:'50%', display:'inline-block' }}/>
+          ))}
         </div>
-      );
-    }
+        <span className="lm-theme-name-current">
+          {allThemes[themeId]?.emoji} {allThemes[themeId]?.nameHe}
+        </span>
+        <span className="lm-theme-chevron">{open ? '▲' : '▼'}</span>
+      </button>
 
-    // ── Checkbox dropdown (כמו בתמונה) ──────────────────────────────────────
-    return (
-      <MultiCheckboxDropdown
-        options={options}
-        selected={currentAnswers}
-        onToggle={toggle}
-        onClear={clearAll}
-        findTeam={findTeam}
-        isAdmin={isAdmin}
-        triggerLabel={triggerLabel}
-      />
-    );
-  };
-
-  const renderSelectWithLogos = (question, value, onChange, selectClassName = "w-[200px]") => {
-    // ✅ שאלות עם ריבוי תשובות — widget מיוחד
-    if (isMultiAnswerQuestion(question)) {
-      return renderMultiAnswerInput(question, value);
-    }
-
-    const options = validationLists[question.validation_list] || [];
-    const isTeamsList = question.validation_list?.toLowerCase().includes('קבוצ') || question.validation_list?.toLowerCase().includes('נבחר');
-    const hasResult = value && value !== '__CLEAR__';
-
-    if (!question.validation_list || options.length === 0) {
-      return (
-        <Input
-          value={value === '__CLEAR__' ? '' : (value || '')}
-          onChange={(e) => onChange(e.target.value)}
-          style={{
-            width: '180px',
-            background: hasResult ? 'var(--tp-20)' : 'rgba(51,65,85,0.5)',
-            borderColor: hasResult ? 'var(--tp)' : 'rgba(100,116,139,1)',
-            color: hasResult ? 'var(--tp)' : '#f8fafc',
-            fontWeight: hasResult ? '700' : 'normal'
-          }}
-          placeholder="הזן תוצאה..."
-          readOnly={!isAdmin}
-        />
-      );
-    }
-
-    const safeValue = (!value || value === 'null' || value === 'undefined' || value.toLowerCase?.().includes('null')) ? '__CLEAR__' : value;
-
-    return (
-      <Select value={safeValue} onValueChange={onChange} disabled={!isAdmin}>
-        <SelectTrigger className={selectClassName} style={{
-          background: hasResult ? 'var(--tp-20)' : 'rgba(51,65,85,0.5)',
-          borderColor: hasResult ? 'var(--tp)' : 'rgba(100,116,139,1)',
-          color: hasResult ? 'var(--tp)' : '#94a3b8',
-          fontWeight: hasResult ? '700' : 'normal'
-        }}>
-          <SelectValue placeholder="בחר...">
-            {!hasResult ? 'בחר...' : (
-              <div className="flex items-center gap-2">
-                {isTeamsList && findTeam(value)?.logo_url && (
-                  <img src={findTeam(value).logo_url} alt={value} className="w-5 h-5 rounded-full" onError={e => e.target.style.display='none'} />
-                )}
-                <span>{value.replace(/\s*\([^)]+\)\s*$/, '').trim()}</span>
-              </div>
-            )}
-          </SelectValue>
-        </SelectTrigger>
-        <SelectContent className="bg-slate-800 border-cyan-600 text-slate-200">
-          <SelectItem value="__CLEAR__" className="hover:bg-cyan-700/20 text-blue-300">בחר...</SelectItem>
-          {options.map(opt => {
-            const team = isTeamsList ? findTeam(opt) : null;
-            const safeVal = (!value || value === '__CLEAR__') ? '' : value;
-            const sn = question.stage_name || '', td = question.table_description || '';
-            const isS11 = sn.includes('רבע גמר') || td.includes('רבע גמר');
-            const isS12 = sn.includes('חצי גמר') || td.includes('חצי גמר');
-            const isS13 = (sn.includes('גמר') && !sn.includes('רבע') && !sn.includes('חצי')) || (td.includes('גמר') && !td.includes('רבע') && !td.includes('חצי'));
-            const isTeamOpt = isTeamsList; // רק עבור validation_list של קבוצות
-            const alreadySelected = isTeamOpt && (
-              (isS11 && selectedT11Teams.has(opt) && safeVal !== opt) ||
-              (isS12 && selectedT12Teams.has(opt) && safeVal !== opt) ||
-              (isS13 && selectedT13Teams.has(opt) && safeVal !== opt)
-            );
+      {/* Theme panel */}
+      {open && (
+        <div className="lm-theme-panel">
+          {Object.values(allThemes).map(t => {
+            const active = themeId === t.id;
+            const palette = isDark ? t.dark : t.light;
             return (
-              <SelectItem key={opt} value={opt} className="hover:bg-cyan-700/20" disabled={alreadySelected} style={{ opacity: alreadySelected ? 0.4 : 1 }}>
-                <div className="flex items-center gap-2">
-                  {team?.logo_url && <img src={team.logo_url} alt={opt} className="w-5 h-5 rounded-full" onError={e => e.target.style.display='none'} style={{ opacity: alreadySelected ? 0.4 : 1 }} />}
-                  <span style={{ color: alreadySelected ? '#64748b' : '#f8fafc' }}>{opt.replace(/\s*\([^)]+\)\s*$/, '').trim()}</span>
+              <button
+                key={t.id}
+                onClick={() => { setTheme(t.id); setOpen(false); }}
+                className={`lm-theme-card${active ? ' active' : ''}`}
+                style={active ? {
+                  border: `1px solid ${palette?.tp || 'var(--tp)'}`,
+                  background: `rgba(${palette?.r||0},${palette?.g||0},${palette?.b||0},0.12)`,
+                } : {}}
+              >
+                {/* Color preview strip */}
+                <div className="lm-theme-strip">
+                  {t.previewColors?.map((c, i) => (
+                    <span key={i} style={{ flex:1, background:c, height:'100%' }}/>
+                  ))}
                 </div>
-              </SelectItem>
+                {/* Info */}
+                <div className="lm-theme-card-info">
+                  <span className="lm-theme-card-emoji">{t.emoji}</span>
+                  <span className="lm-theme-card-name" style={{ fontFamily: t.font }}>
+                    {t.nameHe}
+                  </span>
+                  {active && <span className="lm-theme-check" style={{ color: palette?.tp || 'var(--tp)' }}>✓</span>}
+                </div>
+              </button>
             );
           })}
-        </SelectContent>
-      </Select>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Layout Content ───────────────────────────────────────────────────────────
+function LayoutContent({ children }) {
+  const [currentUser, setCurrentUser] = useState(null);
+  const [loading,     setLoading    ] = useState(true);
+  const [showAdminDialog, setShowAdminDialog] = useState(false);
+  const [adminPassword,   setAdminPassword  ] = useState("");
+  const [sidebarOpen,     setSidebarOpen    ] = useState(false);
+  const { toast } = useToast();
+  const location  = useLocation();
+
+  const {
+    currentGame, games, selectGame,
+    loading: gamesLoading,
+    currentUser: gameContextUser,
+  } = useGame();
+
+  const g = currentGame ? `?gameId=${currentGame.id}` : '';
+
+  const publicItems = [
+    { title:"טבלת דירוג",     url:createPageUrl("LeaderboardNew")  + g, icon:Award,    group:"main" },
+    { title:"צפייה בניחושים", url:createPageUrl("ViewSubmissions") + g, icon:Users,    group:"main" },
+    { title:"תוצאות אמת",     url:createPageUrl("AdminResults")    + g, icon:BarChart3,group:"main" },
+    { title:"סטטיסטיקות",     url:createPageUrl("Statistics")      + g, icon:PieChart, group:"main" },
+  ];
+  const userItems = [
+    { title:"מילוי ניחושים",  url:createPageUrl("PredictionForm")  + g, icon:FileText, group:"main" },
+  ];
+  const adminItems = [
+    { title:"ניהול משתתפים", url:createPageUrl("ManageGameParticipants"), icon:Users,    group:"admin" },
+    { title:"ייבוא ניחושים",  url:createPageUrl("AdminImport"),           icon:Upload,   group:"admin" },
+    { title:"ניהול משתמשים", url:createPageUrl("UserManagement"),         icon:Shield,   group:"admin" },
+    { title:"בניית שאלון",   url:createPageUrl("FormBuilder") + g,        icon:FileText, group:"admin" },
+    { title:"סקירת מערכת",   url:createPageUrl("SystemOverview"),         icon:Database, group:"admin" },
+  ];
+
+  useEffect(() => { loadUser(); }, []);
+  useEffect(() => { setSidebarOpen(false); }, [location.pathname]);
+  useEffect(() => {
+    document.body.style.overflow = sidebarOpen ? 'hidden' : '';
+    return () => { document.body.style.overflow = ''; };
+  }, [sidebarOpen]);
+
+  const loadUser = async () => {
+    try { setCurrentUser(await supabase.auth.getUser().then(r => r.data.user)); }
+    catch { setCurrentUser(null); }
+    setLoading(false);
+  };
+
+  const handleLogout = async () => {
+    try { await supabase.auth.signOut(); setCurrentUser(null); window.location.href = createPageUrl("LeaderboardNew"); }
+    catch (e) { console.error(e); }
+  };
+
+  const handleAdminLogin = async () => {
+    if (adminPassword === "champ11") {
+      try {
+        if (!currentUser) { window.location.href = '/login'; return; }
+        await supabase.auth.updateUser({ role:"admin" });
+        const u = await supabase.auth.getUser().then(r => r.data.user);
+        setCurrentUser(u); setShowAdminDialog(false); setAdminPassword("");
+        toast({ title:"התחברת כמנהל!", className:"bg-green-100 text-green-800", duration:2000 });
+      } catch {
+        toast({ title:"שגיאה", description:"לא ניתן לעדכן הרשאות", variant:"destructive", duration:2000 });
+      }
+    } else {
+      toast({ title:"סיסמה שגויה", variant:"destructive", duration:2000 });
+      setAdminPassword("");
+    }
+  };
+
+  const effectiveUser = gameContextUser || currentUser;
+  const supabaseRole  = effectiveUser?.role || effectiveUser?.user_metadata?.role || null;
+  const isAdmin       = supabaseRole === "admin";
+
+  const allNavItems = [
+    ...publicItems.map(i => ({ ...i, disabled: !currentGame })),
+    ...(effectiveUser ? userItems.map(i => ({ ...i, disabled: !currentGame })) : []),
+    ...(isAdmin ? adminItems.map(i => ({
+      ...i,
+      disabled: i.group==='admin' && !currentGame && i.title!=='ניהול משתמשים' && i.title!=='סקירת מערכת',
+    })) : []),
+  ];
+  const mainNav  = allNavItems.filter(i => i.group==="main");
+  const adminNav = allNavItems.filter(i => i.group==="admin");
+  const isActive = (url) => window.location.pathname.includes(url.split('?')[0]);
+
+  const NavItem = ({ item, onClick }) => {
+    const active = isActive(item.url);
+    return (
+      <Link
+        to={item.disabled ? '#' : item.url}
+        onClick={e => {
+          if (item.disabled) {
+            e.preventDefault();
+            toast({ title:"בחר משחק", description:"נא לבחור משחק תחילה", variant:"destructive", duration:2000 });
+          }
+          // ✅ תמיד סגור את הסיידבר — גם בלחיצה על אותו עמוד
+          if (onClick) onClick();
+        }}
+        className={`lm-nav-item${active?' active':''}${item.disabled?' disabled':''}`}
+        style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
+      >
+        <span className="lm-nav-icon"><item.icon size={20}/></span>
+        <span className="lm-nav-label">{item.title}</span>
+        {active && <span className="lm-nav-bar"/>}
+      </Link>
     );
   };
 
-  const renderQuestionRow = (q, cols = 4, widths = { select: '160px' }) => (
-    <div key={q.id} style={{
-      display: 'grid',
-      gridTemplateColumns: isMultiAnswerQuestion(q) ? `50px 1fr auto 50px` : `50px 1fr ${widths.select} 50px`,
-      gap: '8px', alignItems: 'center', padding: '8px 12px', borderRadius: '6px',
-      position: 'relative', overflow: 'visible',
-    }} className="border border-cyan-600/30 bg-slate-700/20">
-      <Badge variant="outline" className="border-cyan-400 text-cyan-200 justify-center text-xs h-6 w-full">{q.question_id}</Badge>
-      <span className="text-right font-medium text-sm text-blue-100 truncate">{q.question_text}</span>
-      {renderSelectWithLogos(q, results[q.id] || '', val => handleResultChange(q.id, val === '__CLEAR__' ? '' : val), `w-[${widths.select}]`)}
-      <Badge className="text-xs px-2 py-1 justify-center h-6 w-full" style={{ borderColor: 'var(--tp-50)', color: 'var(--tp)', background: 'var(--tp-10)' }}>{q.possible_points || 0}</Badge>
+  const SidebarInner = ({ onItemClick }) => (
+    <div className="lm-sidebar-inner">
+
+      {/* ── Logo ── */}
+      <div style={{
+        display:'flex', alignItems:'center', gap:'14px',
+        padding:'20px 16px 14px',
+      }}>
+        {/* לוגו — inline style מבטיח גודל נכון */}
+        {currentGame?.game_icon ? (
+          <div style={{position:'relative', flexShrink:0}}>
+            <img
+              src={currentGame.game_icon}
+              alt={currentGame.game_name}
+              style={{
+                width:'130px', height:'130px',
+                objectFit:'contain', borderRadius:'16px',
+                border:'1px solid var(--tp-20)', display:'block',
+              }}
+            />
+            <div style={{
+              position:'absolute', inset:'-10px', borderRadius:'24px',
+              background:'radial-gradient(circle, var(--tp-18) 0%, transparent 70%)',
+              pointerEvents:'none',
+            }}/>
+          </div>
+        ) : (
+          <div style={{
+            width:'130px', height:'130px', borderRadius:'16px', flexShrink:0,
+            border:'1px dashed var(--tp-25)', background:'var(--tp-05)',
+            display:'flex', alignItems:'center', justifyContent:'center', fontSize:'48px',
+          }}>⚽</div>
+        )}
+
+        {/* טקסט — שתי שורות ברורות */}
+        <div style={{flex:1, minWidth:0, display:'flex', flexDirection:'column', gap:'6px'}}>
+          {currentGame ? (
+            <>
+              <div style={{
+                fontSize:'1.05rem', fontWeight:900, color:'var(--text)',
+                lineHeight:1.3, wordBreak:'break-word',
+              }}>
+                {currentGame.game_name}
+              </div>
+              {currentGame.game_subtitle && (
+                <div style={{
+                  fontSize:'1rem', fontWeight:800, color:'var(--tp)',
+                  lineHeight:1.2, wordBreak:'break-word',
+                }}>
+                  {currentGame.game_subtitle}
+                </div>
+              )}
+            </>
+          ) : (
+            <div style={{fontSize:'1rem', fontWeight:500, color:'var(--text-muted)'}}>
+              בחר משחק
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── Stars ── */}
+      <div className="lm-stars" aria-hidden="true">
+        {[0,1,2,3,4].map(i=><span key={i} className="lm-star" style={{'--i':i}}>★</span>)}
+      </div>
+
+      {/* ── Game selector ── */}
+      <div className="lm-game-selector">
+        <div className="lm-sec-label lm-sec-label--primary">🎮 משחק פעיל</div>
+        <Select
+          value={currentGame?.id || ''}
+          onValueChange={gameId => { const gx=games.find(x=>x.id===gameId); if(gx) selectGame(gx); }}
+          disabled={gamesLoading || games.length===0}
+        >
+          <SelectTrigger className="lm-select-trigger">
+            <SelectValue placeholder="בחר משחק">
+              {currentGame ? (
+                <div style={{textAlign:'right',lineHeight:'1.2'}}>
+                  <div style={{fontWeight:700,fontSize:'0.82rem'}}>{currentGame.game_name}</div>
+                  {currentGame.game_subtitle && (
+                    <div style={{fontSize:'0.7rem',color:'var(--tp)',opacity:0.85,marginTop:'1px'}}>{currentGame.game_subtitle}</div>
+                  )}
+                </div>
+              ) : "בחר משחק"}
+            </SelectValue>
+          </SelectTrigger>
+          <SelectContent className="lm-select-content">
+            {games.map(game=>(
+              <SelectItem key={game.id} value={game.id}>
+                <div>
+                  <div style={{fontWeight:700,fontSize:'0.85rem'}}>{game.game_name}</div>
+                  {game.game_subtitle && <div style={{fontSize:'0.7rem',color:'var(--tp)',opacity:0.8}}>{game.game_subtitle}</div>}
+                </div>
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {isAdmin && currentGame && (
+          <Link to={createPageUrl("CreateGame")} className="lm-edit-game"><Edit size={10}/> ערוך משחק</Link>
+        )}
+      </div>
+
+      {/* ── Navigation ── */}
+      <nav className="lm-nav">
+        {mainNav.length > 0 && (
+          <><div className="lm-sec-label">ראשי</div>
+          {mainNav.map(item=><NavItem key={item.title} item={item} onClick={onItemClick}/>)}</>
+        )}
+        {!effectiveUser && (
+          <button className="lm-login-prompt" onClick={()=>window.location.href='/login'}>
+            <Lock size={15}/><span>מילוי ניחושים</span><span className="lm-login-badge">התחבר</span>
+          </button>
+        )}
+        {adminNav.length > 0 && (
+          <><div className="lm-sec-label lm-sec-label--admin">ניהול</div>
+          {adminNav.map(item=><NavItem key={item.title} item={item} onClick={onItemClick}/>)}</>
+        )}
+      </nav>
+
+      {/* ── Theme picker ── */}
+      <ThemePicker/>
+
+      {/* ── User footer ── */}
+      <div className="lm-user-footer">
+        {effectiveUser ? (
+          <div className="lm-user-row">
+            <div className="lm-avatar">
+              {(effectiveUser.user_metadata?.full_name || effectiveUser.email || '?')[0].toUpperCase()}
+            </div>
+            <div className="lm-user-info-block">
+              <div className="lm-user-name">{effectiveUser.user_metadata?.full_name || effectiveUser.email}</div>
+              <div className="lm-user-role" style={{color:isAdmin?'var(--tp)':'#64748b'}}>
+                {isAdmin ? '👑 מנהל' : '✅ משתתף'}
+              </div>
+            </div>
+            <button onClick={handleLogout} className="btn btn-danger btn-icon btn-sm lm-logout-btn" title="התנתק">
+              <LogOut size={14}/>
+            </button>
+          </div>
+        ) : (
+          <button onClick={()=>window.location.href='/login'} className="btn btn-secondary btn-wide">
+            <Shield size={15}/> התחבר / הירשם
+          </button>
+        )}
+      </div>
     </div>
   );
 
-  // ── בונוסי שלבים ──────────────────────────────────────────────────────────
-  const STAGE_BONUSES = {
-    T3: { points: 16, desc: 'ניקוד בכל משחקי שמינית הגמר' },
-    T4: { points: 16, desc: 'ניחוש כל 8 קבוצות רבע הגמר' },
-    T5: { points: 12, desc: 'ניחוש כל 4 קבוצות חצי הגמר' },
-    T6: { points: 6,  desc: 'ניחוש שתי קבוצות הגמר' },
-  };
-
-  const renderBonusBanner = (tableId) => {
-    const bonus = STAGE_BONUSES[tableId];
-    if (!bonus) return null;
+  if (loading || gamesLoading) {
     return (
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: '10px', justifyContent: 'center',
-        padding: '8px 16px', borderRadius: '8px', marginBottom: '8px',
-        background: 'rgba(234,179,8,0.10)', border: '1px solid rgba(234,179,8,0.40)',
-      }}>
-        <span style={{ fontSize: '1.1rem' }}>🏆</span>
-        <span style={{ color: '#fde68a', fontSize: '0.82rem', fontWeight: '600' }}>בונוס שלב: +{bonus.points} נקודות</span>
-        <span style={{ color: '#fbbf24', fontSize: '0.75rem', opacity: 0.85 }}>— {bonus.desc}</span>
-      </div>
-    );
-  };
-
-  const ADVANCING_CONFIG = { T4: 8, T5: 4, T6: 2 };
-
-  const renderAdvancingTeamTable = (table) => {
-    const count = ADVANCING_CONFIG[table.id];
-    const seenIds = new Set();
-    const slots = table.questions
-      .filter(q => {
-        const n = parseFloat(q.question_id);
-        if (!Number.isInteger(n) || n < 1 || n > count) return false;
-        if (seenIds.has(n)) return false;
-        seenIds.add(n);
-        return true;
-      })
-      .sort((a, b) => parseFloat(a.question_id) - parseFloat(b.question_id));
-    return (
-      <Card className="bg-slate-800/40 border-cyan-700 shadow-lg shadow-cyan-900/20">
-        <CardHeader className="py-3"><CardTitle className="text-cyan-400">{table.description}</CardTitle></CardHeader>
-        <CardContent className="p-3">
-          {renderBonusBanner(table.id)}
-          <div className="space-y-2">{slots.map(q => renderQuestionRow(q))}</div>
-        </CardContent>
-      </Card>
-    );
-  };
-
-  const renderSpecialQuestions = (table) => {
-    if (ADVANCING_CONFIG[table.id]) return renderAdvancingTeamTable(table);
-
-    const grouped = {};
-    table.questions.forEach((q, idx) => {
-      const qId = q.question_id != null ? String(q.question_id) : String(q.stage_order || idx);
-      const mainId = Math.floor(parseFloat(qId)) || (q.stage_order || idx);
-      if (!grouped[mainId]) grouped[mainId] = { main: null, subs: [] };
-      if (qId.includes('.')) grouped[mainId].subs.push(q);
-      else grouped[mainId].main = q;
-    });
-    const sortedMainIds = Object.keys(grouped).sort((a, b) => Number(a) - Number(b));
-
-    return (
-      <Card className="bg-slate-800/40 border-cyan-700 shadow-lg shadow-cyan-900/20">
-        <CardHeader className="py-3">
-          <CardTitle className="text-cyan-400">{table.description}</CardTitle>
-          {/* הסבר על תמיכה בריבוי תשובות */}
-          {table.questions.some(q => isMultiAnswerQuestion(q)) && (
-            <p style={{ fontSize: '0.72rem', color: '#f97316', marginTop: '4px' }}>
-              ✦ שאלות מסומנות תומכות בריבוי תשובות נכונות — לחץ + להוספה
-            </p>
-          )}
-        </CardHeader>
-        <CardContent className="p-3" style={{ overflow: 'visible' }}>
-          <div className="space-y-2" style={{ overflow: 'visible' }}>
-            {sortedMainIds.map(mainId => {
-              const { main, subs } = grouped[mainId];
-              if (!main) return null;
-              const sortedSubs = [...subs].sort((a, b) => parseFloat(a.question_id || a.stage_order) - parseFloat(b.question_id || b.stage_order));
-
-              if (sortedSubs.length === 0) return renderQuestionRow(main);
-
-              return (
-                <div key={main.id} style={{
-                  padding: '8px 10px', borderRadius: '8px',
-                  border: '1px solid var(--tp-12)', background: 'rgba(0,0,0,0.22)',
-                  position: 'relative',
-                }}>
-                  {/* שאלה ראשית — שורה אחת */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: sortedSubs.length > 0 ? '6px' : 0 }}>
-                    <Badge variant="outline" style={{ borderColor: 'var(--tp-50)', color: 'var(--tp)', minWidth: '36px', textAlign: 'center', flexShrink: 0, fontSize: '0.72rem' }}>{main.question_id}</Badge>
-                    <span style={{ flex: 1, fontSize: '0.85rem', color: '#f1f5f9', fontWeight: '500', textAlign: 'right' }}>{main.question_text}</span>
-                    {renderSelectWithLogos(main, results[main.id] || '', val => handleResultChange(main.id, val === '__CLEAR__' ? '' : val), 'w-[160px]')}
-                    {main.possible_points && <Badge style={{ borderColor: 'var(--tp-35)', color: 'var(--tp)', background: 'var(--tp-08)', fontSize: '0.68rem', flexShrink: 0, whiteSpace: 'nowrap' }}>{main.possible_points} נק'</Badge>}
-                  </div>
-                  {/* תת-שאלות — כל אחת בשורה */}
-                  {sortedSubs.map((sub) => (
-                    <div key={sub.id} style={{ display: 'flex', alignItems: 'center', gap: '6px', paddingRight: '42px', marginTop: '4px', paddingTop: '4px', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
-                      <Badge variant="outline" style={{ borderColor: 'rgba(139,92,246,0.45)', color: '#a78bfa', minWidth: '36px', textAlign: 'center', flexShrink: 0, fontSize: '0.72rem' }}>{sub.question_id}</Badge>
-                      <span style={{ flex: 1, fontSize: '0.82rem', color: '#cbd5e1', textAlign: 'right' }}>{sub.question_text}</span>
-                      {renderSelectWithLogos(sub, results[sub.id] || '', val => handleResultChange(sub.id, val === '__CLEAR__' ? '' : val), 'w-[150px]')}
-                      {sub.possible_points && <Badge style={{ borderColor: 'rgba(139,92,246,0.35)', color: '#a78bfa', background: 'rgba(139,92,246,0.08)', fontSize: '0.68rem', flexShrink: 0, whiteSpace: 'nowrap' }}>{sub.possible_points} נק'</Badge>}
-                    </div>
-                  ))}
-                </div>
-              );
-            })}
-          </div>
-        </CardContent>
-      </Card>
-    );
-  };
-
-  // ── Stage chips ───────────────────────────────────────────────────────────
-  const renderStageChips = (buttons) => {
-    const groupMap = {
-      playoff:    { label: '⚽ פלייאוף',    color: '#3b82f6', bg: 'rgba(59,130,246,0.12)',  border: 'rgba(59,130,246,0.35)' },
-      league:     { label: '⚽ ליגה',        color: '#3b82f6', bg: 'rgba(59,130,246,0.12)',  border: 'rgba(59,130,246,0.35)' },
-      groups:     { label: '🏠 שלב הליגה',   color: 'var(--tp)', bg: 'var(--tp-12)', border: 'var(--tp-35)' },
-      rounds:     { label: '⚽ מחזורים',     color: 'var(--tp)', bg: 'var(--tp-12)', border: 'var(--tp-35)' },
-      special:    { label: '✨ מיוחדות',     color: '#8b5cf6', bg: 'rgba(139,92,246,0.12)', border: 'rgba(139,92,246,0.35)' },
-      qualifiers: { label: '📋 עולות',       color: '#f97316', bg: 'rgba(249,115,22,0.12)',  border: 'rgba(249,115,22,0.35)' },
-      other:      { label: '📌 נוסף',        color: '#64748b', bg: 'rgba(100,116,139,0.10)', border: 'rgba(100,116,139,0.25)' },
-    };
-    const grouped = {};
-    buttons.forEach(btn => {
-      const t = btn.stageType || 'special';
-      if (!grouped[t]) grouped[t] = [];
-      grouped[t].push(btn);
-    });
-    const order = ['playoff','league','groups','rounds','special','qualifiers','other'];
-    return (
-      <div style={{ padding: '14px 12px', background: 'rgba(0,0,0,0.40)', borderRadius: '12px', border: '1px solid var(--tp-12)', marginBottom: '16px' }}>
-        <div style={{ fontSize: '0.6rem', fontWeight: '700', letterSpacing: '0.12em', textTransform: 'uppercase', color: '#475569', marginBottom: '10px' }}>בחירת שלב</div>
-        {order.filter(t => grouped[t]).map(type => {
-          const info = groupMap[type] || groupMap.other;
-          return (
-            <div key={type} style={{ marginBottom: '10px' }}>
-              <div style={{ fontSize: '0.58rem', fontWeight: '700', letterSpacing: '0.1em', textTransform: 'uppercase', color: info.color, marginBottom: '5px' }}>{info.label}</div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px' }}>
-                {grouped[type].map(btn => {
-                  const active = openSections[btn.sectionKey];
-                  return (
-                    <button key={btn.key} onClick={() => toggleSection(btn.sectionKey)} style={{
-                      display: 'inline-flex', alignItems: 'center', padding: '5px 12px', borderRadius: '999px',
-                      fontSize: '0.78rem', fontWeight: active ? '700' : '400',
-                      color: active ? 'white' : info.color, background: active ? info.color : info.bg,
-                      border: `1px solid ${active ? info.color : info.border}`, cursor: 'pointer',
-                      transition: 'all 0.15s', boxShadow: active ? `0 0 10px ${info.color}66` : 'none',
-                      fontFamily: 'Rubik, Heebo, sans-serif', whiteSpace: 'nowrap'
-                    }}>{btn.description}</button>
-                  );
-                })}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    );
-  };
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-screen" style={{ background: 'linear-gradient(135deg, var(--bg1) 0%, var(--bg2) 50%, var(--bg1) 100%)' }}>
-        <Loader2 className="w-8 h-8 animate-spin text-cyan-400" />
-        <span className="mr-3 text-cyan-300">טוען נתונים...</span>
+      <div className="lm-loading">
+        <div className="lm-loading-spinner"/>
+        <span>טוען...</span>
       </div>
     );
   }
 
-  // ── Build nav buttons ─────────────────────────────────────────────────────
-  const allButtons = [];
-  roundTables.forEach(t => {
-    const st = t.questions[0]?.stage_type;
-    // ✅ "שלב הליגה" במקום "שלב הבתים"
-    const stageType = st === 'groups' ? 'groups' : st === 'rounds' ? 'rounds' : st === 'league' ? 'league' : 'playoff';
-    allButtons.push({ numericId: t.stage_order || parseInt(t.id.replace('T','').replace(/\D/g,''))||0, stageType, key: `round_${t.id}`, description: t.description || t.id, sectionKey: `round_${t.id}` });
-  });
-  specialTables.forEach(t => {
-    const st = t.questions[0]?.stage_type;
-    const stageType = st && ['playoff','groups','rounds','league','qualifiers','other'].includes(st) ? st : 'special';
-    allButtons.push({ numericId: t.stage_order || parseInt(t.id.replace('T','').replace(/\D/g,''))||0, stageType, key: t.id, description: t.description, sectionKey: t.id });
-  });
-  if (locationTables.length > 0) allButtons.push({ numericId: 99, stageType: 'qualifiers', key: 'locations', description: 'מיקומים בתום שלב הליגה', sectionKey: 'locations' });
-  if (israeliTable) allButtons.push({ numericId: parseInt(israeliTable.id.replace('T','')||'0'), stageType: israeliTable.questions?.[0]?.stage_type || 'special', key: israeliTable.id, description: israeliTable.description, sectionKey: 'israeli' });
-  if (playoffWinnersTable) allButtons.push({ numericId: parseInt(playoffWinnersTable.id.replace('T','')||'0'), stageType: 'qualifiers', key: playoffWinnersTable.id, description: playoffWinnersTable.description, sectionKey: 'playoffWinners' });
-  allButtons.sort((a, b) => {
-    const order = ['rounds','league','groups','playoff','special','qualifiers','other'];
-    const ai = order.indexOf(a.stageType), bi = order.indexOf(b.stageType);
-    if (ai !== bi) return ai - bi;
-    return a.numericId - b.numericId;
-  });
+  return (
+    <div dir="rtl" className="lm-root">
+      {/* ── Desktop sidebar ── */}
+      <aside className="lm-sidebar desktop-sidebar"><SidebarInner onItemClick={null}/></aside>
 
-  const renderSidebar = () => {
-    const groupMap = {
-      playoff:    { label: '⚽ משחקי פלייאוף', color: '#3b82f6', bg: 'rgba(59,130,246,0.10)',  border: 'rgba(59,130,246,0.30)',  activeBg: '#2563eb',  activeShadow: '0 2px 10px rgba(59,130,246,0.44)' },
-      league:     { label: '⚽ משחקי ליגה',    color: '#3b82f6', bg: 'rgba(59,130,246,0.10)',  border: 'rgba(59,130,246,0.30)',  activeBg: '#2563eb',  activeShadow: '0 2px 10px rgba(59,130,246,0.44)' },
-      // ✅ "שלב הליגה" במקום "שלב הבתים"
-      groups:     { label: '🏠 שלב הליגה',     color: '#06b6d4', bg: 'rgba(6,182,212,0.10)',   border: 'rgba(6,182,212,0.30)',   activeBg: '#0891b2',  activeShadow: '0 2px 10px rgba(6,182,212,0.44)'  },
-      rounds:     { label: '⚽ מחזורים',        color: '#06b6d4', bg: 'rgba(6,182,212,0.10)',   border: 'rgba(6,182,212,0.30)',   activeBg: '#0891b2',  activeShadow: '0 2px 10px rgba(6,182,212,0.44)'  },
-      special:    { label: '✨ שאלות מיוחדות', color: '#8b5cf6', bg: 'rgba(139,92,246,0.10)', border: 'rgba(139,92,246,0.30)', activeBg: '#7c3aed',  activeShadow: '0 2px 10px rgba(139,92,246,0.44)' },
-      qualifiers: { label: '📋 רשימות עולות',  color: '#f97316', bg: 'rgba(249,115,22,0.10)',  border: 'rgba(249,115,22,0.30)',  activeBg: '#ea580c',  activeShadow: '0 2px 10px rgba(249,115,22,0.44)' },
-      other:      { label: '📌 נוסף',           color: '#64748b', bg: 'rgba(100,116,139,0.08)', border: 'rgba(100,116,139,0.20)', activeBg: '#475569',  activeShadow: '0 2px 8px rgba(100,116,139,0.30)'  },
-    };
-    const grouped = {};
-    allButtons.forEach(btn => { const t = btn.stageType || 'other'; if (!grouped[t]) grouped[t] = []; grouped[t].push(btn); });
-    const order = ['rounds','league','groups','playoff','special','qualifiers','other'];
-    const sortedGroups = order.filter(t => grouped[t]);
-    return (
-      <aside style={{ width: '215px', flexShrink: 0, position: 'sticky', top: '70px', alignSelf: 'flex-start', maxHeight: 'calc(100vh - 90px)', overflowY: 'auto', paddingBottom: '16px' }}>
-        <div style={{ background: 'rgba(13,18,30,0.9)', borderRadius: '12px', border: '1px solid var(--tp-12)', padding: '14px 10px', backdropFilter: 'blur(10px)' }}>
-          <div style={{ fontSize: '0.5rem', fontWeight: '800', letterSpacing: '0.18em', textTransform: 'uppercase', color: '#334155', marginBottom: '14px', paddingRight: '2px' }}>בחירת שלב</div>
-          {sortedGroups.map(type => {
-            const info = groupMap[type] || groupMap.other;
-            return (
-              <div key={type} style={{ marginBottom: '14px' }}>
-                <div style={{ fontSize: '0.55rem', fontWeight: '700', letterSpacing: '0.08em', textTransform: 'uppercase', color: info.color, marginBottom: '5px', paddingRight: '2px', opacity: 0.85 }}>{info.label}</div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
-                  {grouped[type].map(btn => {
-                    const active = openSections[btn.sectionKey];
-                    return (
-                      <button key={btn.key} onClick={() => toggleSection(btn.sectionKey)} style={{
-                        display: 'block', width: '100%', textAlign: 'right', padding: '7px 10px',
-                        borderRadius: '8px', fontSize: '0.8rem', fontWeight: active ? '700' : '400',
-                        color: active ? 'white' : info.color, background: active ? info.activeBg : info.bg,
-                        border: `1px solid ${active ? info.color : info.border}`,
-                        cursor: 'pointer', transition: 'all 0.15s',
-                        boxShadow: active ? (info.activeShadow || `0 2px 10px ${info.color}44`) : 'none',
-                        fontFamily: 'Rubik, Heebo, sans-serif', lineHeight: '1.35',
-                      }}>{btn.description}</button>
-                    );
-                  })}
-                </div>
+      {/* ── Mobile overlay (for "more" menu) ── */}
+      <div className={`lm-overlay${sidebarOpen?' visible':''}`} onClick={()=>setSidebarOpen(false)} aria-hidden="true"/>
+
+      {/* ── Mobile "more" drawer (admin items only) ── */}
+      <aside className={`lm-sidebar lm-sidebar--mobile mobile-sidebar${sidebarOpen?' open':''}`}>
+        <button onClick={()=>setSidebarOpen(false)} className="lm-close-btn"><X size={22}/></button>
+        <div style={{padding:'60px 12px 16px'}}>
+          {/* Game info in drawer */}
+          {currentGame && (
+            <div style={{display:'flex',alignItems:'center',gap:12,padding:'12px 8px',marginBottom:16,background:'var(--tp-10)',borderRadius:12,border:'1px solid var(--tp-20)'}}>
+              {currentGame.game_icon && <img src={currentGame.game_icon} alt="" style={{width:48,height:48,borderRadius:10,objectFit:'contain'}}/>}
+              <div>
+                <div style={{fontWeight:800,fontSize:'0.95rem',color:'var(--text)'}}>{currentGame.game_name}</div>
+                {currentGame.game_subtitle && <div style={{fontSize:'0.82rem',color:'var(--tp)',fontWeight:700}}>{currentGame.game_subtitle}</div>}
               </div>
-            );
-          })}
+            </div>
+          )}
+          {/* Game switcher */}
+          {games.length > 1 && (
+            <div style={{marginBottom:16}}>
+              <div style={{fontSize:'0.7rem',fontWeight:700,color:'#475569',marginBottom:6,letterSpacing:'0.08em'}}>החלפת משחק</div>
+              {games.map(game=>(
+                <button key={game.id} onClick={()=>{selectGame(game);setSidebarOpen(false);}} style={{
+                  display:'flex',alignItems:'center',gap:10,width:'100%',
+                  padding:'10px 12px',borderRadius:10,marginBottom:4,cursor:'pointer',
+                  background:currentGame?.id===game.id?'var(--tp-15)':'rgba(30,41,59,0.5)',
+                  border:`1px solid ${currentGame?.id===game.id?'var(--tp)':'rgba(71,85,105,0.3)'}`,
+                  color:currentGame?.id===game.id?'var(--tp)':'var(--text)',
+                  fontFamily:'Rubik,Heebo,sans-serif',textAlign:'right',
+                }}>
+                  {game.game_icon && <img src={game.game_icon} alt="" style={{width:32,height:32,borderRadius:8,objectFit:'contain',flexShrink:0}}/>}
+                  <div style={{flex:1,textAlign:'right'}}>
+                    <div style={{fontWeight:700,fontSize:'0.85rem'}}>{game.game_name}</div>
+                    {game.game_subtitle && <div style={{fontSize:'0.75rem',opacity:0.8}}>{game.game_subtitle}</div>}
+                  </div>
+                  {currentGame?.id===game.id && <span style={{color:'var(--tp)',fontSize:'1rem'}}>✓</span>}
+                </button>
+              ))}
+            </div>
+          )}
+          {/* Admin items */}
+          {isAdmin && (
+            <div>
+              <div style={{fontSize:'0.7rem',fontWeight:700,color:'#475569',marginBottom:6,letterSpacing:'0.08em'}}>ניהול</div>
+              {adminNav.map(item=>(
+                <NavItem key={item.title} item={item} onClick={()=>setSidebarOpen(false)}/>
+              ))}
+            </div>
+          )}
+          {/* Login/logout */}
+          <div style={{marginTop:16,borderTop:'1px solid var(--tp-10)',paddingTop:16}}>
+            {effectiveUser ? (
+              <button onClick={handleLogout} style={{display:'flex',alignItems:'center',gap:10,width:'100%',padding:'12px',borderRadius:10,background:'rgba(239,68,68,0.1)',border:'1px solid rgba(239,68,68,0.3)',color:'#ef4444',cursor:'pointer',fontFamily:'Rubik,Heebo,sans-serif',fontSize:'0.9rem'}}>
+                <LogOut size={18}/> התנתקות
+              </button>
+            ) : (
+              <button onClick={()=>{setShowAdminDialog(true);setSidebarOpen(false);}} style={{display:'flex',alignItems:'center',gap:10,width:'100%',padding:'12px',borderRadius:10,background:'var(--tp-10)',border:'1px solid var(--tp-25)',color:'var(--tp)',cursor:'pointer',fontFamily:'Rubik,Heebo,sans-serif',fontSize:'0.9rem'}}>
+                <Shield size={18}/> כניסת מנהל
+              </button>
+            )}
+          </div>
         </div>
       </aside>
-    );
-  };
 
-  const renderContent = () => (
-    <div style={{ flex: 1, minWidth: 0 }}>
-      {allButtons.length === 0 ? (
-        <Alert variant="destructive" className="bg-cyan-900/50 border-cyan-700 text-cyan-200">
-          <FileText className="w-4 h-4" />
-          <AlertDescription>לא נמצאו שאלות במערכת.</AlertDescription>
-        </Alert>
-      ) : (
-        allButtons.map(button => {
-          if (!openSections[button.sectionKey]) return null;
-          if (button.sectionKey.startsWith('round_')) {
-            const tableId = button.sectionKey.replace('round_', '');
-            const table = roundTables.find(t => t.id === tableId);
-            if (!table) return null;
-            return (
-              <div key={button.key} className="mb-4 space-y-3">
-                {renderBonusBanner(table.id)}
-                <RoundTableResults table={table} teams={teams} results={results} onResultChange={handleResultChange} isAdmin={isAdmin} />
-                {table.specialQuestions?.length > 0 && (
-                  <div className="mt-4">{renderSpecialQuestions({ ...table, questions: table.specialQuestions })}</div>
-                )}
-              </div>
-            );
-          }
-          if (button.sectionKey === 'israeli' && israeliTable) return <div key="israeli" className="mb-4"><RoundTableResults table={israeliTable} teams={teams} results={results} onResultChange={handleResultChange} isAdmin={isAdmin} /></div>;
-          if (button.sectionKey === 'locations') return <div key="locations" className="mb-4 grid grid-cols-1 md:grid-cols-2 gap-3">{locationTables.map(t => renderSpecialQuestions(t))}</div>;
-          if (button.sectionKey === 'playoffWinners' && playoffWinnersTable) return <div key="playoffWinners" className="mb-6">{renderSpecialQuestions(playoffWinnersTable)}</div>;
-          const t = specialTables.find(t => t.id === button.key);
-          if (t) return <div key={t.id} className="mb-6">{renderSpecialQuestions(t)}</div>;
-          return null;
-        })
-      )}
-    </div>
-  );
+      <div className="lm-main" key={currentGame?.id || 'no-game'}>
 
-  return (
-    <div dir="rtl" style={{ background: 'linear-gradient(135deg, var(--bg1) 0%, var(--bg2) 50%, var(--bg1) 100%)', minHeight: '100vh' }}>
-      <div style={{ position: 'sticky', top: 0, zIndex: 20, background: 'rgba(0,0,0,0.70)', backdropFilter: 'blur(12px)', borderBottom: '1px solid var(--tp-15)', padding: '10px 20px' }}>
-        <div className="flex flex-row justify-between items-center gap-3 max-w-7xl mx-auto">
-          <div>
-            <h1 className="text-lg md:text-2xl font-bold flex items-center gap-2" style={{ color: '#f8fafc' }}>
-              <Trophy className="w-5 h-5 md:w-7 md:h-7" style={{ color: 'var(--tp)' }} />
-              {isAdmin ? 'עדכון תוצאות אמת' : 'תוצאות אמת'}
-            </h1>
-            <p className="text-xs" style={{ color: '#94a3b8' }}>
-              {isAdmin ? 'עדכן תוצאות ואז לחץ "שמור תוצאות"' : 'צפייה בתוצאות האמיתיות'}
-            </p>
-          </div>
-          {isAdmin && (
-            <Button size="sm" onClick={handleSaveResults} disabled={saving || recalculating} className="text-white" style={{
-              background: recalculating ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)' : 'linear-gradient(135deg, var(--tp) 0%, var(--tp) 100%)',
-            }}>
-              {saving ? <><Loader2 className="w-4 h-4 animate-spin ml-1" />שומר...</>
-                : recalculating ? <><Loader2 className="w-4 h-4 animate-spin ml-1" />מחשב...</>
-                : <><Save className="w-4 h-4 ml-1" />שמור תוצאות</>}
-            </Button>
-          )}
-        </div>
-      </div>
-      {recalculating && recalcProgress && (
-        <div className="mx-4 mt-2 p-3 rounded-lg text-sm" style={{ background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.3)', color: '#10b981' }}>
-          ⏳ {recalcProgress}
-        </div>
-      )}
-      <div className="md:hidden p-3">{renderStageChips(allButtons)}</div>
-      <div className="hidden md:flex flex-row gap-4 p-4 max-w-7xl mx-auto" style={{ alignItems: 'flex-start' }}>
-        {renderSidebar()}
-        {renderContent()}
-      </div>
-      <div className="md:hidden p-3">{renderContent()}</div>
-    </div>
-  );
-}
-
-// ── MultiCheckboxDropdown — dropdown עם checkboxes כמו בתמונה ────────────────
-function MultiCheckboxDropdown({ options, selected, onToggle, onClear, findTeam, isAdmin, triggerLabel }) {
-  const [open, setOpen] = useState(false);
-  const ref = React.useRef(null);
-
-  // סגור בלחיצה מחוץ
-  useEffect(() => {
-    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, []);
-
-  const hasSelected = selected.length > 0;
-
-  return (
-    <div ref={ref} style={{ position: 'relative', minWidth: '200px' }}>
-      {/* Trigger */}
-      <button
-        onClick={() => isAdmin && setOpen(o => !o)}
-        style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          width: '100%', padding: '6px 10px', borderRadius: '6px', cursor: isAdmin ? 'pointer' : 'default',
-          background: hasSelected ? 'var(--tp-20)' : 'rgba(51,65,85,0.5)',
-          border: `1px solid ${hasSelected ? 'var(--tp)' : 'rgba(100,116,139,1)'}`,
-          color: hasSelected ? 'var(--tp)' : '#94a3b8',
-          fontSize: '0.82rem', fontWeight: hasSelected ? '700' : '400',
-          textAlign: 'right', fontFamily: 'Rubik, Heebo, sans-serif',
-        }}
-      >
-        <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {triggerLabel}
-        </span>
-        <span style={{ marginRight: '6px', fontSize: '0.7rem', opacity: 0.6 }}>▼</span>
-      </button>
-
-      {/* Dropdown */}
-      {open && (
-        <div style={{
-          position: 'absolute', top: '100%', right: 0, zIndex: 100,
-          minWidth: '220px', maxHeight: '280px', overflowY: 'auto',
-          background: '#1e293b', border: '1px solid #06b6d4',
-          borderRadius: '8px', marginTop: '4px',
-          boxShadow: '0 8px 24px rgba(0,0,0,0.6)',
-        }}>
-          {/* נקה הכל */}
-          <div
-            onClick={() => { onClear(); setOpen(false); }}
+        {/* ── Mobile top bar ── */}
+        <header className="lm-topbar mobile-topbar">
+          {/* לוגו + שם משחק — לחיץ לפתיחת drawer */}
+          <button
+            onClick={()=>setSidebarOpen(s=>!s)}
             style={{
-              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-              padding: '8px 12px', cursor: 'pointer', borderBottom: '1px solid rgba(6,182,212,0.2)',
-              color: '#ef4444', fontSize: '0.82rem', fontWeight: 600,
+              display:'flex',alignItems:'center',gap:10,flex:1,
+              background:'none',border:'none',cursor:'pointer',textAlign:'right',
+              padding:'8px 0',
+              WebkitTapHighlightColor:'transparent',touchAction:'manipulation',
             }}
-            className="hover:bg-red-900/20"
           >
-            <span>נקה הכל</span>
-            <span style={{ fontSize: '0.85rem' }}>✕</span>
-          </div>
-
-          {/* אפשרויות */}
-          {options.map(opt => {
-            const isChecked = selected.includes(opt);
-            const team = findTeam?.(opt);
-            const label = opt.replace(/\s*\([^)]+\)\s*$/, '').trim();
-            return (
-              <div
-                key={opt}
-                onClick={() => onToggle(opt)}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: '8px',
-                  padding: '7px 12px', cursor: 'pointer',
-                  background: isChecked ? 'rgba(6,182,212,0.15)' : 'transparent',
-                  borderBottom: '1px solid rgba(255,255,255,0.04)',
-                }}
-                className="hover:bg-cyan-700/20"
-              >
-                {/* Checkbox */}
-                <div style={{
-                  width: 16, height: 16, borderRadius: '4px', flexShrink: 0,
-                  border: `2px solid ${isChecked ? 'var(--tp)' : '#475569'}`,
-                  background: isChecked ? 'var(--tp)' : 'transparent',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                }}>
-                  {isChecked && <span style={{ color: 'white', fontSize: '10px', lineHeight: 1 }}>✓</span>}
-                </div>
-                {/* לוגו */}
-                {team?.logo_url && (
-                  <img src={team.logo_url} alt={label} style={{ width: 18, height: 18, borderRadius: '50%' }}
-                    onError={e => e.target.style.display = 'none'} />
-                )}
-                {/* שם */}
-                <span style={{ fontSize: '0.85rem', color: isChecked ? 'var(--tp)' : '#f8fafc', fontWeight: isChecked ? 600 : 400 }}>
-                  {label}
-                </span>
+            {currentGame?.game_icon ? (
+              <img src={currentGame.game_icon} alt="logo" style={{width:46,height:46,borderRadius:10,objectFit:'contain',flexShrink:0,border:'1px solid var(--tp-20)'}}/>
+            ) : (
+              <div style={{width:46,height:46,borderRadius:10,background:'var(--tp-10)',border:'1px dashed var(--tp-25)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'1.4rem',flexShrink:0}}>⚽</div>
+            )}
+            <div style={{flex:1,minWidth:0,textAlign:'right'}}>
+              <div style={{fontWeight:800,fontSize:'1.05rem',color:'var(--text)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',lineHeight:1.2}}>
+                {currentGame?.game_name || 'בחר משחק'}
               </div>
+              {currentGame?.game_subtitle && (
+                <div style={{fontSize:'0.85rem',fontWeight:700,color:'var(--tp)',marginTop:1}}>
+                  {currentGame.game_subtitle}
+                </div>
+              )}
+            </div>
+            {/* חץ להחלפת משחק */}
+            <div style={{flexShrink:0,color:'var(--tp)',opacity:0.7,fontSize:'1.2rem'}}>☰</div>
+          </button>
+        </header>
+
+        <RouteGuard currentUser={effectiveUser} isAdmin={isAdmin} loading={loading||gamesLoading}>
+          <main className="lm-page lm-page--mobile-padded">{children}</main>
+        </RouteGuard>
+
+        {/* ── Mobile bottom navigation bar ── */}
+        <nav className="lm-bottom-nav mobile-topbar">
+          {mainNav.slice(0,5).map(item => {
+            const active = isActive(item.url);
+            return (
+              <Link
+                key={item.title}
+                to={item.disabled ? '#' : item.url}
+                onClick={e => {
+                  if (item.disabled) { e.preventDefault(); toast({title:"בחר משחק",description:"נא לבחור משחק",variant:"destructive",duration:2000}); }
+                }}
+                style={{
+                  display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',
+                  flex:1,gap:3,padding:'8px 4px',textDecoration:'none',
+                  color: active ? 'var(--tp)' : (item.disabled ? '#334155' : '#64748b'),
+                  background: active ? 'var(--tp-10)' : 'transparent',
+                  borderTop: active ? '2px solid var(--tp)' : '2px solid transparent',
+                  transition:'all 0.15s',
+                  WebkitTapHighlightColor:'transparent',touchAction:'manipulation',
+                  cursor: item.disabled ? 'not-allowed' : 'pointer',
+                }}
+              >
+                <item.icon size={24}/>
+                <span style={{fontSize:'0.65rem',fontWeight:active?700:500,whiteSpace:'nowrap',fontFamily:'Rubik,Heebo,sans-serif'}}>
+                  {item.title}
+                </span>
+              </Link>
             );
           })}
-        </div>
-      )}
+          {/* כפתור "עוד" — פותח drawer */}
+          <button
+            onClick={()=>setSidebarOpen(s=>!s)}
+            style={{
+              display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',
+              flex:1,gap:3,padding:'8px 4px',background:'none',border:'none',
+              color: sidebarOpen ? 'var(--tp)' : '#64748b',
+              borderTop: sidebarOpen ? '2px solid var(--tp)' : '2px solid transparent',
+              cursor:'pointer',WebkitTapHighlightColor:'transparent',touchAction:'manipulation',
+              fontFamily:'Rubik,Heebo,sans-serif',
+            }}
+          >
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="12" cy="5" r="1.5" fill="currentColor" stroke="none"/>
+              <circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none"/>
+              <circle cx="12" cy="19" r="1.5" fill="currentColor" stroke="none"/>
+            </svg>
+            <span style={{fontSize:'0.65rem',fontWeight:500,whiteSpace:'nowrap'}}>עוד</span>
+          </button>
+        </nav>
+
+      </div>
+
+      <UploadStatusIndicator/>
+
+      <Dialog open={showAdminDialog} onOpenChange={setShowAdminDialog}>
+        <DialogContent className="lm-admin-dialog" dir="rtl">
+          <DialogHeader>
+            <DialogTitle style={{color:'var(--tp)',display:'flex',alignItems:'center',gap:8}}>
+              <Shield size={20}/> התחברות מנהל
+            </DialogTitle>
+            <DialogDescription style={{color:'var(--text-muted)'}}>הזן את סיסמת המנהל</DialogDescription>
+          </DialogHeader>
+          <div style={{display:'flex',flexDirection:'column',gap:16}}>
+            <Input type="password" value={adminPassword} onChange={e=>setAdminPassword(e.target.value)}
+              onKeyPress={e=>e.key==='Enter'&&handleAdminLogin()} placeholder="סיסמה..."/>
+            <div style={{display:'flex',gap:10,justifyContent:'flex-end'}}>
+              <button onClick={()=>{setShowAdminDialog(false);setAdminPassword("");}} className="btn btn-ghost">ביטול</button>
+              <button onClick={handleAdminLogin} className="btn btn-primary">התחבר כמנהל</button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
 
-// ── Multi-answer text input helper ────────────────────────────────────────────
-function MultiAnswerTextInput({ currentAnswers, onAdd }) {
-  const [val, setVal] = useState('');
+// ─── Root export ──────────────────────────────────────────────────────────────
+export default function Layout({ children, currentPageName }) {
   return (
-    <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-      <Input
-        value={val}
-        onChange={e => setVal(e.target.value)}
-        onKeyDown={e => { if (e.key === 'Enter' && val.trim()) { onAdd(val.trim()); setVal(''); } }}
-        placeholder="הקלד תשובה..."
-        style={{ width: '140px', fontSize: '0.8rem', background: 'rgba(51,65,85,0.5)', borderColor: 'rgba(100,116,139,1)', color: '#f8fafc' }}
-      />
-      <button onClick={() => { if (val.trim()) { onAdd(val.trim()); setVal(''); } }}
-        style={{ background: 'var(--tp)', border: 'none', borderRadius: '6px', padding: '4px 8px', cursor: 'pointer', color: 'white', fontSize: '0.8rem' }}>
-        +
-      </button>
-    </div>
+    <ThemeProvider>
+      <UploadStatusProvider>
+        <GameProvider>
+          <style>{GLOBAL_STYLES}</style>
+          <LayoutContent currentPageName={currentPageName}>{children}</LayoutContent>
+        </GameProvider>
+      </UploadStatusProvider>
+    </ThemeProvider>
   );
 }
+
+// ═════════════════════════════════════════════════════════════════════════════
+//  GLOBAL STYLES — כל CSS גלובלי כולל btn system, cards, ו-theme variables
+// ═════════════════════════════════════════════════════════════════════════════
+const GLOBAL_STYLES = `
+  /* ThemeContext מטפל ב-font injection + רקעים + CSS vars.
+     כאן רק layout, components, ו-utilities. */
+
+  /* ══════════════════════════════════════════════════
+     CSS VARIABLES — כל הערכים מגיעים מ-ThemeContext
+     =====================================================
+     --bg1, --bg2, --bg3        : רקעים
+     --sidebar                  : רקע סיידבר
+     --tp                       : צבע ראשי
+     --tp-03 ... --tp-50        : ראשי + שקיפות
+     --text, --text-muted       : טקסט
+     --card-bg, --card-border   : כרטיסים
+     --font-main                : גופן
+  ══════════════════════════════════════════════════ */
+
+  /* Default values (overridden at runtime by ThemeContext) */
+  :root {
+    --bg1:         #070d1a;
+    --bg2:         #0d1929;
+    --bg3:         #0a1422;
+    --sidebar:     rgba(5,8,16,0.99);
+    --sidebar-bdr: rgba(6,182,212,0.10);
+    --tp:          #06b6d4;
+    --tp-dark:     #0891b2;
+    --tp-03:       rgba(6,182,212,0.03);
+    --tp-05:       rgba(6,182,212,0.05);
+    --tp-08:       rgba(6,182,212,0.08);
+    --tp-10:       rgba(6,182,212,0.10);
+    --tp-12:       rgba(6,182,212,0.12);
+    --tp-15:       rgba(6,182,212,0.15);
+    --tp-18:       rgba(6,182,212,0.18);
+    --tp-20:       rgba(6,182,212,0.20);
+    --tp-25:       rgba(6,182,212,0.25);
+    --tp-30:       rgba(6,182,212,0.30);
+    --tp-40:       rgba(6,182,212,0.40);
+    --tp-50:       rgba(6,182,212,0.50);
+    --tp-glow:     0 0 20px rgba(6,182,212,0.30);
+    --text:        #e2e8f0;
+    --text-muted:  #64748b;
+    --text-sub:    #475569;
+    --card-bg:     rgba(13,25,41,0.95);
+    --card-border: rgba(6,182,212,0.10);
+    --gold:        #f59e0b;
+    --font-main:   'Rubik', 'Heebo', sans-serif;
+  }
+
+  /* ── Reset ─────────────────────────────────────── */
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    width: 100%; height: 100%;
+    transition: background 0.4s ease, color 0.3s ease;
+  }
+  #root { height: 100%; }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--tp-25); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--tp-40); }
+
+  /* ══════════════════════════════════════════════════
+     BUTTON SYSTEM
+     className="btn btn-primary"
+     className="btn btn-secondary btn-sm"
+     className="btn btn-danger btn-icon"
+     className="btn btn-ghost btn-wide"
+  ══════════════════════════════════════════════════ */
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    gap: 7px; padding: 9px 18px; border-radius: 8px;
+    font-family: var(--font-main) !important;
+    font-size: 0.88rem; font-weight: 600; line-height: 1;
+    cursor: pointer; border: 1px solid transparent;
+    text-decoration: none; white-space: nowrap; user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    transition: background 0.18s, border-color 0.18s, box-shadow 0.18s, transform 0.12s, opacity 0.18s, filter 0.18s;
+  }
+  .btn:active:not(:disabled):not([disabled]) { transform: scale(0.97); }
+  .btn:disabled, .btn[disabled] { opacity: 0.4; cursor: not-allowed; pointer-events: none; }
+
+  .btn-primary   { background: var(--tp); color: #fff; border-color: transparent; }
+  .btn-primary:hover:not(:disabled) { filter: brightness(1.12); box-shadow: 0 4px 20px var(--tp-30); }
+
+  .btn-secondary { background: var(--tp-10); color: var(--tp); border-color: var(--tp-30); }
+  .btn-secondary:hover:not(:disabled) { background: var(--tp-20); border-color: var(--tp-50); box-shadow: 0 0 14px var(--tp-20); }
+
+  .btn-ghost { background: transparent; color: var(--text-muted); border-color: rgba(148,163,184,0.20); }
+  .btn-ghost:hover:not(:disabled) { background: rgba(148,163,184,0.08); color: var(--text); }
+
+  .btn-danger { background: rgba(239,68,68,0.08); color: #ef4444; border-color: rgba(239,68,68,0.22); }
+  .btn-danger:hover:not(:disabled) { background: rgba(239,68,68,0.16); border-color: rgba(239,68,68,0.45); }
+
+  .btn-success { background: rgba(34,197,94,0.10); color: #22c55e; border-color: rgba(34,197,94,0.25); }
+  .btn-success:hover:not(:disabled) { background: rgba(34,197,94,0.18); border-color: rgba(34,197,94,0.45); }
+
+  .btn-warning { background: rgba(245,158,11,0.10); color: #f59e0b; border-color: rgba(245,158,11,0.25); }
+  .btn-warning:hover:not(:disabled) { background: rgba(245,158,11,0.18); }
+
+  .btn-sm   { padding: 5px 12px; font-size: 0.78rem; border-radius: 7px; gap: 5px; }
+  .btn-lg   { padding: 12px 26px; font-size: 0.95rem; border-radius: 10px; gap: 9px; }
+  .btn-icon { padding: 8px; aspect-ratio: 1; }
+  .btn-icon.btn-sm { padding: 6px; }
+  .btn-wide { width: 100%; }
+
+  /* ══════════════════════════════════════════════════
+     CARD SYSTEM
+     className="card"
+  ══════════════════════════════════════════════════ */
+  .card {
+    background: var(--card-bg, var(--bg2));
+    border: 1px solid var(--card-border, var(--tp-10));
+    border-radius: 12px; padding: 20px 24px;
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+  .card:hover { border-color: var(--tp-20); }
+  .card-sm { padding: 14px 18px; border-radius: 10px; }
+  .card-elevated { box-shadow: 0 4px 24px rgba(0,0,0,0.35); }
+
+  /* ══════════════════════════════════════════════════
+     BADGE SYSTEM
+  ══════════════════════════════════════════════════ */
+  .badge {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 3px 10px; border-radius: 20px;
+    font-size: 0.72rem; font-weight: 700; letter-spacing: 0.03em; border: 1px solid transparent;
+  }
+  .badge-primary { background: var(--tp-12); color: var(--tp); border-color: var(--tp-25); }
+  .badge-success { background: rgba(34,197,94,0.10); color: #22c55e; border-color: rgba(34,197,94,0.25); }
+  .badge-danger  { background: rgba(239,68,68,0.10); color: #ef4444; border-color: rgba(239,68,68,0.25); }
+  .badge-warning { background: rgba(245,158,11,0.10); color: #f59e0b; border-color: rgba(245,158,11,0.25); }
+  .badge-gray    { background: rgba(148,163,184,0.10); color: #94a3b8; border-color: rgba(148,163,184,0.20); }
+
+  /* ══════════════════════════════════════════════════
+     INPUT SYSTEM
+  ══════════════════════════════════════════════════ */
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  select, textarea {
+    background: var(--bg1) !important;
+    border: 1px solid var(--tp-20) !important;
+    color: var(--text) !important;
+    border-radius: 8px !important;
+    font-family: var(--font-main) !important;
+    transition: border-color 0.2s, box-shadow 0.2s !important;
+  }
+  input:focus, select:focus, textarea:focus {
+    border-color: var(--tp-50) !important;
+    box-shadow: 0 0 0 3px var(--tp-12) !important;
+    outline: none !important;
+  }
+
+  /* ── Layout shell ─────────────────────────────── */
+  .lm-root {
+    display: flex;
+    height: 100dvh;
+    overflow: hidden;
+    background: var(--bg1);
+    transition: background 0.4s ease;
+  }
+
+  /* ── Sidebar ──────────────────────────────────── */
+  .lm-sidebar {
+    width: 300px !important; flex-shrink: 0;
+    height: 100dvh;
+    display: flex; flex-direction: column;
+    background: var(--sidebar);
+    border-left: 1px solid var(--sidebar-bdr, var(--tp-10));
+    overflow: hidden; z-index: 40; position: relative;
+    transition: background 0.4s ease;
+  }
+  .lm-sidebar::before {
+    content: '';
+    position: absolute; top: -90px; right: -90px;
+    width: 280px; height: 280px;
+    background: radial-gradient(circle, var(--tp-12) 0%, transparent 70%);
+    pointer-events: none; z-index: 0;
+    transition: background 0.4s;
+  }
+  .lm-sidebar::after {
+    content: '';
+    position: absolute; inset: 0;
+    background-image:
+      repeating-linear-gradient(0deg,  transparent, transparent 27px, var(--tp-03) 28px),
+      repeating-linear-gradient(90deg, transparent, transparent 27px, var(--tp-03) 28px);
+    pointer-events: none; z-index: 0;
+  }
+  .lm-sidebar-inner {
+    position: relative; z-index: 1;
+    display: flex; flex-direction: column; height: 100%;
+    overflow-y: auto; scrollbar-width: none;
+  }
+  .lm-sidebar-inner::-webkit-scrollbar { display: none; }
+
+  .lm-sidebar--mobile {
+    position: fixed; top: 0; right: -310px;
+    height: 100dvh; z-index: 50;
+    transition: right 0.30s cubic-bezier(0.4,0,0.2,1), box-shadow 0.30s ease;
+  }
+  .lm-sidebar--mobile.open { right: 0; box-shadow: -12px 0 60px rgba(0,0,0,0.65); }
+
+  .lm-close-btn {
+    position: absolute; top: 12px; left: 12px;
+    background: transparent; border: none; color: var(--text-muted);
+    cursor: pointer; padding: 5px; z-index: 2; border-radius: 6px;
+    transition: color 0.15s, background 0.15s;
+  }
+  .lm-close-btn:hover { color: var(--text); background: var(--tp-08); }
+
+  /* ── Overlay ──────────────────────────────────── */
+  .lm-overlay {
+    display: none; position: fixed; inset: 0; z-index: 49;
+    background: rgba(0,0,0,0.65); backdrop-filter: blur(4px);
+    opacity: 0; transition: opacity 0.30s ease; pointer-events: none;
+  }
+  .lm-overlay.visible { opacity: 1; pointer-events: all; }
+
+  /* ── Logo (96px) ──────────────────────────────── */
+  .lm-logo-area {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 20px 16px 14px;
+  }
+  .lm-logo-img-wrap { position: relative; flex-shrink: 0; }
+  .lm-logo-img {
+    width: 130px; height: 130px;
+    object-fit: contain; border-radius: 16px;
+    border: 1px solid var(--tp-20); display: block;
+  }
+  .lm-logo-glow {
+    position: absolute; inset: -10px; border-radius: 24px;
+    background: radial-gradient(circle, var(--tp-18) 0%, transparent 70%);
+    pointer-events: none; animation: lm-pulse 3.5s ease-in-out infinite;
+    transition: background 0.4s;
+  }
+  @keyframes lm-pulse {
+    0%,100% { opacity: 0.4; transform: scale(1); }
+    50%      { opacity: 1.0; transform: scale(1.08); }
+  }
+  .lm-logo-placeholder {
+    width: 130px; height: 130px; border-radius: 16px; flex-shrink: 0;
+    border: 1px dashed var(--tp-25); background: var(--tp-05);
+    display: flex; align-items: center; justify-content: center; font-size: 48px;
+  }
+  .lm-logo-text {
+    flex: 1; min-width: 0;
+    display: flex; flex-direction: column; gap: 6px;
+  }
+  .lm-logo-title {
+    font-size: 1.05rem;
+    font-weight: 900;
+    color: var(--text);
+    line-height: 1.25;
+    word-break: break-word;
+    overflow-wrap: break-word;
+    /* לא חוצים ל-3 שורות — מציגים הכל */
+    transition: color 0.3s;
+  }
+  .lm-logo-title--dim { color: var(--text-muted); font-weight: 500; }
+  .lm-logo-season {
+    font-size: 1rem;
+    font-weight: 800;
+    color: var(--tp);
+    line-height: 1.2;
+    word-break: break-word;
+    transition: color 0.3s;
+  }
+
+  /* ── Stars ────────────────────────────────────── */
+  .lm-stars {
+    display: flex; justify-content: center; gap: 6px;
+    padding: 0 18px 12px; position: relative;
+  }
+  .lm-stars::after {
+    content: ''; position: absolute; bottom: 0; left: 18px; right: 18px; height: 1px;
+    background: linear-gradient(90deg, transparent, var(--tp-30), transparent);
+  }
+  .lm-star {
+    font-size: 11px; color: var(--gold); opacity: 0;
+    filter: drop-shadow(0 0 5px var(--gold));
+    animation: lm-star-in 0.5s ease forwards;
+    animation-delay: calc(var(--i) * 0.08s + 0.4s);
+    transition: color 0.3s;
+  }
+  @keyframes lm-star-in { to { opacity: 0.9; } }
+
+  /* ── Game selector ────────────────────────────── */
+  .lm-game-selector {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--tp-08);
+    background: var(--tp-03);
+  }
+  .lm-sec-label {
+    font-size: 0.7rem; font-weight: 800; letter-spacing: 0.12em;
+    text-transform: uppercase; color: var(--text-sub); padding: 0 4px 7px;
+  }
+  .lm-sec-label--primary { color: var(--tp); opacity: 1; font-size: 0.72rem; }
+  .lm-sec-label--admin   { color: var(--gold); opacity: 0.9; margin-top: 16px; font-size: 0.7rem; }
+
+  .lm-select-trigger {
+    background: var(--bg1) !important; border: 1px solid var(--tp-20) !important;
+    color: var(--text) !important; font-size: 0.84rem !important; font-weight: 600 !important;
+    height: 38px !important; border-radius: 8px !important;
+    transition: border-color 0.2s, box-shadow 0.2s !important;
+  }
+  .lm-select-content {
+    background: var(--bg2) !important; border: 1px solid var(--tp-30) !important;
+    color: var(--text) !important; z-index: 9999 !important;
+    border-radius: 10px !important; overflow: hidden !important;
+  }
+  .lm-edit-game {
+    display: inline-flex; align-items: center; gap: 4px;
+    margin-top: 6px; font-size: 0.68rem; color: var(--text-muted);
+    text-decoration: none; transition: color 0.15s;
+  }
+  .lm-edit-game:hover { color: var(--tp); }
+
+  /* ── Navigation ───────────────────────────────── */
+  .lm-nav {
+    flex: 1; padding: 12px 10px;
+    display: flex; flex-direction: column; gap: 2px;
+    overflow-y: auto; scrollbar-width: none;
+  }
+  .lm-nav::-webkit-scrollbar { display: none; }
+
+  .lm-nav-item {
+    position: relative; display: flex; align-items: center; gap: 10px;
+    padding: 10px 13px; border-radius: 10px; text-decoration: none;
+    font-size: 0.96rem; font-weight: 500; color: var(--text-muted);
+    transition: background 0.18s, color 0.18s, transform 0.14s;
+    cursor: pointer;
+  }
+  .lm-nav-item:hover:not(.disabled) { background: var(--tp-08); color: var(--text); transform: translateX(-3px); }
+  .lm-nav-item.active { background: var(--tp-12); color: var(--tp); font-weight: 700; }
+  .lm-nav-item.disabled { opacity: 0.35; cursor: not-allowed; }
+  .lm-nav-icon { width:20px; height:20px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+  .lm-nav-label { flex: 1; }
+  .lm-nav-bar {
+    position: absolute; right: 0; top: 50%; transform: translateY(-50%);
+    width: 3px; height: 60%; border-radius: 2px 0 0 2px;
+    background: var(--tp); box-shadow: 0 0 12px var(--tp-40);
+    animation: lm-bar-in 0.22s ease;
+  }
+  @keyframes lm-bar-in {
+    from { transform: translateY(-50%) scaleY(0); }
+    to   { transform: translateY(-50%) scaleY(1); }
+  }
+
+  .lm-login-prompt {
+    display: flex; align-items: center; gap: 10px;
+    width: 100%; padding: 10px 13px; border-radius: 10px;
+    background: var(--tp-05); border: 1px dashed var(--tp-20);
+    color: var(--text-muted); font-size: 0.92rem; font-weight: 500;
+    font-family: var(--font-main) !important; cursor: pointer; text-align: right;
+    transition: background 0.15s, color 0.15s;
+  }
+  .lm-login-prompt:hover { background: var(--tp-10); color: var(--text); }
+  .lm-login-badge {
+    font-size: 0.62rem; font-weight: 700; margin-right: auto;
+    background: var(--tp-15); color: var(--tp);
+    padding: 2px 8px; border-radius: 20px; letter-spacing: 0.05em;
+  }
+
+  /* ══════════════════════════════════════════════════
+     THEME SECTION (replaces old ThemePicker)
+  ══════════════════════════════════════════════════ */
+  .lm-theme-section {
+    padding: 10px 12px;
+    border-top: 1px solid var(--tp-08);
+    display: flex; flex-direction: column; gap: 6px;
+  }
+
+  /* Dark/light toggle */
+  .lm-darkmode-btn {
+    display: flex; align-items: center; gap: 10px;
+    width: 100%; background: transparent; border: none;
+    cursor: pointer; font-family: var(--font-main) !important;
+    padding: 6px 4px; border-radius: 8px; transition: background 0.15s;
+  }
+  .lm-darkmode-btn:hover { background: var(--tp-05); }
+  .lm-darkmode-track {
+    position: relative; width: 36px; height: 20px;
+    background: var(--tp-20); border: 1px solid var(--tp-30);
+    border-radius: 10px; flex-shrink: 0;
+    transition: background 0.25s;
+  }
+  .lm-darkmode-knob {
+    position: absolute; top: 2px; right: 2px;
+    width: 16px; height: 16px; border-radius: 50%;
+    background: var(--tp); color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    transition: transform 0.25s cubic-bezier(0.4,0,0.2,1), background 0.25s;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.4);
+  }
+  .lm-darkmode-knob.light { transform: translateX(-16px); background: var(--gold); }
+  .lm-darkmode-label { font-size: 0.75rem; font-weight: 600; color: var(--text-muted); }
+
+  /* Theme selector trigger */
+  .lm-theme-trigger {
+    display: flex; align-items: center; gap: 8px;
+    width: 100%; background: var(--tp-05);
+    border: 1px solid var(--tp-15); border-radius: 9px;
+    padding: 8px 10px; cursor: pointer;
+    font-family: var(--font-main) !important;
+    transition: background 0.15s, border-color 0.15s;
+  }
+  .lm-theme-trigger:hover { background: var(--tp-10); border-color: var(--tp-25); }
+  .lm-theme-dots { display: flex; gap: 3px; align-items: center; }
+  .lm-theme-name-current { flex: 1; font-size: 0.82rem; font-weight: 600; color: var(--text); text-align: right; }
+  .lm-theme-chevron { font-size: 0.6rem; color: var(--text-muted); }
+
+  /* Theme panel */
+  .lm-theme-panel {
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 6px; margin-top: 4px;
+    animation: lm-panel-in 0.18s ease;
+  }
+  @keyframes lm-panel-in {
+    from { opacity: 0; transform: translateY(-6px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .lm-theme-card {
+    display: flex; flex-direction: column; gap: 6px;
+    padding: 8px; border-radius: 10px;
+    background: var(--tp-05); border: 1px solid var(--tp-10);
+    cursor: pointer; transition: background 0.15s, border-color 0.15s, transform 0.12s;
+    font-family: var(--font-main) !important;
+  }
+  .lm-theme-card:hover { background: var(--tp-10); transform: scale(1.03); }
+  .lm-theme-card.active { transform: scale(1.02); }
+
+  /* Color strip */
+  .lm-theme-strip {
+    width: 100%; height: 20px; border-radius: 6px; overflow: hidden;
+    display: flex; border: 1px solid rgba(255,255,255,0.06);
+  }
+
+  .lm-theme-card-info {
+    display: flex; align-items: center; gap: 5px;
+  }
+  .lm-theme-card-emoji { font-size: 14px; }
+  .lm-theme-card-name  { font-size: 0.75rem; font-weight: 700; color: var(--text); flex: 1; }
+  .lm-theme-check      { font-size: 0.8rem; font-weight: 700; }
+
+  /* ── User footer ──────────────────────────────── */
+  .lm-user-footer { padding: 12px 14px 16px; border-top: 1px solid var(--tp-10); }
+  .lm-user-row { display: flex; align-items: center; gap: 10px; }
+  .lm-avatar {
+    width: 36px; height: 36px; border-radius: 50%; flex-shrink: 0;
+    background: linear-gradient(135deg, var(--tp), #8b5cf6);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.82rem; font-weight: 800; color: white;
+    box-shadow: 0 0 14px var(--tp-25);
+  }
+  .lm-user-info-block { flex: 1; min-width: 0; }
+  .lm-user-name {
+    font-size: 0.82rem; font-weight: 600; color: var(--text);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .lm-user-role { font-size: 0.68rem; margin-top: 1px; }
+  .lm-logout-btn { flex-shrink: 0; }
+
+  /* ── Loading ──────────────────────────────────── */
+  .lm-loading {
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: center; height: 100dvh; gap: 16px;
+    color: var(--text-muted); font-size: 0.9rem;
+    background: var(--bg1);
+  }
+  .lm-loading-spinner {
+    width: 38px; height: 38px;
+    border: 3px solid var(--tp-15); border-top-color: var(--tp);
+    border-radius: 50%; animation: lm-spin 0.8s linear infinite;
+  }
+  @keyframes lm-spin { to { transform: rotate(360deg); } }
+
+  /* ── Main content ─────────────────────────────── */
+  .lm-main {
+    flex: 1; display: flex; flex-direction: column;
+    height: 100dvh; overflow: hidden; min-width: 0;
+    background: var(--bg1); transition: background 0.4s;
+  }
+  .lm-page {
+    flex: 1; overflow-y: auto; overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
+    background: var(--bg1); transition: background 0.4s;
+  }
+
+  /* ── Mobile topbar ────────────────────────────── */
+  .lm-topbar {
+    display: none; align-items: center; justify-content: space-between;
+    padding: 0 14px; height: 62px; flex-shrink: 0;
+    background: var(--sidebar);
+    border-bottom: 1px solid var(--tp-10);
+    position: sticky; top: 0; z-index: 30;
+    transition: background 0.4s;
+  }
+  .lm-topbar-brand {
+    display: flex; align-items: center; gap: 10px;
+    font-size: 1rem; font-weight: 800; color: var(--text);
+    flex: 1; overflow: hidden; min-width: 0;
+  }
+  .lm-topbar-img {
+    width: 42px; height: 42px;
+    object-fit: contain; border-radius: 10px; flex-shrink: 0;
+  }
+
+  /* ── Hamburger — גדול יותר ────────────────────── */
+  .lm-hamburger {
+    display: flex; flex-direction: column; justify-content: center; gap: 6px;
+    width: 46px; height: 46px; padding: 10px;
+    background: var(--tp-08); border: 1px solid var(--tp-20);
+    border-radius: 10px; cursor: pointer; flex-shrink: 0;
+    transition: background 0.15s;
+  }
+  .lm-hamburger:hover { background: var(--tp-15); }
+  .lm-hamburger span {
+    display: block; height: 2.5px; background: var(--tp);
+    border-radius: 2px;
+    transition: transform 0.28s ease, opacity 0.28s ease, width 0.28s ease;
+    transform-origin: center;
+  }
+  .lm-hamburger span:nth-child(1) { width: 24px; }
+  .lm-hamburger span:nth-child(2) { width: 16px; }
+  .lm-hamburger span:nth-child(3) { width: 24px; }
+  .lm-hamburger.open span:nth-child(1) { transform: translateY(8.5px) rotate(45deg); width: 24px; }
+  .lm-hamburger.open span:nth-child(2) { opacity: 0; transform: scaleX(0); }
+  .lm-hamburger.open span:nth-child(3) { transform: translateY(-8.5px) rotate(-45deg); width: 24px; }
+
+  /* ── Admin dialog ─────────────────────────────── */
+  .lm-admin-dialog {
+    background: linear-gradient(135deg, var(--bg3) 0%, var(--bg1) 100%) !important;
+    border: 1px solid var(--tp-30) !important; border-radius: 14px !important;
+  }
+
+  /* ── Responsive ───────────────────────────────── */
+  @media (max-width: 768px) {
+    .desktop-sidebar { display: none !important; }
+    .mobile-topbar   { display: flex !important; }
+    .lm-overlay      { display: block !important; }
+  }
+  @media (min-width: 769px) {
+    .mobile-sidebar { display: none !important; }
+    .mobile-topbar  { display: none !important; }
+  }
+
+  /* ══════════════════════════════════════════════════
+     MOBILE — Bottom navigation + top bar redesign
+  ══════════════════════════════════════════════════ */
+  @media (max-width: 768px) {
+    /* מניעת גלילה אופקית */
+    html, body, #root { overflow-x: hidden !important; max-width: 100vw !important; }
+    .lm-root, .lm-main, .lm-page { overflow-x: hidden !important; }
+
+    /* הסתר sidebar desktop */
+    .desktop-sidebar { display: none !important; }
+
+    /* הצג topbar ו-bottom nav */
+    .mobile-topbar { display: flex !important; }
+
+    /* overlay */
+    .lm-overlay { display: block !important; }
+
+    /* ── Top bar ── */
+    .lm-topbar {
+      height: 68px !important;
+      padding: 0 16px !important;
+    }
+
+    /* ── Bottom nav bar ── */
+    .lm-bottom-nav {
+      position: fixed;
+      bottom: 0; left: 0; right: 0;
+      height: 64px;
+      display: flex !important;
+      align-items: stretch;
+      background: var(--sidebar);
+      border-top: 1px solid var(--tp-15);
+      z-index: 30;
+      box-shadow: 0 -4px 20px rgba(0,0,0,0.4);
+    }
+
+    /* ── Content padding עבור bottom nav ── */
+    .lm-page--mobile-padded {
+      padding-bottom: 72px !important;
+    }
+
+    /* ── Mobile sidebar (drawer מלמעלה) ── */
+    .lm-sidebar--mobile {
+      position: fixed;
+      top: 0; right: -105vw;
+      width: 85vw;
+      height: 100dvh;
+      z-index: 50;
+      transition: right 0.28s cubic-bezier(0.4,0,0.2,1);
+      overflow-y: auto;
+    }
+    .lm-sidebar--mobile.open { right: 0; box-shadow: -12px 0 60px rgba(0,0,0,0.7); }
+
+    /* ── פונטים גדולים יותר ── */
+    body { font-size: 15px; }
+    h1 { font-size: 1.4rem !important; }
+    h2 { font-size: 1.2rem !important; }
+
+    /* טבלאות */
+    table { font-size: 0.88rem !important; }
+    th, td { font-size: 0.85rem !important; padding: 8px 6px !important; }
+
+    /* ── Sidebar nav items בתוך drawer ── */
+    .lm-nav-item {
+      font-size: 1.05rem !important;
+      padding: 14px 16px !important;
+      min-height: 52px !important;
+    }
+    .lm-nav-icon { width: 24px !important; height: 24px !important; }
+    .lm-sec-label { font-size: 0.78rem !important; }
+
+    /* ── Dialog ── */
+    [role="dialog"] {
+      max-width: 96vw !important;
+      width: 96vw !important;
+      max-height: 88vh !important;
+      border-radius: 12px !important;
+    }
+  }
+
+  @media (max-width: 480px) {
+    .lm-topbar { height: 64px !important; }
+    .lm-bottom-nav { height: 60px !important; }
+    .lm-page--mobile-padded { padding-bottom: 68px !important; }
+  }
+
+  /* ── Global overrides (Radix, shadcn, Tailwind) ─ */
+  thead tr th, thead tr td { background: var(--bg2) !important; }
+
+  [data-radix-select-viewport],
+  [data-radix-popper-content-wrapper] > div {
+    background: var(--bg2) !important; border: 1px solid var(--tp-25) !important;
+  }
+  [role="option"]:hover, [data-highlighted] { background: var(--tp-15) !important; color: var(--text) !important; }
+
+  .bg-card   { background: var(--card-bg) !important; }
+  .border-border { border-color: var(--card-border) !important; }
+  .nav-item:hover { background: var(--tp-10) !important; color: var(--text) !important; }
+
+  .text-cyan-400  { color: var(--tp) !important; }
+  .text-cyan-300  { color: var(--tp) !important; opacity: 0.85; }
+  .border-cyan-400 { border-color: var(--tp) !important; }
+  .border-cyan-700\\/50 { border-color: var(--tp-50) !important; }
+  .hover\\:bg-cyan-900\\/20:hover { background: var(--tp-10) !important; }
+  .hover\\:border-cyan-700\\/50:hover { border-color: var(--tp-50) !important; }
+
+  /* ── Light mode adjustments for main content ─── */
+  .hm-light .lm-page,
+  .hm-light .lm-main {
+    background: var(--bg1);
+  }
+  .hm-light .card {
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  }
+  .hm-light input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  .hm-light select,
+  .hm-light textarea {
+    background: #ffffff !important;
+  }
+`;
