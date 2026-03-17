@@ -227,12 +227,17 @@ function LayoutContent({ children }) {
       <Link
         to={item.disabled ? '#' : item.url}
         onClick={e => {
-          if (item.disabled) { e.preventDefault(); toast({ title:"בחר משחק", description:"נא לבחור משחק תחילה", variant:"destructive", duration:2000 }); }
+          if (item.disabled) {
+            e.preventDefault();
+            toast({ title:"בחר משחק", description:"נא לבחור משחק תחילה", variant:"destructive", duration:2000 });
+          }
+          // ✅ תמיד סגור את הסיידבר — גם בלחיצה על אותו עמוד
           if (onClick) onClick();
         }}
         className={`lm-nav-item${active?' active':''}${item.disabled?' disabled':''}`}
+        style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
       >
-        <span className="lm-nav-icon"><item.icon size={16}/></span>
+        <span className="lm-nav-icon"><item.icon size={20}/></span>
         <span className="lm-nav-label">{item.title}</span>
         {active && <span className="lm-nav-bar"/>}
       </Link>
@@ -405,19 +410,33 @@ function LayoutContent({ children }) {
         <SidebarInner onItemClick={()=>setSidebarOpen(false)}/>
       </aside>
 
-      <div className="lm-main">
+      <div className="lm-main" key={currentGame?.id || 'no-game'}>
         <header className="lm-topbar mobile-topbar">
           <button onClick={()=>setSidebarOpen(s=>!s)} className={`lm-hamburger${sidebarOpen?' open':''}`}>
             <span/><span/><span/>
           </button>
           <div className="lm-topbar-brand">
-            {currentGame?.game_icon && <img src={currentGame.game_icon} alt="logo" className="lm-topbar-img"/>}
-            <span style={{lineHeight:'1.2',textAlign:'right'}}>
-              <span style={{display:'block',fontWeight:700}}>{currentGame?.game_name || 'בחר משחק'}</span>
-              {currentGame?.game_subtitle && <span style={{display:'block',fontSize:'0.65rem',opacity:0.75,color:'var(--tp)'}}>{currentGame.game_subtitle}</span>}
-            </span>
+            {currentGame?.game_icon && (
+              <img src={currentGame.game_icon} alt="logo" className="lm-topbar-img"/>
+            )}
+            <div style={{lineHeight:'1.25', textAlign:'right', minWidth:0}}>
+              <div style={{
+                fontWeight:800, fontSize:'1rem', color:'var(--text)',
+                overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap',
+              }}>
+                {currentGame?.game_name || 'בחר משחק'}
+              </div>
+              {currentGame?.game_subtitle && (
+                <div style={{
+                  fontSize:'0.82rem', fontWeight:700,
+                  color:'var(--tp)', marginTop:'1px',
+                }}>
+                  {currentGame.game_subtitle}
+                </div>
+              )}
+            </div>
           </div>
-          <div style={{width:30}}/>
+          <div style={{width:46, flexShrink:0}}/>
         </header>
         <RouteGuard currentUser={effectiveUser} isAdmin={isAdmin} loading={loading||gamesLoading}>
           <main className="lm-page">{children}</main>
@@ -958,38 +977,43 @@ const GLOBAL_STYLES = `
   /* ── Mobile topbar ────────────────────────────── */
   .lm-topbar {
     display: none; align-items: center; justify-content: space-between;
-    padding: 0 16px; height: 56px; flex-shrink: 0;
+    padding: 0 14px; height: 62px; flex-shrink: 0;
     background: var(--sidebar);
     border-bottom: 1px solid var(--tp-10);
     position: sticky; top: 0; z-index: 30;
     transition: background 0.4s;
   }
   .lm-topbar-brand {
-    display: flex; align-items: center; gap: 8px;
-    font-size: 0.9rem; font-weight: 800; color: var(--text);
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 60vw;
+    display: flex; align-items: center; gap: 10px;
+    font-size: 1rem; font-weight: 800; color: var(--text);
+    flex: 1; overflow: hidden; min-width: 0;
   }
-  .lm-topbar-img { width: 34px; height: 34px; object-fit: contain; border-radius: 8px; flex-shrink: 0; }
+  .lm-topbar-img {
+    width: 42px; height: 42px;
+    object-fit: contain; border-radius: 10px; flex-shrink: 0;
+  }
 
-  /* ── Hamburger ────────────────────────────────── */
+  /* ── Hamburger — גדול יותר ────────────────────── */
   .lm-hamburger {
-    display: flex; flex-direction: column; justify-content: center; gap: 5.5px;
-    width: 38px; height: 38px; padding: 7px;
-    background: transparent; border: none; border-radius: 8px;
-    cursor: pointer; flex-shrink: 0; transition: background 0.15s;
+    display: flex; flex-direction: column; justify-content: center; gap: 6px;
+    width: 46px; height: 46px; padding: 10px;
+    background: var(--tp-08); border: 1px solid var(--tp-20);
+    border-radius: 10px; cursor: pointer; flex-shrink: 0;
+    transition: background 0.15s;
   }
-  .lm-hamburger:hover { background: var(--tp-08); }
+  .lm-hamburger:hover { background: var(--tp-15); }
   .lm-hamburger span {
-    display: block; height: 2px; background: var(--text-muted); border-radius: 2px;
+    display: block; height: 2.5px; background: var(--tp);
+    border-radius: 2px;
     transition: transform 0.28s ease, opacity 0.28s ease, width 0.28s ease;
     transform-origin: center;
   }
-  .lm-hamburger span:nth-child(1) { width: 20px; }
-  .lm-hamburger span:nth-child(2) { width: 14px; }
-  .lm-hamburger span:nth-child(3) { width: 20px; }
-  .lm-hamburger.open span:nth-child(1) { transform: translateY(7.5px) rotate(45deg); width: 20px; }
+  .lm-hamburger span:nth-child(1) { width: 24px; }
+  .lm-hamburger span:nth-child(2) { width: 16px; }
+  .lm-hamburger span:nth-child(3) { width: 24px; }
+  .lm-hamburger.open span:nth-child(1) { transform: translateY(8.5px) rotate(45deg); width: 24px; }
   .lm-hamburger.open span:nth-child(2) { opacity: 0; transform: scaleX(0); }
-  .lm-hamburger.open span:nth-child(3) { transform: translateY(-7.5px) rotate(-45deg); width: 20px; }
+  .lm-hamburger.open span:nth-child(3) { transform: translateY(-8.5px) rotate(-45deg); width: 24px; }
 
   /* ── Admin dialog ─────────────────────────────── */
   .lm-admin-dialog {
@@ -1082,9 +1106,14 @@ const GLOBAL_STYLES = `
       padding: 6px 14px !important;
     }
 
-    /* ── Sidebar nav ── */
-    .lm-nav-item { font-size: 1rem !important; padding: 11px 14px !important; }
-    .lm-sec-label { font-size: 0.72rem !important; }
+    /* ── Sidebar nav — גדול וקל ללחיצה ── */
+    .lm-nav-item {
+      font-size: 1.05rem !important;
+      padding: 14px 16px !important;
+      min-height: 52px !important;
+    }
+    .lm-sec-label { font-size: 0.78rem !important; }
+    .lm-nav-icon { width: 24px !important; height: 24px !important; }
 
     /* ── אזורי תוכן ── */
     .min-h-screen { padding: 8px !important; }
@@ -1106,11 +1135,12 @@ const GLOBAL_STYLES = `
 
   /* ── Extra small (phones < 480px) ── */
   @media (max-width: 480px) {
-    body, * { font-size: 13px; }
-    h1 { font-size: 1.2rem !important; }
-    .lm-topbar { height: 50px !important; }
-    .lm-topbar-brand { font-size: 0.85rem !important; }
-    .lm-topbar-img { width: 28px !important; height: 28px !important; }
+    body, * { font-size: 14px; }
+    h1 { font-size: 1.25rem !important; }
+    .lm-topbar { height: 62px !important; }
+    .lm-topbar-brand { font-size: 0.95rem !important; }
+    .lm-topbar-img { width: 38px !important; height: 38px !important; }
+    .lm-nav-item { font-size: 1.05rem !important; padding: 14px 16px !important; }
   }
 
   /* ── Global overrides (Radix, shadcn, Tailwind) ─ */
