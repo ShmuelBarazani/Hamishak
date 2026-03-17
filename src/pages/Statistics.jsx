@@ -1241,9 +1241,9 @@ export default function Statistics() {
                           </CardContent>
                         </Card>
                       );
-                    })()
+                    })()}
 
-                    }:{ts.locationsData?(
+                    {!ts.qualifierData?.isSpecialTeamList && ts.locationsData&&(
                       <div className="space-y-4">
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                           <Card className="bg-slate-800/40 border-slate-700"><CardContent className="p-4"><p className="text-sm text-slate-400">סה"כ בחירות</p><p className="text-3xl font-bold text-cyan-400">{ts.locationsData.totalPredictions}</p></CardContent></Card>
@@ -1267,7 +1267,9 @@ export default function Statistics() {
                           </CardContent>
                         </Card>
                       </div>
-                    ):(
+                    )}
+
+                    {!ts.qualifierData?.isSpecialTeamList && !ts.locationsData&&(
                       <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
                         {ts.questions.filter(qs=>qs.question.question_id!=='11.1').sort((a,b)=>parseFloat(a.question.question_id)-parseFloat(b.question.question_id)).map(qStat=>{
                           const q=qStat.question;
