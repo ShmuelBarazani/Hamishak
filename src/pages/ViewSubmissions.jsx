@@ -802,6 +802,31 @@ export default function ViewSubmissions() {
 
   const ADVANCING_CONFIG_VS = { T4: { count: 8, bonus: 16 }, T5: { count: 4, bonus: 12 }, T6: { count: 2, bonus: 6 } };
 
+  // ✅ נרמול שמות — הסרת "(מדינה)"
+  const normTeam = (name) =>
+    (name || '').replace(/\s*\([^)]+\)\s*$/, '').replace(/\s+/g, ' ').trim().toLowerCase();
+
+  // ✅ בניית קבוצות עולות ומודחות
+  const buildAdvancingAndEliminated = (slots, tableId) => {
+    // עולות — מתוצאות האמת של חריצי הטבלה
+    const advancingSet = new Set(
+      slots
+        .filter(q => q.actual_result && q.actual_result !== '__CLEAR__')
+        .map(q => normTeam(q.actual_result))
+    );
+    // מודחות — הצד שלא עלה מכל זוג ב-T3
+    const t3Qs = data.questions.filter(q => q.table_id === 'T3' && q.home_team && q.away_team);
+    const eliminatedSet = new Set();
+    advancingSet.forEach(adv => {
+      t3Qs.forEach(q => {
+        const h = normTeam(q.home_team), a = normTeam(q.away_team);
+        if (h === adv && !advancingSet.has(a)) eliminatedSet.add(a);
+        if (a === adv && !advancingSet.has(h)) eliminatedSet.add(h);
+      });
+    });
+    return { advancingSet, eliminatedSet };
+  };
+
   const renderQualifiersTable = (table) => {
     const cfg = ADVANCING_CONFIG_VS[table.id];
     const advCount = cfg ? cfg.count : 999;
@@ -816,32 +841,34 @@ export default function ViewSubmissions() {
       })
       .sort((a, b) => parseFloat(a.question_id) - parseFloat(b.question_id));
 
-    // ✅ נרמול שמות קבוצות — הסרת "(מדינה)" לפני השוואה
-    const normalizeTeamForSet = (name) =>
-      (name || '').replace(/\s*\([^)]+\)\s*$/, '').replace(/\s+/g, ' ').trim().toLowerCase();
-
-    const actualSet = new Set(
-      slots
-        .filter(q => q.actual_result && q.actual_result !== '__CLEAR__')
-        .map(q => normalizeTeamForSet(q.actual_result))
-    );
+    const { advancingSet, eliminatedSet } = buildAdvancingAndEliminated(slots, table.id);
+    const hasAnyResult = advancingSet.size > 0;
     const allResultsIn = slots.length > 0 && slots.every(q => q.actual_result && q.actual_result !== '__CLEAR__');
-
-    let stageBonusEarned = false;
-    if (selectedParticipant && allResultsIn && cfg) {
-      const predMap = getCombinedPredictionsMap();
-      const guessedSet = new Set(
-        slots.map(q => normalizeTeamForSet(predMap[q.id] ?? predMap[q.question_id] ?? '')).filter(Boolean)
-      );
-      stageBonusEarned = [...actualSet].every(t => guessedSet.has(t));
-    }
-
     const pointsPerSlot = slots[0]?.possible_points || 0;
     const totalPossible = slots.length * pointsPerSlot;
+
+    // בונוס שלב
+    let stageBonusEarned = false;
+    if (selectedParticipant && allResultsIn && cfg) {
+      const pMap = getCombinedPredictionsMap();
+      const guessedSet = new Set(
+        slots.map(q => normTeam(pMap[q.id] ?? pMap[q.question_id] ?? '')).filter(Boolean)
+      );
+      stageBonusEarned = [...advancingSet].every(t => guessedSet.has(t));
+    }
+
+    // ✅ ניחושים — לפי זהות קבוצה, ללא מיקום
+    const pMap = getCombinedPredictionsMap();
+    const allPreds = slots.map(q => {
+      const raw = pMap[q.id] ?? pMap[q.question_id] ?? '';
+      return (typeof raw === 'string' ? raw : (raw?.text_prediction || '')).trim();
+    });
 
     return (
       <div style={{ background: 'rgba(30,41,59,0.6)', border: '1px solid rgba(249,115,22,0.3)', borderRadius: '12px', padding: '16px', backdropFilter: 'blur(10px)' }}>
         <h3 className="text-right font-bold text-base mb-3" style={{ color: '#f97316' }}>📋 {table.description}</h3>
+
+        {/* בונוס שלב */}
         {cfg && (
           <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'8px 14px', borderRadius:'8px', marginBottom:'10px', background: stageBonusEarned ? 'rgba(16,185,129,0.12)' : 'rgba(234,179,8,0.08)', border: `1px solid ${stageBonusEarned ? 'rgba(16,185,129,0.45)' : 'rgba(234,179,8,0.35)'}` }}>
             <div className="flex items-center gap-2">
@@ -856,29 +883,38 @@ export default function ViewSubmissions() {
             </Badge>
           </div>
         )}
-        {totalPossible > 0 && (
-          <div style={{ textAlign:'left', marginBottom:'8px' }}>
-            <span style={{ fontSize:'0.72rem', color:'#94a3b8' }}>{pointsPerSlot} נק' לכל קבוצה נכונה • סה"כ אפשרי: {totalPossible} נק'{cfg ? ` + בונוס שלב ${cfg.bonus} נק'` : ''}</span>
-          </div>
-        )}
-        <div className="grid grid-cols-1 gap-2">
-          {slots.map(q => {
-            const _predMap = getCombinedPredictionsMap();
-            const _predRaw = _predMap[q.id] ?? _predMap[q.question_id] ?? '';
-            const pred = (typeof _predRaw === 'string' ? _predRaw : (_predRaw?.text_prediction || '')).trim();
-            const hasResult = q.actual_result && q.actual_result !== '__CLEAR__';
-            const predNorm  = normalizeTeamForSet(pred);
-            const isCorrect = hasResult && pred && actualSet.has(predNorm);
-            const isWrong   = hasResult && pred && !actualSet.has(predNorm);
-            const pts = isCorrect ? (q.possible_points || 0) : 0;
+
+        <div style={{ textAlign:'left', marginBottom:'10px' }}>
+          <span style={{ fontSize:'0.72rem', color:'#94a3b8' }}>
+            {pointsPerSlot} נק' לכל קבוצה נכונה • סה"כ אפשרי: {totalPossible} נק'{cfg ? ` + בונוס ${cfg.bonus} נק'` : ''}
+          </span>
+        </div>
+
+        {/* ✅ ניחושים לפי זהות — 2 עמודות */}
+        <div className="grid grid-cols-2 gap-2">
+          {allPreds.map((pred, i) => {
+            const norm = normTeam(pred);
+            const isAdv  = pred && advancingSet.has(norm);
+            const isElim = pred && !isAdv && eliminatedSet.has(norm);
+            const isGray = !pred || (!isAdv && !isElim);
+
+            const bg     = isAdv ? 'rgba(16,185,129,0.12)' : isElim ? 'rgba(239,68,68,0.10)' : 'rgba(15,23,42,0.4)';
+            const border = isAdv ? 'rgba(16,185,129,0.35)'  : isElim ? 'rgba(239,68,68,0.30)'  : 'rgba(249,115,22,0.15)';
+            const color  = isAdv ? '#34d399'                 : isElim ? '#f87171'                : '#94a3b8';
+            const icon   = isAdv ? '✅'                       : isElim ? '❌'                     : '❓';
+            const scoreText = !pred ? `?/${pointsPerSlot}` : hasAnyResult ? (isAdv ? `+${pointsPerSlot}` : isElim ? '0' : `?/${pointsPerSlot}`) : `?/${pointsPerSlot}`;
+            const scoreBg   = isAdv ? '#16a34a' : isElim ? '#dc2626' : 'rgba(100,116,139,0.25)';
+
             return (
-              <div key={q.id} style={{ display:'grid', gridTemplateColumns:'36px 1fr 1fr auto auto', gap:'8px', alignItems:'center', padding:'7px 10px', borderRadius:'6px', background: isCorrect ? 'rgba(16,185,129,0.10)' : isWrong ? 'rgba(239,68,68,0.08)' : 'rgba(15,23,42,0.4)', border:`1px solid ${isCorrect ? 'rgba(16,185,129,0.30)' : isWrong ? 'rgba(239,68,68,0.25)' : 'rgba(249,115,22,0.15)'}` }}>
-                <Badge variant="outline" style={{ borderColor:'rgba(249,115,22,0.45)', color:'#fb923c', fontSize:'0.72rem', justifyContent:'center' }}>{q.question_id}</Badge>
-                <span style={{ fontSize:'0.78rem', color:'#94a3b8', textAlign:'right', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{q.question_text || ''}</span>
-                {pred ? <span style={{ fontSize:'0.84rem', fontWeight:'500', color:'#f8fafc', textAlign:'right' }}>{pred}</span> : <span style={{ fontSize:'0.84rem', color:'#475569', textAlign:'right' }}>—</span>}
-                {hasResult && <span style={{ fontSize:'0.75rem', color:'#64748b', whiteSpace:'nowrap' }}>({q.actual_result})</span>}
-                <Badge style={{ minWidth:'38px', justifyContent:'center', fontSize:'0.75rem', background: isCorrect ? 'rgba(16,185,129,0.2)' : isWrong ? 'rgba(239,68,68,0.15)' : 'rgba(100,116,139,0.15)', color: isCorrect ? '#34d399' : isWrong ? '#f87171' : '#94a3b8', border:`1px solid ${isCorrect ? 'rgba(16,185,129,0.35)' : isWrong ? 'rgba(239,68,68,0.3)' : 'rgba(100,116,139,0.3)'}` }}>
-                  {hasResult ? (isCorrect ? `+${pts}` : '0') : `?/${q.possible_points || 0}`}
+              <div key={i} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'8px 10px', borderRadius:'8px', background: bg, border:`1px solid ${border}`, gap:'8px' }}>
+                <div style={{ display:'flex', alignItems:'center', gap:'6px', minWidth:0 }}>
+                  <span style={{ fontSize:'0.9rem', flexShrink:0 }}>{pred ? icon : '—'}</span>
+                  <span style={{ fontSize:'0.84rem', fontWeight: isAdv ? 700 : 500, color, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                    {pred || <span style={{ color:'#475569' }}>לא מולא</span>}
+                  </span>
+                </div>
+                <Badge style={{ fontSize:'0.75rem', fontWeight:700, background: scoreBg, color:'white', border:'none', minWidth:'44px', textAlign:'center', padding:'3px 8px', flexShrink:0 }}>
+                  {scoreText}
                 </Badge>
               </div>
             );
