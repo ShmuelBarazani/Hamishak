@@ -1,899 +1,1382 @@
-import React, { useState, useEffect, useCallback } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import React, { useState, useEffect } from "react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
+import { createPageUrl } from "@/utils";
 import {
-  Trophy, Loader2, Crown, TrendingUp, TrendingDown, Minus,
-  Users, Target, CheckCircle, ArrowUpDown, ArrowUp, ArrowDown
+  Users, FileText, BarChart3, Database, Award, PieChart,
+  LogOut, Shield, Edit, Upload, Lock, X, Sun, Moon,
 } from "lucide-react";
-import { supabase } from '@/api/supabaseClient';
-import * as db from '@/api/entities';
+import { supabase } from "@/api/supabaseClient";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
+import { UploadStatusProvider } from '@/components/contexts/UploadStatusContext';
+import { GameProvider, useGame } from '@/components/contexts/GameContext';
+import { ThemeProvider, useTheme, THEMES } from '@/components/contexts/ThemeContext';
+import UploadStatusIndicator from '@/components/layout/UploadStatusIndicator';
 import { useToast } from "@/components/ui/use-toast";
-import { useGame } from "@/components/contexts/GameContext";
-import { calculateTotalScore } from "@/components/scoring/ScoreService";
 
-export default function LeaderboardNew() {
-  const [rankings,            setRankings           ] = useState([]);
-  const [loading,             setLoading            ] = useState(true);
-  const [settingBaseline,     setSettingBaseline    ] = useState(false);
-  const [selectedParticipant, setSelectedParticipant] = useState(null);
-  const [participantDetails,  setParticipantDetails ] = useState(null);
-  const [loadingDetails,      setLoadingDetails     ] = useState(false);
-  const [currentUser,         setCurrentUser        ] = useState(null);
-  const [avgScore,            setAvgScore           ] = useState(0);
-  const [maxScore,            setMaxScore           ] = useState(0);
-  const [minScore,            setMinScore           ] = useState(0);
-  const [sortColumn,          setSortColumn         ] = useState('current_position');
-  const [sortDirection,       setSortDirection      ] = useState('asc');
-  const { toast }       = useToast();
-  const { currentGame } = useGame();
+// ─── Route access ─────────────────────────────────────────────────────────────
+const ROUTE_ACCESS = {
+  LeaderboardNew: 'public', ViewSubmissions: 'public',
+  AdminResults: 'public',   Statistics: 'public',
+  PredictionForm: 'user',   JoinGame: 'user',
+  AdminImport: 'admin', ManageGameParticipants: 'admin',
+  UserManagement: 'admin',  FormBuilder: 'admin',
+  SystemOverview: 'admin',  CreateGame: 'admin',
+};
 
-  // ─── Auth ──────────────────────────────────────────────────────────────────
+function getPageName(pathname) {
+  const map = {
+    'leaderboard':'LeaderboardNew','view-submissions':'ViewSubmissions',
+    'admin-results':'AdminResults','statistics':'Statistics',
+    'prediction-form':'PredictionForm','join-game':'JoinGame',
+    'admin-import':'AdminImport','manage-game':'ManageGameParticipants',
+    'user-management':'UserManagement','form-builder':'FormBuilder',
+    'system-overview':'SystemOverview','create-game':'CreateGame',
+  };
+  const lower = pathname.toLowerCase();
+  for (const [k,v] of Object.entries(map)) if (lower.includes(k)) return v;
+  return null;
+}
+
+function RouteGuard({ children, currentUser, isAdmin, loading }) {
+  const location = useLocation(), navigate = useNavigate();
+  const { toast } = useToast();
   useEffect(() => {
-    const loadUser = async () => {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session) {
-          const { data: { user } } = await supabase.auth.getUser();
-          setCurrentUser(user);
-        } else setCurrentUser(null);
-      } catch { setCurrentUser(null); }
-    };
-    loadUser();
-  }, []);
-
-  const formatScore = (score) => {
-    if (!score || score === '__CLEAR__') return '';
-    return score.includes('-')
-      ? score.split('-').map(x => x.trim()).join(' - ')
-      : score;
-  };
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  //  DB HELPERS — STRICT GAME ISOLATION
-  //  כל פונקציה מסננת אך ורק לפי game_id הנוכחי.
-  //  אין cross-game fallback מכל סוג שהוא.
-  // ═══════════════════════════════════════════════════════════════════════════
-
-  const loadAllRankings = async (gameId, orderBy = '-current_score') => {
-    let all = [], from = 0;
-    const PAGE = 1000;
-    while (true) {
-      let q = supabase.from('rankings').select('*')
-        .eq('game_id', gameId).range(from, from + PAGE - 1);
-      if (orderBy === '-current_score')
-        q = q.order('current_score', { ascending: false });
-      else if (orderBy)
-        q = q.order(orderBy.replace('-', ''), { ascending: !orderBy.startsWith('-') });
-      const { data, error } = await q;
-      if (error || !data || data.length === 0) break;
-      all = [...all, ...data];
-      if (data.length < PAGE) break;
-      from += PAGE;
+    if (loading) return;
+    const page = getPageName(location.pathname);
+    if (!page) return;
+    const req = ROUTE_ACCESS[page] || 'public';
+    if (req === 'admin' && !isAdmin) {
+      toast({ title:"אין הרשאה", description:"דף זה מיועד למנהלים בלבד.", variant:"destructive", duration:3000 });
+      navigate(createPageUrl("LeaderboardNew"), { replace:true });
+    } else if (req === 'user' && !currentUser) {
+      toast({ title:"נדרשת התחברות", description:"יש להתחבר כדי לגשת לדף זה.", variant:"destructive", duration:3000 });
+      navigate('/login', { replace:true });
     }
-    return all;
-  };
+  }, [location.pathname, currentUser, isAdmin, loading]);
+  return <>{children}</>;
+}
 
-  /**
-   * שאלות של המשחק הנוכחי בלבד — ללא שום fallback למשחק אחר.
-   */
-  const loadQuestionsForGame = async (gameId) => {
-    let all = [], from = 0;
-    const PAGE = 1000;
-    while (true) {
-      const { data, error } = await supabase
-        .from('questions').select('*')
-        .eq('game_id', gameId)
-        .range(from, from + PAGE - 1);
-      if (error || !data || data.length === 0) break;
-      all = [...all, ...data];
-      if (data.length < PAGE) break;
-      from += PAGE;
-    }
-    return all.filter(q => q.table_id && q.table_id !== 'T1');
-  };
+// ─── Theme Picker ─────────────────────────────────────────────────────────────
+function ThemePicker() {
+  const { themeId, setTheme, allThemes, isDark, setIsDark } = useTheme();
+  const [open, setOpen] = useState(false);
 
-  /**
-   * ניחושים של המשחק הנוכחי בלבד.
-   * הגנה כפולה: סינון DB + סינון לפי question_id ידוע.
-   */
-  const loadPredictionsForGame = async (gameId, participantName, allQuestions) => {
-    const knownIds = new Set(allQuestions.map(q => q.id));
-    let all = [], from = 0;
-    const PAGE = 1000;
-    while (true) {
-      const { data, error } = await supabase
-        .from('predictions').select('*')
-        .eq('game_id', gameId)
-        .eq('participant_name', participantName)
-        .range(from, from + PAGE - 1);
-      if (error || !data || data.length === 0) break;
-      all = [...all, ...data];
-      if (data.length < PAGE) break;
-      from += PAGE;
-    }
-    // ✅ רק ניחושים לשאלות המשחק הנוכחי
-    return all.filter(p => knownIds.has(p.question_id));
-  };
+  return (
+    <div className="lm-theme-section">
 
-  /**
-   * חישוב ניקוד — תיקון: home_prediction + away_prediction → "X-Y"
-   */
-  const calcScore = (allQuestions, predictions) => {
-    const latest = {};
-    predictions.forEach(pred => {
-      const ex = latest[pred.question_id];
-      if (!ex || new Date(pred.created_at) > new Date(ex.created_at))
-        latest[pred.question_id] = pred;
-    });
+      {/* Dark / Light toggle */}
+      <button
+        className="lm-darkmode-btn"
+        onClick={() => setIsDark(!isDark)}
+        title={isDark ? 'עבור למצב בהיר' : 'עבור למצב כהה'}
+      >
+        <span className="lm-darkmode-track">
+          <span className={`lm-darkmode-knob${isDark ? '' : ' light'}`}>
+            {isDark ? <Moon size={11}/> : <Sun size={11}/>}
+          </span>
+        </span>
+        <span className="lm-darkmode-label">
+          {isDark ? 'מצב כהה' : 'מצב בהיר'}
+        </span>
+      </button>
 
-    const predMap = {};
-    for (const [qid, pred] of Object.entries(latest)) {
-      if (
-        pred.home_prediction !== null && pred.home_prediction !== undefined &&
-        pred.away_prediction !== null && pred.away_prediction !== undefined
-      ) {
-        predMap[qid] = `${pred.home_prediction}-${pred.away_prediction}`;
-      } else {
-        predMap[qid] = pred.text_prediction;
-      }
-    }
-    return calculateTotalScore(allQuestions, predMap);
-  };
+      {/* Theme trigger */}
+      <button className="lm-theme-trigger" onClick={() => setOpen(o => !o)}>
+        <div className="lm-theme-dots">
+          {allThemes[themeId]?.previewColors?.map((c, i) => (
+            <span key={i} style={{ background: c, width:10, height:10, borderRadius:'50%', display:'inline-block' }}/>
+          ))}
+        </div>
+        <span className="lm-theme-name-current">
+          {allThemes[themeId]?.emoji} {allThemes[themeId]?.nameHe}
+        </span>
+        <span className="lm-theme-chevron">{open ? '▲' : '▼'}</span>
+      </button>
 
-  // ─── Load rankings list ────────────────────────────────────────────────────
-  const loadRankings = useCallback(async () => {
-    if (!currentGame) { setLoading(false); return; }
-    setLoading(true);
-    try {
-      const rankingsData = await loadAllRankings(currentGame.id, '-current_score');
-      if (rankingsData.length > 0) {
-        let position = 1;
-        for (let i = 0; i < rankingsData.length; i++) {
-          if (i > 0 && rankingsData[i].current_score !== rankingsData[i - 1].current_score)
-            position = i + 1;
-          rankingsData[i].current_position = position;
-        }
-        setRankings(rankingsData);
-        const scores = rankingsData.map(r => Number(r.current_score) || 0);
-        setAvgScore(scores.reduce((a, b) => a + b, 0) / scores.length);
-        setMaxScore(Math.max(...scores));
-        setMinScore(Math.min(...scores));
-      } else setRankings([]);
-    } catch (error) {
-      console.error("Error loading rankings:", error);
-      toast({ title: "שגיאה", description: "טעינת הדירוג נכשלה", variant: "destructive" });
-    }
+      {/* Theme panel */}
+      {open && (
+        <div className="lm-theme-panel">
+          {Object.values(allThemes).map(t => {
+            const active = themeId === t.id;
+            const palette = isDark ? t.dark : t.light;
+            return (
+              <button
+                key={t.id}
+                onClick={() => { setTheme(t.id); setOpen(false); }}
+                className={`lm-theme-card${active ? ' active' : ''}`}
+                style={active ? {
+                  border: `1px solid ${palette?.tp || 'var(--tp)'}`,
+                  background: `rgba(${palette?.r||0},${palette?.g||0},${palette?.b||0},0.12)`,
+                } : {}}
+              >
+                {/* Color preview strip */}
+                <div className="lm-theme-strip">
+                  {t.previewColors?.map((c, i) => (
+                    <span key={i} style={{ flex:1, background:c, height:'100%' }}/>
+                  ))}
+                </div>
+                {/* Info */}
+                <div className="lm-theme-card-info">
+                  <span className="lm-theme-card-emoji">{t.emoji}</span>
+                  <span className="lm-theme-card-name" style={{ fontFamily: t.font }}>
+                    {t.nameHe}
+                  </span>
+                  {active && <span className="lm-theme-check" style={{ color: palette?.tp || 'var(--tp)' }}>✓</span>}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Layout Content ───────────────────────────────────────────────────────────
+function LayoutContent({ children }) {
+  const [currentUser, setCurrentUser] = useState(null);
+  const [loading,     setLoading    ] = useState(true);
+  const [showAdminDialog, setShowAdminDialog] = useState(false);
+  const [adminPassword,   setAdminPassword  ] = useState("");
+  const [sidebarOpen,     setSidebarOpen    ] = useState(false);
+  const { toast } = useToast();
+  const location  = useLocation();
+
+  const {
+    currentGame, games, selectGame,
+    loading: gamesLoading,
+    currentUser: gameContextUser,
+  } = useGame();
+
+  const g = currentGame ? `?gameId=${currentGame.id}` : '';
+
+  const publicItems = [
+    { title:"טבלת דירוג",     url:createPageUrl("LeaderboardNew")  + g, icon:Award,    group:"main" },
+    { title:"צפייה בניחושים", url:createPageUrl("ViewSubmissions") + g, icon:Users,    group:"main" },
+    { title:"תוצאות אמת",     url:createPageUrl("AdminResults")    + g, icon:BarChart3,group:"main" },
+    { title:"סטטיסטיקות",     url:createPageUrl("Statistics")      + g, icon:PieChart, group:"main" },
+  ];
+  const userItems = [
+    { title:"מילוי ניחושים",  url:createPageUrl("PredictionForm")  + g, icon:FileText, group:"main" },
+  ];
+  const adminItems = [
+    { title:"ניהול משתתפים", url:createPageUrl("ManageGameParticipants"), icon:Users,    group:"admin" },
+    { title:"ייבוא ניחושים",  url:createPageUrl("AdminImport"),           icon:Upload,   group:"admin" },
+    { title:"ניהול משתמשים", url:createPageUrl("UserManagement"),         icon:Shield,   group:"admin" },
+    { title:"בניית שאלון",   url:createPageUrl("FormBuilder") + g,        icon:FileText, group:"admin" },
+    { title:"סקירת מערכת",   url:createPageUrl("SystemOverview"),         icon:Database, group:"admin" },
+  ];
+
+  useEffect(() => { loadUser(); }, []);
+  useEffect(() => { setSidebarOpen(false); }, [location.pathname]);
+  useEffect(() => {
+    document.body.style.overflow = sidebarOpen ? 'hidden' : '';
+    return () => { document.body.style.overflow = ''; };
+  }, [sidebarOpen]);
+
+  const loadUser = async () => {
+    try { setCurrentUser(await supabase.auth.getUser().then(r => r.data.user)); }
+    catch { setCurrentUser(null); }
     setLoading(false);
-  }, [currentGame, toast]);
-
-  useEffect(() => { loadRankings(); }, [loadRankings]);
-
-  // ─── Set baseline ──────────────────────────────────────────────────────────
-  const handleSetBaseline = async () => {
-    if (!currentGame) return;
-    if (!window.confirm(
-      '📌 האם לקבוע את הדירוג הנוכחי כנקודת ייחוס?\n\nהחישוב הבא יציג שינויים ביחס לנקודה זו.'
-    )) return;
-    setSettingBaseline(true);
-    try {
-      const allRankings = await loadAllRankings(currentGame.id, null);
-      const now = new Date().toISOString();
-      for (let i = 0; i < allRankings.length; i += 5) {
-        const batch = allRankings.slice(i, i + 5);
-        await Promise.all(batch.map(r =>
-          db.Ranking.update(r.id, {
-            baseline_score:    r.current_score,
-            baseline_position: r.current_position,
-            last_baseline_set: now,
-          })
-        ));
-        await new Promise(r => setTimeout(r, 300));
-      }
-      toast({
-        title: "נקודת ייחוס נקבעה!",
-        description: `${allRankings.length} משתתפים עודכנו`,
-        className: "bg-green-900/30 border-green-500 text-green-200"
-      });
-      await loadRankings();
-    } catch (error) {
-      console.error("Error setting baseline:", error);
-      toast({ title: "שגיאה", description: error.message, variant: "destructive" });
-    }
-    setSettingBaseline(false);
   };
 
-  // ─── Load participant popup ────────────────────────────────────────────────
-  const loadParticipantDetails = async (participantName) => {
-    if (!currentGame) return;
-    setSelectedParticipant(participantName);
-    setParticipantDetails(null);
-    setLoadingDetails(true);
+  const handleLogout = async () => {
+    try { await supabase.auth.signOut(); setCurrentUser(null); window.location.href = createPageUrl("LeaderboardNew"); }
+    catch (e) { console.error(e); }
+  };
 
-    try {
-      const allQuestions   = await loadQuestionsForGame(currentGame.id);
-      const allPredictions = await loadPredictionsForGame(currentGame.id, participantName, allQuestions);
-
-      const teamsMap = (currentGame.teams_data || [])
-        .reduce((acc, t) => { acc[t.name] = t; return acc; }, {});
-
-      const { total: calcTotal, breakdown } = calcScore(allQuestions, allPredictions);
-
-      // ✅ ניקוד אמיתי — קרא מטבלת rankings (סמכותית, כולל בונוסים מיוחדים כמו T5)
-      // calcScore מחמיץ לוגיקת bonus מיוחדת (qualifiers, מיקומים) → השתמש בDB
-      let totalScore = calcTotal;
+  const handleAdminLogin = async () => {
+    if (adminPassword === "champ11") {
       try {
-        const { data: rankRow } = await supabase
-          .from('rankings')
-          .select('current_score')
-          .eq('game_id', currentGame.id)
-          .eq('participant_name', participantName)
-          .single();
-        if (rankRow?.current_score != null) totalScore = rankRow.current_score;
-      } catch { /* fallback to calcTotal */ }
-
-      const LOCATION_TABLE_IDS = ['T14', 'T15', 'T16', 'T17', 'T19'];
-      const LOCATION_DEFAULTS  = {
-        T14: 'מקומות 1-8 — שלב הבתים',
-        T15: 'מקומות 9-16 — שלב הבתים',
-        T16: 'מקומות 17-24 — שלב הבתים',
-        T17: 'מקומות 1-24 — טבלה כוללת',
-        T19: 'רשימת העולות לשמינית הגמר',
-      };
-      const locationDesc = { ...LOCATION_DEFAULTS };
-      allQuestions.forEach(q => {
-        if (LOCATION_TABLE_IDS.includes(q.table_id) && q.table_description?.trim())
-          locationDesc[q.table_id] = q.table_description.trim();
-      });
-
-      // dedup predictions for display
-      const latestPred = {};
-      allPredictions.forEach(p => {
-        const ex = latestPred[p.question_id];
-        if (!ex || new Date(p.created_at) > new Date(ex.created_at))
-          latestPred[p.question_id] = p;
-      });
-
-      const getPredDisplay = (qid) => {
-        const p = latestPred[qid];
-        if (!p) return '';
-        if (p.home_prediction !== null && p.home_prediction !== undefined &&
-            p.away_prediction !== null && p.away_prediction !== undefined)
-          return formatScore(`${p.home_prediction}-${p.away_prediction}`);
-        return formatScore(p.text_prediction || '');
-      };
-
-      const locationSums     = {};
-      const regularBreakdown = [];
-      const bonusRows        = []; // שורות בונוס שלב (T3/T4/T5/T6_STAGE_BONUS)
-
-      breakdown.forEach(item => {
-        if (LOCATION_TABLE_IDS.includes(item.table_id)) {
-          // ── מיקומים: קבץ לסכום לפי טבלה ──
-          locationSums[item.table_id] = (locationSums[item.table_id] || 0) + item.score;
-
-        } else if (item.isBonus === true || !allQuestions.find(x => x.id === item.question_id)) {
-          // ── בונוס שלב (question_id סינתטי כמו 'T5_STAGE_BONUS') ──
-          if (item.score > 0) {
-            bonusRows.push({
-              score:               item.score,
-              max_score:           item.max_score || item.score,
-              table_id:            item.table_id || '?',
-              question_id_display: '',
-              question_text:       item.question_id_text || item.bonusDescription || `בונוס שלב ${item.table_id}`,
-              home_team: null, away_team: null,
-              actual_result: '', prediction: '',
-              home_team_display: null, away_team_display: null,
-              home_team_logo: null, away_team_logo: null,
-              isLocationSummary: false,
-              isStageBonusRow:   true,
-            });
-          }
-
-        } else if (item.score > 0) {
-          // ── שאלה רגילה ──
-          const q = allQuestions.find(x => x.id === item.question_id);
-          if (!q) return;
-          regularBreakdown.push({
-            score:               item.score,
-            max_score:           item.max_score,
-            table_id:            item.table_id || '?',
-            question_id_display: item.question_id_text || q.question_id || '?',
-            question_text:       q.question_text || '',
-            home_team:           q.home_team,
-            away_team:           q.away_team,
-            actual_result:       formatScore(q.actual_result || ''),
-            prediction:          getPredDisplay(item.question_id),
-            home_team_display:   q.home_team?.replace(/\s*\([^)]+\)\s*$/, '').trim() || null,
-            away_team_display:   q.away_team?.replace(/\s*\([^)]+\)\s*$/, '').trim() || null,
-            home_team_logo:      q.home_team
-              ? (teamsMap[q.home_team]?.logo_url || teamsMap[q.home_team.replace(/\s*\([^)]+\)\s*$/, '').trim()]?.logo_url)
-              : null,
-            away_team_logo:      q.away_team
-              ? (teamsMap[q.away_team]?.logo_url || teamsMap[q.away_team.replace(/\s*\([^)]+\)\s*$/, '').trim()]?.logo_url)
-              : null,
-            isLocationSummary: false,
-            isStageBonusRow:   false,
-          });
-        }
-      });
-
-      const locationRows = Object.entries(locationSums)
-        .filter(([, s]) => s > 0)
-        .map(([tid, s]) => ({
-          score: s, max_score: null, table_id: tid,
-          question_id_display: '',
-          question_text: locationDesc[tid] || tid,
-          home_team: null, away_team: null,
-          actual_result: '', prediction: '',
-          home_team_display: null, away_team_display: null,
-          home_team_logo: null, away_team_logo: null,
-          isLocationSummary: true,
-        }));
-
-      const enriched = [...regularBreakdown, ...locationRows, ...bonusRows];
-      enriched.sort((a, b) => {
-        const tA = parseInt(a.table_id.replace('T', '')) || 999;
-        const tB = parseInt(b.table_id.replace('T', '')) || 999;
-        if (tA !== tB) return tA - tB;
-        return (parseFloat(a.question_id_display) || 999) - (parseFloat(b.question_id_display) || 999);
-      });
-
-      // ✅ בניית qualifying sections (T4/T5/T6) — לפי זהות קבוצה, לא מיקום
-      const normT = n => (n || '').replace(/\s*\([^)]+\)\s*$/, '').replace(/\s+/g, ' ').trim().toLowerCase();
-      const t3Qs = allQuestions.filter(q => q.table_id === 'T3' && q.home_team && q.away_team);
-
-      // ✅ זיהוי דינמי — כל טבלת qualifiers, ללא הנחת T4/T5/T6 ספציפית
-      const qualTableMap = {};
-      allQuestions.forEach(q => {
-        if (q.stage_type !== 'qualifiers') return;
-        const n = parseFloat(q.question_id);
-        if (!Number.isInteger(n) || n < 1) return;
-        if (!qualTableMap[q.table_id]) qualTableMap[q.table_id] = [];
-        qualTableMap[q.table_id].push(q);
-      });
-
-      const qualifyingSections = Object.entries(qualTableMap)
-        .sort((a,b) => (parseInt(a[0].replace('T',''))||0) - (parseInt(b[0].replace('T',''))||0))
-        .map(([tableId, tSlots]) => {
-          tSlots.sort((a,b) => parseFloat(a.question_id) - parseFloat(b.question_id));
-          const count = tSlots.length;
-          const bonusPoints = count >= 8 ? 16 : count >= 4 ? 12 : count >= 2 ? 6 : 0;
-          const cfg = { count, bonus: bonusPoints };
-
-          const advSet = new Set(
-            tSlots.filter(q => q.actual_result && q.actual_result !== '__CLEAR__')
-                  .map(q => normT(q.actual_result))
-          );
-          const elimSet = new Set();
-          advSet.forEach(adv => {
-            t3Qs.forEach(q => {
-              const h = normT(q.home_team), a = normT(q.away_team);
-              if (h === adv && !advSet.has(a)) elimSet.add(a);
-              if (a === adv && !advSet.has(h)) elimSet.add(h);
-            });
-          });
-
-          const preds = tSlots.map(q => {
-            const disp = getPredDisplay(q.id);
-            const norm = normT(disp);
-            const isAdv  = disp && advSet.has(norm);
-            const isElim = disp && !isAdv && elimSet.has(norm);
-            return { pred: disp, isAdv, isElim, pts: q.possible_points || 0 };
-          });
-
-          const guessedSet = new Set(preds.map(p => normT(p.pred)).filter(Boolean));
-          const allResultsIn = tSlots.every(q => q.actual_result && q.actual_result !== '__CLEAR__');
-          const bonusEarned  = allResultsIn && [...advSet].every(t => guessedSet.has(t));
-
-          return {
-            tableId,
-            tableDesc: tSlots[0]?.table_description || tableId,
-            preds, advSet, cfg, bonusEarned,
-            hasAnyResult: advSet.size > 0,
-            allResultsIn,
-          };
-        });
-
-      setParticipantDetails({ name: participantName, scores: enriched, totalScore, qualifyingSections });
-    } catch (error) {
-      console.error("Error loading participant details:", error);
-      toast({ title: "שגיאה", description: "טעינת הפרטים נכשלה", variant: "destructive" });
-    }
-    setLoadingDetails(false);
-  };
-
-  // ─── Sort ──────────────────────────────────────────────────────────────────
-  const handleSort = (column) => {
-    if (sortColumn === column) setSortDirection(d => d === 'asc' ? 'desc' : 'asc');
-    else {
-      setSortColumn(column);
-      setSortDirection(
-        ['current_score','previous_score','score_change','position_change'].includes(column) ? 'desc' : 'asc'
-      );
+        if (!currentUser) { window.location.href = '/login'; return; }
+        await supabase.auth.updateUser({ role:"admin" });
+        const u = await supabase.auth.getUser().then(r => r.data.user);
+        setCurrentUser(u); setShowAdminDialog(false); setAdminPassword("");
+        toast({ title:"התחברת כמנהל!", className:"bg-green-100 text-green-800", duration:2000 });
+      } catch {
+        toast({ title:"שגיאה", description:"לא ניתן לעדכן הרשאות", variant:"destructive", duration:2000 });
+      }
+    } else {
+      toast({ title:"סיסמה שגויה", variant:"destructive", duration:2000 });
+      setAdminPassword("");
     }
   };
 
-  const getSortedRankings = () => [...rankings].sort((a, b) => {
-    if (sortColumn === 'participant_name') {
-      const aV = String(a.participant_name || '');
-      const bV = String(b.participant_name || '');
-      return sortDirection === 'asc' ? aV.localeCompare(bV, 'he') : bV.localeCompare(aV, 'he');
-    }
-    const aV = Number(a[sortColumn]) || 0;
-    const bV = Number(b[sortColumn]) || 0;
-    return sortDirection === 'asc' ? aV - bV : bV - aV;
-  });
+  const effectiveUser = gameContextUser || currentUser;
+  const supabaseRole  = effectiveUser?.role || effectiveUser?.user_metadata?.role || null;
+  const isAdmin       = supabaseRole === "admin";
 
-  const SortIcon = ({ column }) => {
-    if (sortColumn !== column)
-      return <ArrowUpDown className="w-2.5 h-2.5 md:w-4 md:h-4 opacity-30" />;
-    return sortDirection === 'asc'
-      ? <ArrowUp   className="w-2.5 h-2.5 md:w-4 md:h-4" style={{ color: 'var(--tp)' }} />
-      : <ArrowDown className="w-2.5 h-2.5 md:w-4 md:h-4" style={{ color: 'var(--tp)' }} />;
-  };
+  const allNavItems = [
+    ...publicItems.map(i => ({ ...i, disabled: !currentGame })),
+    ...(effectiveUser ? userItems.map(i => ({ ...i, disabled: !currentGame })) : []),
+    ...(isAdmin ? adminItems.map(i => ({
+      ...i,
+      disabled: i.group==='admin' && !currentGame && i.title!=='ניהול משתמשים' && i.title!=='סקירת מערכת',
+    })) : []),
+  ];
+  const mainNav  = allNavItems.filter(i => i.group==="main");
+  const adminNav = allNavItems.filter(i => i.group==="admin");
+  const isActive = (url) => window.location.pathname.includes(url.split('?')[0]);
 
-  const getPositionIcon = (p) => {
-    if (p === 1) return <Crown  className="w-5 h-5 text-yellow-400" />;
-    if (p === 2) return <Trophy className="w-5 h-5 text-gray-400"   />;
-    if (p === 3) return <Trophy className="w-5 h-5 text-orange-400" />;
-    return null;
-  };
-
-  const getPositionChangeIcon = (c) => {
-    if (c > 0) return <TrendingUp   className="w-3 h-3 md:w-4 md:h-4 text-green-400" />;
-    if (c < 0) return <TrendingDown className="w-3 h-3 md:w-4 md:h-4 text-red-400"   />;
-    return          <Minus         className="w-3 h-3 md:w-4 md:h-4 text-gray-400"  />;
-  };
-
-  if (loading) {
+  const NavItem = ({ item, onClick }) => {
+    const active = isActive(item.url);
     return (
-      <div className="flex items-center justify-center h-screen"
-        style={{ background: 'linear-gradient(135deg, var(--bg1) 0%, var(--bg2) 50%, var(--bg1) 100%)' }}>
-        <Loader2 className="w-8 h-8 animate-spin" style={{ color: 'var(--tp)' }} />
-        <span className="mr-3" style={{ color: 'var(--tp)' }}>טוען דירוג...</span>
+      <Link
+        to={item.disabled ? '#' : item.url}
+        onClick={e => {
+          if (item.disabled) {
+            e.preventDefault();
+            toast({ title:"בחר משחק", description:"נא לבחור משחק תחילה", variant:"destructive", duration:2000 });
+          }
+          // ✅ תמיד סגור את הסיידבר — גם בלחיצה על אותו עמוד
+          if (onClick) onClick();
+        }}
+        className={`lm-nav-item${active?' active':''}${item.disabled?' disabled':''}`}
+        style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
+      >
+        <span className="lm-nav-icon"><item.icon size={20}/></span>
+        <span className="lm-nav-label">{item.title}</span>
+        {active && <span className="lm-nav-bar"/>}
+      </Link>
+    );
+  };
+
+  const SidebarInner = ({ onItemClick }) => (
+    <div className="lm-sidebar-inner">
+
+      {/* ── Logo ── */}
+      <div style={{
+        display:'flex', alignItems:'center', gap:'14px',
+        padding:'20px 16px 14px',
+      }}>
+        {/* לוגו — inline style מבטיח גודל נכון */}
+        {currentGame?.game_icon ? (
+          <div style={{position:'relative', flexShrink:0}}>
+            <img
+              src={currentGame.game_icon}
+              alt={currentGame.game_name}
+              style={{
+                width:'130px', height:'130px',
+                objectFit:'contain', borderRadius:'16px',
+                border:'1px solid var(--tp-20)', display:'block',
+              }}
+            />
+            <div style={{
+              position:'absolute', inset:'-10px', borderRadius:'24px',
+              background:'radial-gradient(circle, var(--tp-18) 0%, transparent 70%)',
+              pointerEvents:'none',
+            }}/>
+          </div>
+        ) : (
+          <div style={{
+            width:'130px', height:'130px', borderRadius:'16px', flexShrink:0,
+            border:'1px dashed var(--tp-25)', background:'var(--tp-05)',
+            display:'flex', alignItems:'center', justifyContent:'center', fontSize:'48px',
+          }}>⚽</div>
+        )}
+
+        {/* טקסט — שתי שורות ברורות */}
+        <div style={{flex:1, minWidth:0, display:'flex', flexDirection:'column', gap:'6px'}}>
+          {currentGame ? (
+            <>
+              <div style={{
+                fontSize:'1.05rem', fontWeight:900, color:'var(--text)',
+                lineHeight:1.3, wordBreak:'break-word',
+              }}>
+                {currentGame.game_name}
+              </div>
+              {currentGame.game_subtitle && (
+                <div style={{
+                  fontSize:'1rem', fontWeight:800, color:'var(--tp)',
+                  lineHeight:1.2, wordBreak:'break-word',
+                }}>
+                  {currentGame.game_subtitle}
+                </div>
+              )}
+            </>
+          ) : (
+            <div style={{fontSize:'1rem', fontWeight:500, color:'var(--text-muted)'}}>
+              בחר משחק
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── Stars ── */}
+      <div className="lm-stars" aria-hidden="true">
+        {[0,1,2,3,4].map(i=><span key={i} className="lm-star" style={{'--i':i}}>★</span>)}
+      </div>
+
+      {/* ── Game selector ── */}
+      <div className="lm-game-selector">
+        <div className="lm-sec-label lm-sec-label--primary">🎮 משחק פעיל</div>
+        <Select
+          value={currentGame?.id || ''}
+          onValueChange={gameId => { const gx=games.find(x=>x.id===gameId); if(gx) selectGame(gx); }}
+          disabled={gamesLoading || games.length===0}
+        >
+          <SelectTrigger className="lm-select-trigger">
+            <SelectValue placeholder="בחר משחק">
+              {currentGame ? (
+                <div style={{textAlign:'right',lineHeight:'1.2'}}>
+                  <div style={{fontWeight:700,fontSize:'0.82rem'}}>{currentGame.game_name}</div>
+                  {currentGame.game_subtitle && (
+                    <div style={{fontSize:'0.7rem',color:'var(--tp)',opacity:0.85,marginTop:'1px'}}>{currentGame.game_subtitle}</div>
+                  )}
+                </div>
+              ) : "בחר משחק"}
+            </SelectValue>
+          </SelectTrigger>
+          <SelectContent className="lm-select-content">
+            {games.map(game=>(
+              <SelectItem key={game.id} value={game.id}>
+                <div>
+                  <div style={{fontWeight:700,fontSize:'0.85rem'}}>{game.game_name}</div>
+                  {game.game_subtitle && <div style={{fontSize:'0.7rem',color:'var(--tp)',opacity:0.8}}>{game.game_subtitle}</div>}
+                </div>
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {isAdmin && currentGame && (
+          <Link to={createPageUrl("CreateGame")} className="lm-edit-game"><Edit size={10}/> ערוך משחק</Link>
+        )}
+      </div>
+
+      {/* ── Navigation ── */}
+      <nav className="lm-nav">
+        {mainNav.length > 0 && (
+          <><div className="lm-sec-label">ראשי</div>
+          {mainNav.map(item=><NavItem key={item.title} item={item} onClick={onItemClick}/>)}</>
+        )}
+        {!effectiveUser && (
+          <button className="lm-login-prompt" onClick={()=>window.location.href='/login'}>
+            <Lock size={15}/><span>מילוי ניחושים</span><span className="lm-login-badge">התחבר</span>
+          </button>
+        )}
+        {adminNav.length > 0 && (
+          <><div className="lm-sec-label lm-sec-label--admin">ניהול</div>
+          {adminNav.map(item=><NavItem key={item.title} item={item} onClick={onItemClick}/>)}</>
+        )}
+      </nav>
+
+      {/* ── Theme picker ── */}
+      <ThemePicker/>
+
+      {/* ── User footer ── */}
+      <div className="lm-user-footer">
+        {effectiveUser ? (
+          <div className="lm-user-row">
+            <div className="lm-avatar">
+              {(effectiveUser.user_metadata?.full_name || effectiveUser.email || '?')[0].toUpperCase()}
+            </div>
+            <div className="lm-user-info-block">
+              <div className="lm-user-name">{effectiveUser.user_metadata?.full_name || effectiveUser.email}</div>
+              <div className="lm-user-role" style={{color:isAdmin?'var(--tp)':'#64748b'}}>
+                {isAdmin ? '👑 מנהל' : '✅ משתתף'}
+              </div>
+            </div>
+            <button onClick={handleLogout} className="btn btn-danger btn-icon btn-sm lm-logout-btn" title="התנתק">
+              <LogOut size={14}/>
+            </button>
+          </div>
+        ) : (
+          <button onClick={()=>window.location.href='/login'} className="btn btn-secondary btn-wide">
+            <Shield size={15}/> התחבר / הירשם
+          </button>
+        )}
+      </div>
+    </div>
+  );
+
+  if (loading || gamesLoading) {
+    return (
+      <div className="lm-loading">
+        <div className="lm-loading-spinner"/>
+        <span>טוען...</span>
       </div>
     );
   }
 
-  const isAdmin        = currentUser?.role === 'admin' || currentUser?.user_metadata?.role === 'admin';
-  const sortedRankings = getSortedRankings();
-
   return (
-    <div className="min-h-screen p-3 md:p-6" dir="rtl"
-      style={{ background: 'linear-gradient(135deg, var(--bg1) 0%, var(--bg2) 50%, var(--bg1) 100%)' }}>
-      <div className="max-w-7xl mx-auto">
+    <div dir="rtl" className="lm-root">
+      {/* ── Desktop sidebar ── */}
+      <aside className="lm-sidebar desktop-sidebar"><SidebarInner onItemClick={null}/></aside>
 
-        {/* ── Header ── */}
-        <div className="flex flex-col md:flex-row justify-between items-start gap-3 mb-4 md:mb-8">
-          <div>
-            <h1 className="text-xl md:text-4xl font-bold mb-1 md:mb-2 flex items-center gap-2 md:gap-3"
-              style={{ color: '#f8fafc', textShadow: '0 0 10px var(--tp-30)' }}>
-              <Trophy className="w-6 h-6 md:w-10 md:h-10" style={{ color: 'var(--tp)' }} />
-              טבלת דירוג
-            </h1>
-            <p className="text-xs md:text-base" style={{ color: '#94a3b8' }}>
-              מצב העמידה הנוכחי של המשתתפים
-            </p>
-          </div>
-          {isAdmin && (
-            <div className="flex gap-2 md:gap-3 w-full md:w-auto flex-wrap">
-              <Button
-                onClick={handleSetBaseline}
-                disabled={settingBaseline}
-                style={{
-                  background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-                  boxShadow: '0 0 20px rgba(16,185,129,0.4)'
-                }}
-                className="text-white flex-1 md:flex-none h-8 md:h-10 text-[10px] md:text-sm"
-              >
-                {settingBaseline
-                  ? <><Loader2 className="w-3 h-3 md:w-4 md:h-4 animate-spin ml-1"/>קובע...</>
-                  : <><CheckCircle className="w-3 h-3 md:w-4 md:h-4 ml-1"/>קבע דירוג</>}
-              </Button>
+      {/* ── Mobile overlay (for "more" menu) ── */}
+      <div className={`lm-overlay${sidebarOpen?' visible':''}`} onClick={()=>setSidebarOpen(false)} aria-hidden="true"/>
+
+      {/* ── Mobile "more" drawer (admin items only) ── */}
+      <aside className={`lm-sidebar lm-sidebar--mobile mobile-sidebar${sidebarOpen?' open':''}`}>
+        <button onClick={()=>setSidebarOpen(false)} className="lm-close-btn"><X size={22}/></button>
+        <div style={{padding:'60px 12px 16px'}}>
+          {/* Game info in drawer */}
+          {currentGame && (
+            <div style={{display:'flex',alignItems:'center',gap:12,padding:'12px 8px',marginBottom:16,background:'var(--tp-10)',borderRadius:12,border:'1px solid var(--tp-20)'}}>
+              {currentGame.game_icon && <img src={currentGame.game_icon} alt="" style={{width:48,height:48,borderRadius:10,objectFit:'contain'}}/>}
+              <div>
+                <div style={{fontWeight:800,fontSize:'0.95rem',color:'var(--text)'}}>{currentGame.game_name}</div>
+                {currentGame.game_subtitle && <div style={{fontSize:'0.82rem',color:'var(--tp)',fontWeight:700}}>{currentGame.game_subtitle}</div>}
+              </div>
             </div>
           )}
-        </div>
-
-        {/* ── Stats ── */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-4 mb-4 md:mb-8">
-          {[
-            { label: 'סה"כ משתתפים', value: rankings.length,     icon: Users,       color: 'var(--tp)' },
-            { label: 'ניקוד ממוצע',   value: avgScore.toFixed(1), icon: Target,      color: 'var(--tp)' },
-            { label: 'ניקוד מקסימלי', value: maxScore.toFixed(1), icon: TrendingUp,  color: '#8b5cf6'   },
-            { label: 'ניקוד מינימלי', value: minScore.toFixed(1), icon: TrendingDown,color: '#94a3b8'   },
-          ].map((stat, idx) => (
-            <Card key={idx} style={{ background: 'var(--bg3-60)', border: '1px solid var(--tp-20)', backdropFilter: 'blur(10px)' }}>
-              <CardContent className="p-2 md:p-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-[9px] md:text-sm" style={{ color: '#94a3b8' }}>{stat.label}</p>
-                    <p className="text-lg md:text-3xl font-bold" style={{ color: stat.color }}>{stat.value}</p>
+          {/* Game switcher */}
+          {games.length > 1 && (
+            <div style={{marginBottom:16}}>
+              <div style={{fontSize:'0.7rem',fontWeight:700,color:'#475569',marginBottom:6,letterSpacing:'0.08em'}}>החלפת משחק</div>
+              {games.map(game=>(
+                <button key={game.id} onClick={()=>{selectGame(game);setSidebarOpen(false);}} style={{
+                  display:'flex',alignItems:'center',gap:10,width:'100%',
+                  padding:'10px 12px',borderRadius:10,marginBottom:4,cursor:'pointer',
+                  background:currentGame?.id===game.id?'var(--tp-15)':'rgba(30,41,59,0.5)',
+                  border:`1px solid ${currentGame?.id===game.id?'var(--tp)':'rgba(71,85,105,0.3)'}`,
+                  color:currentGame?.id===game.id?'var(--tp)':'var(--text)',
+                  fontFamily:'Rubik,Heebo,sans-serif',textAlign:'right',
+                }}>
+                  {game.game_icon && <img src={game.game_icon} alt="" style={{width:32,height:32,borderRadius:8,objectFit:'contain',flexShrink:0}}/>}
+                  <div style={{flex:1,textAlign:'right'}}>
+                    <div style={{fontWeight:700,fontSize:'0.85rem'}}>{game.game_name}</div>
+                    {game.game_subtitle && <div style={{fontSize:'0.75rem',opacity:0.8}}>{game.game_subtitle}</div>}
                   </div>
-                  <stat.icon className="w-6 h-6 md:w-10 md:h-10" style={{ color: stat.color, opacity: 0.5 }} />
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-
-        {/* ── Rankings table ── */}
-        <Card style={{ background: 'var(--bg3-60)', border: '1px solid var(--tp-20)', backdropFilter: 'blur(10px)' }}>
-          <CardHeader className="py-2 md:py-4">
-            <CardTitle className="text-sm md:text-lg" style={{ color: 'var(--tp)' }}>הדירוג הנוכחי</CardTitle>
-          </CardHeader>
-          <CardContent className="p-0">
-            <div style={{ maxHeight: '600px', overflowY: 'auto', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-              <table className="w-full" style={{ borderCollapse: 'collapse' }}>
-                <thead style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--bg3)' }}>
-                  <tr style={{ borderBottom: '2px solid var(--tp-30)' }}>
-                    {[
-                      { key: 'current_position', label: '#',            mobile: '#',   align: 'center' },
-                      { key: 'participant_name',  label: 'שם',           mobile: 'שם',  align: 'right'  },
-                      { key: 'current_score',     label: "נק'",          mobile: "נק'", align: 'center' },
-                      { key: 'previous_position', label: 'מיקום קודם',  mobile: null,  align: 'center' },
-                      { key: 'previous_score',    label: 'ניקוד קודם',  mobile: null,  align: 'center' },
-                      { key: 'score_change',      label: 'שינוי בניקוד', mobile: '+/-', align: 'center' },
-                      { key: 'position_change',   label: 'שינוי במיקום', mobile: '↕',  align: 'center' },
-                    ].map(col => (
-                      <th
-                        key={col.key}
-                        className={`p-1 md:p-3 cursor-pointer hover:bg-cyan-900/20 transition-colors text-[8px] md:text-sm text-${col.align} ${col.mobile === null ? 'hidden md:table-cell' : ''}`}
-                        style={{ backgroundColor: 'var(--bg3)', color: '#94a3b8' }}
-                        onClick={() => handleSort(col.key)}
-                      >
-                        <div className={`flex items-center ${col.align === 'right' ? 'justify-start' : 'justify-center'} gap-0.5 md:gap-2`}>
-                          {col.mobile !== null && col.mobile !== col.label
-                            ? <><span className="hidden md:inline">{col.label}</span><span className="md:hidden">{col.mobile}</span></>
-                            : <span>{col.label}</span>}
-                          <SortIcon column={col.key} />
-                        </div>
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {sortedRankings.map((rank) => (
-                    <tr key={rank.id} className="hover:bg-white/5"
-                      style={{ borderBottom: '1px solid var(--tp-10)' }}>
-                      <td className="text-center p-1 md:p-2">
-                        <div className="flex items-center justify-center gap-0.5 md:gap-1.5">
-                          <span className="hidden md:inline">{getPositionIcon(rank.current_position)}</span>
-                          <span className="font-bold text-xs md:text-base" style={{ color: '#f8fafc' }}>
-                            {rank.current_position}
-                          </span>
-                        </div>
-                      </td>
-                      <td
-                        className="font-medium text-[10px] md:text-base cursor-pointer hover:underline text-right p-1 md:p-2"
-                        style={{ color: 'var(--tp)' }}
-                        onClick={() => loadParticipantDetails(rank.participant_name)}
-                      >
-                        {rank.participant_name}
-                      </td>
-                      <td className="text-center p-1 md:p-2">
-                        <Badge className="text-white text-[10px] md:text-base px-1.5 md:px-3 py-0.5 md:py-1"
-                          style={{ background: 'var(--tp)', boxShadow: '0 0 10px var(--tp-40)' }}>
-                          {rank.current_score}
-                        </Badge>
-                      </td>
-                      <td className="hidden md:table-cell text-center p-1 md:p-2 text-sm" style={{ color: '#94a3b8' }}>{rank.previous_position || '-'}</td>
-                      <td className="hidden md:table-cell text-center p-1 md:p-2 text-sm" style={{ color: '#94a3b8' }}>{rank.previous_score || '0'}</td>
-                      <td className="text-center p-1 md:p-2">
-                        <div className="flex items-center justify-center">
-                          {rank.score_change > 0  && <Badge className="text-white text-[8px] md:text-xs px-1 md:px-2" style={{ background: '#10b981' }}>+{rank.score_change}</Badge>}
-                          {rank.score_change < 0  && <Badge className="text-white text-[8px] md:text-xs px-1 md:px-2" style={{ background: '#ef4444' }}>{rank.score_change}</Badge>}
-                          {(!rank.score_change || rank.score_change === 0) && <Badge className="text-white text-[8px] md:text-xs px-1 md:px-2" style={{ background: '#475569' }}>0</Badge>}
-                        </div>
-                      </td>
-                      <td className="text-center p-1 md:p-2">
-                        <div className="flex items-center justify-center gap-0.5 md:gap-1">
-                          {getPositionChangeIcon(rank.position_change)}
-                          <span className={`font-medium text-[10px] md:text-sm ${rank.position_change > 0 ? 'text-green-400' : rank.position_change < 0 ? 'text-red-400' : 'text-gray-400'}`}>
-                            {rank.position_change !== 0 ? Math.abs(rank.position_change) : '-'}
-                          </span>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                  {currentGame?.id===game.id && <span style={{color:'var(--tp)',fontSize:'1rem'}}>✓</span>}
+                </button>
+              ))}
             </div>
-          </CardContent>
-        </Card>
+          )}
+          {/* Admin items */}
+          {isAdmin && (
+            <div>
+              <div style={{fontSize:'0.7rem',fontWeight:700,color:'#475569',marginBottom:6,letterSpacing:'0.08em'}}>ניהול</div>
+              {adminNav.map(item=>(
+                <NavItem key={item.title} item={item} onClick={()=>setSidebarOpen(false)}/>
+              ))}
+            </div>
+          )}
+          {/* Login/logout */}
+          <div style={{marginTop:16,borderTop:'1px solid var(--tp-10)',paddingTop:16}}>
+            {effectiveUser ? (
+              <button onClick={handleLogout} style={{display:'flex',alignItems:'center',gap:10,width:'100%',padding:'12px',borderRadius:10,background:'rgba(239,68,68,0.1)',border:'1px solid rgba(239,68,68,0.3)',color:'#ef4444',cursor:'pointer',fontFamily:'Rubik,Heebo,sans-serif',fontSize:'0.9rem'}}>
+                <LogOut size={18}/> התנתקות
+              </button>
+            ) : (
+              <button onClick={()=>{setShowAdminDialog(true);setSidebarOpen(false);}} style={{display:'flex',alignItems:'center',gap:10,width:'100%',padding:'12px',borderRadius:10,background:'var(--tp-10)',border:'1px solid var(--tp-25)',color:'var(--tp)',cursor:'pointer',fontFamily:'Rubik,Heebo,sans-serif',fontSize:'0.9rem'}}>
+                <Shield size={18}/> כניסת מנהל
+              </button>
+            )}
+          </div>
+        </div>
+      </aside>
+
+      <div className="lm-main" key={currentGame?.id || 'no-game'}>
+
+        {/* ── Mobile top bar ── */}
+        <header className="lm-topbar mobile-topbar">
+          {/* לוגו + שם משחק — לחיץ לפתיחת drawer */}
+          <button
+            onClick={()=>setSidebarOpen(s=>!s)}
+            style={{
+              display:'flex',alignItems:'center',gap:10,flex:1,
+              background:'none',border:'none',cursor:'pointer',textAlign:'right',
+              padding:'8px 0',
+              WebkitTapHighlightColor:'transparent',touchAction:'manipulation',
+            }}
+          >
+            {currentGame?.game_icon ? (
+              <img src={currentGame.game_icon} alt="logo" style={{width:46,height:46,borderRadius:10,objectFit:'contain',flexShrink:0,border:'1px solid var(--tp-20)'}}/>
+            ) : (
+              <div style={{width:46,height:46,borderRadius:10,background:'var(--tp-10)',border:'1px dashed var(--tp-25)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'1.4rem',flexShrink:0}}>⚽</div>
+            )}
+            <div style={{flex:1,minWidth:0,textAlign:'right'}}>
+              <div style={{fontWeight:800,fontSize:'1.05rem',color:'var(--text)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',lineHeight:1.2}}>
+                {currentGame?.game_name || 'בחר משחק'}
+              </div>
+              {currentGame?.game_subtitle && (
+                <div style={{fontSize:'0.85rem',fontWeight:700,color:'var(--tp)',marginTop:1}}>
+                  {currentGame.game_subtitle}
+                </div>
+              )}
+            </div>
+            {/* חץ להחלפת משחק */}
+            <div style={{flexShrink:0,color:'var(--tp)',opacity:0.7,fontSize:'1.2rem'}}>☰</div>
+          </button>
+        </header>
+
+        <RouteGuard currentUser={effectiveUser} isAdmin={isAdmin} loading={loading||gamesLoading}>
+          <main className="lm-page lm-page--mobile-padded">{children}</main>
+        </RouteGuard>
+
+        {/* ── Mobile bottom navigation bar ── */}
+        <nav className="lm-bottom-nav mobile-topbar">
+          {mainNav.slice(0,5).map(item => {
+            const active = isActive(item.url);
+            return (
+              <Link
+                key={item.title}
+                to={item.disabled ? '#' : item.url}
+                onClick={e => {
+                  if (item.disabled) { e.preventDefault(); toast({title:"בחר משחק",description:"נא לבחור משחק",variant:"destructive",duration:2000}); }
+                }}
+                style={{
+                  display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',
+                  flex:1,gap:3,padding:'8px 4px',textDecoration:'none',
+                  color: active ? 'var(--tp)' : (item.disabled ? '#334155' : '#64748b'),
+                  background: active ? 'var(--tp-10)' : 'transparent',
+                  borderTop: active ? '2px solid var(--tp)' : '2px solid transparent',
+                  transition:'all 0.15s',
+                  WebkitTapHighlightColor:'transparent',touchAction:'manipulation',
+                  cursor: item.disabled ? 'not-allowed' : 'pointer',
+                }}
+              >
+                <item.icon size={24}/>
+                <span style={{fontSize:'0.65rem',fontWeight:active?700:500,whiteSpace:'nowrap',fontFamily:'Rubik,Heebo,sans-serif'}}>
+                  {item.title}
+                </span>
+              </Link>
+            );
+          })}
+          {/* כפתור "עוד" — פותח drawer */}
+          <button
+            onClick={()=>setSidebarOpen(s=>!s)}
+            style={{
+              display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',
+              flex:1,gap:3,padding:'8px 4px',background:'none',border:'none',
+              color: sidebarOpen ? 'var(--tp)' : '#64748b',
+              borderTop: sidebarOpen ? '2px solid var(--tp)' : '2px solid transparent',
+              cursor:'pointer',WebkitTapHighlightColor:'transparent',touchAction:'manipulation',
+              fontFamily:'Rubik,Heebo,sans-serif',
+            }}
+          >
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="12" cy="5" r="1.5" fill="currentColor" stroke="none"/>
+              <circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none"/>
+              <circle cx="12" cy="19" r="1.5" fill="currentColor" stroke="none"/>
+            </svg>
+            <span style={{fontSize:'0.65rem',fontWeight:500,whiteSpace:'nowrap'}}>עוד</span>
+          </button>
+        </nav>
+
       </div>
 
-      {/* ════════════════════════════════════════════════════════════════════════
-          PARTICIPANT DETAIL DIALOG
-          גודל: 75vw רוחב, 80vh גובה — סביר, לא מסך מלא
-      ════════════════════════════════════════════════════════════════════════ */}
-      <Dialog
-        open={selectedParticipant !== null}
-        onOpenChange={() => { setSelectedParticipant(null); setParticipantDetails(null); }}
-      >
-        <DialogContent
-          dir="rtl"
-          style={{
-            maxWidth: '52vw',
-            width: '52vw',
-            maxHeight: '82vh',
-            height: '82vh',
-            display: 'flex',
-            flexDirection: 'column',
-            background: 'linear-gradient(135deg, var(--bg1) 0%, var(--bg3) 100%)',
-            border: '1px solid var(--tp-20)',
-            boxShadow: '0 0 30px var(--tp-25)',
-            borderRadius: '14px',
-            padding: '0',
-            overflow: 'hidden',
-          }}
-        >
-          {/* ── Header ── */}
-          <DialogHeader style={{
-            padding: '16px 24px 14px',
-            borderBottom: '1px solid var(--tp-20)',
-            flexShrink: 0,
-          }}>
-            <DialogTitle style={{
-              fontSize: '1.35rem',
-              fontWeight: 800,
-              color: '#f8fafc',
-              textAlign: 'right',
-              marginBottom: '8px',
-            }}>
-              {selectedParticipant}
+      <UploadStatusIndicator/>
+
+      <Dialog open={showAdminDialog} onOpenChange={setShowAdminDialog}>
+        <DialogContent className="lm-admin-dialog" dir="rtl">
+          <DialogHeader>
+            <DialogTitle style={{color:'var(--tp)',display:'flex',alignItems:'center',gap:8}}>
+              <Shield size={20}/> התחברות מנהל
             </DialogTitle>
-            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '12px' }}>
-              {loadingDetails ? (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <Loader2 className="animate-spin" style={{ width: 16, height: 16, color: 'var(--tp)' }} />
-                  <span style={{ fontSize: '0.9rem', color: 'var(--tp)' }}>מחשב ניקוד עדכני...</span>
-                </div>
-              ) : (
-                <>
-                  <Badge style={{
-                    background: 'var(--tp)', color: 'white',
-                    fontSize: '1rem', fontWeight: 700,
-                    padding: '5px 16px', borderRadius: '999px',
-                  }}>
-                    סה"כ: {participantDetails?.totalScore} נקודות
-                  </Badge>
-                  <span style={{ fontSize: '0.85rem', color: '#94a3b8' }}>
-                    {participantDetails?.scores?.length || 0} שאלות עם ניקוד
-                  </span>
-                </>
-              )}
-            </div>
+            <DialogDescription style={{color:'var(--text-muted)'}}>הזן את סיסמת המנהל</DialogDescription>
           </DialogHeader>
-
-          {/* ── Body ── */}
-          <div style={{ flex: 1, overflow: 'auto', padding: '4px 0 8px' }}>
-            {loadingDetails ? (
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '180px' }}>
-                <Loader2 className="animate-spin" style={{ width: 32, height: 32, color: 'var(--tp)' }} />
-              </div>
-            ) : (
-              <>
-              {/* ✅ טבלאות עולות — לפי זהות קבוצה */}
-              {participantDetails?.qualifyingSections?.length > 0 && (
-                <div style={{ padding:'8px 16px 4px' }}>
-                  {participantDetails.qualifyingSections.map(sec => {
-                    const { bonusEarned } = sec;
-                    return (
-                      <div key={sec.tableId} style={{ marginBottom:'12px', background:'rgba(30,41,59,0.5)', border:'1px solid var(--tp-20)', borderRadius:'10px', padding:'10px 12px' }}>
-                        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'8px' }}>
-                          <span style={{ fontSize:'0.82rem', fontWeight:700, color:'#f97316' }}>📋 {sec.tableDesc}</span>
-                          <span style={{ fontSize:'0.75rem', padding:'2px 8px', borderRadius:'999px', background: bonusEarned ? '#059669' : sec.allResultsIn ? '#dc2626' : 'rgba(100,116,139,0.3)', color:'white', fontWeight:700 }}>
-                            {bonusEarned ? `🏆 +${sec.cfg.bonus}` : sec.allResultsIn ? `בונוס: 0/${sec.cfg.bonus}` : `בונוס: ?/${sec.cfg.bonus}`}
-                          </span>
-                        </div>
-                        <div style={{ display:'grid', gridTemplateColumns:'repeat(2, 1fr)', gap:'4px' }}>
-                          {sec.preds.map((p, i) => {
-                            const icon  = p.pred ? (p.isAdv ? '✅' : p.isElim ? '❌' : '❓') : '—';
-                            const color = p.isAdv ? '#34d399' : p.isElim ? '#f87171' : '#94a3b8';
-                            const bg    = p.isAdv ? 'rgba(16,185,129,0.10)' : p.isElim ? 'rgba(239,68,68,0.08)' : 'rgba(15,23,42,0.3)';
-                            const score = !p.pred ? `?/${p.pts}` : sec.hasAnyResult ? (p.isAdv ? `+${p.pts}` : p.isElim ? '0' : `?/${p.pts}`) : `?/${p.pts}`;
-                            return (
-                              <div key={i} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'5px 8px', borderRadius:'6px', background: bg, border:`1px solid ${p.isAdv ? 'rgba(16,185,129,0.25)' : p.isElim ? 'rgba(239,68,68,0.20)' : 'rgba(71,85,105,0.3)'}` }}>
-                                <span style={{ fontSize:'0.82rem', color, fontWeight: p.isAdv ? 700 : 400 }}>{icon} {p.pred || <span style={{color:'#475569'}}>—</span>}</span>
-                                <span style={{ fontSize:'0.72rem', fontWeight:700, color: p.isAdv ? '#34d399' : p.isElim ? '#f87171' : '#64748b', marginRight:'6px' }}>{score}</span>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    );
-                  })}
-                  <div style={{ height:'1px', background:'var(--tp-15)', margin:'4px 0 8px' }}/>
-                </div>
-              )}
-
-              <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: '0 3px' }}>
-                <thead style={{ position: 'sticky', top: 0, zIndex: 10 }}>
-                  <tr>
-                    {[
-                      { label: 'טבלה',  w: '64px'  },
-                      { label: 'מס׳',   w: '54px'  },
-                      { label: 'שאלה',  w: 'auto'  },
-                      { label: 'ניחוש', w: '110px' },
-                      { label: 'תוצאה', w: '80px'  },
-                      { label: 'ניקוד', w: '74px'  },
-                    ].map(h => (
-                      <th key={h.label} style={{
-                        width: h.w,
-                        background: 'var(--bg1)',
-                        color: '#64748b',
-                        fontSize: '0.75rem',
-                        fontWeight: 600,
-                        textAlign: 'center',
-                        padding: '8px 6px',
-                        letterSpacing: '0.04em',
-                        borderBottom: '1px solid var(--tp-15)',
-                      }}>
-                        {h.label}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {participantDetails?.scores?.map((s, i) => {
-
-                    // ── שורת בונוס שלב (T3/T4/T5/T6) ─────────────────────
-                    if (s.isStageBonusRow) {
-                      return (
-                        <tr key={i} style={{
-                          background: 'rgba(16,185,129,0.08)',
-                          borderRight: '3px solid #10b981',
-                        }}>
-                          <td style={{ padding: '8px 6px', textAlign: 'center' }}>
-                            <span style={{
-                              display: 'inline-block', borderRadius: '999px',
-                              padding: '2px 8px', fontSize: '0.72rem',
-                              border: '1px solid #10b981', color: '#10b981',
-                              background: 'rgba(16,185,129,0.1)',
-                            }}>
-                              {s.table_id}
-                            </span>
-                          </td>
-                          <td style={{ padding: '8px 6px', textAlign: 'center', fontSize: '0.85rem' }}>🏆</td>
-                          <td colSpan={3} style={{ padding: '8px 6px', textAlign: 'right' }}>
-                            <span style={{ color: '#6ee7b7', fontSize: '0.88rem', fontWeight: 600 }}>
-                              {s.question_text}
-                            </span>
-                          </td>
-                          <td style={{ padding: '8px 6px', textAlign: 'center' }}>
-                            <span style={{
-                              display: 'inline-block', background: '#059669', color: 'white',
-                              fontSize: '0.85rem', fontWeight: 700,
-                              padding: '3px 10px', borderRadius: '999px',
-                            }}>
-                              +{s.score}
-                            </span>
-                          </td>
-                        </tr>
-                      );
-                    }
-
-                    // ── שורת מיקומים ──────────────────────────────────────
-                    if (s.isLocationSummary) {
-                      return (
-                        <tr key={i} style={{
-                          background: 'rgba(249,115,22,0.08)',
-                          borderRight: '3px solid #f97316',
-                        }}>
-                          <td style={{ padding: '8px 6px', textAlign: 'center' }}>
-                            <span style={{
-                              display: 'inline-block', borderRadius: '999px',
-                              padding: '2px 8px', fontSize: '0.72rem',
-                              border: '1px solid #f97316', color: '#f97316',
-                              background: 'rgba(249,115,22,0.1)',
-                            }}>
-                              {s.table_id}
-                            </span>
-                          </td>
-                          <td style={{ padding: '8px 6px', textAlign: 'center', color: '#94a3b8', fontSize: '0.85rem' }}>📋</td>
-                          <td colSpan={3} style={{ padding: '8px 6px', textAlign: 'right' }}>
-                            <span style={{ color: '#fdba74', fontSize: '0.88rem', fontWeight: 600 }}>
-                              {s.question_text}
-                            </span>
-                          </td>
-                          <td style={{ padding: '8px 6px', textAlign: 'center' }}>
-                            <span style={{
-                              display: 'inline-block', background: '#ea580c', color: 'white',
-                              fontSize: '0.85rem', fontWeight: 700,
-                              padding: '3px 10px', borderRadius: '999px',
-                            }}>
-                              +{s.score}
-                            </span>
-                          </td>
-                        </tr>
-                      );
-                    }
-
-                    // ── שורת שאלה רגילה ───────────────────────────────────
-                    let badgeBg = '#475569';
-                    if (s.score === s.max_score && s.max_score > 0) badgeBg = '#16a34a';
-                    else if (s.score >= 7)  badgeBg = '#2563eb';
-                    else if (s.score > 0)   badgeBg = '#ca8a04';
-
-                    return (
-                      <tr key={i}
-                        style={{ background: 'rgba(30,41,59,0.5)', transition: 'background 0.12s' }}
-                        onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.045)'}
-                        onMouseLeave={e => e.currentTarget.style.background = 'rgba(30,41,59,0.5)'}
-                      >
-                        {/* טבלה */}
-                        <td style={{ padding: '8px 6px', textAlign: 'center' }}>
-                          <span style={{
-                            display: 'inline-block', borderRadius: '999px',
-                            padding: '2px 8px', fontSize: '0.72rem',
-                            border: '1px solid var(--tp)', color: 'var(--tp)',
-                            background: 'var(--tp-10)',
-                          }}>
-                            {s.table_id}
-                          </span>
-                        </td>
-                        {/* מס' */}
-                        <td style={{ padding: '8px 6px', textAlign: 'center' }}>
-                          <span style={{
-                            display: 'inline-block', borderRadius: '999px',
-                            padding: '2px 8px', fontSize: '0.72rem',
-                            border: '1px solid var(--tp)', color: 'var(--tp)',
-                            background: 'var(--tp-10)',
-                          }}>
-                            {s.question_id_display}
-                          </span>
-                        </td>
-                        {/* שאלה */}
-                        <td style={{ padding: '8px 6px', textAlign: 'right' }}>
-                          {s.home_team && s.away_team ? (
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '0.88rem', color: '#f1f5f9' }}>
-                              <span>{s.home_team_display || s.home_team}</span>
-                              {s.home_team_logo && (
-                                <img src={s.home_team_logo} alt="" style={{ width: 18, height: 18, borderRadius: '50%' }}
-                                  onError={e => e.target.style.display = 'none'} />
-                              )}
-                              <span style={{ color: '#475569', fontSize: '0.78rem' }}>נגד</span>
-                              {s.away_team_logo && (
-                                <img src={s.away_team_logo} alt="" style={{ width: 18, height: 18, borderRadius: '50%' }}
-                                  onError={e => e.target.style.display = 'none'} />
-                              )}
-                              <span>{s.away_team_display || s.away_team}</span>
-                            </div>
-                          ) : (
-                            <span style={{ fontSize: '0.88rem', color: '#f1f5f9' }}>{s.question_text}</span>
-                          )}
-                        </td>
-                        {/* ניחוש */}
-                        <td style={{ padding: '8px 6px', textAlign: 'center', fontSize: '0.88rem', color: '#94a3b8' }}>
-                          {s.prediction || '—'}
-                        </td>
-                        {/* תוצאה */}
-                        <td style={{ padding: '8px 6px', textAlign: 'center', fontSize: '0.88rem', color: '#f1f5f9', fontWeight: 600 }}>
-                          {s.actual_result || '—'}
-                        </td>
-                        {/* ניקוד */}
-                        <td style={{ padding: '8px 6px', textAlign: 'center' }}>
-                          <span style={{
-                            display: 'inline-block', background: badgeBg, color: 'white',
-                            fontSize: '0.85rem', fontWeight: 700,
-                            padding: '3px 10px', borderRadius: '999px',
-                            minWidth: '52px', textAlign: 'center',
-                          }}>
-                            {s.score}/{s.max_score}
-                          </span>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-              </>
-            )}
+          <div style={{display:'flex',flexDirection:'column',gap:16}}>
+            <Input type="password" value={adminPassword} onChange={e=>setAdminPassword(e.target.value)}
+              onKeyPress={e=>e.key==='Enter'&&handleAdminLogin()} placeholder="סיסמה..."/>
+            <div style={{display:'flex',gap:10,justifyContent:'flex-end'}}>
+              <button onClick={()=>{setShowAdminDialog(false);setAdminPassword("");}} className="btn btn-ghost">ביטול</button>
+              <button onClick={handleAdminLogin} className="btn btn-primary">התחבר כמנהל</button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>
     </div>
   );
 }
+
+// ─── Root export ──────────────────────────────────────────────────────────────
+export default function Layout({ children, currentPageName }) {
+  return (
+    <ThemeProvider>
+      <UploadStatusProvider>
+        <GameProvider>
+          <style>{GLOBAL_STYLES}</style>
+          <LayoutContent currentPageName={currentPageName}>{children}</LayoutContent>
+        </GameProvider>
+      </UploadStatusProvider>
+    </ThemeProvider>
+  );
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+//  GLOBAL STYLES — כל CSS גלובלי כולל btn system, cards, ו-theme variables
+// ═════════════════════════════════════════════════════════════════════════════
+const GLOBAL_STYLES = `
+  /* ThemeContext מטפל ב-font injection + רקעים + CSS vars.
+     כאן רק layout, components, ו-utilities. */
+
+  /* ══════════════════════════════════════════════════
+     CSS VARIABLES — כל הערכים מגיעים מ-ThemeContext
+     =====================================================
+     --bg1, --bg2, --bg3        : רקעים
+     --sidebar                  : רקע סיידבר
+     --tp                       : צבע ראשי
+     --tp-03 ... --tp-50        : ראשי + שקיפות
+     --text, --text-muted       : טקסט
+     --card-bg, --card-border   : כרטיסים
+     --font-main                : גופן
+  ══════════════════════════════════════════════════ */
+
+  /* Default values (overridden at runtime by ThemeContext) */
+  :root {
+    --bg1:         #070d1a;
+    --bg2:         #0d1929;
+    --bg3:         #0a1422;
+    --sidebar:     rgba(5,8,16,0.99);
+    --sidebar-bdr: rgba(6,182,212,0.10);
+    --tp:          #06b6d4;
+    --tp-dark:     #0891b2;
+    --tp-03:       rgba(6,182,212,0.03);
+    --tp-05:       rgba(6,182,212,0.05);
+    --tp-08:       rgba(6,182,212,0.08);
+    --tp-10:       rgba(6,182,212,0.10);
+    --tp-12:       rgba(6,182,212,0.12);
+    --tp-15:       rgba(6,182,212,0.15);
+    --tp-18:       rgba(6,182,212,0.18);
+    --tp-20:       rgba(6,182,212,0.20);
+    --tp-25:       rgba(6,182,212,0.25);
+    --tp-30:       rgba(6,182,212,0.30);
+    --tp-40:       rgba(6,182,212,0.40);
+    --tp-50:       rgba(6,182,212,0.50);
+    --tp-glow:     0 0 20px rgba(6,182,212,0.30);
+    --text:        #e2e8f0;
+    --text-muted:  #64748b;
+    --text-sub:    #475569;
+    --card-bg:     rgba(13,25,41,0.95);
+    --card-border: rgba(6,182,212,0.10);
+    --gold:        #f59e0b;
+    --font-main:   'Rubik', 'Heebo', sans-serif;
+  }
+
+  /* ── Reset ─────────────────────────────────────── */
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    width: 100%; height: 100%;
+    transition: background 0.4s ease, color 0.3s ease;
+  }
+  #root { height: 100%; }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--tp-25); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--tp-40); }
+
+  /* ══════════════════════════════════════════════════
+     BUTTON SYSTEM
+     className="btn btn-primary"
+     className="btn btn-secondary btn-sm"
+     className="btn btn-danger btn-icon"
+     className="btn btn-ghost btn-wide"
+  ══════════════════════════════════════════════════ */
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    gap: 7px; padding: 9px 18px; border-radius: 8px;
+    font-family: var(--font-main) !important;
+    font-size: 0.88rem; font-weight: 600; line-height: 1;
+    cursor: pointer; border: 1px solid transparent;
+    text-decoration: none; white-space: nowrap; user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    transition: background 0.18s, border-color 0.18s, box-shadow 0.18s, transform 0.12s, opacity 0.18s, filter 0.18s;
+  }
+  .btn:active:not(:disabled):not([disabled]) { transform: scale(0.97); }
+  .btn:disabled, .btn[disabled] { opacity: 0.4; cursor: not-allowed; pointer-events: none; }
+
+  .btn-primary   { background: var(--tp); color: #fff; border-color: transparent; }
+  .btn-primary:hover:not(:disabled) { filter: brightness(1.12); box-shadow: 0 4px 20px var(--tp-30); }
+
+  .btn-secondary { background: var(--tp-10); color: var(--tp); border-color: var(--tp-30); }
+  .btn-secondary:hover:not(:disabled) { background: var(--tp-20); border-color: var(--tp-50); box-shadow: 0 0 14px var(--tp-20); }
+
+  .btn-ghost { background: transparent; color: var(--text-muted); border-color: rgba(148,163,184,0.20); }
+  .btn-ghost:hover:not(:disabled) { background: rgba(148,163,184,0.08); color: var(--text); }
+
+  .btn-danger { background: rgba(239,68,68,0.08); color: #ef4444; border-color: rgba(239,68,68,0.22); }
+  .btn-danger:hover:not(:disabled) { background: rgba(239,68,68,0.16); border-color: rgba(239,68,68,0.45); }
+
+  .btn-success { background: rgba(34,197,94,0.10); color: #22c55e; border-color: rgba(34,197,94,0.25); }
+  .btn-success:hover:not(:disabled) { background: rgba(34,197,94,0.18); border-color: rgba(34,197,94,0.45); }
+
+  .btn-warning { background: rgba(245,158,11,0.10); color: #f59e0b; border-color: rgba(245,158,11,0.25); }
+  .btn-warning:hover:not(:disabled) { background: rgba(245,158,11,0.18); }
+
+  .btn-sm   { padding: 5px 12px; font-size: 0.78rem; border-radius: 7px; gap: 5px; }
+  .btn-lg   { padding: 12px 26px; font-size: 0.95rem; border-radius: 10px; gap: 9px; }
+  .btn-icon { padding: 8px; aspect-ratio: 1; }
+  .btn-icon.btn-sm { padding: 6px; }
+  .btn-wide { width: 100%; }
+
+  /* ══════════════════════════════════════════════════
+     CARD SYSTEM
+     className="card"
+  ══════════════════════════════════════════════════ */
+  .card {
+    background: var(--card-bg, var(--bg2));
+    border: 1px solid var(--card-border, var(--tp-10));
+    border-radius: 12px; padding: 20px 24px;
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+  .card:hover { border-color: var(--tp-20); }
+  .card-sm { padding: 14px 18px; border-radius: 10px; }
+  .card-elevated { box-shadow: 0 4px 24px rgba(0,0,0,0.35); }
+
+  /* ══════════════════════════════════════════════════
+     BADGE SYSTEM
+  ══════════════════════════════════════════════════ */
+  .badge {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 3px 10px; border-radius: 20px;
+    font-size: 0.72rem; font-weight: 700; letter-spacing: 0.03em; border: 1px solid transparent;
+  }
+  .badge-primary { background: var(--tp-12); color: var(--tp); border-color: var(--tp-25); }
+  .badge-success { background: rgba(34,197,94,0.10); color: #22c55e; border-color: rgba(34,197,94,0.25); }
+  .badge-danger  { background: rgba(239,68,68,0.10); color: #ef4444; border-color: rgba(239,68,68,0.25); }
+  .badge-warning { background: rgba(245,158,11,0.10); color: #f59e0b; border-color: rgba(245,158,11,0.25); }
+  .badge-gray    { background: rgba(148,163,184,0.10); color: #94a3b8; border-color: rgba(148,163,184,0.20); }
+
+  /* ══════════════════════════════════════════════════
+     INPUT SYSTEM
+  ══════════════════════════════════════════════════ */
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  select, textarea {
+    background: var(--bg1) !important;
+    border: 1px solid var(--tp-20) !important;
+    color: var(--text) !important;
+    border-radius: 8px !important;
+    font-family: var(--font-main) !important;
+    transition: border-color 0.2s, box-shadow 0.2s !important;
+  }
+  input:focus, select:focus, textarea:focus {
+    border-color: var(--tp-50) !important;
+    box-shadow: 0 0 0 3px var(--tp-12) !important;
+    outline: none !important;
+  }
+
+  /* ── Layout shell ─────────────────────────────── */
+  .lm-root {
+    display: flex;
+    height: 100dvh;
+    overflow: hidden;
+    background: var(--bg1);
+    transition: background 0.4s ease;
+  }
+
+  /* ── Sidebar ──────────────────────────────────── */
+  .lm-sidebar {
+    width: 300px !important; flex-shrink: 0;
+    height: 100dvh;
+    display: flex; flex-direction: column;
+    background: var(--sidebar);
+    border-left: 1px solid var(--sidebar-bdr, var(--tp-10));
+    overflow: hidden; z-index: 40; position: relative;
+    transition: background 0.4s ease;
+  }
+  .lm-sidebar::before {
+    content: '';
+    position: absolute; top: -90px; right: -90px;
+    width: 280px; height: 280px;
+    background: radial-gradient(circle, var(--tp-12) 0%, transparent 70%);
+    pointer-events: none; z-index: 0;
+    transition: background 0.4s;
+  }
+  .lm-sidebar::after {
+    content: '';
+    position: absolute; inset: 0;
+    background-image:
+      repeating-linear-gradient(0deg,  transparent, transparent 27px, var(--tp-03) 28px),
+      repeating-linear-gradient(90deg, transparent, transparent 27px, var(--tp-03) 28px);
+    pointer-events: none; z-index: 0;
+  }
+  .lm-sidebar-inner {
+    position: relative; z-index: 1;
+    display: flex; flex-direction: column; height: 100%;
+    overflow-y: auto; scrollbar-width: none;
+  }
+  .lm-sidebar-inner::-webkit-scrollbar { display: none; }
+
+  .lm-sidebar--mobile {
+    position: fixed; top: 0; right: -310px;
+    height: 100dvh; z-index: 50;
+    transition: right 0.30s cubic-bezier(0.4,0,0.2,1), box-shadow 0.30s ease;
+  }
+  .lm-sidebar--mobile.open { right: 0; box-shadow: -12px 0 60px rgba(0,0,0,0.65); }
+
+  .lm-close-btn {
+    position: absolute; top: 12px; left: 12px;
+    background: transparent; border: none; color: var(--text-muted);
+    cursor: pointer; padding: 5px; z-index: 2; border-radius: 6px;
+    transition: color 0.15s, background 0.15s;
+  }
+  .lm-close-btn:hover { color: var(--text); background: var(--tp-08); }
+
+  /* ── Overlay ──────────────────────────────────── */
+  .lm-overlay {
+    display: none; position: fixed; inset: 0; z-index: 49;
+    background: rgba(0,0,0,0.65); backdrop-filter: blur(4px);
+    opacity: 0; transition: opacity 0.30s ease; pointer-events: none;
+  }
+  .lm-overlay.visible { opacity: 1; pointer-events: all; }
+
+  /* ── Logo (96px) ──────────────────────────────── */
+  .lm-logo-area {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 20px 16px 14px;
+  }
+  .lm-logo-img-wrap { position: relative; flex-shrink: 0; }
+  .lm-logo-img {
+    width: 130px; height: 130px;
+    object-fit: contain; border-radius: 16px;
+    border: 1px solid var(--tp-20); display: block;
+  }
+  .lm-logo-glow {
+    position: absolute; inset: -10px; border-radius: 24px;
+    background: radial-gradient(circle, var(--tp-18) 0%, transparent 70%);
+    pointer-events: none; animation: lm-pulse 3.5s ease-in-out infinite;
+    transition: background 0.4s;
+  }
+  @keyframes lm-pulse {
+    0%,100% { opacity: 0.4; transform: scale(1); }
+    50%      { opacity: 1.0; transform: scale(1.08); }
+  }
+  .lm-logo-placeholder {
+    width: 130px; height: 130px; border-radius: 16px; flex-shrink: 0;
+    border: 1px dashed var(--tp-25); background: var(--tp-05);
+    display: flex; align-items: center; justify-content: center; font-size: 48px;
+  }
+  .lm-logo-text {
+    flex: 1; min-width: 0;
+    display: flex; flex-direction: column; gap: 6px;
+  }
+  .lm-logo-title {
+    font-size: 1.05rem;
+    font-weight: 900;
+    color: var(--text);
+    line-height: 1.25;
+    word-break: break-word;
+    overflow-wrap: break-word;
+    /* לא חוצים ל-3 שורות — מציגים הכל */
+    transition: color 0.3s;
+  }
+  .lm-logo-title--dim { color: var(--text-muted); font-weight: 500; }
+  .lm-logo-season {
+    font-size: 1rem;
+    font-weight: 800;
+    color: var(--tp);
+    line-height: 1.2;
+    word-break: break-word;
+    transition: color 0.3s;
+  }
+
+  /* ── Stars ────────────────────────────────────── */
+  .lm-stars {
+    display: flex; justify-content: center; gap: 6px;
+    padding: 0 18px 12px; position: relative;
+  }
+  .lm-stars::after {
+    content: ''; position: absolute; bottom: 0; left: 18px; right: 18px; height: 1px;
+    background: linear-gradient(90deg, transparent, var(--tp-30), transparent);
+  }
+  .lm-star {
+    font-size: 11px; color: var(--gold); opacity: 0;
+    filter: drop-shadow(0 0 5px var(--gold));
+    animation: lm-star-in 0.5s ease forwards;
+    animation-delay: calc(var(--i) * 0.08s + 0.4s);
+    transition: color 0.3s;
+  }
+  @keyframes lm-star-in { to { opacity: 0.9; } }
+
+  /* ── Game selector ────────────────────────────── */
+  .lm-game-selector {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--tp-08);
+    background: var(--tp-03);
+  }
+  .lm-sec-label {
+    font-size: 0.7rem; font-weight: 800; letter-spacing: 0.12em;
+    text-transform: uppercase; color: var(--text-sub); padding: 0 4px 7px;
+  }
+  .lm-sec-label--primary { color: var(--tp); opacity: 1; font-size: 0.72rem; }
+  .lm-sec-label--admin   { color: var(--gold); opacity: 0.9; margin-top: 16px; font-size: 0.7rem; }
+
+  .lm-select-trigger {
+    background: var(--bg1) !important; border: 1px solid var(--tp-20) !important;
+    color: var(--text) !important; font-size: 0.84rem !important; font-weight: 600 !important;
+    height: 38px !important; border-radius: 8px !important;
+    transition: border-color 0.2s, box-shadow 0.2s !important;
+  }
+  .lm-select-content {
+    background: var(--bg2) !important; border: 1px solid var(--tp-30) !important;
+    color: var(--text) !important; z-index: 9999 !important;
+    border-radius: 10px !important; overflow: hidden !important;
+  }
+  .lm-edit-game {
+    display: inline-flex; align-items: center; gap: 4px;
+    margin-top: 6px; font-size: 0.68rem; color: var(--text-muted);
+    text-decoration: none; transition: color 0.15s;
+  }
+  .lm-edit-game:hover { color: var(--tp); }
+
+  /* ── Navigation ───────────────────────────────── */
+  .lm-nav {
+    flex: 1; padding: 12px 10px;
+    display: flex; flex-direction: column; gap: 2px;
+    overflow-y: auto; scrollbar-width: none;
+  }
+  .lm-nav::-webkit-scrollbar { display: none; }
+
+  .lm-nav-item {
+    position: relative; display: flex; align-items: center; gap: 10px;
+    padding: 10px 13px; border-radius: 10px; text-decoration: none;
+    font-size: 0.96rem; font-weight: 500; color: var(--text-muted);
+    transition: background 0.18s, color 0.18s, transform 0.14s;
+    cursor: pointer;
+  }
+  .lm-nav-item:hover:not(.disabled) { background: var(--tp-08); color: var(--text); transform: translateX(-3px); }
+  .lm-nav-item.active { background: var(--tp-12); color: var(--tp); font-weight: 700; }
+  .lm-nav-item.disabled { opacity: 0.35; cursor: not-allowed; }
+  .lm-nav-icon { width:20px; height:20px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+  .lm-nav-label { flex: 1; }
+  .lm-nav-bar {
+    position: absolute; right: 0; top: 50%; transform: translateY(-50%);
+    width: 3px; height: 60%; border-radius: 2px 0 0 2px;
+    background: var(--tp); box-shadow: 0 0 12px var(--tp-40);
+    animation: lm-bar-in 0.22s ease;
+  }
+  @keyframes lm-bar-in {
+    from { transform: translateY(-50%) scaleY(0); }
+    to   { transform: translateY(-50%) scaleY(1); }
+  }
+
+  .lm-login-prompt {
+    display: flex; align-items: center; gap: 10px;
+    width: 100%; padding: 10px 13px; border-radius: 10px;
+    background: var(--tp-05); border: 1px dashed var(--tp-20);
+    color: var(--text-muted); font-size: 0.92rem; font-weight: 500;
+    font-family: var(--font-main) !important; cursor: pointer; text-align: right;
+    transition: background 0.15s, color 0.15s;
+  }
+  .lm-login-prompt:hover { background: var(--tp-10); color: var(--text); }
+  .lm-login-badge {
+    font-size: 0.62rem; font-weight: 700; margin-right: auto;
+    background: var(--tp-15); color: var(--tp);
+    padding: 2px 8px; border-radius: 20px; letter-spacing: 0.05em;
+  }
+
+  /* ══════════════════════════════════════════════════
+     THEME SECTION (replaces old ThemePicker)
+  ══════════════════════════════════════════════════ */
+  .lm-theme-section {
+    padding: 10px 12px;
+    border-top: 1px solid var(--tp-08);
+    display: flex; flex-direction: column; gap: 6px;
+  }
+
+  /* Dark/light toggle */
+  .lm-darkmode-btn {
+    display: flex; align-items: center; gap: 10px;
+    width: 100%; background: transparent; border: none;
+    cursor: pointer; font-family: var(--font-main) !important;
+    padding: 6px 4px; border-radius: 8px; transition: background 0.15s;
+  }
+  .lm-darkmode-btn:hover { background: var(--tp-05); }
+  .lm-darkmode-track {
+    position: relative; width: 36px; height: 20px;
+    background: var(--tp-20); border: 1px solid var(--tp-30);
+    border-radius: 10px; flex-shrink: 0;
+    transition: background 0.25s;
+  }
+  .lm-darkmode-knob {
+    position: absolute; top: 2px; right: 2px;
+    width: 16px; height: 16px; border-radius: 50%;
+    background: var(--tp); color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    transition: transform 0.25s cubic-bezier(0.4,0,0.2,1), background 0.25s;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.4);
+  }
+  .lm-darkmode-knob.light { transform: translateX(-16px); background: var(--gold); }
+  .lm-darkmode-label { font-size: 0.75rem; font-weight: 600; color: var(--text-muted); }
+
+  /* Theme selector trigger */
+  .lm-theme-trigger {
+    display: flex; align-items: center; gap: 8px;
+    width: 100%; background: var(--tp-05);
+    border: 1px solid var(--tp-15); border-radius: 9px;
+    padding: 8px 10px; cursor: pointer;
+    font-family: var(--font-main) !important;
+    transition: background 0.15s, border-color 0.15s;
+  }
+  .lm-theme-trigger:hover { background: var(--tp-10); border-color: var(--tp-25); }
+  .lm-theme-dots { display: flex; gap: 3px; align-items: center; }
+  .lm-theme-name-current { flex: 1; font-size: 0.82rem; font-weight: 600; color: var(--text); text-align: right; }
+  .lm-theme-chevron { font-size: 0.6rem; color: var(--text-muted); }
+
+  /* Theme panel */
+  .lm-theme-panel {
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 6px; margin-top: 4px;
+    animation: lm-panel-in 0.18s ease;
+  }
+  @keyframes lm-panel-in {
+    from { opacity: 0; transform: translateY(-6px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .lm-theme-card {
+    display: flex; flex-direction: column; gap: 6px;
+    padding: 8px; border-radius: 10px;
+    background: var(--tp-05); border: 1px solid var(--tp-10);
+    cursor: pointer; transition: background 0.15s, border-color 0.15s, transform 0.12s;
+    font-family: var(--font-main) !important;
+  }
+  .lm-theme-card:hover { background: var(--tp-10); transform: scale(1.03); }
+  .lm-theme-card.active { transform: scale(1.02); }
+
+  /* Color strip */
+  .lm-theme-strip {
+    width: 100%; height: 20px; border-radius: 6px; overflow: hidden;
+    display: flex; border: 1px solid rgba(255,255,255,0.06);
+  }
+
+  .lm-theme-card-info {
+    display: flex; align-items: center; gap: 5px;
+  }
+  .lm-theme-card-emoji { font-size: 14px; }
+  .lm-theme-card-name  { font-size: 0.75rem; font-weight: 700; color: var(--text); flex: 1; }
+  .lm-theme-check      { font-size: 0.8rem; font-weight: 700; }
+
+  /* ── User footer ──────────────────────────────── */
+  .lm-user-footer { padding: 12px 14px 16px; border-top: 1px solid var(--tp-10); }
+  .lm-user-row { display: flex; align-items: center; gap: 10px; }
+  .lm-avatar {
+    width: 36px; height: 36px; border-radius: 50%; flex-shrink: 0;
+    background: linear-gradient(135deg, var(--tp), #8b5cf6);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.82rem; font-weight: 800; color: white;
+    box-shadow: 0 0 14px var(--tp-25);
+  }
+  .lm-user-info-block { flex: 1; min-width: 0; }
+  .lm-user-name {
+    font-size: 0.82rem; font-weight: 600; color: var(--text);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .lm-user-role { font-size: 0.68rem; margin-top: 1px; }
+  .lm-logout-btn { flex-shrink: 0; }
+
+  /* ── Loading ──────────────────────────────────── */
+  .lm-loading {
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: center; height: 100dvh; gap: 16px;
+    color: var(--text-muted); font-size: 0.9rem;
+    background: var(--bg1);
+  }
+  .lm-loading-spinner {
+    width: 38px; height: 38px;
+    border: 3px solid var(--tp-15); border-top-color: var(--tp);
+    border-radius: 50%; animation: lm-spin 0.8s linear infinite;
+  }
+  @keyframes lm-spin { to { transform: rotate(360deg); } }
+
+  /* ── Main content ─────────────────────────────── */
+  .lm-main {
+    flex: 1; display: flex; flex-direction: column;
+    height: 100dvh; overflow: hidden; min-width: 0;
+    background: var(--bg1); transition: background 0.4s;
+  }
+  .lm-page {
+    flex: 1; overflow-y: auto; overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
+    background: var(--bg1); transition: background 0.4s;
+  }
+
+  /* ── Mobile topbar ────────────────────────────── */
+  .lm-topbar {
+    display: none; align-items: center; justify-content: space-between;
+    padding: 0 14px; height: 62px; flex-shrink: 0;
+    background: var(--sidebar);
+    border-bottom: 1px solid var(--tp-10);
+    position: sticky; top: 0; z-index: 30;
+    transition: background 0.4s;
+  }
+  .lm-topbar-brand {
+    display: flex; align-items: center; gap: 10px;
+    font-size: 1rem; font-weight: 800; color: var(--text);
+    flex: 1; overflow: hidden; min-width: 0;
+  }
+  .lm-topbar-img {
+    width: 42px; height: 42px;
+    object-fit: contain; border-radius: 10px; flex-shrink: 0;
+  }
+
+  /* ── Hamburger — גדול יותר ────────────────────── */
+  .lm-hamburger {
+    display: flex; flex-direction: column; justify-content: center; gap: 6px;
+    width: 46px; height: 46px; padding: 10px;
+    background: var(--tp-08); border: 1px solid var(--tp-20);
+    border-radius: 10px; cursor: pointer; flex-shrink: 0;
+    transition: background 0.15s;
+  }
+  .lm-hamburger:hover { background: var(--tp-15); }
+  .lm-hamburger span {
+    display: block; height: 2.5px; background: var(--tp);
+    border-radius: 2px;
+    transition: transform 0.28s ease, opacity 0.28s ease, width 0.28s ease;
+    transform-origin: center;
+  }
+  .lm-hamburger span:nth-child(1) { width: 24px; }
+  .lm-hamburger span:nth-child(2) { width: 16px; }
+  .lm-hamburger span:nth-child(3) { width: 24px; }
+  .lm-hamburger.open span:nth-child(1) { transform: translateY(8.5px) rotate(45deg); width: 24px; }
+  .lm-hamburger.open span:nth-child(2) { opacity: 0; transform: scaleX(0); }
+  .lm-hamburger.open span:nth-child(3) { transform: translateY(-8.5px) rotate(-45deg); width: 24px; }
+
+  /* ── Admin dialog ─────────────────────────────── */
+  .lm-admin-dialog {
+    background: linear-gradient(135deg, var(--bg3) 0%, var(--bg1) 100%) !important;
+    border: 1px solid var(--tp-30) !important; border-radius: 14px !important;
+  }
+
+  /* ── Responsive ───────────────────────────────── */
+  @media (max-width: 768px) {
+    .desktop-sidebar { display: none !important; }
+    .mobile-topbar   { display: flex !important; }
+    .lm-overlay      { display: block !important; }
+  }
+  @media (min-width: 769px) {
+    .mobile-sidebar { display: none !important; }
+    .mobile-topbar  { display: none !important; }
+  }
+
+  /* ══════════════════════════════════════════════════════════════════
+     MOBILE COMPLETE REDESIGN
+     עיצוב מובייל מחדש — מקיף, מעמיק, לכל עמודי האפליקציה
+  ══════════════════════════════════════════════════════════════════ */
+  @media (max-width: 768px) {
+
+    /* ─── Base ──────────────────────────────────────────────── */
+    html, body, #root {
+      overflow-x: hidden !important;
+      max-width: 100vw !important;
+      -webkit-text-size-adjust: 100%;
+    }
+    body { font-size: 15px !important; }
+    .lm-root, .lm-main, .lm-page { overflow-x: hidden !important; }
+
+    /* ─── Show/hide ─────────────────────────────────────────── */
+    .desktop-sidebar { display: none !important; }
+    .mobile-topbar   { display: flex !important; }
+    .lm-overlay      { display: block !important; }
+
+    /* ─── Top bar ───────────────────────────────────────────── */
+    .lm-topbar { height: 64px !important; padding: 0 12px !important; }
+
+    /* ─── Bottom nav ────────────────────────────────────────── */
+    .lm-bottom-nav {
+      position: fixed; bottom: 0; left: 0; right: 0;
+      height: 62px; display: flex !important; align-items: stretch;
+      background: var(--sidebar); border-top: 1px solid var(--tp-15);
+      z-index: 30; box-shadow: 0 -4px 24px rgba(0,0,0,0.5);
+      padding-bottom: env(safe-area-inset-bottom, 0px);
+    }
+    .lm-page--mobile-padded { padding-bottom: 70px !important; }
+
+    /* ─── Drawer ────────────────────────────────────────────── */
+    .lm-sidebar--mobile {
+      position: fixed; top: 0; right: -105vw; width: 85vw;
+      height: 100dvh; z-index: 50; overflow-y: auto;
+      transition: right 0.28s cubic-bezier(0.4,0,0.2,1);
+    }
+    .lm-sidebar--mobile.open { right: 0; box-shadow: -12px 0 60px rgba(0,0,0,0.7); }
+
+    /* ─── Headings ──────────────────────────────────────────── */
+    h1 { font-size: 1.35rem !important; }
+    h2 { font-size: 1.15rem !important; }
+    h3 { font-size: 1rem !important; }
+
+    /* ─── Nav items in drawer ───────────────────────────────── */
+    .lm-nav-item { font-size: 1.05rem !important; padding: 14px 16px !important; min-height: 52px !important; }
+    .lm-nav-icon { width: 24px !important; height: 24px !important; }
+    .lm-sec-label { font-size: 0.78rem !important; }
+
+    /* ─── Cards ─────────────────────────────────────────────── */
+    .card, [class*="Card"], [data-card] {
+      border-radius: 10px !important;
+    }
+
+    /* ─── Buttons — minimum tap target 44px ─────────────────── */
+    button, [role="button"], .btn, a.btn {
+      min-height: 40px;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+    }
+    button[class*="Badge"], span[class*="Badge"] { min-height: unset; }
+
+    /* ─── Form elements ─────────────────────────────────────── */
+    input, select, textarea {
+      font-size: 16px !important; /* prevent iOS zoom */
+      min-height: 44px;
+    }
+    [class*="SelectTrigger"] {
+      min-height: 44px !important;
+      font-size: 15px !important;
+    }
+
+    /* ─── Dialogs — full screen on mobile ───────────────────── */
+    [role="dialog"] {
+      max-width: 100vw !important;
+      width: 100vw !important;
+      max-height: 92dvh !important;
+      height: 92dvh !important;
+      margin: 0 !important;
+      border-radius: 16px 16px 0 0 !important;
+      position: fixed !important;
+      bottom: 0 !important;
+      top: auto !important;
+      left: 0 !important;
+      right: 0 !important;
+      transform: none !important;
+    }
+    /* Dialog close button — bigger */
+    [role="dialog"] button[class*="close"],
+    [role="dialog"] button[aria-label="Close"] {
+      width: 36px !important; height: 36px !important;
+      top: 12px !important; left: 12px !important;
+    }
+
+    /* ─── Tables — horizontal scroll ────────────────────────── */
+    table {
+      font-size: 0.82rem !important;
+      min-width: 100%;
+    }
+    th, td { padding: 7px 5px !important; font-size: 0.82rem !important; }
+
+    /* ─── Leaderboard table specific ────────────────────────── */
+    .leaderboard-table th:nth-child(4),
+    .leaderboard-table th:nth-child(5),
+    .leaderboard-table td:nth-child(4),
+    .leaderboard-table td:nth-child(5) { display: none !important; }
+
+    /* ─── Grids — single column on mobile ───────────────────── */
+    .grid-cols-2 { grid-template-columns: 1fr !important; }
+    .grid-cols-3 { grid-template-columns: 1fr !important; }
+    .grid-cols-4 { grid-template-columns: 1fr 1fr !important; }
+    .md\\:grid-cols-2 { grid-template-columns: 1fr !important; }
+    .md\\:grid-cols-3 { grid-template-columns: 1fr !important; }
+    .lg\\:grid-cols-3 { grid-template-columns: 1fr !important; }
+
+    /* ─── Spacing ───────────────────────────────────────────── */
+    .p-6 { padding: 12px !important; }
+    .p-4 { padding: 10px !important; }
+    .px-6 { padding-left: 12px !important; padding-right: 12px !important; }
+    .py-6 { padding-top: 12px !important; padding-bottom: 12px !important; }
+    .gap-6 { gap: 10px !important; }
+    .gap-4 { gap: 8px !important; }
+    .mb-8 { margin-bottom: 16px !important; }
+    .mb-6 { margin-bottom: 12px !important; }
+
+    /* ─── Flex layouts — only explicit mobile classes ───────── */
+    .mobile-flex-col { flex-direction: column !important; }
+    .md\\:flex-row { flex-direction: column !important; }
+
+    /* ─── Stats cards (Leaderboard top row) ─────────────────── */
+    .stats-grid {
+      grid-template-columns: 1fr 1fr !important;
+      gap: 8px !important;
+    }
+
+    /* ─── Sidebar in pages (AdminResults, Statistics) ───────── */
+    aside[style*="215px"],
+    aside[style*="width: 215"],
+    .vs-sidebar-desktop { display: none !important; }
+
+    /* ─── ViewSubmissions chips ─────────────────────────────── */
+    .vs-mobile-chips { display: block !important; }
+
+    /* ─── Qualifying tables (2 columns on mobile) ───────────── */
+    .qualifying-grid { grid-template-columns: 1fr !important; }
+
+    /* ─── Score badges ──────────────────────────────────────── */
+    [class*="Badge"] {
+      font-size: 0.78rem !important;
+      padding: 2px 7px !important;
+    }
+
+    /* ─── Max score display in ViewSubmissions ──────────────── */
+    .min-w-\\[135px\\], .max-w-\\[140px\\] {
+      min-width: 100px !important;
+      max-width: 120px !important;
+    }
+
+    /* ─── Round table read only ─────────────────────────────── */
+    .round-table-row {
+      grid-template-columns: 1fr auto !important;
+      font-size: 0.82rem !important;
+    }
+
+    /* ─── Statistics sidebar ────────────────────────────────── */
+    .stats-sidebar { display: none !important; }
+    .stats-content { width: 100% !important; }
+
+    /* ─── AdminResults sidebar ──────────────────────────────── */
+    .admin-sidebar { display: none !important; }
+
+    /* ─── Hide non-essential columns in prediction rows ─────── */
+    .pred-row-optional { display: none !important; }
+
+    /* ─── Sticky headers ────────────────────────────────────── */
+    .sticky { position: -webkit-sticky; position: sticky; }
+
+    /* ─── Safe area ─────────────────────────────────────────── */
+    .lm-page {
+      padding-bottom: max(70px, calc(62px + env(safe-area-inset-bottom))) !important;
+    }
+  }
+
+  /* ── Extra small phones < 480px ────────────────────────────── */
+  @media (max-width: 480px) {
+    body { font-size: 14px !important; }
+    .lm-topbar { height: 60px !important; }
+    .lm-bottom-nav { height: 58px !important; }
+    .lm-page--mobile-padded { padding-bottom: 66px !important; }
+    h1 { font-size: 1.2rem !important; }
+    [role="dialog"] { max-height: 94dvh !important; height: 94dvh !important; }
+    table { font-size: 0.76rem !important; }
+    th, td { padding: 5px 3px !important; font-size: 0.76rem !important; }
+  }
+
+  /* ── Global overrides (Radix, shadcn, Tailwind) ─ */
+  thead tr th, thead tr td { background: var(--bg2) !important; }
+
+  [data-radix-select-viewport],
+  [data-radix-popper-content-wrapper] > div {
+    background: var(--bg2) !important; border: 1px solid var(--tp-25) !important;
+  }
+  [role="option"]:hover, [data-highlighted] { background: var(--tp-15) !important; color: var(--text) !important; }
+
+  .bg-card   { background: var(--card-bg) !important; }
+  .border-border { border-color: var(--card-border) !important; }
+  .nav-item:hover { background: var(--tp-10) !important; color: var(--text) !important; }
+
+  .text-cyan-400  { color: var(--tp) !important; }
+  .text-cyan-300  { color: var(--tp) !important; opacity: 0.85; }
+  .border-cyan-400 { border-color: var(--tp) !important; }
+  .border-cyan-700\\/50 { border-color: var(--tp-50) !important; }
+  .hover\\:bg-cyan-900\\/20:hover { background: var(--tp-10) !important; }
+  .hover\\:border-cyan-700\\/50:hover { border-color: var(--tp-50) !important; }
+
+  /* ── Light mode adjustments for main content ─── */
+  .hm-light .lm-page,
+  .hm-light .lm-main {
+    background: var(--bg1);
+  }
+  .hm-light .card {
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  }
+  .hm-light input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  .hm-light select,
+  .hm-light textarea {
+    background: #ffffff !important;
+  }
+`;
