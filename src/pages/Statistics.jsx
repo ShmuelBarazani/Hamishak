@@ -35,14 +35,21 @@ const alternateSlice = data => {
 };
 
 const loadAllPreds = async gameId => {
-  try {
-    let all=[],from=0;
-    while(true){const{data,error}=await supabase.from('game_predictions').select('*').eq('game_id',gameId).range(from,from+999);if(error)throw error;if(!data?.length)break;all=all.concat(data);if(data.length<1000)break;from+=1000;}
-    if(all.length>0) return all;
-  } catch(e){console.warn(e.message);}
-  let all=[],off=0;const seen=new Set();let mx=20;
-  while(mx-->0){const b=await db.Prediction.filter({game_id:gameId},null,1000,off);if(!b?.length)break;const n=b.filter(p=>!seen.has(p.id));if(!n.length)break;n.forEach(p=>seen.add(p.id));all=all.concat(n);if(b.length<1000)break;off+=1000;}
-  return all;
+  // ✅ טוען מ-predictions (לא game_predictions view) כדי לקבל home_prediction/away_prediction
+  let all=[],from=0;
+  while(true){
+    const{data,error}=await supabase.from('predictions').select('*').eq('game_id',gameId).range(from,from+999);
+    if(error){console.warn('predictions fetch error:',error.message);break;}
+    if(!data?.length) break;
+    all=all.concat(data);
+    if(data.length<1000) break;
+    from+=1000;
+  }
+  if(all.length>0) return all;
+  // fallback
+  let allFb=[],off=0;const seen=new Set();let mx=20;
+  while(mx-->0){const b=await db.Prediction.filter({game_id:gameId},null,1000,off);if(!b?.length)break;const n=b.filter(p=>!seen.has(p.id));if(!n.length)break;n.forEach(p=>seen.add(p.id));allFb=allFb.concat(n);if(b.length<1000)break;off+=1000;}
+  return allFb;
 };
 
 // ─── Participant Panel (click-to-lock) ────────────────────────────────────────
@@ -83,7 +90,11 @@ function computeInsights(allQuestions, allPredictions, teams) {
     const ex  = latestPred[key];
     if (!ex || new Date(p.created_at) > new Date(ex.created_at)) latestPred[key] = p;
   });
-  const preds = Object.values(latestPred);
+  const preds = Object.values(latestPred).map(p => {
+    if ((!p.text_prediction || p.text_prediction === "") && p.home_prediction != null && p.away_prediction != null)
+      return { ...p, text_prediction: `${p.home_prediction}-${p.away_prediction}` };
+    return p;
+  });
 
   const participants = [...new Set(preds.map(p=>p.participant_name))];
   const matchQs   = allQuestions.filter(q=>q.home_team&&q.away_team&&q.table_id!=='T1');
@@ -163,34 +174,44 @@ function computeInsights(allQuestions, allPredictions, teams) {
   {
     const qAgreement = [];
     allQuestions.filter(q=>q.table_id!=='T1').forEach(q=>{
-      const qPreds=preds.filter(p=>p.question_id===q.id&&p.text_prediction?.trim());
-      if(qPreds.length<5) return;
-      const counts={};
-      qPreds.forEach(p=>{const v=p.text_prediction.trim();counts[v]=(counts[v]||0)+1;});
-      const top=Math.max(...Object.values(counts));
-      qAgreement.push({q,agreement:top/qPreds.length,topAnswer:Object.entries(counts).sort((a,b)=>b[1]-a[1])[0][0],total:qPreds.length,topCount:top});
+      // כולל שאלות match (עם normalized text_prediction)
+      const qPreds = preds.filter(p => p.question_id === q.id && p.text_prediction?.trim());
+      if (qPreds.length < 3) return; // מינימום 3 תשובות
+      const counts = {};
+      qPreds.forEach(p => { const v = p.text_prediction.trim(); counts[v] = (counts[v]||0)+1; });
+      const vals = Object.values(counts);
+      if (vals.length === 0) return;
+      const top = Math.max(...vals);
+      const [topAnswer] = Object.entries(counts).sort((a,b)=>b[1]-a[1])[0];
+      qAgreement.push({
+        q, agreement: top/qPreds.length,
+        topAnswer, total: qPreds.length, topCount: top,
+        uniqueAnswers: vals.length
+      });
     });
     qAgreement.sort((a,b)=>b.agreement-a.agreement);
-    const highConsensus=qAgreement.slice(0,3);
-    const highDispute=qAgreement.slice(-3).reverse();
-    if(qAgreement.length>0){
+    const highConsensus = qAgreement.slice(0,3);
+    // מחלוקת = הכי הרבה תשובות שונות (גיוון), לא הכי נמוך הסכמה
+    const byDiversity = [...qAgreement].sort((a,b)=>b.uniqueAnswers-a.uniqueAnswers);
+    const highDispute  = byDiversity.slice(0,3);
+    if (qAgreement.length > 0) {
       insights.push({
         id:'consensus', icon:'🤝', title:'קונצנזוס ומחלוקת',
         category:'ניתוח קהל',
         color:'#8b5cf6',
-        summary:`השאלה הכי מוסכמת: ${(highConsensus[0]?.agreement*100||0).toFixed(0)}% הסכמה. הכי שנויה במחלוקת: ${(highDispute[0]?.agreement*100||0).toFixed(0)}%`,
-        consensusData:highConsensus.map(d=>({
-          question:d.q.question_text||`שאלה ${d.q.question_id}`,
-          agreement:(d.agreement*100).toFixed(1),
-          topAnswer:d.topAnswer, total:d.total, topCount:d.topCount
+        summary:`הכי מוסכמת: ${(highConsensus[0]?.agreement*100||0).toFixed(0)}% הסכמה | הכי מגוונת: ${highDispute[0]?.uniqueAnswers||0} תשובות שונות`,
+        consensusData: highConsensus.map(d=>({
+          question: (d.q.home_team&&d.q.away_team) ? `${cleanTeam(d.q.home_team)} נגד ${cleanTeam(d.q.away_team)}` : (d.q.question_text||`שאלה ${d.q.question_id}`),
+          agreement: (d.agreement*100).toFixed(1),
+          topAnswer: d.topAnswer, total: d.total, topCount: d.topCount
         })),
-        disputeData:highDispute.map(d=>({
-          question:d.q.question_text||`שאלה ${d.q.question_id}`,
-          agreement:(d.agreement*100).toFixed(1),
-          topAnswer:d.topAnswer, total:d.total, topCount:d.topCount, uniqueAnswers:Object.keys(d).length
+        disputeData: highDispute.map(d=>({
+          question: (d.q.home_team&&d.q.away_team) ? `${cleanTeam(d.q.home_team)} נגד ${cleanTeam(d.q.away_team)}` : (d.q.question_text||`שאלה ${d.q.question_id}`),
+          agreement: (d.agreement*100).toFixed(1),
+          topAnswer: d.topAnswer, total: d.total, topCount: d.topCount, uniqueAnswers: d.uniqueAnswers
         })),
         chartType:'consensus',
-        detail:'שאלות עם הסכמה גבוהה מלמדות על תחושה ברורה בקרב המנחשים. שאלות עם מחלוקת מלמדות על אי-ודאות.',
+        detail:`נותחו ${qAgreement.length} שאלות. שאלות בעלות הסכמה גבוהה מלמדות על קונצנזוס. שאלות עם ריבוי תשובות מלמדות על אי-ודאות.`,
       });
     }
   }
@@ -595,7 +616,12 @@ export default function Statistics() {
   const lockPanel  = (key,data) => setLockedPanel(prev=>prev[key]?.title===data?.title?{...prev,[key]:null}:{...prev,[key]:data});
   const closePanel = key => setLockedPanel(prev=>({...prev,[key]:null}));
 
-  useEffect(()=>{ loadAllData(); },[currentGame]);
+  // ✅ נקה insights כשמשחק משתנה — תובנות חייבות להיות נפרדות לכל משחק
+  useEffect(()=>{
+    setAiInsights(null);
+    setInsightsLoading(false);
+    loadAllData();
+  },[currentGame]);
 
   const loadAllData = async () => {
     if(!currentGame){setLoading(false);return;}
@@ -646,8 +672,19 @@ export default function Statistics() {
         return desc&&!/^\d+$/.test(desc)&&!detectedLoc.has(t.id)&&t.id!=='T19';
       }).sort((a,b)=>(parseInt(a.id.replace('T',''))||0)-(parseInt(b.id.replace('T',''))||0));
 
-      setQualifierTables(allSpecial.filter(t=>(t.description||'').includes('רשימת הקבוצות שיעלו')));
-      setSpecialTables(allSpecial.filter(t=>!(t.description||'').includes('רשימת הקבוצות שיעלו')));
+      // ✅ זיהוי qualifier: לפי תיאור OR לפי table_id (T4/T5/T6)
+      const QUAL_IDS = new Set(['T4','T5','T6']);
+      const isQualTable = t => {
+        const desc = t.description||'';
+        return QUAL_IDS.has(t.id) ||
+          desc.includes('רשימת הקבוצות שיעלו') ||
+          desc.includes('שתנצחנה') ||
+          desc.includes('שתנצח') ||
+          desc.includes('שתעפלנה') ||
+          desc.includes('עולות לשמינית');
+      };
+      setQualifierTables(allSpecial.filter(t=>isQualTable(t)));
+      setSpecialTables(allSpecial.filter(t=>!isQualTable(t)));
     } catch(e){console.error(e);}
     setLoading(false);
   };
@@ -655,12 +692,16 @@ export default function Statistics() {
   const participantsByQA = useMemo(()=>{
     const idx=new Map();
     allPredictions.forEach(p=>{
-      if(!p.text_prediction?.trim()) return;
-      const norm=normPred(p.text_prediction.trim());
+      // normalize home/away → text for match questions
+      const rawText = (!p.text_prediction?.trim() && p.home_prediction != null && p.away_prediction != null)
+        ? `${p.home_prediction}-${p.away_prediction}`
+        : p.text_prediction;
+      if(!rawText?.trim()) return;
+      const norm=normPred(rawText.trim());
       const k1=`${p.question_id}_${norm}`;
       if(!idx.has(k1)) idx.set(k1,[]);
       idx.get(k1).push(p.participant_name);
-      const k2=`${p.question_id}_${p.text_prediction.trim()}`;
+      const k2=`${p.question_id}_${rawText.trim()}`;
       if(k2!==k1){if(!idx.has(k2))idx.set(k2,[]);idx.get(k2).push(p.participant_name);}
     });
     idx.forEach((pts,k)=>idx.set(k,[...new Set(pts)].sort((a,b)=>a.localeCompare(b,'he'))));
@@ -687,8 +728,18 @@ export default function Statistics() {
       const gsd={};
       for(const table of tables){
         for(const q of table.questions){
-          const preds=predByQ.get(q.id)||[];
-          const counts=preds.reduce((acc,p)=>{const r=p.text_prediction||'לא ניחש';acc[r]=(acc[r]||0)+1;return acc;},{});
+          const rawPreds=predByQ.get(q.id)||[];
+          // dedup: last prediction per participant
+          const latestByPart={};
+          rawPreds.forEach(p=>{const ex=latestByPart[p.participant_name];if(!ex||new Date(p.created_at)>new Date(ex.created_at))latestByPart[p.participant_name]=p;});
+          const preds=Object.values(latestByPart);
+          const counts=preds.reduce((acc,p)=>{
+            // normalize home/away
+            const r=(!p.text_prediction?.trim()&&p.home_prediction!=null&&p.away_prediction!=null)
+              ?`${p.home_prediction}-${p.away_prediction}`
+              :(p.text_prediction||'לא ניחש');
+            acc[r]=(acc[r]||0)+1;return acc;
+          },{});
           const total=preds.length;
           const chart=Object.entries(counts).sort((a,b)=>b[1]-a[1]).map(([r,c])=>({name:r,value:c,percentage:total>0?((c/total)*100).toFixed(1):0}));
           gsd[q.id]={question:q,table,totalPredictions:total,chartData:alternateSlice(chart).map(e=>({...e,percentage:parseFloat(e.percentage)})),mostPopular:chart[0]||{name:'-',value:0,percentage:0}};
@@ -739,8 +790,11 @@ export default function Statistics() {
           const slotIds=new Set(slots.map(s=>s.id));
           const teamCounts={}, participantsMap={};
           allPredictions.forEach(p=>{
-            if(!slotIds.has(p.question_id)||!p.text_prediction?.trim()) return;
-            const team=cleanTeam(normalizeTeam(p.text_prediction.trim()));
+            if(!slotIds.has(p.question_id)) return;
+            const rawText=(!p.text_prediction?.trim()&&p.home_prediction!=null&&p.away_prediction!=null)
+              ?`${p.home_prediction}-${p.away_prediction}`:p.text_prediction;
+            if(!rawText?.trim()) return;
+            const team=cleanTeam(normalizeTeam(rawText.trim()));
             if(!team||team.toLowerCase()==='null') return;
             teamCounts[team]=(teamCounts[team]||0)+1;
             if(!participantsMap[team]) participantsMap[team]=new Set();
@@ -768,8 +822,18 @@ export default function Statistics() {
           if(table.id!=='T1'){
             for(const q of table.questions){
               const qPreds=allPredictions.filter(p=>p.question_id===q.id);
-              const answerCounts=qPreds.reduce((acc,pred)=>{
-                let answer=String(pred.text_prediction||'').trim();
+              // dedup per participant (last prediction)
+              const latestByPart={};
+              qPreds.forEach(p=>{
+                const ex=latestByPart[p.participant_name];
+                if(!ex||new Date(p.created_at)>new Date(ex.created_at)) latestByPart[p.participant_name]=p;
+              });
+              const dedupPreds=Object.values(latestByPart);
+              const answerCounts=dedupPreds.reduce((acc,pred)=>{
+                // normalize home/away for match questions
+                let answer=(!pred.text_prediction?.trim()&&pred.home_prediction!=null&&pred.away_prediction!=null)
+                  ?`${pred.home_prediction}-${pred.away_prediction}`
+                  :String(pred.text_prediction||'').trim();
                 if(!answer||answer==='__CLEAR__'||answer.toLowerCase()==='null'||answer.toLowerCase()==='undefined') return acc;
                 const isYN=['כן','לא','yes','no'].includes(answer), isNum=!isNaN(Number(answer));
                 if(!isYN&&!isNum&&q.validation_list?.toLowerCase().includes('קבוצ')) answer=cleanTeam(answer);
@@ -788,40 +852,66 @@ export default function Statistics() {
     } catch(e){console.error(e);}
   },[specialTables,qualifierTables,locationTables,playoffTable,allPredictions]);
 
-  // ── Sidebar groups — structure matching ViewSubmissions ───────────────────
+  // ── Sidebar — מבנה תואם ViewSubmissions ──────────────────────────────────
   const sidebarGroups = useMemo(()=>{
     const groups=[];
 
-    // 1. תובנות
+    // 1. תובנות (סגול)
     groups.push({label:'🤖 תובנות',color:'#8b5cf6',activeBg:'#7c3aed',
       buttons:[{key:'insights',description:'תובנות AI ומחנות'}]});
 
-    // 2. ראשי — round tables
-    const playoffBtns=[];
-    const allAreGroups=roundTables.every(t=>t.id.includes('בית')||t.description?.includes('בית'));
-    if(allAreGroups&&roundTables.length>0){
-      playoffBtns.push({key:'round_all',description:'שלב הבתים'});
-    } else {
-      roundTables.forEach(t=>playoffBtns.push({key:`round_${t.id}`,description:(t.id==='T3'&&isKnockout)?'שלב שמינית הגמר - המשחקים!':t.description}));
+    // 2. שלב הבתים / פלייאוף (כחול) — לפי round tables
+    if(roundTables.length>0){
+      // זיהוי שלב הבתים: שאלות stage_type=groups OR יש הרבה בתים
+      const isGroupStage = roundTables.length>1 || roundTables.some(t=>
+        t.questions[0]?.stage_type==='groups'||t.description?.includes('בית')
+      );
+      const groupLabel = isGroupStage ? '🏠 שלב הבתים' : '⚽ פלייאוף';
+      groups.push({
+        label: groupLabel, color:'#3b82f6', activeBg:'#2563eb',
+        buttons: roundTables.map(t=>({
+          key:`round_${t.id}`,
+          description:(t.id==='T3'&&isKnockout)?'שמינית הגמר - המשחקים':t.description||t.id
+        }))
+      });
     }
-    if(playoffBtns.length>0) groups.push({label:allAreGroups?'🏠 שלב הבתים':'⚽ פלייאוף',color:allAreGroups?'var(--tp)':'#3b82f6',activeBg:'#2563eb',buttons:playoffBtns});
 
-    // 3. שאלות מיוחדות
+    // 3. שאלות פלייאוף מיוחדות (כחול בהיר) — stage_type=playoff/groups ב-special tables
+    const playoffSpecial=specialTables.filter(t=>
+      t.questions[0]?.stage_type==='playoff'||
+      t.questions[0]?.stage_type==='groups'||
+      t.description?.includes('פלייאוף')||
+      t.description?.includes('מקומות')
+    );
+    if(playoffSpecial.length>0){
+      groups.push({
+        label:'🔵 שלבי פלייאוף', color:'#06b6d4', activeBg:'#0891b2',
+        buttons:playoffSpecial.map(t=>({key:t.id,description:t.description}))
+      });
+    }
+
+    // 4. שאלות מיוחדות (סגול) — stage_type=special
+    const regularSpecial=specialTables.filter(t=>
+      !['playoff','groups'].includes(t.questions[0]?.stage_type) &&
+      !t.description?.includes('פלייאוף') &&
+      !t.description?.includes('מקומות')
+    );
     const specialBtns=[];
-    specialTables.forEach(t=>{if(t.id==='T1') return;specialBtns.push({key:t.id,description:t.description});});
+    regularSpecial.forEach(t=>{if(t.id!=='T1')specialBtns.push({key:t.id,description:t.description});});
     if(israeliTable) specialBtns.push({key:`round_${israeliTable.id}`,description:israeliTable.description});
     if(playoffTable) specialBtns.push({key:playoffTable.id,description:playoffTable.description});
     if(specialBtns.length>0) groups.push({label:'✨ שאלות מיוחדות',color:'#8b5cf6',activeBg:'#7c3aed',buttons:specialBtns});
 
-    // 4. עולות
+    // 5. רשימות עולות (כתום) — qualifiers ואחר כך מיקומים
     const qualBtns=[
-      ...(locationTables.length>0?[{key:'locations',description:'מיקומים בתום שלב הבתים'}]:[]),
-      ...qualifierTables.map(t=>({key:`qual_${t.id}`,description:t.description}))
+      ...qualifierTables.map(t=>({key:`qual_${t.id}`,description:t.description})),
+      ...(locationTables.length>0?[{key:'locations',description:'מיקומים'}]:[]),
     ];
     if(qualBtns.length>0) groups.push({label:'📋 רשימות עולות',color:'#f97316',activeBg:'#ea580c',buttons:qualBtns});
 
     return groups;
   },[roundTables,specialTables,qualifierTables,locationTables,israeliTable,playoffTable,isKnockout]);
+
 
   useEffect(()=>{
     if(!selectedSection||loading||!allQuestions.length) return;
