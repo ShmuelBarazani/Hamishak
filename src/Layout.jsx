@@ -274,7 +274,16 @@ function LayoutContent({ children }) {
           disabled={gamesLoading || games.length===0}
         >
           <SelectTrigger className="lm-select-trigger">
-            <SelectValue placeholder="בחר משחק">{currentGame ? currentGame.game_name : "בחר משחק"}</SelectValue>
+            <SelectValue placeholder="בחר משחק">
+              {currentGame ? (
+                <div style={{textAlign:'right',lineHeight:'1.2'}}>
+                  <div style={{fontWeight:700,fontSize:'0.82rem'}}>{currentGame.game_name}</div>
+                  {currentGame.game_subtitle && (
+                    <div style={{fontSize:'0.7rem',color:'var(--tp)',opacity:0.85,marginTop:'1px'}}>{currentGame.game_subtitle}</div>
+                  )}
+                </div>
+              ) : "בחר משחק"}
+            </SelectValue>
           </SelectTrigger>
           <SelectContent className="lm-select-content">
             {games.map(game=>(
@@ -363,7 +372,10 @@ function LayoutContent({ children }) {
           </button>
           <div className="lm-topbar-brand">
             {currentGame?.game_icon && <img src={currentGame.game_icon} alt="logo" className="lm-topbar-img"/>}
-            <span>{currentGame?.game_name || 'בחר משחק'}</span>
+            <span style={{lineHeight:'1.2',textAlign:'right'}}>
+              <span style={{display:'block',fontWeight:700}}>{currentGame?.game_name || 'בחר משחק'}</span>
+              {currentGame?.game_subtitle && <span style={{display:'block',fontSize:'0.65rem',opacity:0.75,color:'var(--tp)'}}>{currentGame.game_subtitle}</span>}
+            </span>
           </div>
           <div style={{width:30}}/>
         </header>
@@ -576,7 +588,7 @@ const GLOBAL_STYLES = `
 
   /* ── Sidebar ──────────────────────────────────── */
   .lm-sidebar {
-    width: 260px; flex-shrink: 0;
+    width: 300px; flex-shrink: 0;
     height: 100dvh;
     display: flex; flex-direction: column;
     background: var(--sidebar);
@@ -608,7 +620,7 @@ const GLOBAL_STYLES = `
   .lm-sidebar-inner::-webkit-scrollbar { display: none; }
 
   .lm-sidebar--mobile {
-    position: fixed; top: 0; right: -270px;
+    position: fixed; top: 0; right: -310px;
     height: 100dvh; z-index: 50;
     transition: right 0.30s cubic-bezier(0.4,0,0.2,1), box-shadow 0.30s ease;
   }
@@ -632,17 +644,17 @@ const GLOBAL_STYLES = `
 
   /* ── Logo (96px) ──────────────────────────────── */
   .lm-logo-area {
-    display: flex; align-items: center; gap: 14px;
-    padding: 22px 18px 14px;
+    display: flex; align-items: center; gap: 16px;
+    padding: 24px 18px 16px;
   }
   .lm-logo-img-wrap { position: relative; flex-shrink: 0; }
   .lm-logo-img {
-    width: 96px; height: 96px;
-    object-fit: contain; border-radius: 16px;
+    width: 120px; height: 120px;
+    object-fit: contain; border-radius: 18px;
     border: 1px solid var(--tp-20); display: block;
   }
   .lm-logo-glow {
-    position: absolute; inset: -8px; border-radius: 22px;
+    position: absolute; inset: -10px; border-radius: 26px;
     background: radial-gradient(circle, var(--tp-18) 0%, transparent 70%);
     pointer-events: none; animation: lm-pulse 3.5s ease-in-out infinite;
     transition: background 0.4s;
@@ -652,21 +664,21 @@ const GLOBAL_STYLES = `
     50%      { opacity: 1.0; transform: scale(1.08); }
   }
   .lm-logo-placeholder {
-    width: 96px; height: 96px; border-radius: 16px; flex-shrink: 0;
+    width: 120px; height: 120px; border-radius: 18px; flex-shrink: 0;
     border: 1px dashed var(--tp-25); background: var(--tp-05);
-    display: flex; align-items: center; justify-content: center; font-size: 36px;
+    display: flex; align-items: center; justify-content: center; font-size: 44px;
   }
   .lm-logo-text { flex: 1; min-width: 0; }
   .lm-logo-title {
-    font-size: 1rem; font-weight: 800; color: var(--text);
+    font-size: 1.15rem; font-weight: 900; color: var(--text);
     line-height: 1.3; word-break: break-word;
     display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
     transition: color 0.3s;
   }
   .lm-logo-title--dim { color: var(--text-muted); font-weight: 500; }
   .lm-logo-season {
-    font-size: 0.74rem; font-weight: 700; color: var(--tp);
-    margin-top: 5px; line-height: 1.4; word-break: break-word;
+    font-size: 0.9rem; font-weight: 800; color: var(--tp);
+    margin-top: 6px; line-height: 1.3; word-break: break-word;
     transition: color 0.3s;
   }
 
