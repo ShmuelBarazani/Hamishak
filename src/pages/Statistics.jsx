@@ -879,21 +879,24 @@ export default function Statistics() {
           if(table.id!=='T1'){
 
             // ✅ זיהוי "רשימת קבוצות" בשלב הבתים:
-            // טבלה שכל שאלותיה הן חריצי קבוצות (שלמות, ≥1) עם validation_list של קבוצות
-            // → מציג גרף מרוכז אחד (כמו qualifiers) ולא גרף לכל חריץ
+            // זיהוי "רשימת קבוצות עולות" בשלב הבתים בלבד:
+            // תנאים: ≥4 חריצים שלמים, ללא home/away, stage_type='qualifiers' או תיאור מתאים
+            // חשוב: לא stage_type='special' — אלה שאלות מיוחדות שנשארות כגרפים נפרדים
             const slots = table.questions.filter(q => {
               const n = parseFloat(q.question_id);
               return Number.isInteger(n) && n >= 1;
             });
-            const isTeamListTable = slots.length >= 4 && slots.every(q =>
-              !q.home_team && !q.away_team && (
-                q.validation_list?.toLowerCase().includes('קבוצ') ||
-                q.stage_type === 'qualifiers' ||
-                (table.description||'').includes('שתנצח') ||
-                (table.description||'').includes('שיעלו') ||
-                (table.description||'').includes('שתעפל')
-              )
-            );
+            const isTeamListTable = slots.length >= 4 &&
+              // ❌ שאלות special — לא רשימת עולות
+              !slots.some(q => q.stage_type === 'special') &&
+              slots.every(q =>
+                !q.home_team && !q.away_team && (
+                  q.stage_type === 'qualifiers' ||
+                  (table.description||'').includes('שתנצח') ||
+                  (table.description||'').includes('שיעלו') ||
+                  (table.description||'').includes('שתעפל')
+                )
+              );
 
             if (isTeamListTable) {
               // גרף מרוכז — כמה משתתפים בחרו כל קבוצה (ללא תלות במיקום)
@@ -1066,7 +1069,7 @@ export default function Statistics() {
             <div style={{fontSize:'0.58rem',fontWeight:'700',letterSpacing:'0.12em',textTransform:'uppercase',color:'#475569',marginBottom:'10px'}}>בחר שלב</div>
             {sidebarGroups.map(group=>(
               <div key={group.label} style={{marginBottom:'12px'}}>
-                <div style={{fontSize:'0.82rem',fontWeight:'800',color:group.color,letterSpacing:'0.04em',marginBottom:'6px',paddingRight:'8px',borderRight:`3px solid ${group.color}`}}>{group.label}</div>
+                <div style={{fontSize:'0.95rem',fontWeight:'800',color:group.color,letterSpacing:'0.02em',marginBottom:'7px',paddingRight:'8px',borderRight:`3px solid ${group.color}`}}>{group.label}</div>
                 {group.buttons.map(btn=>{
                   const active=selectedSection===btn.key;
                   return(
