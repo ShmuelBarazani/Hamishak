@@ -486,10 +486,12 @@ export default function AdminResults() {
             const isS11 = sn.includes('רבע גמר') || td.includes('רבע גמר');
             const isS12 = sn.includes('חצי גמר') || td.includes('חצי גמר');
             const isS13 = (sn.includes('גמר') && !sn.includes('רבע') && !sn.includes('חצי')) || (td.includes('גמר') && !td.includes('רבע') && !td.includes('חצי'));
-            const alreadySelected =
+            const isTeamOpt = isTeamsList; // רק עבור validation_list של קבוצות
+            const alreadySelected = isTeamOpt && (
               (isS11 && selectedT11Teams.has(opt) && safeVal !== opt) ||
               (isS12 && selectedT12Teams.has(opt) && safeVal !== opt) ||
-              (isS13 && selectedT13Teams.has(opt) && safeVal !== opt);
+              (isS13 && selectedT13Teams.has(opt) && safeVal !== opt)
+            );
             return (
               <SelectItem key={opt} value={opt} className="hover:bg-cyan-700/20" disabled={alreadySelected} style={{ opacity: alreadySelected ? 0.4 : 1 }}>
                 <div className="flex items-center gap-2">
