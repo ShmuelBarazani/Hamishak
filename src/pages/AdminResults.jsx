@@ -602,29 +602,24 @@ export default function AdminResults() {
 
               return (
                 <div key={main.id} style={{
-                  display: 'flex', flexWrap: 'wrap', alignItems: 'flex-start',
                   padding: '8px 10px', borderRadius: '8px',
                   border: '1px solid var(--tp-12)', background: 'rgba(0,0,0,0.22)',
-                  position: 'relative', gap: '6px',
+                  position: 'relative',
                 }}>
-                  {/* שאלה ראשית */}
-                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: '6px', flex: '1 1 300px', minWidth: 0 }}>
-                    <Badge variant="outline" style={{ borderColor: 'var(--tp-50)', color: 'var(--tp)', minWidth: '44px', textAlign: 'center', flexShrink: 0, fontSize: '0.72rem', marginTop: '2px' }}>{main.question_id}</Badge>
-                    <label style={{ flex: 1, minWidth: 0, fontSize: '0.85rem', color: '#f1f5f9', fontWeight: '500', textAlign: 'right', cursor: 'default', lineHeight: '1.4' }}>{main.question_text}</label>
-                    <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: '5px' }}>
-                      {renderSelectWithLogos(main, results[main.id] || '', val => handleResultChange(main.id, val === '__CLEAR__' ? '' : val), 'w-[140px]')}
-                      {main.possible_points && <Badge style={{ borderColor: 'var(--tp-35)', color: 'var(--tp)', background: 'var(--tp-08)', fontSize: '0.68rem', flexShrink: 0, whiteSpace: 'nowrap' }}>{main.possible_points} נק'</Badge>}
-                    </div>
+                  {/* שאלה ראשית — שורה אחת */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: sortedSubs.length > 0 ? '6px' : 0 }}>
+                    <Badge variant="outline" style={{ borderColor: 'var(--tp-50)', color: 'var(--tp)', minWidth: '36px', textAlign: 'center', flexShrink: 0, fontSize: '0.72rem' }}>{main.question_id}</Badge>
+                    <span style={{ flex: 1, fontSize: '0.85rem', color: '#f1f5f9', fontWeight: '500', textAlign: 'right' }}>{main.question_text}</span>
+                    {renderSelectWithLogos(main, results[main.id] || '', val => handleResultChange(main.id, val === '__CLEAR__' ? '' : val), 'w-[160px]')}
+                    {main.possible_points && <Badge style={{ borderColor: 'var(--tp-35)', color: 'var(--tp)', background: 'var(--tp-08)', fontSize: '0.68rem', flexShrink: 0, whiteSpace: 'nowrap' }}>{main.possible_points} נק'</Badge>}
                   </div>
-                  {/* תת-שאלות */}
+                  {/* תת-שאלות — כל אחת בשורה */}
                   {sortedSubs.map((sub) => (
-                    <div key={sub.id} style={{ display: 'flex', alignItems: 'flex-start', gap: '6px', flex: '1 1 220px', minWidth: 0, paddingRight: '8px', borderRight: '1px solid rgba(255,255,255,0.07)' }}>
-                      <Badge variant="outline" style={{ borderColor: 'rgba(139,92,246,0.45)', color: '#a78bfa', minWidth: '44px', textAlign: 'center', flexShrink: 0, fontSize: '0.72rem', marginTop: '2px' }}>{sub.question_id}</Badge>
-                      <label style={{ flex: 1, minWidth: 0, fontSize: '0.82rem', color: '#cbd5e1', textAlign: 'right', cursor: 'default', lineHeight: '1.4' }}>{sub.question_text}</label>
-                      <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: '5px' }}>
-                        {renderSelectWithLogos(sub, results[sub.id] || '', val => handleResultChange(sub.id, val === '__CLEAR__' ? '' : val), 'w-[130px]')}
-                        {sub.possible_points && <Badge style={{ borderColor: 'rgba(139,92,246,0.35)', color: '#a78bfa', background: 'rgba(139,92,246,0.08)', fontSize: '0.68rem', flexShrink: 0, whiteSpace: 'nowrap' }}>{sub.possible_points} נק'</Badge>}
-                      </div>
+                    <div key={sub.id} style={{ display: 'flex', alignItems: 'center', gap: '6px', paddingRight: '42px', marginTop: '4px', paddingTop: '4px', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+                      <Badge variant="outline" style={{ borderColor: 'rgba(139,92,246,0.45)', color: '#a78bfa', minWidth: '36px', textAlign: 'center', flexShrink: 0, fontSize: '0.72rem' }}>{sub.question_id}</Badge>
+                      <span style={{ flex: 1, fontSize: '0.82rem', color: '#cbd5e1', textAlign: 'right' }}>{sub.question_text}</span>
+                      {renderSelectWithLogos(sub, results[sub.id] || '', val => handleResultChange(sub.id, val === '__CLEAR__' ? '' : val), 'w-[150px]')}
+                      {sub.possible_points && <Badge style={{ borderColor: 'rgba(139,92,246,0.35)', color: '#a78bfa', background: 'rgba(139,92,246,0.08)', fontSize: '0.68rem', flexShrink: 0, whiteSpace: 'nowrap' }}>{sub.possible_points} נק'</Badge>}
                     </div>
                   ))}
                 </div>
