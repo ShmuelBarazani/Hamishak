@@ -816,13 +816,23 @@ export default function ViewSubmissions() {
       })
       .sort((a, b) => parseFloat(a.question_id) - parseFloat(b.question_id));
 
-    const actualSet = new Set(slots.filter(q => q.actual_result && q.actual_result !== '__CLEAR__').map(q => q.actual_result.trim().toLowerCase()));
+    // ✅ נרמול שמות קבוצות — הסרת "(מדינה)" לפני השוואה
+    const normalizeTeamForSet = (name) =>
+      (name || '').replace(/\s*\([^)]+\)\s*$/, '').replace(/\s+/g, ' ').trim().toLowerCase();
+
+    const actualSet = new Set(
+      slots
+        .filter(q => q.actual_result && q.actual_result !== '__CLEAR__')
+        .map(q => normalizeTeamForSet(q.actual_result))
+    );
     const allResultsIn = slots.length > 0 && slots.every(q => q.actual_result && q.actual_result !== '__CLEAR__');
 
     let stageBonusEarned = false;
     if (selectedParticipant && allResultsIn && cfg) {
       const predMap = getCombinedPredictionsMap();
-      const guessedSet = new Set(slots.map(q => (predMap[q.id] ?? predMap[q.question_id] ?? '').trim().toLowerCase()).filter(Boolean));
+      const guessedSet = new Set(
+        slots.map(q => normalizeTeamForSet(predMap[q.id] ?? predMap[q.question_id] ?? '')).filter(Boolean)
+      );
       stageBonusEarned = [...actualSet].every(t => guessedSet.has(t));
     }
 
@@ -857,8 +867,9 @@ export default function ViewSubmissions() {
             const _predRaw = _predMap[q.id] ?? _predMap[q.question_id] ?? '';
             const pred = (typeof _predRaw === 'string' ? _predRaw : (_predRaw?.text_prediction || '')).trim();
             const hasResult = q.actual_result && q.actual_result !== '__CLEAR__';
-            const isCorrect = hasResult && pred && actualSet.has(pred.toLowerCase());
-            const isWrong   = hasResult && pred && !actualSet.has(pred.toLowerCase());
+            const predNorm  = normalizeTeamForSet(pred);
+            const isCorrect = hasResult && pred && actualSet.has(predNorm);
+            const isWrong   = hasResult && pred && !actualSet.has(predNorm);
             const pts = isCorrect ? (q.possible_points || 0) : 0;
             return (
               <div key={q.id} style={{ display:'grid', gridTemplateColumns:'36px 1fr 1fr auto auto', gap:'8px', alignItems:'center', padding:'7px 10px', borderRadius:'6px', background: isCorrect ? 'rgba(16,185,129,0.10)' : isWrong ? 'rgba(239,68,68,0.08)' : 'rgba(15,23,42,0.4)', border:`1px solid ${isCorrect ? 'rgba(16,185,129,0.30)' : isWrong ? 'rgba(239,68,68,0.25)' : 'rgba(249,115,22,0.15)'}` }}>
