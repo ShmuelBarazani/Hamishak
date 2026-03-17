@@ -508,7 +508,8 @@ export default function AdminResults() {
     <div key={q.id} style={{
       display: 'grid',
       gridTemplateColumns: isMultiAnswerQuestion(q) ? `50px 1fr auto 50px` : `50px 1fr ${widths.select} 50px`,
-      gap: '8px', alignItems: 'center', padding: '8px 12px', borderRadius: '6px'
+      gap: '8px', alignItems: 'center', padding: '8px 12px', borderRadius: '6px',
+      position: 'relative', overflow: 'visible',
     }} className="border border-cyan-600/30 bg-slate-700/20">
       <Badge variant="outline" className="border-cyan-400 text-cyan-200 justify-center text-xs h-6 w-full">{q.question_id}</Badge>
       <span className="text-right font-medium text-sm text-blue-100 truncate">{q.question_text}</span>
@@ -590,8 +591,8 @@ export default function AdminResults() {
             </p>
           )}
         </CardHeader>
-        <CardContent className="p-3">
-          <div className="space-y-2">
+        <CardContent className="p-3" style={{ overflow: 'visible' }}>
+          <div className="space-y-2" style={{ overflow: 'visible' }}>
             {sortedMainIds.map(mainId => {
               const { main, subs } = grouped[mainId];
               if (!main) return null;
@@ -600,27 +601,31 @@ export default function AdminResults() {
               if (sortedSubs.length === 0) return renderQuestionRow(main);
 
               return (
-                <div key={main.id} style={{ display: 'flex', alignItems: 'center', padding: '7px 10px', borderRadius: '8px', overflow: 'hidden', border: '1px solid var(--tp-12)', background: 'rgba(0,0,0,0.22)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: '1.4', minWidth: 0 }}>
-                    <Badge variant="outline" style={{ borderColor: 'var(--tp-50)', color: 'var(--tp)', minWidth: '44px', textAlign: 'center', flexShrink: 0, fontSize: '0.72rem' }}>{main.question_id}</Badge>
-                    <label style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '0.82rem', color: '#f1f5f9', fontWeight: '500', textAlign: 'right', cursor: 'default' }}>{main.question_text}</label>
+                <div key={main.id} style={{
+                  display: 'flex', flexWrap: 'wrap', alignItems: 'flex-start',
+                  padding: '8px 10px', borderRadius: '8px',
+                  border: '1px solid var(--tp-12)', background: 'rgba(0,0,0,0.22)',
+                  position: 'relative', gap: '6px',
+                }}>
+                  {/* שאלה ראשית */}
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: '6px', flex: '1 1 300px', minWidth: 0 }}>
+                    <Badge variant="outline" style={{ borderColor: 'var(--tp-50)', color: 'var(--tp)', minWidth: '44px', textAlign: 'center', flexShrink: 0, fontSize: '0.72rem', marginTop: '2px' }}>{main.question_id}</Badge>
+                    <label style={{ flex: 1, minWidth: 0, fontSize: '0.85rem', color: '#f1f5f9', fontWeight: '500', textAlign: 'right', cursor: 'default', lineHeight: '1.4' }}>{main.question_text}</label>
                     <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: '5px' }}>
-                      {renderSelectWithLogos(main, results[main.id] || '', val => handleResultChange(main.id, val === '__CLEAR__' ? '' : val), 'w-[150px]')}
+                      {renderSelectWithLogos(main, results[main.id] || '', val => handleResultChange(main.id, val === '__CLEAR__' ? '' : val), 'w-[140px]')}
                       {main.possible_points && <Badge style={{ borderColor: 'var(--tp-35)', color: 'var(--tp)', background: 'var(--tp-08)', fontSize: '0.68rem', flexShrink: 0, whiteSpace: 'nowrap' }}>{main.possible_points} נק'</Badge>}
                     </div>
                   </div>
+                  {/* תת-שאלות */}
                   {sortedSubs.map((sub) => (
-                    <React.Fragment key={sub.id}>
-                      <div style={{ width: '1px', height: '26px', background: 'rgba(255,255,255,0.07)', flexShrink: 0, margin: '0 8px' }} />
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: '1', minWidth: 0 }}>
-                        <Badge variant="outline" style={{ borderColor: 'rgba(139,92,246,0.45)', color: '#a78bfa', minWidth: '44px', textAlign: 'center', flexShrink: 0, fontSize: '0.72rem' }}>{sub.question_id}</Badge>
-                        <label style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '0.82rem', color: '#cbd5e1', textAlign: 'right', cursor: 'default' }}>{sub.question_text}</label>
-                        <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: '5px' }}>
-                          {renderSelectWithLogos(sub, results[sub.id] || '', val => handleResultChange(sub.id, val === '__CLEAR__' ? '' : val), 'w-[150px]')}
-                          {sub.possible_points && <Badge style={{ borderColor: 'rgba(139,92,246,0.35)', color: '#a78bfa', background: 'rgba(139,92,246,0.08)', fontSize: '0.68rem', flexShrink: 0, whiteSpace: 'nowrap' }}>{sub.possible_points} נק'</Badge>}
-                        </div>
+                    <div key={sub.id} style={{ display: 'flex', alignItems: 'flex-start', gap: '6px', flex: '1 1 220px', minWidth: 0, paddingRight: '8px', borderRight: '1px solid rgba(255,255,255,0.07)' }}>
+                      <Badge variant="outline" style={{ borderColor: 'rgba(139,92,246,0.45)', color: '#a78bfa', minWidth: '44px', textAlign: 'center', flexShrink: 0, fontSize: '0.72rem', marginTop: '2px' }}>{sub.question_id}</Badge>
+                      <label style={{ flex: 1, minWidth: 0, fontSize: '0.82rem', color: '#cbd5e1', textAlign: 'right', cursor: 'default', lineHeight: '1.4' }}>{sub.question_text}</label>
+                      <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: '5px' }}>
+                        {renderSelectWithLogos(sub, results[sub.id] || '', val => handleResultChange(sub.id, val === '__CLEAR__' ? '' : val), 'w-[130px]')}
+                        {sub.possible_points && <Badge style={{ borderColor: 'rgba(139,92,246,0.35)', color: '#a78bfa', background: 'rgba(139,92,246,0.08)', fontSize: '0.68rem', flexShrink: 0, whiteSpace: 'nowrap' }}>{sub.possible_points} נק'</Badge>}
                       </div>
-                    </React.Fragment>
+                    </div>
                   ))}
                 </div>
               );
