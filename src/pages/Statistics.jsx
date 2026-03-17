@@ -997,7 +997,7 @@ export default function Statistics() {
 
     // 5. רשימות עולות (כתום) — qualifiers ואחר כך מיקומים
     const qualBtns=[
-      ...qualifierTables.map(t=>({key:`qual_${t.id}`,description:t.description})),
+      ...qualifierTables.map(t=>({key:`qual_${t.id}`,description:(t.description||'').replace(/\s*[-–]\s*שאלות מיוחדות\s*$/,'').trim()})),
       ...(locationTables.length>0?[{key:'locations',description:'מיקומים'}]:[]),
     ];
     if(qualBtns.length>0) groups.push({label:'📋 רשימות עולות',color:'#f97316',activeBg:'#ea580c',buttons:qualBtns});
