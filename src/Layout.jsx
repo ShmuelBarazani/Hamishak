@@ -245,7 +245,7 @@ function LayoutContent({ children }) {
       {/* ── Logo ── */}
       <div style={{
         display:'flex', alignItems:'center', gap:'14px',
-        padding:'20px 16px 14px', flexDirection:'row-reverse', justifyContent:'flex-end'
+        padding:'20px 16px 14px',
       }}>
         {/* לוגו — inline style מבטיח גודל נכון */}
         {currentGame?.game_icon ? (
