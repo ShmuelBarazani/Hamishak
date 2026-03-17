@@ -736,12 +736,12 @@ export default function Statistics() {
       }).sort((a,b)=>(parseInt(a.id.replace('T',''))||0)-(parseInt(b.id.replace('T',''))||0));
 
       // ✅ זיהוי qualifier: לפי תיאור OR לפי table_id (T4/T5/T6)
-      // ✅ Qualifier = רק לפי table_id (T4/T5/T6) — לא לפי תיאור.
-      // טבלאות עם שמות כמו "שיעלו לחצי גמר" בשלב הנוקאאוט שייכות ל"מיוחדות", לא ל"עולות".
-      const QUAL_IDS = new Set(['T4','T5','T6']);
-      const isQualTable = t => QUAL_IDS.has(t.id);
-      setQualifierTables(allSpecial.filter(t=>isQualTable(t)));
-      setSpecialTables(allSpecial.filter(t=>!isQualTable(t)));
+      // ✅ Qualifier = לפי stage_type='qualifiers' בלבד — לא לפי ID!
+      // בנוקאאוט: T4,T6,T8 הם qualifiers; T5,T7,T9 הם special
+      // בשלב הבתים: טבלות עולות לפי stage_type
+      const isQualTable = t => t.questions[0]?.stage_type === 'qualifiers';
+      setQualifierTables(allSpecial.filter(t => isQualTable(t)));
+      setSpecialTables(allSpecial.filter(t => !isQualTable(t)));
     } catch(e){console.error(e);}
     setLoading(false);
   };
@@ -842,7 +842,8 @@ export default function Statistics() {
 
         // ── Qualifiers: גרף מרוכז יחיד ─────────────────────────────────
         if(group==='qualifier'){
-          const cfg=ADVANCING_CONFIG[table.id];
+          // cfg: השתמש ב-ADVANCING_CONFIG אם קיים, אחרת חשב דינמית לפי מספר חריצים
+          const cfg = ADVANCING_CONFIG[table.id] || null;
           const slots=table.questions.filter(q=>{const n=parseFloat(q.question_id);return Number.isInteger(n)&&n>=1;});
           const slotIds=new Set(slots.map(s=>s.id));
           const teamCounts={}, participantsMap={};
@@ -879,23 +880,16 @@ export default function Statistics() {
           if(table.id!=='T1'){
 
             // ✅ זיהוי "רשימת קבוצות" בשלב הבתים:
-            // זיהוי "רשימת קבוצות עולות" בשלב הבתים בלבד:
-            // תנאים: ≥4 חריצים שלמים, ללא home/away, stage_type='qualifiers' או תיאור מתאים
-            // חשוב: לא stage_type='special' — אלה שאלות מיוחדות שנשארות כגרפים נפרדים
+            // זיהוי "רשימת קבוצות עולות" — stage_type='qualifiers' בלבד
+            // stage_type='special' → שאלות מיוחדות (לא רשימת עולות)
             const slots = table.questions.filter(q => {
               const n = parseFloat(q.question_id);
               return Number.isInteger(n) && n >= 1;
             });
-            const isTeamListTable = slots.length >= 4 &&
-              // ❌ שאלות special — לא רשימת עולות
-              !slots.some(q => q.stage_type === 'special') &&
+            const isTeamListTable = slots.length >= 2 &&
               slots.every(q =>
-                !q.home_team && !q.away_team && (
-                  q.stage_type === 'qualifiers' ||
-                  (table.description||'').includes('שתנצח') ||
-                  (table.description||'').includes('שיעלו') ||
-                  (table.description||'').includes('שתעפל')
-                )
+                !q.home_team && !q.away_team &&
+                q.stage_type === 'qualifiers'
               );
 
             if (isTeamListTable) {
@@ -1069,7 +1063,17 @@ export default function Statistics() {
             <div style={{fontSize:'0.58rem',fontWeight:'700',letterSpacing:'0.12em',textTransform:'uppercase',color:'#475569',marginBottom:'10px'}}>בחר שלב</div>
             {sidebarGroups.map(group=>(
               <div key={group.label} style={{marginBottom:'12px'}}>
-                <div style={{fontSize:'0.95rem',fontWeight:'800',color:group.color,letterSpacing:'0.02em',marginBottom:'7px',paddingRight:'8px',borderRight:`3px solid ${group.color}`}}>{group.label}</div>
+                <div style={{
+                  fontSize:'1rem',
+                  fontWeight:'900',
+                  color:group.color,
+                  letterSpacing:'0.01em',
+                  marginBottom:'8px',
+                  paddingRight:'10px',
+                  borderRight:`4px solid ${group.color}`,
+                  lineHeight:'1.3',
+                  fontFamily:'Rubik, Heebo, sans-serif',
+                }}>{group.label}</div>
                 {group.buttons.map(btn=>{
                   const active=selectedSection===btn.key;
                   return(
