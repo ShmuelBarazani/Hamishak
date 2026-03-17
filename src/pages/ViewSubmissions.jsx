@@ -1,899 +1,1533 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import {
-  Trophy, Loader2, Crown, TrendingUp, TrendingDown, Minus,
-  Users, Target, CheckCircle, ArrowUpDown, ArrowUp, ArrowDown
-} from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Prediction, Question, Team, ValidationList, User, SystemSettings } from "@/entities/all";
 import { supabase } from '@/api/supabaseClient';
 import * as db from '@/api/entities';
+import { Users, Loader2, ChevronDown, ChevronUp, FileText, Trash2, AlertTriangle, Trophy, Pencil, Save, Download, Award, CheckCircle } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
+import RoundTableReadOnly from "../components/predictions/RoundTableReadOnly";
+import { calculateQuestionScore, calculateLocationBonus } from "@/components/scoring/ScoreService";
+import StandingsTable from "../components/predictions/StandingsTable";
 import { useGame } from "@/components/contexts/GameContext";
-import { calculateTotalScore } from "@/components/scoring/ScoreService";
 
-export default function LeaderboardNew() {
-  const [rankings,            setRankings           ] = useState([]);
-  const [loading,             setLoading            ] = useState(true);
-  const [settingBaseline,     setSettingBaseline    ] = useState(false);
+function ParticipantTotalScore({ participantName, gameId }) {
+  const [totalScore, setTotalScore] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const loadScore = async () => {
+      if (!participantName || !gameId) { setLoading(false); return; }
+      try {
+        const rankingData = await db.Ranking.filter({ game_id: gameId, participant_name: participantName }, null, 1);
+        if (rankingData && rankingData.length > 0) setTotalScore(rankingData[0].current_score);
+        else setTotalScore(null);
+      } catch (error) {
+        console.error("Failed to load participant score:", error);
+        setTotalScore(null);
+      }
+      setLoading(false);
+    };
+    loadScore();
+  }, [participantName, gameId]);
+
+  if (loading) return <Loader2 className="w-4 h-4 animate-spin" style={{ color: '#06b6d4' }} />;
+  if (totalScore === null) return null;
+
+  return (
+    <Badge className="text-white text-sm px-3 py-1 flex items-center gap-1.5" style={{ 
+      background: 'linear-gradient(135deg, #06b6d4 0%, #0ea5e9 100%)',
+      boxShadow: '0 0 10px rgba(6, 182, 212, 0.4)'
+    }}>
+      <Award className="w-4 h-4" />
+      סה"כ: {totalScore} נקודות
+    </Badge>
+  );
+}
+
+export default function ViewSubmissions() {
+
+  const [loading, setLoading] = useState(true);
+  const [loadingPredictions, setLoadingPredictions] = useState(false);
+  const [data, setData] = useState({ predictions: [], questions: [], teams: [], validationLists: [], locationPredsByTableQ: {}, locationActualsByTableQ: {} });
   const [selectedParticipant, setSelectedParticipant] = useState(null);
-  const [participantDetails,  setParticipantDetails ] = useState(null);
-  const [loadingDetails,      setLoadingDetails     ] = useState(false);
-  const [currentUser,         setCurrentUser        ] = useState(null);
-  const [avgScore,            setAvgScore           ] = useState(0);
-  const [maxScore,            setMaxScore           ] = useState(0);
-  const [minScore,            setMinScore           ] = useState(0);
-  const [sortColumn,          setSortColumn         ] = useState('current_position');
-  const [sortDirection,       setSortDirection      ] = useState('asc');
-  const { toast }       = useToast();
+  const [openSections, setOpenSections] = useState({});
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [deletingParticipant, setDeletingParticipant] = useState(null);
+  const [participantStats, setParticipantStats] = useState([]);
+  const [currentUser, setCurrentUser] = useState(null);
+
+  const [participantQuestions, setParticipantQuestions] = useState([]);
+  const [roundTables, setRoundTables] = useState([]);
+  const [israeliTable, setIsraeliTable] = useState(null);
+  const [specialTables, setSpecialTables] = useState([]);
+  const [locationTables, setLocationTables] = useState([]);
+  const [playoffWinnersTable, setPlayoffWinnersTable] = useState(null);
+  const [qualifiersTables, setQualifiersTables] = useState([]);
+  const [allParticipants, setAllParticipants] = useState([]);
+
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [editedPredictions, setEditedPredictions] = useState({});
+  const [savingChanges, setSavingChanges] = useState(false);
+
+  const [teamValidationList, setTeamValidationList] = useState([]);
+  const [exporting, setExporting] = useState(false);
+  const [showMissingReport, setShowMissingReport] = useState(false);
+  const [missingPredictions, setMissingPredictions] = useState([]);
+  const [loadingMissing, setLoadingMissing] = useState(false);
+
+  const { toast } = useToast();
   const { currentGame } = useGame();
 
-  // ─── Auth ──────────────────────────────────────────────────────────────────
+  const isAdmin = currentUser?.role === 'admin' || currentUser?.user_metadata?.role === 'admin';
+
   useEffect(() => {
     const loadUser = async () => {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session) {
-          const { data: { user } } = await supabase.auth.getUser();
+        const isAuth = await supabase.auth.getSession().then(r => !!r.data.session);
+        if (isAuth) {
+          const user = await supabase.auth.getUser().then(r => r.data.user);
           setCurrentUser(user);
         } else setCurrentUser(null);
-      } catch { setCurrentUser(null); }
+      } catch (error) {
+        console.error("Failed to load current user:", error);
+        setCurrentUser(null);
+      }
     };
     loadUser();
   }, []);
 
-  const formatScore = (score) => {
-    if (!score || score === '__CLEAR__') return '';
-    return score.includes('-')
-      ? score.split('-').map(x => x.trim()).join(' - ')
-      : score;
-  };
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  //  DB HELPERS — STRICT GAME ISOLATION
-  //  כל פונקציה מסננת אך ורק לפי game_id הנוכחי.
-  //  אין cross-game fallback מכל סוג שהוא.
-  // ═══════════════════════════════════════════════════════════════════════════
-
-  const loadAllRankings = async (gameId, orderBy = '-current_score') => {
-    let all = [], from = 0;
-    const PAGE = 1000;
-    while (true) {
-      let q = supabase.from('rankings').select('*')
-        .eq('game_id', gameId).range(from, from + PAGE - 1);
-      if (orderBy === '-current_score')
-        q = q.order('current_score', { ascending: false });
-      else if (orderBy)
-        q = q.order(orderBy.replace('-', ''), { ascending: !orderBy.startsWith('-') });
-      const { data, error } = await q;
-      if (error || !data || data.length === 0) break;
-      all = [...all, ...data];
-      if (data.length < PAGE) break;
-      from += PAGE;
-    }
-    return all;
-  };
-
-  /**
-   * שאלות של המשחק הנוכחי בלבד — ללא שום fallback למשחק אחר.
-   */
-  const loadQuestionsForGame = async (gameId) => {
-    let all = [], from = 0;
-    const PAGE = 1000;
-    while (true) {
-      const { data, error } = await supabase
-        .from('questions').select('*')
-        .eq('game_id', gameId)
-        .range(from, from + PAGE - 1);
-      if (error || !data || data.length === 0) break;
-      all = [...all, ...data];
-      if (data.length < PAGE) break;
-      from += PAGE;
-    }
-    return all.filter(q => q.table_id && q.table_id !== 'T1');
-  };
-
-  /**
-   * ניחושים של המשחק הנוכחי בלבד.
-   * הגנה כפולה: סינון DB + סינון לפי question_id ידוע.
-   */
-  const loadPredictionsForGame = async (gameId, participantName, allQuestions) => {
-    const knownIds = new Set(allQuestions.map(q => q.id));
-    let all = [], from = 0;
-    const PAGE = 1000;
-    while (true) {
-      const { data, error } = await supabase
-        .from('predictions').select('*')
-        .eq('game_id', gameId)
-        .eq('participant_name', participantName)
-        .range(from, from + PAGE - 1);
-      if (error || !data || data.length === 0) break;
-      all = [...all, ...data];
-      if (data.length < PAGE) break;
-      from += PAGE;
-    }
-    // ✅ רק ניחושים לשאלות המשחק הנוכחי
-    return all.filter(p => knownIds.has(p.question_id));
-  };
-
-  /**
-   * חישוב ניקוד — תיקון: home_prediction + away_prediction → "X-Y"
-   */
-  const calcScore = (allQuestions, predictions) => {
-    const latest = {};
-    predictions.forEach(pred => {
-      const ex = latest[pred.question_id];
-      if (!ex || new Date(pred.created_at) > new Date(ex.created_at))
-        latest[pred.question_id] = pred;
-    });
-
-    const predMap = {};
-    for (const [qid, pred] of Object.entries(latest)) {
-      if (
-        pred.home_prediction !== null && pred.home_prediction !== undefined &&
-        pred.away_prediction !== null && pred.away_prediction !== undefined
-      ) {
-        predMap[qid] = `${pred.home_prediction}-${pred.away_prediction}`;
-      } else {
-        predMap[qid] = pred.text_prediction;
-      }
-    }
-    return calculateTotalScore(allQuestions, predMap);
-  };
-
-  // ─── Load rankings list ────────────────────────────────────────────────────
-  const loadRankings = useCallback(async () => {
-    if (!currentGame) { setLoading(false); return; }
-    setLoading(true);
-    try {
-      const rankingsData = await loadAllRankings(currentGame.id, '-current_score');
-      if (rankingsData.length > 0) {
-        let position = 1;
-        for (let i = 0; i < rankingsData.length; i++) {
-          if (i > 0 && rankingsData[i].current_score !== rankingsData[i - 1].current_score)
-            position = i + 1;
-          rankingsData[i].current_position = position;
-        }
-        setRankings(rankingsData);
-        const scores = rankingsData.map(r => Number(r.current_score) || 0);
-        setAvgScore(scores.reduce((a, b) => a + b, 0) / scores.length);
-        setMaxScore(Math.max(...scores));
-        setMinScore(Math.min(...scores));
-      } else setRankings([]);
-    } catch (error) {
-      console.error("Error loading rankings:", error);
-      toast({ title: "שגיאה", description: "טעינת הדירוג נכשלה", variant: "destructive" });
-    }
-    setLoading(false);
-  }, [currentGame, toast]);
-
-  useEffect(() => { loadRankings(); }, [loadRankings]);
-
-  // ─── Set baseline ──────────────────────────────────────────────────────────
-  const handleSetBaseline = async () => {
-    if (!currentGame) return;
-    if (!window.confirm(
-      '📌 האם לקבוע את הדירוג הנוכחי כנקודת ייחוס?\n\nהחישוב הבא יציג שינויים ביחס לנקודה זו.'
-    )) return;
-    setSettingBaseline(true);
-    try {
-      const allRankings = await loadAllRankings(currentGame.id, null);
-      const now = new Date().toISOString();
-      for (let i = 0; i < allRankings.length; i += 5) {
-        const batch = allRankings.slice(i, i + 5);
-        await Promise.all(batch.map(r =>
-          db.Ranking.update(r.id, {
-            baseline_score:    r.current_score,
-            baseline_position: r.current_position,
-            last_baseline_set: now,
-          })
-        ));
-        await new Promise(r => setTimeout(r, 300));
-      }
-      toast({
-        title: "נקודת ייחוס נקבעה!",
-        description: `${allRankings.length} משתתפים עודכנו`,
-        className: "bg-green-900/30 border-green-500 text-green-200"
-      });
-      await loadRankings();
-    } catch (error) {
-      console.error("Error setting baseline:", error);
-      toast({ title: "שגיאה", description: error.message, variant: "destructive" });
-    }
-    setSettingBaseline(false);
-  };
-
-  // ─── Load participant popup ────────────────────────────────────────────────
-  const loadParticipantDetails = async (participantName) => {
-    if (!currentGame) return;
-    setSelectedParticipant(participantName);
-    setParticipantDetails(null);
-    setLoadingDetails(true);
-
-    try {
-      const allQuestions   = await loadQuestionsForGame(currentGame.id);
-      const allPredictions = await loadPredictionsForGame(currentGame.id, participantName, allQuestions);
-
-      const teamsMap = (currentGame.teams_data || [])
-        .reduce((acc, t) => { acc[t.name] = t; return acc; }, {});
-
-      const { total: calcTotal, breakdown } = calcScore(allQuestions, allPredictions);
-
-      // ✅ ניקוד אמיתי — קרא מטבלת rankings (סמכותית, כולל בונוסים מיוחדים כמו T5)
-      // calcScore מחמיץ לוגיקת bonus מיוחדת (qualifiers, מיקומים) → השתמש בDB
-      let totalScore = calcTotal;
+  useEffect(() => {
+    const loadData = async () => {
+      if (!currentGame) { setLoading(false); return; }
+      setLoading(true);
       try {
-        const { data: rankRow } = await supabase
-          .from('rankings')
-          .select('current_score')
-          .eq('game_id', currentGame.id)
-          .eq('participant_name', participantName)
-          .single();
-        if (rankRow?.current_score != null) totalScore = rankRow.current_score;
-      } catch { /* fallback to calcTotal */ }
+        const questions = await Question.filter({ game_id: currentGame.id }, "-created_at", 10000);
 
-      const LOCATION_TABLE_IDS = ['T14', 'T15', 'T16', 'T17', 'T19'];
-      const LOCATION_DEFAULTS  = {
-        T14: 'מקומות 1-8 — שלב הבתים',
-        T15: 'מקומות 9-16 — שלב הבתים',
-        T16: 'מקומות 17-24 — שלב הבתים',
-        T17: 'מקומות 1-24 — טבלה כוללת',
-        T19: 'רשימת העולות לשמינית הגמר',
-      };
-      const locationDesc = { ...LOCATION_DEFAULTS };
-      allQuestions.forEach(q => {
-        if (LOCATION_TABLE_IDS.includes(q.table_id) && q.table_description?.trim())
-          locationDesc[q.table_id] = q.table_description.trim();
-      });
+        let uniqueParticipants = [];
+        try {
+          const { data: gpData, error: gpErr } = await supabase
+            .from('game_participants')
+            .select('participant_name')
+            .eq('game_id', currentGame.id)
+            .order('participant_name');
+          if (!gpErr && gpData && gpData.length > 0)
+            uniqueParticipants = gpData.map(r => r.participant_name).filter(Boolean);
+        } catch(e) { console.warn('game_participants fallback', e); }
 
-      // dedup predictions for display
-      const latestPred = {};
-      allPredictions.forEach(p => {
-        const ex = latestPred[p.question_id];
-        if (!ex || new Date(p.created_at) > new Date(ex.created_at))
-          latestPred[p.question_id] = p;
-      });
+        if (uniqueParticipants.length === 0) {
+          const PAGE = 1000;
+          let allPredNames = [], from = 0, keepGoing = true, iter = 0;
+          while (keepGoing && iter < 20) {
+            const { data: chunk } = await supabase
+              .from('game_predictions')
+              .select('participant_name')
+              .eq('game_id', currentGame.id)
+              .range(from, from + PAGE - 1);
+            if (!chunk || chunk.length === 0) break;
+            allPredNames = allPredNames.concat(chunk);
+            keepGoing = chunk.length === PAGE;
+            from += PAGE;
+            iter++;
+          }
+          uniqueParticipants = [...new Set(allPredNames.map(p => p.participant_name))].sort();
+        }
 
-      const getPredDisplay = (qid) => {
-        const p = latestPred[qid];
-        if (!p) return '';
-        if (p.home_prediction !== null && p.home_prediction !== undefined &&
-            p.away_prediction !== null && p.away_prediction !== undefined)
-          return formatScore(`${p.home_prediction}-${p.away_prediction}`);
-        return formatScore(p.text_prediction || '');
-      };
+        const teamsData = currentGame.teams_data || [];
+        const validationListsData = currentGame.validation_lists || [];
+        const teamsMap = teamsData.reduce((acc, team) => { acc[team.name] = team; return acc; }, {});
+        const listsMap = validationListsData.reduce((acc, list) => { acc[list.list_name] = list.options; return acc; }, {});
 
-      const locationSums     = {};
-      const regularBreakdown = [];
-      const bonusRows        = []; // שורות בונוס שלב (T3/T4/T5/T6_STAGE_BONUS)
+        const teamListObj = validationListsData.find(list =>
+          list.list_name?.toLowerCase().includes('קבוצ') &&
+          !list.list_name?.toLowerCase().includes('מוקדמות')
+        );
+        if (teamListObj) setTeamValidationList(teamListObj.options);
 
-      breakdown.forEach(item => {
-        if (LOCATION_TABLE_IDS.includes(item.table_id)) {
-          // ── מיקומים: קבץ לסכום לפי טבלה ──
-          locationSums[item.table_id] = (locationSums[item.table_id] || 0) + item.score;
+        setAllParticipants(uniqueParticipants);
 
-        } else if (item.isBonus === true || !allQuestions.find(x => x.id === item.question_id)) {
-          // ── בונוס שלב (question_id סינתטי כמו 'T5_STAGE_BONUS') ──
-          if (item.score > 0) {
-            bonusRows.push({
-              score:               item.score,
-              max_score:           item.max_score || item.score,
-              table_id:            item.table_id || '?',
-              question_id_display: '',
-              question_text:       item.question_id_text || item.bonusDescription || `בונוס שלב ${item.table_id}`,
-              home_team: null, away_team: null,
-              actual_result: '', prediction: '',
-              home_team_display: null, away_team_display: null,
-              home_team_logo: null, away_team_logo: null,
-              isLocationSummary: false,
-              isStageBonusRow:   true,
-            });
+        const rTables = {}, sTables = {};
+        questions.forEach(q => {
+          if (!q.table_id) return;
+          if ((q.table_id === 'T20' || q.table_id === 'T3') && q.question_text && !q.home_team) {
+            let teams = null;
+            if (q.question_text.includes(' נגד ')) teams = q.question_text.split(' נגד ').map(t => t.trim());
+            else if (q.question_text.includes(' - ')) teams = q.question_text.split(' - ').map(t => t.trim());
+            if (teams && teams.length === 2) { q.home_team = teams[0]; q.away_team = teams[1]; }
           }
 
-        } else if (item.score > 0) {
-          // ── שאלה רגילה ──
-          const q = allQuestions.find(x => x.id === item.question_id);
-          if (!q) return;
-          regularBreakdown.push({
-            score:               item.score,
-            max_score:           item.max_score,
-            table_id:            item.table_id || '?',
-            question_id_display: item.question_id_text || q.question_id || '?',
-            question_text:       q.question_text || '',
-            home_team:           q.home_team,
-            away_team:           q.away_team,
-            actual_result:       formatScore(q.actual_result || ''),
-            prediction:          getPredDisplay(item.question_id),
-            home_team_display:   q.home_team?.replace(/\s*\([^)]+\)\s*$/, '').trim() || null,
-            away_team_display:   q.away_team?.replace(/\s*\([^)]+\)\s*$/, '').trim() || null,
-            home_team_logo:      q.home_team
-              ? (teamsMap[q.home_team]?.logo_url || teamsMap[q.home_team.replace(/\s*\([^)]+\)\s*$/, '').trim()]?.logo_url)
-              : null,
-            away_team_logo:      q.away_team
-              ? (teamsMap[q.away_team]?.logo_url || teamsMap[q.away_team.replace(/\s*\([^)]+\)\s*$/, '').trim()]?.logo_url)
-              : null,
-            isLocationSummary: false,
-            isStageBonusRow:   false,
-          });
-        }
-      });
+          const tableCollection = (q.home_team && q.away_team) ? rTables : sTables;
+          let tableId = q.table_id;
+          let tableDescription = q.table_description;
 
-      const locationRows = Object.entries(locationSums)
-        .filter(([, s]) => s > 0)
-        .map(([tid, s]) => ({
-          score: s, max_score: null, table_id: tid,
-          question_id_display: '',
-          question_text: locationDesc[tid] || tid,
-          home_team: null, away_team: null,
-          actual_result: '', prediction: '',
-          home_team_display: null, away_team_display: null,
-          home_team_logo: null, away_team_logo: null,
-          isLocationSummary: true,
-        }));
+          if (q.stage_name && q.stage_name.includes('בית')) { tableId = q.stage_name; tableDescription = q.stage_name; }
+          else if (q.table_description?.includes('שאלות מיוחדות') && q.stage_order && q.table_id !== 'T10') {
+            tableId = `custom_order_${q.stage_order}`; tableDescription = q.stage_name || q.table_description;
+          }
+          if (q.table_id === 'T12') tableDescription = 'שלב הליגה - פינת הגאווה הישראלית - 7 בוםםםםםםםםםם !!!';
+          else if (q.table_id === 'T13') tableDescription = 'שלב ראש בראש - "מבול מטאורים של כוכבים (*)"';
 
-      const enriched = [...regularBreakdown, ...locationRows, ...bonusRows];
-      enriched.sort((a, b) => {
-        const tA = parseInt(a.table_id.replace('T', '')) || 999;
-        const tB = parseInt(b.table_id.replace('T', '')) || 999;
-        if (tA !== tB) return tA - tB;
-        return (parseFloat(a.question_id_display) || 999) - (parseFloat(b.question_id_display) || 999);
-      });
-
-      // ✅ בניית qualifying sections (T4/T5/T6) — לפי זהות קבוצה, לא מיקום
-      const normT = n => (n || '').replace(/\s*\([^)]+\)\s*$/, '').replace(/\s+/g, ' ').trim().toLowerCase();
-      const t3Qs = allQuestions.filter(q => q.table_id === 'T3' && q.home_team && q.away_team);
-
-      // ✅ זיהוי דינמי — כל טבלת qualifiers, ללא הנחת T4/T5/T6 ספציפית
-      const qualTableMap = {};
-      allQuestions.forEach(q => {
-        if (q.stage_type !== 'qualifiers') return;
-        const n = parseFloat(q.question_id);
-        if (!Number.isInteger(n) || n < 1) return;
-        if (!qualTableMap[q.table_id]) qualTableMap[q.table_id] = [];
-        qualTableMap[q.table_id].push(q);
-      });
-
-      const qualifyingSections = Object.entries(qualTableMap)
-        .sort((a,b) => (parseInt(a[0].replace('T',''))||0) - (parseInt(b[0].replace('T',''))||0))
-        .map(([tableId, tSlots]) => {
-          tSlots.sort((a,b) => parseFloat(a.question_id) - parseFloat(b.question_id));
-          const count = tSlots.length;
-          const bonusPoints = count >= 8 ? 16 : count >= 4 ? 12 : count >= 2 ? 6 : 0;
-          const cfg = { count, bonus: bonusPoints };
-
-          const advSet = new Set(
-            tSlots.filter(q => q.actual_result && q.actual_result !== '__CLEAR__')
-                  .map(q => normT(q.actual_result))
-          );
-          const elimSet = new Set();
-          advSet.forEach(adv => {
-            t3Qs.forEach(q => {
-              const h = normT(q.home_team), a = normT(q.away_team);
-              if (h === adv && !advSet.has(a)) elimSet.add(a);
-              if (a === adv && !advSet.has(h)) elimSet.add(h);
-            });
-          });
-
-          const preds = tSlots.map(q => {
-            const disp = getPredDisplay(q.id);
-            const norm = normT(disp);
-            const isAdv  = disp && advSet.has(norm);
-            const isElim = disp && !isAdv && elimSet.has(norm);
-            return { pred: disp, isAdv, isElim, pts: q.possible_points || 0 };
-          });
-
-          const guessedSet = new Set(preds.map(p => normT(p.pred)).filter(Boolean));
-          const allResultsIn = tSlots.every(q => q.actual_result && q.actual_result !== '__CLEAR__');
-          const bonusEarned  = allResultsIn && [...advSet].every(t => guessedSet.has(t));
-
-          return {
-            tableId,
-            tableDesc: tSlots[0]?.table_description || tableId,
-            preds, advSet, cfg, bonusEarned,
-            hasAnyResult: advSet.size > 0,
-            allResultsIn,
-          };
+          if (!tableCollection[tableId]) {
+            tableCollection[tableId] = {
+              id: tableId,
+              description: tableDescription || (q.home_team && q.away_team ? `מחזור ${tableId.replace('T','')}` : `שאלות ${tableId.replace('T','')}`),
+              questions: []
+            };
+          }
+          tableCollection[tableId].questions.push(q);
         });
 
-      setParticipantDetails({ name: participantName, scores: enriched, totalScore, qualifyingSections });
-    } catch (error) {
-      console.error("Error loading participant details:", error);
-      toast({ title: "שגיאה", description: "טעינת הפרטים נכשלה", variant: "destructive" });
+        const t20Table = rTables['T20'];
+        delete rTables['T20'];
+        setIsraeliTable(t20Table || null);
+
+        const participantQns = sTables['T1'] ? sTables['T1'].questions : [];
+        const uniqueParticipantQns = participantQns.reduce((acc, current) => {
+          if (!acc.find(item => item.question_text === current.question_text)) acc.push(current);
+          return acc;
+        }, []);
+        setParticipantQuestions(uniqueParticipantQns);
+        delete sTables['T1'];
+
+        const sortedRoundTables = Object.values(rTables).sort((a,b) => {
+          const aIsGroup = a.id.includes('בית'), bIsGroup = b.id.includes('בית');
+          if (aIsGroup && !bIsGroup) return -1;
+          if (!aIsGroup && bIsGroup) return 1;
+          if (aIsGroup && bIsGroup) return a.id.charAt(a.id.length-1).localeCompare(b.id.charAt(b.id.length-1), 'he');
+          return (parseInt(a.id.replace('T',''))||0) - (parseInt(b.id.replace('T',''))||0);
+        });
+        setRoundTables(sortedRoundTables);
+
+        const locationTableIds = ['T9', 'T14', 'T15', 'T16', 'T17'];
+        const locationGroup = Object.values(sTables)
+          .filter(table => locationTableIds.includes(table.id))
+          .sort((a,b) => (parseInt(a.id.replace('T',''))||0) - (parseInt(b.id.replace('T',''))||0));
+        setLocationTables(locationGroup);
+
+        const t19Table = sTables['T19'];
+        setPlayoffWinnersTable(t19Table || null);
+
+        const allSpecialTables = Object.values(sTables).filter(table => {
+          const desc = table.description?.trim();
+          const isGroup = table.id.includes('בית') || desc?.includes('בית');
+          const stageType = table.questions[0]?.stage_type;
+          return desc && !/^\d+$/.test(desc) && !locationTableIds.includes(table.id) && table.id !== 'T19' && !isGroup && stageType !== 'qualifiers';
+        }).sort((a,b) => {
+          const orderA = a.questions[0]?.stage_order || 999, orderB = b.questions[0]?.stage_order || 999;
+          if (orderA !== orderB) return orderA - orderB;
+          return (parseInt(a.id.replace('T',''))||0) - (parseInt(b.id.replace('T',''))||0);
+        });
+        setSpecialTables(allSpecialTables);
+
+        const t10Special = sTables['T10'];
+        if (t10Special) {
+          const t10Round = Object.values(rTables).find(t => t.id === 'T10');
+          if (t10Round) t10Round.specialQuestions = t10Special.questions;
+        }
+
+        const allQualifiersTables = Object.values(sTables).filter(table => {
+          const stageType = table.questions[0]?.stage_type;
+          return stageType === 'qualifiers';
+        }).sort((a,b) => {
+          const orderA = a.questions[0]?.stage_order || 999, orderB = b.questions[0]?.stage_order || 999;
+          return orderA - orderB;
+        });
+        setQualifiersTables(allQualifiersTables);
+
+        setData(prev => ({ ...prev, questions, teams: teamsMap, validationLists: listsMap }));
+      } catch (error) {
+        console.error("Error loading data:", error);
+      }
+      setLoading(false);
+    };
+    loadData();
+  }, [currentGame]);
+
+  useEffect(() => {
+    const loadParticipantPredictions = async () => {
+      if (!selectedParticipant) {
+        setData(prev => ({ ...prev, predictions: [] }));
+        setEditedPredictions({});
+        setIsEditMode(false);
+        return;
+      }
+      setLoadingPredictions(true);
+      try {
+        const predictions = await Prediction.filter({ participant_name: selectedParticipant }, "-created_at", 5000);
+
+        const locationTableIds = ['T14', 'T15', 'T16', 'T17', 'T19'];
+        const locationPredsByTableQ = {};
+        try {
+          const { data: locQuestions } = await supabase
+            .from('questions')
+            .select('id, table_id, question_id, actual_result')
+            .in('table_id', locationTableIds);
+
+          if (locQuestions && locQuestions.length > 0) {
+            const uuidToKey = {};
+            locQuestions.forEach(q => { uuidToKey[q.id] = `${q.table_id}_${q.question_id}`; });
+
+            predictions.forEach(p => {
+              const key = uuidToKey[p.question_id];
+              if (key) {
+                if (!locationPredsByTableQ[key] || new Date(p.created_at) > new Date(locationPredsByTableQ[key].created_at))
+                  locationPredsByTableQ[key] = { text_prediction: p.text_prediction, created_at: p.created_at };
+              }
+            });
+
+            const locationActualsByTableQ = {};
+            locQuestions.forEach(q => {
+              if (q.actual_result && q.actual_result.trim() !== '' && q.actual_result !== '__CLEAR__')
+                locationActualsByTableQ[`${q.table_id}_${q.question_id}`] = q.actual_result;
+            });
+            setData(prev => ({ ...prev, predictions, locationPredsByTableQ, locationActualsByTableQ }));
+          } else {
+            setData(prev => ({ ...prev, predictions, locationPredsByTableQ, locationActualsByTableQ: {} }));
+          }
+        } catch (e) { console.error('Error building locationPredsByTableQ:', e); }
+
+        setEditedPredictions({});
+        setIsEditMode(false);
+      } catch (error) { console.error("Error loading participant predictions:", error); }
+      setLoadingPredictions(false);
+    };
+    loadParticipantPredictions();
+  }, [selectedParticipant, currentUser]);
+
+  const participantPredictions = useMemo(() => {
+    if (!selectedParticipant) return {};
+    const tempPreds = {};
+    data.predictions.forEach(p => {
+      const existing = tempPreds[p.question_id];
+      if (!existing || new Date(p.created_at) > new Date(existing.created_at))
+        tempPreds[p.question_id] = { text_prediction: p.text_prediction, home_prediction: p.home_prediction, away_prediction: p.away_prediction, created_at: p.created_at };
+    });
+    const predMap = {};
+    for (const [qid, pred] of Object.entries(tempPreds)) {
+      if (pred.home_prediction !== null && pred.home_prediction !== undefined &&
+          pred.away_prediction !== null && pred.away_prediction !== undefined)
+        predMap[qid] = pred.home_prediction + '-' + pred.away_prediction;
+      else predMap[qid] = pred.text_prediction;
     }
-    setLoadingDetails(false);
+    return predMap;
+  }, [selectedParticipant, data.predictions]);
+
+  const getPredictionValueForDisplay = useCallback((questionId) => {
+    return editedPredictions[questionId] !== undefined ? editedPredictions[questionId] : participantPredictions[questionId];
+  }, [editedPredictions, participantPredictions]);
+
+  const getLocationPred = useCallback((question) => {
+    const locationTableIds = ['T14', 'T15', 'T16', 'T17', 'T19'];
+    if (!locationTableIds.includes(question.table_id)) return null;
+    const direct = participantPredictions[question.id];
+    if (direct !== undefined && direct !== '') return direct;
+    const key = `${question.table_id}_${question.question_id}`;
+    const fallback = data.locationPredsByTableQ?.[key];
+    return fallback ? (fallback.text_prediction || '') : '';
+  }, [participantPredictions, data.locationPredsByTableQ]);
+
+  const getCombinedPredictionsMap = useCallback(() => ({
+    ...participantPredictions,
+    ...editedPredictions,
+  }), [participantPredictions, editedPredictions]);
+
+  const participantDetails = useMemo(() => {
+    if (!selectedParticipant) return {};
+    const details = { name: selectedParticipant };
+    participantQuestions.forEach(q => {
+      const pred = data.predictions.find(p => p.question_id === q.id);
+      if (pred) details[q.id] = pred.text_prediction;
+    });
+    return details;
+  }, [selectedParticipant, participantQuestions, data.predictions]);
+
+  const loadParticipantStats = async () => {
+    if (!currentGame) return;
+    try {
+      const allPredictions = await Prediction.filter({ game_id: currentGame.id }, null, 10000);
+      const stats = {};
+      allPredictions.forEach(pred => {
+        if (!stats[pred.participant_name]) stats[pred.participant_name] = 0;
+        stats[pred.participant_name]++;
+      });
+      const statsArray = Object.entries(stats).map(([name, count]) => ({ name, predictionsCount: count }))
+        .sort((a, b) => a.name.localeCompare(b.name, 'he'));
+      setParticipantStats(statsArray);
+    } catch (error) {
+      console.error("Error loading participant stats:", error);
+      toast({ title: "שגיאה", description: "טעינת נתוני משתתפים נכשלה.", variant: "destructive" });
+    }
   };
 
-  // ─── Sort ──────────────────────────────────────────────────────────────────
-  const handleSort = (column) => {
-    if (sortColumn === column) setSortDirection(d => d === 'asc' ? 'desc' : 'asc');
-    else {
-      setSortColumn(column);
-      setSortDirection(
-        ['current_score','previous_score','score_change','position_change'].includes(column) ? 'desc' : 'asc'
+  const handleDeleteParticipant = async (participantName) => {
+    if (!currentGame) return;
+    if (!window.confirm(`האם אתה בטוח שברצונך למחוק את כל הניחושים של "${participantName}"? פעולה זו אינה הפיכה!`)) return;
+    setDeletingParticipant(participantName);
+    try {
+      const predictionsToDelete = await Prediction.filter({ participant_name: participantName, game_id: currentGame.id }, null, 10000);
+      const BATCH_SIZE = 10, DELAY_MS = 500;
+      for (let i = 0; i < predictionsToDelete.length; i += BATCH_SIZE) {
+        const batch = predictionsToDelete.slice(i, i + BATCH_SIZE);
+        await Promise.all(batch.map(pred => Prediction.delete(pred.id)));
+        toast({ title: "מוחק...", description: `נמחקו ${Math.min(i+BATCH_SIZE, predictionsToDelete.length)}/${predictionsToDelete.length}`, className: "bg-yellow-900/30 border-yellow-500 text-yellow-200" });
+        if (i + BATCH_SIZE < predictionsToDelete.length) await new Promise(resolve => setTimeout(resolve, DELAY_MS));
+      }
+      toast({ title: "נמחק בהצלחה!", description: `נמחקו ${predictionsToDelete.length} ניחושים של ${participantName}.`, className: "bg-green-900/30 border-green-500 text-green-200" });
+      setAllParticipants(prev => prev.filter(p => p !== participantName));
+      if (selectedParticipant === participantName) setSelectedParticipant(null);
+      await loadParticipantStats();
+    } catch (error) {
+      console.error("Error deleting participant:", error);
+      toast({ title: "שגיאה", description: "מחיקת המשתתף נכשלה: " + error.message, variant: "destructive" });
+    } finally { setDeletingParticipant(null); }
+  };
+
+  const handlePredictionEdit = (questionId, newValue) => {
+    if (!isEditMode) return;
+    const originalValue = participantPredictions[questionId] || '';
+    if (newValue === originalValue) {
+      setEditedPredictions(prev => { const n = { ...prev }; delete n[questionId]; return n; });
+    } else {
+      setEditedPredictions(prev => ({ ...prev, [questionId]: newValue }));
+    }
+  };
+
+  const handleSaveChanges = async () => {
+    const changedPredictions = Object.entries(editedPredictions);
+    if (changedPredictions.length === 0) {
+      toast({ title: "אין שינויים", description: "לא בוצעו שינויים בניחושים", className: "bg-blue-900/30 border-blue-500 text-blue-200" });
+      return;
+    }
+    setSavingChanges(true);
+    try {
+      let updatedCount = 0;
+      for (const [questionId, newValue] of changedPredictions) {
+        const prediction = data.predictions.find(p => p.question_id === questionId);
+        if (prediction) { await Prediction.update(prediction.id, { text_prediction: newValue }); updatedCount++; }
+        else { await Prediction.create({ question_id: questionId, participant_name: selectedParticipant, text_prediction: newValue }); updatedCount++; }
+      }
+      toast({ title: "שינויים נשמרו!", description: `עודכנו ${updatedCount} ניחושים עבור ${selectedParticipant}`, className: "bg-green-900/30 border-green-500 text-green-200" });
+      const reloadPreds = await Prediction.filter({ participant_name: selectedParticipant }, "-created_at", 5000);
+      setData(prev => ({ ...prev, predictions: reloadPreds }));
+      setEditedPredictions({});
+      setIsEditMode(false);
+    } catch (error) {
+      console.error("Error saving changes:", error);
+      toast({ title: "שגיאה", description: "שמירת השינויים נכשלה", variant: "destructive" });
+    }
+    setSavingChanges(false);
+  };
+
+  const toggleSection = (sectionId) => setOpenSections(prev => ({...prev, [sectionId]: !prev[sectionId]}));
+
+  const handleMissingReport = async () => {
+    if (!currentGame) return;
+    setLoadingMissing(true);
+    setShowMissingReport(true);
+    try {
+      let allPredictions = [], skip = 0;
+      while (true) {
+        const batch = await Prediction.filter({ game_id: currentGame.id }, null, 10000, skip);
+        allPredictions = [...allPredictions, ...batch];
+        if (batch.length < 10000) break;
+        skip += 10000;
+      }
+      const predictionsByParticipant = {};
+      allPredictions.forEach(pred => {
+        if (!predictionsByParticipant[pred.participant_name]) predictionsByParticipant[pred.participant_name] = {};
+        const existing = predictionsByParticipant[pred.participant_name][pred.question_id];
+        if (!existing || new Date(pred.created_at) > new Date(existing.created_at))
+          predictionsByParticipant[pred.participant_name][pred.question_id] = pred;
+      });
+      const participants = Object.keys(predictionsByParticipant).sort();
+      const missingByQuestion = {};
+      data.questions.forEach(q => {
+        if (q.table_id === 'T1') return;
+        const questionKey = `${q.table_id}.${q.question_id}`;
+        const missingParticipants = [];
+        participants.forEach(participant => {
+          const participantPredictions = predictionsByParticipant[participant];
+          const pred = participantPredictions[q.id];
+          const hasPrediction = pred && pred.text_prediction !== null && pred.text_prediction !== undefined &&
+                                pred.text_prediction.toString().trim() !== '' && pred.text_prediction !== '__CLEAR__';
+          if (!hasPrediction) missingParticipants.push(participant);
+        });
+        if (missingParticipants.length > 0) {
+          missingByQuestion[questionKey] = {
+            table_id: q.table_id, table_description: q.table_description || q.stage_name || '',
+            question_id: q.question_id,
+            question_text: q.question_text || `${(q.home_team || '').replace(/\s*\([^)]+\)\s*$/, '').trim()} נגד ${(q.away_team || '').replace(/\s*\([^)]+\)\s*$/, '').trim()}`,
+            stage_order: q.stage_order || 0,
+            missing_count: missingParticipants.length,
+            missing_participants: missingParticipants.sort((a, b) => a.localeCompare(b, 'he'))
+          };
+        }
+      });
+      const missingArray = Object.entries(missingByQuestion)
+        .map(([key, data]) => ({ ...data, full_id: key }))
+        .sort((a, b) => {
+          if (a.stage_order !== b.stage_order) return a.stage_order - b.stage_order;
+          const tableA = parseInt(a.table_id.replace('T', '')) || 0, tableB = parseInt(b.table_id.replace('T', '')) || 0;
+          if (tableA !== tableB) return tableA - tableB;
+          return (parseFloat(a.question_id) || 0) - (parseFloat(b.question_id) || 0);
+        });
+      setMissingPredictions(missingArray);
+    } catch (error) {
+      console.error("Error generating missing report:", error);
+      toast({ title: "שגיאה", description: "יצירת הדוח נכשלה", variant: "destructive" });
+    }
+    setLoadingMissing(false);
+  };
+
+  const handleExportData = async () => {
+    if (!currentGame) return;
+    setExporting(true);
+    try {
+      let allPredictions = [], skip = 0;
+      while (true) {
+        const batch = await Prediction.filter({ game_id: currentGame.id }, null, 10000, skip);
+        allPredictions = [...allPredictions, ...batch];
+        if (batch.length < 10000) break;
+        skip += 10000;
+      }
+      const questionsMap = {};
+      data.questions.forEach(q => { questionsMap[q.id] = q; });
+      const participants = [...new Set(allPredictions.map(p => p.participant_name))].sort();
+      const headers = ['שלב', 'מס\' שאלה', 'שאלה', 'רשימת אימות', ...participants];
+      const predictionsByQuestion = {};
+      allPredictions.forEach(p => {
+        if (!predictionsByQuestion[p.question_id]) predictionsByQuestion[p.question_id] = {};
+        predictionsByQuestion[p.question_id][p.participant_name] = p.text_prediction || '';
+      });
+      const sortedQuestions = [...data.questions].sort((a, b) => {
+        const stageOrderA = a.stage_order || 0, stageOrderB = b.stage_order || 0;
+        if (stageOrderA !== stageOrderB) return stageOrderA - stageOrderB;
+        return (parseFloat(a.question_id) || 0) - (parseFloat(b.question_id) || 0);
+      });
+      const rows = sortedQuestions.map(q => {
+        const stageName = q.stage_name || q.table_description || q.table_id || '';
+        const questionId = q.question_id || '';
+        const questionText = q.question_text || `${q.home_team || ''} נגד ${q.away_team || ''}`;
+        const validationList = q.validation_list || '';
+        const participantValues = participants.map(p => {
+          let pred = predictionsByQuestion[q.id]?.[p] || '';
+          if (pred && pred.includes('-')) pred = "'" + pred;
+          return pred;
+        });
+        let safeQuestionText = questionText;
+        if (safeQuestionText && safeQuestionText.includes('-')) safeQuestionText = "'" + safeQuestionText;
+        return [stageName, questionId, safeQuestionText, validationList, ...participantValues];
+      });
+      const csvContent = [headers, ...rows].map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
+      const BOM = '\uFEFF';
+      const blob = new Blob([BOM + csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `predictions_export_${currentGame.game_name}_${new Date().toISOString().split('T')[0]}.csv`;
+      link.click();
+      toast({ title: "ייצוא הושלם!", description: `יוצאו ${sortedQuestions.length} שאלות עבור ${participants.length} משתתפים`, className: "bg-green-900/30 border-green-500 text-green-200" });
+    } catch (error) {
+      console.error("Error exporting data:", error);
+      toast({ title: "שגיאה", description: "ייצוא הנתונים נכשל", variant: "destructive" });
+    }
+    setExporting(false);
+  };
+
+  const stripCountry = (name) => name ? name.replace(/\s*\([^)]+\)\s*$/, '').trim() : name;
+
+  const findMatchedTeamName = useCallback((predictionName) => {
+    if (!predictionName || teamValidationList.length === 0) return predictionName;
+    const trimmedPrediction = predictionName.trim();
+    if (teamValidationList.includes(trimmedPrediction)) return trimmedPrediction;
+    const baseName = trimmedPrediction.split('(')[0].trim();
+    const normalizeTeamName = (name) => name
+      .replace(/קרבאך/g, 'קרבאח').replace(/קראבח/g, 'קרבאח').replace(/קראבך/g, 'קרבאח')
+      .replace(/ת"א/g, 'תל אביב').replace(/ת.א/g, 'תל אביב');
+    const normalizedBaseName = normalizeTeamName(baseName);
+    for (const validName of teamValidationList) {
+      const validBaseName = validName.split('(')[0].trim();
+      if (normalizeTeamName(validBaseName) === normalizedBaseName) return validName;
+    }
+    return trimmedPrediction;
+  }, [teamValidationList]);
+
+  const getMaxPossibleScore = (question) => {
+    if (question.table_id === 'T20' && question.home_team && question.away_team) return 6;
+    if (question.possible_points != null && question.possible_points > 0) return question.possible_points;
+    if (question.actual_result != null && question.actual_result !== '') return 10;
+    if (question.table_id === 'T10') return question.possible_points || 10;
+    return 0;
+  };
+
+  const renderReadOnlySelect = (question, originalValue) => {
+    const isTeamsList = question.validation_list?.toLowerCase().includes('קבוצ');
+    const locationTableIds = ['T14', 'T15', 'T16', 'T17', 'T19'];
+    const isLocationQuestion = locationTableIds.includes(question.table_id);
+
+    let displayTeamNameForReadonly = originalValue;
+    if (isTeamsList && originalValue && isLocationQuestion) displayTeamNameForReadonly = findMatchedTeamName(originalValue);
+    const team = isTeamsList ? data.teams[displayTeamNameForReadonly] : null;
+
+    const maxScore = getMaxPossibleScore(question);
+    const hasValue = originalValue && originalValue.trim() !== '';
+    const hasActualResult = question.actual_result && question.actual_result.trim() !== '' && question.actual_result !== '__CLEAR__';
+    const textColor = hasActualResult ? '#06b6d4' : '#f8fafc';
+    const isQuestion11_1 = question.question_id === '11.1';
+    const isQuestion11_2 = question.question_id === '11.2';
+    const boxWidth = isQuestion11_1 ? 'min-w-[60px] max-w-[65px]' : isQuestion11_2 ? 'min-w-[145px] max-w-[150px]' : 'min-w-[135px] max-w-[140px]';
+
+    if (isEditMode && isAdmin && question.validation_list && data.validationLists[question.validation_list]) {
+      const options = data.validationLists[question.validation_list] || [];
+      const editedValue = editedPredictions[question.id];
+      const currentValue = editedValue !== undefined ? editedValue : originalValue;
+      const selectValue = currentValue || "__CLEAR__";
+      let displayCurrentTeamNameForEdit = currentValue;
+      if (isTeamsList && currentValue && isLocationQuestion) displayCurrentTeamNameForEdit = findMatchedTeamName(currentValue);
+      const currentTeam = isTeamsList ? data.teams[displayCurrentTeamNameForEdit] : null;
+      return (
+        <>
+          <Select value={selectValue} onValueChange={(val) => handlePredictionEdit(question.id, val === "__CLEAR__" ? "" : val)}>
+            <SelectTrigger className={`${boxWidth} h-10`} style={{ background: 'rgba(15,23,42,0.6)', border: '1px solid rgba(6,182,212,0.3)', color: '#f8fafc' }}>
+              {currentValue ? (
+                <div className="flex items-center gap-2 w-full">
+                  {currentTeam?.logo_url && <img src={currentTeam.logo_url} alt={displayCurrentTeamNameForEdit} className="w-4 h-4 rounded-full" onError={(e) => e.target.style.display='none'} />}
+                  <span className="truncate">{displayCurrentTeamNameForEdit}</span>
+                </div>
+              ) : <span className="text-slate-400">{isQuestion11_1 || isQuestion11_2 ? "" : "- בחר -"}</span>}
+            </SelectTrigger>
+            <SelectContent style={{ background: '#1e293b', border: '1px solid rgba(6,182,212,0.3)' }}>
+              <SelectItem value="__CLEAR__" className="hover:bg-cyan-700/20" style={{ color: '#94a3b8' }}>-</SelectItem>
+              {options.map(opt => {
+                const cleanOpt = opt.replace(/\s*\([^)]+\)\s*$/, '').trim();
+                const optTeam = isTeamsList ? (data.teams[opt] || data.teams[cleanOpt]) : null;
+                return (
+                  <SelectItem key={opt} value={opt} className="hover:bg-cyan-700/20" style={{ color: '#f8fafc' }}>
+                    <div className="flex items-center gap-2">
+                      {optTeam?.logo_url && <img src={optTeam.logo_url} alt={cleanOpt} className="w-4 h-4 rounded-full" onError={(e) => e.target.style.display='none'} />}
+                      <span>{cleanOpt}</span>
+                    </div>
+                  </SelectItem>
+                );
+              })}
+            </SelectContent>
+          </Select>
+          <div className="w-12"></div>
+        </>
       );
     }
-  };
 
-  const getSortedRankings = () => [...rankings].sort((a, b) => {
-    if (sortColumn === 'participant_name') {
-      const aV = String(a.participant_name || '');
-      const bV = String(b.participant_name || '');
-      return sortDirection === 'asc' ? aV.localeCompare(bV, 'he') : bV.localeCompare(aV, 'he');
+    if (isEditMode && isAdmin && (!question.validation_list || !data.validationLists[question.validation_list])) {
+      const valueForInput = editedPredictions[question.id] !== undefined ? editedPredictions[question.id] : originalValue;
+      return (
+        <div className="flex items-center gap-2">
+          <input type="text" value={valueForInput} onChange={(e) => handlePredictionEdit(question.id, e.target.value)}
+            className="rounded-md px-3 py-2 min-w-[120px] h-10"
+            style={{ background: 'rgba(15,23,42,0.6)', border: '1px solid rgba(6,182,212,0.3)', color: '#f8fafc' }} />
+          <Badge className="bg-slate-600 text-slate-300 text-xs px-1.5 py-0.5 min-w-[45px] justify-center">?/{maxScore}</Badge>
+        </div>
+      );
     }
-    const aV = Number(a[sortColumn]) || 0;
-    const bV = Number(b[sortColumn]) || 0;
-    return sortDirection === 'asc' ? aV - bV : bV - aV;
-  });
 
-  const SortIcon = ({ column }) => {
-    if (sortColumn !== column)
-      return <ArrowUpDown className="w-2.5 h-2.5 md:w-4 md:h-4 opacity-30" />;
-    return sortDirection === 'asc'
-      ? <ArrowUp   className="w-2.5 h-2.5 md:w-4 md:h-4" style={{ color: 'var(--tp)' }} />
-      : <ArrowDown className="w-2.5 h-2.5 md:w-4 md:h-4" style={{ color: 'var(--tp)' }} />;
+    if (!hasValue) {
+      return (
+        <>
+          <div className={`rounded-md px-2 py-2 ${boxWidth} flex items-center gap-1`} style={{ background: 'rgba(15,23,42,0.6)', border: '1px solid rgba(6,182,212,0.2)' }}>
+            <span style={{ color: '#94a3b8', fontSize: isQuestion11_1 ? '0.65rem' : '0.875rem' }}>-</span>
+          </div>
+          <div className="w-12"></div>
+        </>
+      );
+    }
+
+    const stripParens = (s) => s ? s.replace(/\s*\([^)]*\)/g, '').replace(/\s+/g, ' ').trim() : '';
+    const isLocQ = ['T14', 'T15', 'T16', 'T17', 'T19'].includes(question.table_id);
+
+    let score;
+    if (isLocQ) {
+      const locKey = `${question.table_id}_${question.question_id}`;
+      const crossGameActual = data.locationActualsByTableQ?.[locKey];
+      const effectiveActual = crossGameActual || question.actual_result || '';
+      if (!effectiveActual || effectiveActual === '__CLEAR__' || !originalValue) {
+        score = null;
+      } else {
+        const predClean = stripParens(originalValue).trim().toLowerCase();
+        const allActualsInTable = Object.entries(data.locationActualsByTableQ || {})
+          .filter(([k]) => k.startsWith(question.table_id + '_'))
+          .map(([, v]) => stripParens(v).trim().toLowerCase()).filter(Boolean);
+        score = allActualsInTable.includes(predClean) ? (question.possible_points || 0) : 0;
+      }
+    } else {
+      // ✅ מעביר את כל שאלות הטבלה — נדרש עבור T4/T5/T6 (isAdvancingTeamSlot)
+      const questionsInTable = data.questions.filter(q => q.table_id === question.table_id);
+      score = calculateQuestionScore(question, originalValue, questionsInTable);
+    }
+
+    let badgeColor = 'bg-slate-600 text-slate-300';
+    if (score !== null) {
+      if (score === maxScore && maxScore > 0) badgeColor = 'bg-green-700 text-green-100';
+      else if (score === 0) badgeColor = 'bg-red-700 text-red-100';
+      else if (maxScore > 0 && score >= maxScore * 0.7) badgeColor = 'bg-blue-700 text-blue-100';
+      else if (score > 0) badgeColor = 'bg-yellow-500 text-white';
+    }
+
+    return (
+      <>
+        <div className={`rounded-md px-2 py-2 ${boxWidth} flex items-center gap-1`} style={{
+          background: hasActualResult ? 'rgba(6,182,212,0.2)' : 'rgba(15,23,42,0.6)',
+          border: hasActualResult ? '1px solid #06b6d4' : '1px solid rgba(6,182,212,0.2)',
+          boxShadow: hasActualResult ? '0 0 10px rgba(6,182,212,0.4)' : 'none'
+        }}>
+          {team?.logo_url && <img src={team.logo_url} alt={displayTeamNameForReadonly} className="w-4 h-4 rounded-full flex-shrink-0" onError={(e) => e.target.style.display='none'} />}
+          <span style={{ color: textColor, fontSize: isQuestion11_1 ? '0.65rem' : '0.875rem', fontWeight: hasActualResult ? '700' : 'normal' }}>{displayTeamNameForReadonly}</span>
+        </div>
+        {score !== null ? (
+          <Badge className={`${badgeColor} text-xs font-bold px-1.5 py-0.5 min-w-[45px] justify-center`}>{score}/{maxScore}</Badge>
+        ) : (
+          <Badge className="bg-slate-600 text-slate-300 text-xs px-1.5 py-0.5 min-w-[45px] justify-center">?/{maxScore}</Badge>
+        )}
+      </>
+    );
   };
 
-  const getPositionIcon = (p) => {
-    if (p === 1) return <Crown  className="w-5 h-5 text-yellow-400" />;
-    if (p === 2) return <Trophy className="w-5 h-5 text-gray-400"   />;
-    if (p === 3) return <Trophy className="w-5 h-5 text-orange-400" />;
-    return null;
+  const renderT10Questions = (table) => {
+    const questions = table.questions;
+    const grouped = {};
+    questions.forEach(q => {
+      const mainId = Math.floor(parseFloat(q.question_id));
+      if (!grouped[mainId]) grouped[mainId] = { main: null, subs: [] };
+      if (q.question_id.includes('.')) grouped[mainId].subs.push(q);
+      else grouped[mainId].main = q;
+    });
+    const sortedMainIds = Object.keys(grouped).sort((a, b) => Number(a) - Number(b));
+
+    const renderTeamPrediction = (questionId, originalValue) => {
+      const valueToDisplay = editedPredictions[questionId] !== undefined ? editedPredictions[questionId] : originalValue;
+      if (!valueToDisplay || valueToDisplay.trim() === '') {
+        return (
+          <>
+            <div className="rounded-md px-2 py-2 min-w-[135px] max-w-[140px] flex items-center gap-1" style={{ background: 'rgba(15,23,42,0.6)', border: '1px solid rgba(6,182,212,0.2)' }}>
+              <span style={{ color: '#94a3b8', fontSize: '0.875rem' }}>-</span>
+            </div>
+            <div className="w-12"></div>
+          </>
+        );
+      }
+      const matchedName = findMatchedTeamName(valueToDisplay);
+      const team = data.teams[matchedName];
+      const q = questions.find(question => question.id === questionId);
+      const hasActualResult = q?.actual_result && q.actual_result.trim() !== '' && q.actual_result !== '__CLEAR__';
+      const textColor = hasActualResult ? '#06b6d4' : '#f8fafc';
+      return (
+        <>
+          <div className="rounded-md px-2 py-2 min-w-[135px] max-w-[140px] flex items-center gap-1" style={{
+            background: hasActualResult ? 'rgba(6,182,212,0.2)' : 'rgba(15,23,42,0.6)',
+            border: hasActualResult ? '1px solid #06b6d4' : '1px solid rgba(6,182,212,0.2)',
+            boxShadow: hasActualResult ? '0 0 10px rgba(6,182,212,0.4)' : 'none'
+          }}>
+            {team?.logo_url && <img src={team.logo_url} alt={matchedName} className="w-4 h-4 rounded-full flex-shrink-0" onError={(e) => e.target.style.display='none'} />}
+            <span style={{ color: textColor, fontSize: '0.875rem', fontWeight: hasActualResult ? '700' : 'normal' }}>{matchedName}</span>
+          </div>
+          <Badge className="bg-slate-600 text-slate-300 text-xs px-1.5 py-0.5 min-w-[45px] justify-center">?/10</Badge>
+        </>
+      );
+    };
+
+    return (
+      <Card className="bg-slate-800/40 border-slate-700 shadow-lg shadow-slate-900/20">
+        <CardHeader className="py-3"><CardTitle className="text-cyan-400">{table.description}</CardTitle></CardHeader>
+        <CardContent className="p-3">
+          <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+          <div className="space-y-3">
+            {sortedMainIds.map(mainId => {
+              const { main, subs } = grouped[mainId];
+              if (!main) return null;
+              const sortedSubs = [...subs].sort((a, b) => parseFloat(a.question_id) - parseFloat(b.question_id));
+              const isTeamQuestion = !!(main.home_team && main.away_team);
+              const mainValue = participantPredictions[main.id] || '';
+              const getSubValue = (sub) => {
+                const subVal = participantPredictions[sub.id] || '';
+                if (sub.question_id === '1.1' && mainValue !== 'אחר') return '';
+                return subVal;
+              };
+
+              if (sortedSubs.length === 0) {
+                return (
+                  <div key={main.id} style={{ display:'grid', gridTemplateColumns:'50px 1fr 160px 50px', gap:'8px', alignItems:'center', padding:'8px 12px', borderRadius:'6px' }} className="bg-slate-700/20 border border-slate-600/30">
+                    <Badge variant="outline" className="border-cyan-400 text-cyan-200 justify-center text-xs h-6 w-full">{main.question_id}</Badge>
+                    <span className="text-right font-medium text-sm text-blue-100 truncate">{main.question_text}</span>
+                    <div className="contents">{renderReadOnlySelect(main, participantPredictions[main.id] || "")}</div>
+                  </div>
+                );
+              }
+
+              if (sortedSubs.length === 1) {
+                return (
+                  <div key={main.id} style={{ display:'grid', gridTemplateColumns:'50px minmax(250px, 2fr) 160px 50px 1fr 50px minmax(180px, 1.5fr) 160px 50px', gap:'8px', alignItems:'center', padding:'8px 12px', borderRadius:'6px' }} className="bg-slate-700/20 border border-slate-600/30">
+                    <Badge variant="outline" className="border-cyan-400 text-cyan-200 justify-center text-xs h-6 w-full">{main.question_id}</Badge>
+                    <span className="text-right font-medium text-sm text-blue-100">{main.question_text}</span>
+                    <div className="contents">{isTeamQuestion ? renderTeamPrediction(main.id, participantPredictions[main.id] || "") : renderReadOnlySelect(main, participantPredictions[main.id] || "")}</div>
+                    <div></div>
+                    <Badge variant="outline" className="border-cyan-400 text-cyan-200 justify-center text-xs h-6 w-full">{sortedSubs[0].question_id}</Badge>
+                    <span className="text-right font-medium text-sm text-blue-100">{sortedSubs[0].question_text}</span>
+                    <div className="contents">{isTeamQuestion ? renderTeamPrediction(sortedSubs[0].id, getSubValue(sortedSubs[0])) : renderReadOnlySelect(sortedSubs[0], getSubValue(sortedSubs[0]))}</div>
+                  </div>
+                );
+              }
+
+              return (
+                <div key={main.id} style={{ display:'grid', gridTemplateColumns:'45px 1fr 140px 45px 45px 1fr 140px 45px 45px 1fr 140px 45px', gap:'6px', alignItems:'center', padding:'8px 12px', borderRadius:'6px' }} className="bg-slate-700/20 border border-slate-600/30">
+                  <Badge variant="outline" className="border-cyan-400 text-cyan-200 justify-center text-xs h-6 w-full">{main.question_id}</Badge>
+                  <span className="text-right font-medium text-sm text-blue-100 truncate">{main.question_text}</span>
+                  <div className="contents">{isTeamQuestion ? renderTeamPrediction(main.id, participantPredictions[main.id] || "") : renderReadOnlySelect(main, participantPredictions[main.id] || "")}</div>
+                  {sortedSubs.map(sub => (
+                    <React.Fragment key={sub.id}>
+                      <Badge variant="outline" className="border-cyan-400 text-cyan-200 justify-center text-xs h-6 w-full">{sub.question_id}</Badge>
+                      <span className="text-right font-medium text-sm text-blue-100 truncate">{sub.question_text}</span>
+                      <div className="contents">{isTeamQuestion ? renderTeamPrediction(sub.id, getSubValue(sub)) : renderReadOnlySelect(sub, getSubValue(sub))}</div>
+                    </React.Fragment>
+                  ))}
+                </div>
+              );
+            })}
+          </div>{/* end space-y-3 */}
+          </div>{/* end overflow-x wrapper */}
+        </CardContent>
+      </Card>
+    );
   };
 
-  const getPositionChangeIcon = (c) => {
-    if (c > 0) return <TrendingUp   className="w-3 h-3 md:w-4 md:h-4 text-green-400" />;
-    if (c < 0) return <TrendingDown className="w-3 h-3 md:w-4 md:h-4 text-red-400"   />;
-    return          <Minus         className="w-3 h-3 md:w-4 md:h-4 text-gray-400"  />;
+  const ADVANCING_CONFIG_VS = { T4: { count: 8, bonus: 16 }, T5: { count: 4, bonus: 12 }, T6: { count: 2, bonus: 6 } };
+
+  // ✅ נרמול שמות — הסרת "(מדינה)"
+  const normTeam = (name) =>
+    (name || '').replace(/\s*\([^)]+\)\s*$/, '').replace(/\s+/g, ' ').trim().toLowerCase();
+
+  // ✅ בניית קבוצות עולות ומודחות
+  const buildAdvancingAndEliminated = (slots, tableId) => {
+    // עולות — מתוצאות האמת של חריצי הטבלה
+    const advancingSet = new Set(
+      slots
+        .filter(q => q.actual_result && q.actual_result !== '__CLEAR__')
+        .map(q => normTeam(q.actual_result))
+    );
+    // מודחות — הצד שלא עלה מכל זוג ב-T3
+    const t3Qs = data.questions.filter(q => q.table_id === 'T3' && q.home_team && q.away_team);
+    const eliminatedSet = new Set();
+    advancingSet.forEach(adv => {
+      t3Qs.forEach(q => {
+        const h = normTeam(q.home_team), a = normTeam(q.away_team);
+        if (h === adv && !advancingSet.has(a)) eliminatedSet.add(a);
+        if (a === adv && !advancingSet.has(h)) eliminatedSet.add(h);
+      });
+    });
+    return { advancingSet, eliminatedSet };
+  };
+
+  const renderQualifiersTable = (table) => {
+    const cfg = ADVANCING_CONFIG_VS[table.id];
+    const advCount = cfg ? cfg.count : 999;
+    const seenIds = new Set();
+    const slots = (table.questions || [])
+      .filter(q => {
+        const n = parseFloat(q.question_id);
+        if (!Number.isInteger(n) || n < 1 || n > advCount) return false;
+        if (seenIds.has(n)) return false;
+        seenIds.add(n);
+        return true;
+      })
+      .sort((a, b) => parseFloat(a.question_id) - parseFloat(b.question_id));
+
+    const { advancingSet, eliminatedSet } = buildAdvancingAndEliminated(slots, table.id);
+    const hasAnyResult = advancingSet.size > 0;
+    const allResultsIn = slots.length > 0 && slots.every(q => q.actual_result && q.actual_result !== '__CLEAR__');
+    const pointsPerSlot = slots[0]?.possible_points || 0;
+    const totalPossible = slots.length * pointsPerSlot;
+
+    // בונוס שלב
+    let stageBonusEarned = false;
+    if (selectedParticipant && allResultsIn && cfg) {
+      const pMap = getCombinedPredictionsMap();
+      const guessedSet = new Set(
+        slots.map(q => normTeam(pMap[q.id] ?? pMap[q.question_id] ?? '')).filter(Boolean)
+      );
+      stageBonusEarned = [...advancingSet].every(t => guessedSet.has(t));
+    }
+
+    // ✅ ניחושים — לפי זהות קבוצה, ללא מיקום
+    const pMap = getCombinedPredictionsMap();
+    const allPreds = slots.map(q => {
+      const raw = pMap[q.id] ?? pMap[q.question_id] ?? '';
+      return (typeof raw === 'string' ? raw : (raw?.text_prediction || '')).trim();
+    });
+
+    return (
+      <div style={{ background: 'rgba(30,41,59,0.6)', border: '1px solid var(--tp-20)', borderRadius: '12px', padding: '16px', backdropFilter: 'blur(10px)' }}>
+        <h3 className="text-right font-bold text-base mb-3" style={{ color: '#f97316' }}>📋 {table.description}</h3>
+
+        {/* בונוס שלב */}
+        {cfg && (
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'8px 14px', borderRadius:'8px', marginBottom:'10px', background: stageBonusEarned ? 'rgba(16,185,129,0.12)' : 'rgba(234,179,8,0.08)', border: `1px solid ${stageBonusEarned ? 'rgba(16,185,129,0.45)' : 'rgba(234,179,8,0.35)'}` }}>
+            <div className="flex items-center gap-2">
+              <span style={{ fontSize: '1rem' }}>🏆</span>
+              <div>
+                <p style={{ fontSize: '0.78rem', fontWeight: '700', color: stageBonusEarned ? '#6ee7b7' : '#fde68a' }}>{stageBonusEarned ? '✅ בונוס שלב!' : '🏆 בונוס שלב'}</p>
+                <p style={{ fontSize: '0.70rem', color: '#94a3b8' }}>{stageBonusEarned ? `כל ${advCount} הקבוצות נכונות!` : allResultsIn ? `פגיעה בכל ${advCount} → +${cfg.bonus} נק'` : `ממתין לתוצאות...`}</p>
+              </div>
+            </div>
+            <Badge style={{ fontSize:'0.95rem', fontWeight:'800', padding:'4px 12px', background: stageBonusEarned ? '#059669' : allResultsIn ? '#dc2626' : 'rgba(100,116,139,0.3)', color:'#fff', border: stageBonusEarned ? '1px solid #10b981' : allResultsIn ? '1px solid #ef4444' : '1px solid rgba(100,116,139,0.4)' }}>
+              {stageBonusEarned ? `+${cfg.bonus}` : allResultsIn ? `0/${cfg.bonus}` : `?/${cfg.bonus}`}
+            </Badge>
+          </div>
+        )}
+
+        <div style={{ textAlign:'left', marginBottom:'10px' }}>
+          <span style={{ fontSize:'0.72rem', color:'#94a3b8' }}>
+            {pointsPerSlot} נק' לכל קבוצה נכונה • סה"כ אפשרי: {totalPossible} נק'{cfg ? ` + בונוס ${cfg.bonus} נק'` : ''}
+          </span>
+        </div>
+
+        {/* ✅ ניחושים לפי זהות — 2 עמודות */}
+        <div className="grid grid-cols-2 gap-2">
+          {allPreds.map((pred, i) => {
+            const norm = normTeam(pred);
+            const isAdv  = pred && advancingSet.has(norm);
+            const isElim = pred && !isAdv && eliminatedSet.has(norm);
+            const isGray = !pred || (!isAdv && !isElim);
+
+            const bg     = isAdv ? 'rgba(16,185,129,0.12)' : isElim ? 'rgba(239,68,68,0.10)' : 'rgba(15,23,42,0.4)';
+            const border = isAdv ? 'rgba(16,185,129,0.35)'  : isElim ? 'rgba(239,68,68,0.30)'  : 'rgba(71,85,105,0.30)';
+            const color  = isAdv ? '#34d399'                 : isElim ? '#f87171'                : '#94a3b8';
+            const icon   = isAdv ? '✅'                       : isElim ? '❌'                     : '❓';
+            const scoreText = !pred ? `?/${pointsPerSlot}` : hasAnyResult ? (isAdv ? `+${pointsPerSlot}` : isElim ? '0' : `?/${pointsPerSlot}`) : `?/${pointsPerSlot}`;
+            const scoreBg   = isAdv ? '#16a34a' : isElim ? '#dc2626' : 'rgba(100,116,139,0.25)';
+
+            return (
+              <div key={i} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'8px 10px', borderRadius:'8px', background: bg, border:`1px solid ${border}`, gap:'8px' }}>
+                <div style={{ display:'flex', alignItems:'center', gap:'6px', minWidth:0 }}>
+                  <span style={{ fontSize:'0.9rem', flexShrink:0 }}>{pred ? icon : '—'}</span>
+                  <span style={{ fontSize:'0.84rem', fontWeight: isAdv ? 700 : 500, color, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                    {pred || <span style={{ color:'#475569' }}>לא מולא</span>}
+                  </span>
+                </div>
+                <Badge style={{ fontSize:'0.75rem', fontWeight:700, background: scoreBg, color:'white', border:'none', minWidth:'44px', textAlign:'center', padding:'3px 8px', flexShrink:0 }}>
+                  {scoreText}
+                </Badge>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // renderSpecialQuestions — THE FIX IS HERE
+  // כל <div className="flex items-center gap-2"> שעוטף renderReadOnlySelect
+  // הוחלף ב-<div className="contents"> כדי שהילדים יתפסו עמודות grid נפרדות
+  // ─────────────────────────────────────────────────────────────────────────────
+  const renderSpecialQuestions = (table) => {
+    const isT10 = table.description.includes('T10') || table.id === 'T10' || table.id.includes('custom_order');
+    if (isT10) return renderT10Questions(table);
+
+    const grouped = {};
+    table.questions.forEach(q => {
+      const mainId = Math.floor(parseFloat(q.question_id));
+      if (!grouped[mainId]) grouped[mainId] = { main: null, subs: [] };
+      if (q.question_id.includes('.')) grouped[mainId].subs.push(q);
+      else grouped[mainId].main = q;
+    });
+    const sortedMainIds = Object.keys(grouped).sort((a, b) => Number(a) - Number(b));
+
+    let bonusInfo = null;
+    const isLocationTable = ['T14', 'T15', 'T16', 'T17', 'T19'].includes(table.id);
+    if (selectedParticipant) {
+      const predForBonus = {};
+      table.questions.forEach(q => {
+        const editedValue = editedPredictions[q.id];
+        if (editedValue !== undefined) predForBonus[q.id] = editedValue;
+        else if (isLocationTable) predForBonus[q.id] = getLocationPred(q) || "";
+        else predForBonus[q.id] = participantPredictions[q.id] || "";
+      });
+      const enrichedQuestions = isLocationTable ? table.questions.map(q => {
+        const locKey = `${q.table_id}_${q.question_id}`;
+        const crossActual = data.locationActualsByTableQ?.[locKey];
+        return crossActual ? { ...q, actual_result: crossActual } : q;
+      }) : table.questions;
+      bonusInfo = calculateLocationBonus(table.id, enrichedQuestions, predForBonus);
+    }
+
+    let teamsBonusPotential = 0, orderBonusPotential = 0;
+    if (isLocationTable) {
+      if (table.id === 'T17') { teamsBonusPotential = 30; orderBonusPotential = 50; }
+      else if (table.id === 'T19') { teamsBonusPotential = 20; orderBonusPotential = 0; }
+      else { teamsBonusPotential = 20; orderBonusPotential = 40; }
+    }
+
+    return (
+      <Card style={{ background: 'rgba(30,41,59,0.6)', border: '1px solid rgba(6,182,212,0.2)', backdropFilter: 'blur(10px)' }}>
+        <CardHeader className="py-3"><CardTitle style={{ color: '#06b6d4' }}>{table.description}</CardTitle></CardHeader>
+        <CardContent className="p-3">
+          <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+          <div className="space-y-2">
+            {sortedMainIds.map(mainId => {
+              const { main, subs } = grouped[mainId];
+              if (!main) return null;
+              const sortedSubs = [...subs].sort((a, b) => parseFloat(a.question_id) - parseFloat(b.question_id));
+              const isLocTable = ['T14', 'T15', 'T16', 'T17', 'T19'].includes(table.id);
+              const mainOriginalValue = editedPredictions[main.id] !== undefined
+                ? editedPredictions[main.id]
+                : (isLocTable ? (getLocationPred(main) || '') : (participantPredictions[main.id] || ''));
+
+              // ── 0 תתי-שאלות — 4 עמודות ──────────────────────────────────
+              if (sortedSubs.length === 0) {
+                return (
+                  <div key={main.id} style={{ display:'grid', gridTemplateColumns:'50px 1fr 160px 50px', gap:'8px', alignItems:'center', padding:'8px 12px', borderRadius:'6px', background:'rgba(15,23,42,0.4)', border:'1px solid rgba(6,182,212,0.1)' }}>
+                    <Badge variant="outline" className="justify-center text-xs h-6 w-full" style={{ borderColor:'#06b6d4', color:'#06b6d4' }}>{main.question_id}</Badge>
+                    <span className="text-right font-medium text-sm truncate" style={{ color:'#f8fafc' }}>{main.question_text}</span>
+                    {/* ✅ FIX: contents — שני הילדים תופסים עמודות 3+4 */}
+                    <div className="contents">{renderReadOnlySelect(main, mainOriginalValue)}</div>
+                  </div>
+                );
+              }
+
+              // ── 1 תת-שאלה — 9 עמודות ────────────────────────────────────
+              if (sortedSubs.length === 1) {
+                const subOriginalValue = editedPredictions[sortedSubs[0].id] !== undefined
+                  ? editedPredictions[sortedSubs[0].id]
+                  : (isLocTable ? (getLocationPred(sortedSubs[0]) || '') : (participantPredictions[sortedSubs[0].id] || ''));
+                return (
+                  <div key={main.id} style={{ display:'grid', gridTemplateColumns:'50px minmax(250px, 2fr) 160px 50px 1fr 50px minmax(180px, 1.5fr) 160px 50px', gap:'8px', alignItems:'center', padding:'8px 12px', borderRadius:'6px', background:'rgba(15,23,42,0.4)', border:'1px solid rgba(6,182,212,0.1)' }}>
+                    <Badge variant="outline" className="justify-center text-xs h-6 w-full" style={{ borderColor:'#06b6d4', color:'#06b6d4' }}>{main.question_id}</Badge>
+                    <span className="text-right font-medium text-sm text-blue-100">{main.question_text}</span>
+                    {/* ✅ FIX: עמודות 3+4 */}
+                    <div className="contents">{renderReadOnlySelect(main, mainOriginalValue)}</div>
+                    <div></div>
+                    <Badge variant="outline" className="justify-center text-xs h-6 w-full" style={{ borderColor:'#06b6d4', color:'#06b6d4' }}>{sortedSubs[0].question_id}</Badge>
+                    <span className="text-right font-medium text-sm text-blue-100">{sortedSubs[0].question_text}</span>
+                    {/* ✅ FIX: עמודות 8+9 */}
+                    <div className="contents">{renderReadOnlySelect(sortedSubs[0], subOriginalValue)}</div>
+                  </div>
+                );
+              }
+
+              // ── 2 תתי-שאלות — 12 עמודות ─────────────────────────────────
+              return (
+                <div key={main.id} style={{ display:'grid', gridTemplateColumns:'45px 1fr 140px 45px 45px 1fr 140px 45px 45px 1fr 140px 45px', gap:'6px', alignItems:'center', padding:'8px 12px', borderRadius:'6px', background:'rgba(15,23,42,0.4)', border:'1px solid rgba(6,182,212,0.1)' }}>
+                  <Badge variant="outline" className="justify-center text-xs h-6 w-full" style={{ borderColor:'#06b6d4', color:'#06b6d4' }}>{main.question_id}</Badge>
+                  <span className="text-right font-medium text-sm truncate" style={{ color:'#f8fafc' }}>{main.question_text}</span>
+                  {/* ✅ FIX: עמודות 3+4 */}
+                  <div className="contents">{renderReadOnlySelect(main, mainOriginalValue)}</div>
+                  {sortedSubs.map(sub => {
+                    const subOriginalValue = editedPredictions[sub.id] !== undefined
+                      ? editedPredictions[sub.id]
+                      : (isLocTable ? (getLocationPred(sub) || '') : (participantPredictions[sub.id] || ''));
+                    return (
+                      <React.Fragment key={sub.id}>
+                        <Badge variant="outline" className="justify-center text-xs h-6 w-full" style={{ borderColor:'#06b6d4', color:'#06b6d4' }}>{sub.question_id}</Badge>
+                        <span className="text-right font-medium text-sm truncate" style={{ color:'#f8fafc' }}>{sub.question_text}</span>
+                        {/* ✅ FIX: עמודות נפרדות לכל תת-שאלה */}
+                        <div className="contents">{renderReadOnlySelect(sub, subOriginalValue)}</div>
+                      </React.Fragment>
+                    );
+                  })}
+                </div>
+              );
+            })}
+          </div>{/* end space-y-2 */}
+          </div>{/* end overflow-x wrapper */}
+
+          {isLocationTable && selectedParticipant && (
+            <div className="mt-4 grid grid-cols-2 gap-3">
+              <div className={`p-3 rounded-lg border ${bonusInfo?.allCorrect ? 'bg-gradient-to-r from-green-900/40 to-emerald-900/40 border-green-600/50' : bonusInfo !== null ? 'bg-gradient-to-r from-red-900/40 to-red-800/40 border-red-600/50' : 'bg-gradient-to-r from-slate-800/40 to-slate-700/40 border-slate-600/50'}`}>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Trophy className={`w-5 h-5 ${bonusInfo?.allCorrect ? 'text-green-400' : bonusInfo !== null ? 'text-red-400' : 'text-slate-400'}`} />
+                    <div>
+                      <p className={`font-bold text-sm ${bonusInfo?.allCorrect ? 'text-green-200' : bonusInfo !== null ? 'text-red-200' : 'text-slate-300'}`}>{bonusInfo?.allCorrect ? '✅' : bonusInfo !== null ? '❌' : '⏳'} בונוס עולות</p>
+                      <p className={`text-xs ${bonusInfo?.allCorrect ? 'text-green-300' : bonusInfo !== null ? 'text-red-300' : 'text-slate-400'}`}>{bonusInfo?.allCorrect ? 'כל הקבוצות נכונות!' : bonusInfo !== null ? 'לא כל הקבוצות' : 'ממתין לתוצאות...'}</p>
+                    </div>
+                  </div>
+                  <Badge className={`text-lg font-bold px-3 py-1 ${bonusInfo?.allCorrect ? 'bg-green-600 text-white' : bonusInfo !== null ? 'bg-red-600 text-white' : 'bg-slate-600 text-slate-300'}`}>
+                    {bonusInfo?.allCorrect ? `+${bonusInfo.teamsBonus}` : bonusInfo !== null ? '0' : '?'}/{teamsBonusPotential}
+                  </Badge>
+                </div>
+              </div>
+              {table.id !== 'T19' && (
+                <div className={`p-3 rounded-lg border ${bonusInfo?.perfectOrder ? 'bg-gradient-to-r from-yellow-900/40 to-orange-900/40 border-yellow-600/50' : bonusInfo !== null ? 'bg-gradient-to-r from-red-900/40 to-red-800/40 border-red-600/50' : 'bg-gradient-to-r from-slate-800/40 to-slate-700/40 border-slate-600/50'}`}>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Trophy className={`w-5 h-5 ${bonusInfo?.perfectOrder ? 'text-yellow-400' : bonusInfo !== null ? 'text-red-400' : 'text-slate-400'}`} />
+                      <div>
+                        <p className={`font-bold text-sm ${bonusInfo?.perfectOrder ? 'text-yellow-200' : bonusInfo !== null ? 'text-red-200' : 'text-slate-300'}`}>{bonusInfo?.perfectOrder ? '✨' : bonusInfo !== null ? '❌' : '⏳'} בונוס מיקום</p>
+                        <p className={`text-xs ${bonusInfo?.perfectOrder ? 'text-yellow-300' : bonusInfo !== null ? 'text-red-300' : 'text-slate-400'}`}>{bonusInfo?.perfectOrder ? 'סדר מושלם!' : bonusInfo?.allCorrect ? 'לא בסדר המדויק' : bonusInfo !== null ? 'לא כל הקבוצות' : 'ממתין לתוצאות...'}</p>
+                      </div>
+                    </div>
+                    <Badge className={`text-lg font-bold px-3 py-1 ${bonusInfo?.perfectOrder ? 'bg-yellow-600 text-white' : bonusInfo !== null ? 'bg-red-600 text-white' : 'bg-slate-600 text-slate-300'}`}>
+                      {bonusInfo?.perfectOrder ? `+${bonusInfo.orderBonus}` : bonusInfo !== null ? '0' : '?'}/{orderBonusPotential}
+                    </Badge>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    );
   };
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-screen"
-        style={{ background: 'linear-gradient(135deg, var(--bg1) 0%, var(--bg2) 50%, var(--bg1) 100%)' }}>
-        <Loader2 className="w-8 h-8 animate-spin" style={{ color: 'var(--tp)' }} />
-        <span className="mr-3" style={{ color: 'var(--tp)' }}>טוען דירוג...</span>
+      <div className="flex items-center justify-center h-screen" style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%)' }}>
+        <Loader2 className="w-8 h-8 animate-spin" style={{ color: '#06b6d4' }} />
+        <span className="ml-3" style={{ color: '#06b6d4' }}>טוען נתונים...</span>
       </div>
     );
   }
 
-  const isAdmin        = currentUser?.role === 'admin' || currentUser?.user_metadata?.role === 'admin';
-  const sortedRankings = getSortedRankings();
+  const hasChanges = Object.keys(editedPredictions).length > 0;
+  const TEXT_LENGTH_THRESHOLD = 18;
+
+  const renderStageChips = (allButtonsList, openSectionsMap, toggleSectionFn) => {
+    const groupMap = {
+      playoff:    { label: '⚽ משחקי פלייאוף',  color: '#3b82f6', bg: 'rgba(59,130,246,0.12)',  border: 'rgba(59,130,246,0.35)' },
+      league:     { label: '⚽ משחקי ליגה',      color: '#3b82f6', bg: 'rgba(59,130,246,0.12)',  border: 'rgba(59,130,246,0.35)' },
+      groups:     { label: '🏠 שלב הבתים',       color: '#06b6d4', bg: 'rgba(6,182,212,0.12)',   border: 'rgba(6,182,212,0.35)' },
+      special:    { label: '✨ שאלות מיוחדות',  color: '#8b5cf6', bg: 'rgba(139,92,246,0.12)', border: 'rgba(139,92,246,0.35)' },
+      qualifiers: { label: '📋 רשימות עולות',   color: '#f97316', bg: 'rgba(249,115,22,0.12)',  border: 'rgba(249,115,22,0.35)' },
+      rounds:     { label: '⚽ מחזורים',          color: '#06b6d4', bg: 'rgba(6,182,212,0.12)',   border: 'rgba(6,182,212,0.35)' },
+      other:      { label: '📌 נוסף',             color: '#64748b', bg: 'rgba(100,116,139,0.1)', border: 'rgba(100,116,139,0.25)' },
+    };
+    const grouped = {};
+    allButtonsList.forEach(btn => {
+      let type = btn.stageType;
+      if (!type) {
+        if (btn.sectionKey === 'rounds') type = 'rounds';
+        else if (btn.sectionKey.startsWith('round_')) type = 'playoff';
+        else if (btn.sectionKey.startsWith('qual_')) type = 'qualifiers';
+        else type = 'special';
+      }
+      if (!grouped[type]) grouped[type] = [];
+      grouped[type].push(btn);
+    });
+    const order = ['rounds','league','groups','playoff','special','qualifiers','other'];
+    const sortedGroups = order.filter(t => grouped[t]);
+    return (
+      <div style={{ padding:'16px 12px', background:'rgba(17,24,39,0.7)', borderRadius:'12px', border:'1px solid rgba(56,189,248,0.12)', marginBottom:'20px' }}>
+        <div style={{ fontSize:'0.6rem', fontWeight:'700', letterSpacing:'0.12em', textTransform:'uppercase', color:'#475569', marginBottom:'10px' }}>בחירת שלב</div>
+        {sortedGroups.map(type => {
+          const info = groupMap[type] || groupMap.other;
+          return (
+            <div key={type} style={{ marginBottom:'10px' }}>
+              <div style={{ fontSize:'0.58rem', fontWeight:'700', letterSpacing:'0.1em', textTransform:'uppercase', color:info.color, marginBottom:'5px', paddingRight:'2px' }}>{info.label}</div>
+              <div style={{ display:'flex', flexWrap:'wrap', gap:'5px' }}>
+                {grouped[type].map(button => {
+                  const active = openSectionsMap[button.sectionKey];
+                  return (
+                    <button key={button.key} onClick={() => toggleSectionFn(button.sectionKey)} style={{ display:'inline-flex', alignItems:'center', padding:'5px 12px', borderRadius:'999px', fontSize:'0.78rem', fontWeight: active ? '700' : '400', color: active ? 'white' : info.color, background: active ? info.color : info.bg, border:`1px solid ${active ? info.color : info.border}`, cursor:'pointer', transition:'all 0.15s', boxShadow: active ? `0 0 10px ${info.color}66` : 'none', fontFamily:'Rubik, Heebo, sans-serif', whiteSpace:'nowrap' }}>
+                      {button.description}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
+  const renderSidebar = () => {
+    const groupMap = {
+      playoff:    { label: '⚽ משחקי פלייאוף', color: '#3b82f6', bg: 'rgba(59,130,246,0.10)',  border: 'rgba(59,130,246,0.30)',  activeBg: '#2563eb',  activeShadow: '0 2px 10px rgba(59,130,246,0.44)' },
+      league:     { label: '⚽ משחקי ליגה',    color: '#3b82f6', bg: 'rgba(59,130,246,0.10)',  border: 'rgba(59,130,246,0.30)',  activeBg: '#2563eb',  activeShadow: '0 2px 10px rgba(59,130,246,0.44)' },
+      groups:     { label: '🏠 שלב הבתים',     color: '#06b6d4', bg: 'rgba(6,182,212,0.10)',   border: 'rgba(6,182,212,0.30)',   activeBg: '#0891b2',  activeShadow: '0 2px 10px rgba(6,182,212,0.44)'  },
+      rounds:     { label: '⚽ מחזורים',        color: '#06b6d4', bg: 'rgba(6,182,212,0.10)',   border: 'rgba(6,182,212,0.30)',   activeBg: '#0891b2',  activeShadow: '0 2px 10px rgba(6,182,212,0.44)'  },
+      special:    { label: '✨ שאלות מיוחדות', color: '#8b5cf6', bg: 'rgba(139,92,246,0.10)', border: 'rgba(139,92,246,0.30)', activeBg: '#7c3aed',  activeShadow: '0 2px 10px rgba(139,92,246,0.44)' },
+      qualifiers: { label: '📋 רשימות עולות',  color: '#f97316', bg: 'rgba(249,115,22,0.10)',  border: 'rgba(249,115,22,0.30)',  activeBg: '#ea580c',  activeShadow: '0 2px 10px rgba(249,115,22,0.44)' },
+      other:      { label: '📌 נוסף',           color: '#64748b', bg: 'rgba(100,116,139,0.08)', border: 'rgba(100,116,139,0.20)', activeBg: '#475569',  activeShadow: '0 2px 8px rgba(100,116,139,0.30)'  },
+    };
+    const grouped = {};
+    allButtons.forEach(btn => {
+      const t = btn.stageType || (btn.sectionKey === 'rounds' ? 'rounds' : btn.sectionKey.startsWith('round_') ? 'playoff' : btn.sectionKey.startsWith('qual_') ? 'qualifiers' : 'special');
+      if (!grouped[t]) grouped[t] = [];
+      grouped[t].push(btn);
+    });
+    const order = ['rounds','league','groups','playoff','special','qualifiers','other'];
+    const sortedGroups = order.filter(t => grouped[t]);
+    return (
+      <aside style={{ width:'215px', flexShrink:0, position:'sticky', top:'70px', alignSelf:'flex-start', maxHeight:'calc(100vh - 90px)', overflowY:'auto', paddingBottom:'16px' }}>
+        <div style={{ background:'rgba(13,18,30,0.9)', borderRadius:'12px', border:'1px solid rgba(6,182,212,0.12)', padding:'14px 10px', backdropFilter:'blur(10px)' }}>
+          <div style={{ fontSize:'0.5rem', fontWeight:'800', letterSpacing:'0.18em', textTransform:'uppercase', color:'#334155', marginBottom:'14px', paddingRight:'2px' }}>בחירת שלב</div>
+          {sortedGroups.map(type => {
+            const info = groupMap[type] || groupMap.other;
+            return (
+              <div key={type} style={{ marginBottom:'14px' }}>
+                <div style={{ fontSize:'0.55rem', fontWeight:'700', letterSpacing:'0.08em', textTransform:'uppercase', color:info.color, marginBottom:'5px', paddingRight:'2px', opacity:0.85 }}>{info.label}</div>
+                <div style={{ display:'flex', flexDirection:'column', gap:'3px' }}>
+                  {grouped[type].map(btn => {
+                    const active = openSections[btn.sectionKey];
+                    return (
+                      <button key={btn.key} onClick={() => toggleSection(btn.sectionKey)} style={{ display:'block', width:'100%', textAlign:'right', padding:'7px 10px', borderRadius:'8px', fontSize:'0.8rem', fontWeight: active ? '700' : '400', color: active ? 'white' : info.color, background: active ? info.activeBg : info.bg, border:`1px solid ${active ? info.color : info.border}`, cursor:'pointer', transition:'all 0.15s', boxShadow: active ? (info.activeShadow || `0 2px 10px ${info.color}44`) : 'none', fontFamily:'Rubik, Heebo, sans-serif', lineHeight:'1.35' }}>
+                        {btn.description}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </aside>
+    );
+  };
+
+  const allButtons = [];
+
+  if (roundTables.length > 0) {
+    const allAreGroups = roundTables.every(table => table.id.includes('בית') || table.description?.includes('בית'));
+    if (allAreGroups) {
+      const firstRoundTableId = roundTables[0]?.id || 'T2';
+      const description = 'שלב הבתים';
+      allButtons.push({ numericId: parseInt(firstRoundTableId.replace('T','').replace(/\D/g,''),10), key:'rounds', description, sectionKey:'rounds', stageType:'rounds', isLongText: description.length > TEXT_LENGTH_THRESHOLD });
+    } else {
+      roundTables.forEach(table => {
+        const description = table.description || table.id;
+        allButtons.push({ numericId: parseInt(table.id.replace('T','').replace(/\D/g,''),10)||0, key:`round_${table.id}`, description, stageType: table.questions[0]?.stage_type || 'playoff', sectionKey:`round_${table.id}`, isLongText: description.length > TEXT_LENGTH_THRESHOLD });
+      });
+    }
+  }
+
+  specialTables.forEach(table => {
+    const description = table.description;
+    allButtons.push({ numericId: table.questions[0]?.stage_order || parseInt(table.id.replace('T','').replace(/\D/g,''),10), key:table.id, description, stageType: table.questions[0]?.stage_type || 'special', sectionKey:table.id, isLongText: description.length > TEXT_LENGTH_THRESHOLD });
+  });
+
+  if (locationTables.length > 0) {
+    const firstLocationTableId = locationTables[0]?.id || 'T14';
+    const description = 'מיקומים בתום שלב הבתים';
+    allButtons.push({ numericId: parseInt(firstLocationTableId.replace('T',''),10), key:'locations', description, stageType:'qualifiers', sectionKey:'locations', isLongText: description.length > TEXT_LENGTH_THRESHOLD });
+  }
+
+  qualifiersTables.forEach(table => {
+    const description = table.description || table.id;
+    allButtons.push({ numericId: table.questions[0]?.stage_order || parseInt(table.id.replace('T',''))||0, key:`qual_${table.id}`, description, stageType:'qualifiers', sectionKey:`qual_${table.id}`, isLongText: description.length > TEXT_LENGTH_THRESHOLD });
+  });
+
+  if (israeliTable) {
+    const description = israeliTable.description;
+    allButtons.push({ numericId: parseInt(israeliTable.id.replace('T',''),10), key:israeliTable.id, description, stageType:'special', sectionKey:'israeli', isLongText: description.length > TEXT_LENGTH_THRESHOLD });
+  }
+
+  if (playoffWinnersTable) {
+    const description = playoffWinnersTable.description;
+    allButtons.push({ numericId: parseInt(playoffWinnersTable.id.replace('T',''),10), key:playoffWinnersTable.id, description, stageType:'qualifiers', sectionKey:'playoffWinners', isLongText: description.length > TEXT_LENGTH_THRESHOLD });
+  }
+
+  allButtons.sort((a, b) => {
+    if (a.sectionKey === 'rounds' && b.sectionKey !== 'rounds') return -1;
+    if (b.sectionKey === 'rounds' && a.sectionKey !== 'rounds') return 1;
+    return a.numericId - b.numericId;
+  });
 
   return (
-    <div className="min-h-screen p-3 md:p-6" dir="rtl"
-      style={{ background: 'linear-gradient(135deg, var(--bg1) 0%, var(--bg2) 50%, var(--bg1) 100%)' }}>
-      <div className="max-w-7xl mx-auto">
+    <div className="min-h-screen" dir="rtl" style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%)', overflowX: 'hidden', maxWidth: '100vw' }}>
+      <style>{`
+        /* ── ViewSubmissions mobile fixes ── */
+        @media (max-width: 768px) {
 
-        {/* ── Header ── */}
-        <div className="flex flex-col md:flex-row justify-between items-start gap-3 mb-4 md:mb-8">
-          <div>
-            <h1 className="text-xl md:text-4xl font-bold mb-1 md:mb-2 flex items-center gap-2 md:gap-3"
-              style={{ color: '#f8fafc', textShadow: '0 0 10px var(--tp-30)' }}>
-              <Trophy className="w-6 h-6 md:w-10 md:h-10" style={{ color: 'var(--tp)' }} />
-              טבלת דירוג
-            </h1>
-            <p className="text-xs md:text-base" style={{ color: '#94a3b8' }}>
-              מצב העמידה הנוכחי של המשתתפים
-            </p>
-          </div>
-          {isAdmin && (
-            <div className="flex gap-2 md:gap-3 w-full md:w-auto flex-wrap">
-              <Button
-                onClick={handleSetBaseline}
-                disabled={settingBaseline}
-                style={{
-                  background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-                  boxShadow: '0 0 20px rgba(16,185,129,0.4)'
-                }}
-                className="text-white flex-1 md:flex-none h-8 md:h-10 text-[10px] md:text-sm"
-              >
-                {settingBaseline
-                  ? <><Loader2 className="w-3 h-3 md:w-4 md:h-4 animate-spin ml-1"/>קובע...</>
-                  : <><CheckCircle className="w-3 h-3 md:w-4 md:h-4 ml-1"/>קבע דירוג</>}
-              </Button>
+          /* שורות grid — גלילה אופקית מקומית */
+          .vs-grid-row {
+            overflow-x: auto !important;
+            -webkit-overflow-scrolling: touch !important;
+            padding-bottom: 4px !important;
+          }
+
+          /* כרטיס שאלה פשוטה (4 עמודות) — הפוך לכרטיס */
+          .vs-simple-row {
+            display: flex !important;
+            flex-wrap: wrap !important;
+            align-items: center !important;
+            gap: 6px !important;
+            padding: 10px 12px !important;
+          }
+          .vs-simple-row .vs-q-id   { flex: 0 0 auto; }
+          .vs-simple-row .vs-q-text { flex: 1 1 100%; font-size: 0.88rem !important; }
+          .vs-simple-row .vs-q-val  { flex: 1 1 auto; }
+          .vs-simple-row .vs-score  { flex: 0 0 auto; }
+
+          /* פונטים */
+          .vs-q-text  { font-size: 0.88rem !important; }
+          .vs-score   { font-size: 0.8rem !important; }
+
+          /* Sidebar: הסתר במובייל */
+          .vs-sidebar-desktop { display: none !important; }
+
+          /* Header buttons — smaller */
+          .sticky .btn, .sticky button {
+            font-size: 0.78rem !important;
+            padding: 6px 10px !important;
+          }
+        }
+
+        /* Extra small */
+        @media (max-width: 480px) {
+          .vs-simple-row .vs-q-text { font-size: 0.82rem !important; }
+        }
+      `}</style>
+      <div className="sticky top-0 z-30 backdrop-blur-sm shadow-lg" style={{ background: 'rgba(15,23,42,0.95)', borderBottom: '1px solid rgba(6,182,212,0.2)' }}>
+        <div className="p-3 md:p-6 max-w-7xl mx-auto">
+          <div className="flex flex-col md:flex-row justify-between items-start gap-2 md:gap-0 mb-3 md:mb-4">
+            <div>
+              <h1 className="text-xl md:text-3xl font-bold mb-1 md:mb-2 flex items-center gap-2 md:gap-3" style={{ color:'#f8fafc', textShadow:'0 0 10px rgba(6,182,212,0.3)' }}>
+                <Users className="w-5 h-5 md:w-8 md:h-8" style={{ color:'#06b6d4' }} />
+                צפייה בניחושים
+              </h1>
+              <p className="text-xs md:text-base" style={{ color:'#94a3b8' }}>בחר משתתף כדי לראות את הניחושים שלו.</p>
             </div>
-          )}
-        </div>
-
-        {/* ── Stats ── */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-4 mb-4 md:mb-8">
-          {[
-            { label: 'סה"כ משתתפים', value: rankings.length,     icon: Users,       color: 'var(--tp)' },
-            { label: 'ניקוד ממוצע',   value: avgScore.toFixed(1), icon: Target,      color: 'var(--tp)' },
-            { label: 'ניקוד מקסימלי', value: maxScore.toFixed(1), icon: TrendingUp,  color: '#8b5cf6'   },
-            { label: 'ניקוד מינימלי', value: minScore.toFixed(1), icon: TrendingDown,color: '#94a3b8'   },
-          ].map((stat, idx) => (
-            <Card key={idx} style={{ background: 'var(--bg3-60)', border: '1px solid var(--tp-20)', backdropFilter: 'blur(10px)' }}>
-              <CardContent className="p-2 md:p-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-[9px] md:text-sm" style={{ color: '#94a3b8' }}>{stat.label}</p>
-                    <p className="text-lg md:text-3xl font-bold" style={{ color: stat.color }}>{stat.value}</p>
-                  </div>
-                  <stat.icon className="w-6 h-6 md:w-10 md:h-10" style={{ color: stat.color, opacity: 0.5 }} />
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-
-        {/* ── Rankings table ── */}
-        <Card style={{ background: 'var(--bg3-60)', border: '1px solid var(--tp-20)', backdropFilter: 'blur(10px)' }}>
-          <CardHeader className="py-2 md:py-4">
-            <CardTitle className="text-sm md:text-lg" style={{ color: 'var(--tp)' }}>הדירוג הנוכחי</CardTitle>
-          </CardHeader>
-          <CardContent className="p-0">
-            <div style={{ maxHeight: '600px', overflowY: 'auto', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-              <table className="w-full" style={{ borderCollapse: 'collapse' }}>
-                <thead style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--bg3)' }}>
-                  <tr style={{ borderBottom: '2px solid var(--tp-30)' }}>
-                    {[
-                      { key: 'current_position', label: '#',            mobile: '#',   align: 'center' },
-                      { key: 'participant_name',  label: 'שם',           mobile: 'שם',  align: 'right'  },
-                      { key: 'current_score',     label: "נק'",          mobile: "נק'", align: 'center' },
-                      { key: 'previous_position', label: 'מיקום קודם',  mobile: null,  align: 'center' },
-                      { key: 'previous_score',    label: 'ניקוד קודם',  mobile: null,  align: 'center' },
-                      { key: 'score_change',      label: 'שינוי בניקוד', mobile: '+/-', align: 'center' },
-                      { key: 'position_change',   label: 'שינוי במיקום', mobile: '↕',  align: 'center' },
-                    ].map(col => (
-                      <th
-                        key={col.key}
-                        className={`p-1 md:p-3 cursor-pointer hover:bg-cyan-900/20 transition-colors text-[8px] md:text-sm text-${col.align} ${col.mobile === null ? 'hidden md:table-cell' : ''}`}
-                        style={{ backgroundColor: 'var(--bg3)', color: '#94a3b8' }}
-                        onClick={() => handleSort(col.key)}
-                      >
-                        <div className={`flex items-center ${col.align === 'right' ? 'justify-start' : 'justify-center'} gap-0.5 md:gap-2`}>
-                          {col.mobile !== null && col.mobile !== col.label
-                            ? <><span className="hidden md:inline">{col.label}</span><span className="md:hidden">{col.mobile}</span></>
-                            : <span>{col.label}</span>}
-                          <SortIcon column={col.key} />
-                        </div>
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {sortedRankings.map((rank) => (
-                    <tr key={rank.id} className="hover:bg-white/5"
-                      style={{ borderBottom: '1px solid var(--tp-10)' }}>
-                      <td className="text-center p-1 md:p-2">
-                        <div className="flex items-center justify-center gap-0.5 md:gap-1.5">
-                          <span className="hidden md:inline">{getPositionIcon(rank.current_position)}</span>
-                          <span className="font-bold text-xs md:text-base" style={{ color: '#f8fafc' }}>
-                            {rank.current_position}
-                          </span>
-                        </div>
-                      </td>
-                      <td
-                        className="font-medium text-[10px] md:text-base cursor-pointer hover:underline text-right p-1 md:p-2"
-                        style={{ color: 'var(--tp)' }}
-                        onClick={() => loadParticipantDetails(rank.participant_name)}
-                      >
-                        {rank.participant_name}
-                      </td>
-                      <td className="text-center p-1 md:p-2">
-                        <Badge className="text-white text-[10px] md:text-base px-1.5 md:px-3 py-0.5 md:py-1"
-                          style={{ background: 'var(--tp)', boxShadow: '0 0 10px var(--tp-40)' }}>
-                          {rank.current_score}
-                        </Badge>
-                      </td>
-                      <td className="hidden md:table-cell text-center p-1 md:p-2 text-sm" style={{ color: '#94a3b8' }}>{rank.previous_position || '-'}</td>
-                      <td className="hidden md:table-cell text-center p-1 md:p-2 text-sm" style={{ color: '#94a3b8' }}>{rank.previous_score || '0'}</td>
-                      <td className="text-center p-1 md:p-2">
-                        <div className="flex items-center justify-center">
-                          {rank.score_change > 0  && <Badge className="text-white text-[8px] md:text-xs px-1 md:px-2" style={{ background: '#10b981' }}>+{rank.score_change}</Badge>}
-                          {rank.score_change < 0  && <Badge className="text-white text-[8px] md:text-xs px-1 md:px-2" style={{ background: '#ef4444' }}>{rank.score_change}</Badge>}
-                          {(!rank.score_change || rank.score_change === 0) && <Badge className="text-white text-[8px] md:text-xs px-1 md:px-2" style={{ background: '#475569' }}>0</Badge>}
-                        </div>
-                      </td>
-                      <td className="text-center p-1 md:p-2">
-                        <div className="flex items-center justify-center gap-0.5 md:gap-1">
-                          {getPositionChangeIcon(rank.position_change)}
-                          <span className={`font-medium text-[10px] md:text-sm ${rank.position_change > 0 ? 'text-green-400' : rank.position_change < 0 ? 'text-red-400' : 'text-gray-400'}`}>
-                            {rank.position_change !== 0 ? Math.abs(rank.position_change) : '-'}
-                          </span>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* ════════════════════════════════════════════════════════════════════════
-          PARTICIPANT DETAIL DIALOG
-          גודל: 75vw רוחב, 80vh גובה — סביר, לא מסך מלא
-      ════════════════════════════════════════════════════════════════════════ */}
-      <Dialog
-        open={selectedParticipant !== null}
-        onOpenChange={() => { setSelectedParticipant(null); setParticipantDetails(null); }}
-      >
-        <DialogContent
-          dir="rtl"
-          style={{
-            maxWidth: '52vw',
-            width: '52vw',
-            maxHeight: '82vh',
-            height: '82vh',
-            display: 'flex',
-            flexDirection: 'column',
-            background: 'linear-gradient(135deg, var(--bg1) 0%, var(--bg3) 100%)',
-            border: '1px solid var(--tp-20)',
-            boxShadow: '0 0 30px var(--tp-25)',
-            borderRadius: '14px',
-            padding: '0',
-            overflow: 'hidden',
-          }}
-        >
-          {/* ── Header ── */}
-          <DialogHeader style={{
-            padding: '16px 24px 14px',
-            borderBottom: '1px solid var(--tp-20)',
-            flexShrink: 0,
-          }}>
-            <DialogTitle style={{
-              fontSize: '1.35rem',
-              fontWeight: 800,
-              color: '#f8fafc',
-              textAlign: 'right',
-              marginBottom: '8px',
-            }}>
-              {selectedParticipant}
-            </DialogTitle>
-            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '12px' }}>
-              {loadingDetails ? (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <Loader2 className="animate-spin" style={{ width: 16, height: 16, color: 'var(--tp)' }} />
-                  <span style={{ fontSize: '0.9rem', color: 'var(--tp)' }}>מחשב ניקוד עדכני...</span>
-                </div>
-              ) : (
+            <div className="flex gap-1.5 md:gap-3 flex-wrap w-full md:w-auto">
+              {isAdmin && selectedParticipant && !loadingPredictions && (
                 <>
-                  <Badge style={{
-                    background: 'var(--tp)', color: 'white',
-                    fontSize: '1rem', fontWeight: 700,
-                    padding: '5px 16px', borderRadius: '999px',
-                  }}>
-                    סה"כ: {participantDetails?.totalScore} נקודות
-                  </Badge>
-                  <span style={{ fontSize: '0.85rem', color: '#94a3b8' }}>
-                    {participantDetails?.scores?.length || 0} שאלות עם ניקוד
-                  </span>
+                  {!isEditMode ? (
+                    <Button onClick={() => setIsEditMode(true)} variant="outline" style={{ borderColor:'rgba(6,182,212,0.5)', color:'#06b6d4', background:'rgba(30,41,59,0.4)' }} className="hover:bg-cyan-500/20">
+                      <Pencil className="w-4 h-4 ml-2" /> ערוך ניחושים
+                    </Button>
+                  ) : (
+                    <>
+                      <Button onClick={() => { setEditedPredictions({}); setIsEditMode(false); }} variant="outline" style={{ borderColor:'rgba(148,163,184,0.5)', color:'#94a3b8', background:'rgba(30,41,59,0.4)' }} className="hover:bg-slate-500/20" disabled={savingChanges}>ביטול</Button>
+                      <Button onClick={handleSaveChanges} disabled={Object.keys(editedPredictions).length === 0 || savingChanges}
+                        style={{ background: Object.keys(editedPredictions).length > 0 ? 'linear-gradient(135deg, #06b6d4 0%, #0ea5e9 100%)' : 'rgba(71,85,105,0.5)', boxShadow: Object.keys(editedPredictions).length > 0 ? '0 0 20px rgba(6,182,212,0.4)' : 'none', color: Object.keys(editedPredictions).length > 0 ? 'white' : '#64748b' }}>
+                        {savingChanges ? <><Loader2 className="w-4 h-4 animate-spin ml-2" />שומר...</> : <><Save className="w-4 h-4 ml-2" />שמור שינויים {Object.keys(editedPredictions).length > 0 && `(${Object.keys(editedPredictions).length})`}</>}
+                      </Button>
+                    </>
+                  )}
+                </>
+              )}
+              {isAdmin && (
+                <>
+                  <Button onClick={handleExportData} disabled={exporting} variant="outline" style={{ borderColor:'rgba(34,197,94,0.5)', color:'#86efac', background:'rgba(30,41,59,0.4)' }} className="hover:bg-green-500/20">
+                    {exporting ? <><Loader2 className="w-4 h-4 ml-2 animate-spin" />מייצא...</> : <><Download className="w-4 h-4 ml-2" />ייצוא לקובץ</>}
+                  </Button>
+                  <Button onClick={() => { loadParticipantStats(); setShowDeleteDialog(true); }} variant="outline" style={{ borderColor:'rgba(239,68,68,0.5)', color:'#fca5a5', background:'rgba(30,41,59,0.4)' }} className="hover:bg-red-500/20">
+                    <Trash2 className="w-4 h-4 ml-2" /> ניהול משתתפים
+                  </Button>
                 </>
               )}
             </div>
-          </DialogHeader>
+          </div>
 
-          {/* ── Body ── */}
-          <div style={{ flex: 1, overflow: 'auto', padding: '4px 0 8px' }}>
-            {loadingDetails ? (
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '180px' }}>
-                <Loader2 className="animate-spin" style={{ width: 32, height: 32, color: 'var(--tp)' }} />
-              </div>
-            ) : (
-              <>
-              {/* ✅ טבלאות עולות — לפי זהות קבוצה */}
-              {participantDetails?.qualifyingSections?.length > 0 && (
-                <div style={{ padding:'8px 16px 4px' }}>
-                  {participantDetails.qualifyingSections.map(sec => {
-                    const { bonusEarned } = sec;
-                    return (
-                      <div key={sec.tableId} style={{ marginBottom:'12px', background:'rgba(30,41,59,0.5)', border:'1px solid var(--tp-20)', borderRadius:'10px', padding:'10px 12px' }}>
-                        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'8px' }}>
-                          <span style={{ fontSize:'0.82rem', fontWeight:700, color:'#f97316' }}>📋 {sec.tableDesc}</span>
-                          <span style={{ fontSize:'0.75rem', padding:'2px 8px', borderRadius:'999px', background: bonusEarned ? '#059669' : sec.allResultsIn ? '#dc2626' : 'rgba(100,116,139,0.3)', color:'white', fontWeight:700 }}>
-                            {bonusEarned ? `🏆 +${sec.cfg.bonus}` : sec.allResultsIn ? `בונוס: 0/${sec.cfg.bonus}` : `בונוס: ?/${sec.cfg.bonus}`}
-                          </span>
-                        </div>
-                        <div style={{ display:'grid', gridTemplateColumns:'repeat(2, 1fr)', gap:'4px' }}>
-                          {sec.preds.map((p, i) => {
-                            const icon  = p.pred ? (p.isAdv ? '✅' : p.isElim ? '❌' : '❓') : '—';
-                            const color = p.isAdv ? '#34d399' : p.isElim ? '#f87171' : '#94a3b8';
-                            const bg    = p.isAdv ? 'rgba(16,185,129,0.10)' : p.isElim ? 'rgba(239,68,68,0.08)' : 'rgba(15,23,42,0.3)';
-                            const score = !p.pred ? `?/${p.pts}` : sec.hasAnyResult ? (p.isAdv ? `+${p.pts}` : p.isElim ? '0' : `?/${p.pts}`) : `?/${p.pts}`;
-                            return (
-                              <div key={i} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'5px 8px', borderRadius:'6px', background: bg, border:`1px solid ${p.isAdv ? 'rgba(16,185,129,0.25)' : p.isElim ? 'rgba(239,68,68,0.20)' : 'rgba(71,85,105,0.3)'}` }}>
-                                <span style={{ fontSize:'0.82rem', color, fontWeight: p.isAdv ? 700 : 400 }}>{icon} {p.pred || <span style={{color:'#475569'}}>—</span>}</span>
-                                <span style={{ fontSize:'0.72rem', fontWeight:700, color: p.isAdv ? '#34d399' : p.isElim ? '#f87171' : '#64748b', marginRight:'6px' }}>{score}</span>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    );
-                  })}
-                  <div style={{ height:'1px', background:'var(--tp-15)', margin:'4px 0 8px' }}/>
-                </div>
-              )}
-
-              <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: '0 3px' }}>
-                <thead style={{ position: 'sticky', top: 0, zIndex: 10 }}>
-                  <tr>
-                    {[
-                      { label: 'טבלה',  w: '64px'  },
-                      { label: 'מס׳',   w: '54px'  },
-                      { label: 'שאלה',  w: 'auto'  },
-                      { label: 'ניחוש', w: '110px' },
-                      { label: 'תוצאה', w: '80px'  },
-                      { label: 'ניקוד', w: '74px'  },
-                    ].map(h => (
-                      <th key={h.label} style={{
-                        width: h.w,
-                        background: 'var(--bg1)',
-                        color: '#64748b',
-                        fontSize: '0.75rem',
-                        fontWeight: 600,
-                        textAlign: 'center',
-                        padding: '8px 6px',
-                        letterSpacing: '0.04em',
-                        borderBottom: '1px solid var(--tp-15)',
-                      }}>
-                        {h.label}
-                      </th>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <Card style={{ background:'rgba(30,41,59,0.6)', border:'1px solid rgba(6,182,212,0.2)', backdropFilter:'blur(10px)' }}>
+              <CardHeader className="py-2"><CardTitle className="text-sm" style={{ color:'#06b6d4' }}>בחר משתתף</CardTitle></CardHeader>
+              <CardContent className="p-3 flex justify-start">
+                <Select onValueChange={setSelectedParticipant} value={selectedParticipant || ''}>
+                  <SelectTrigger className="w-48 h-8 text-sm" style={{ background:'rgba(15,23,42,0.6)', border:'1px solid rgba(6,182,212,0.3)', color:'#f8fafc' }}>
+                    <SelectValue placeholder="בחר שם..." className="text-right" />
+                  </SelectTrigger>
+                  <SelectContent className="max-w-[200px]" position="popper" align="start" style={{ background:'#1e293b', border:'1px solid rgba(6,182,212,0.3)' }}>
+                    {allParticipants.map(p => (
+                      <SelectItem key={p} value={p} className="hover:bg-cyan-500/20 text-right pr-8" style={{ color:'#f8fafc' }}>{p}</SelectItem>
                     ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {participantDetails?.scores?.map((s, i) => {
+                  </SelectContent>
+                </Select>
+              </CardContent>
+            </Card>
 
-                    // ── שורת בונוס שלב (T3/T4/T5/T6) ─────────────────────
-                    if (s.isStageBonusRow) {
-                      return (
-                        <tr key={i} style={{
-                          background: 'rgba(16,185,129,0.08)',
-                          borderRight: '3px solid #10b981',
-                        }}>
-                          <td style={{ padding: '8px 6px', textAlign: 'center' }}>
-                            <span style={{
-                              display: 'inline-block', borderRadius: '999px',
-                              padding: '2px 8px', fontSize: '0.72rem',
-                              border: '1px solid #10b981', color: '#10b981',
-                              background: 'rgba(16,185,129,0.1)',
-                            }}>
-                              {s.table_id}
-                            </span>
-                          </td>
-                          <td style={{ padding: '8px 6px', textAlign: 'center', fontSize: '0.85rem' }}>🏆</td>
-                          <td colSpan={3} style={{ padding: '8px 6px', textAlign: 'right' }}>
-                            <span style={{ color: '#6ee7b7', fontSize: '0.88rem', fontWeight: 600 }}>
-                              {s.question_text}
-                            </span>
-                          </td>
-                          <td style={{ padding: '8px 6px', textAlign: 'center' }}>
-                            <span style={{
-                              display: 'inline-block', background: '#059669', color: 'white',
-                              fontSize: '0.85rem', fontWeight: 700,
-                              padding: '3px 10px', borderRadius: '999px',
-                            }}>
-                              +{s.score}
-                            </span>
-                          </td>
-                        </tr>
-                      );
-                    }
-
-                    // ── שורת מיקומים ──────────────────────────────────────
-                    if (s.isLocationSummary) {
-                      return (
-                        <tr key={i} style={{
-                          background: 'rgba(249,115,22,0.08)',
-                          borderRight: '3px solid #f97316',
-                        }}>
-                          <td style={{ padding: '8px 6px', textAlign: 'center' }}>
-                            <span style={{
-                              display: 'inline-block', borderRadius: '999px',
-                              padding: '2px 8px', fontSize: '0.72rem',
-                              border: '1px solid #f97316', color: '#f97316',
-                              background: 'rgba(249,115,22,0.1)',
-                            }}>
-                              {s.table_id}
-                            </span>
-                          </td>
-                          <td style={{ padding: '8px 6px', textAlign: 'center', color: '#94a3b8', fontSize: '0.85rem' }}>📋</td>
-                          <td colSpan={3} style={{ padding: '8px 6px', textAlign: 'right' }}>
-                            <span style={{ color: '#fdba74', fontSize: '0.88rem', fontWeight: 600 }}>
-                              {s.question_text}
-                            </span>
-                          </td>
-                          <td style={{ padding: '8px 6px', textAlign: 'center' }}>
-                            <span style={{
-                              display: 'inline-block', background: '#ea580c', color: 'white',
-                              fontSize: '0.85rem', fontWeight: 700,
-                              padding: '3px 10px', borderRadius: '999px',
-                            }}>
-                              +{s.score}
-                            </span>
-                          </td>
-                        </tr>
-                      );
-                    }
-
-                    // ── שורת שאלה רגילה ───────────────────────────────────
-                    let badgeBg = '#475569';
-                    if (s.score === s.max_score && s.max_score > 0) badgeBg = '#16a34a';
-                    else if (s.score >= 7)  badgeBg = '#2563eb';
-                    else if (s.score > 0)   badgeBg = '#ca8a04';
-
-                    return (
-                      <tr key={i}
-                        style={{ background: 'rgba(30,41,59,0.5)', transition: 'background 0.12s' }}
-                        onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.045)'}
-                        onMouseLeave={e => e.currentTarget.style.background = 'rgba(30,41,59,0.5)'}
-                      >
-                        {/* טבלה */}
-                        <td style={{ padding: '8px 6px', textAlign: 'center' }}>
-                          <span style={{
-                            display: 'inline-block', borderRadius: '999px',
-                            padding: '2px 8px', fontSize: '0.72rem',
-                            border: '1px solid var(--tp)', color: 'var(--tp)',
-                            background: 'var(--tp-10)',
-                          }}>
-                            {s.table_id}
-                          </span>
-                        </td>
-                        {/* מס' */}
-                        <td style={{ padding: '8px 6px', textAlign: 'center' }}>
-                          <span style={{
-                            display: 'inline-block', borderRadius: '999px',
-                            padding: '2px 8px', fontSize: '0.72rem',
-                            border: '1px solid var(--tp)', color: 'var(--tp)',
-                            background: 'var(--tp-10)',
-                          }}>
-                            {s.question_id_display}
-                          </span>
-                        </td>
-                        {/* שאלה */}
-                        <td style={{ padding: '8px 6px', textAlign: 'right' }}>
-                          {s.home_team && s.away_team ? (
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '0.88rem', color: '#f1f5f9' }}>
-                              <span>{s.home_team_display || s.home_team}</span>
-                              {s.home_team_logo && (
-                                <img src={s.home_team_logo} alt="" style={{ width: 18, height: 18, borderRadius: '50%' }}
-                                  onError={e => e.target.style.display = 'none'} />
-                              )}
-                              <span style={{ color: '#475569', fontSize: '0.78rem' }}>נגד</span>
-                              {s.away_team_logo && (
-                                <img src={s.away_team_logo} alt="" style={{ width: 18, height: 18, borderRadius: '50%' }}
-                                  onError={e => e.target.style.display = 'none'} />
-                              )}
-                              <span>{s.away_team_display || s.away_team}</span>
+            {selectedParticipant && (
+              <Card style={{ background:'rgba(30,41,59,0.6)', border:'1px solid rgba(6,182,212,0.2)', backdropFilter:'blur(10px)' }}>
+                <CardHeader className="py-2">
+                  <CardTitle className="text-sm flex items-center justify-between" style={{ color:'#06b6d4' }}>
+                    <span>פרטי המשתתף</span>
+                    <ParticipantTotalScore participantName={selectedParticipant} gameId={currentGame?.id} />
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="p-3">
+                  {participantQuestions.length > 0 ? (
+                    <div className="grid grid-cols-3 gap-2">
+                      {participantQuestions.map(q => {
+                        const isNameField = q.question_text?.includes("שם");
+                        const displayValue = isNameField ? selectedParticipant : (participantDetails[q.id] || '-');
+                        return (
+                          <div key={q.id} className="text-right">
+                            <label className="text-xs font-medium mb-1 block" style={{ color:'#94a3b8' }}>{q.question_text}</label>
+                            <div className="rounded-md px-2 py-1 text-sm text-right" style={{ background:'rgba(15,23,42,0.6)', border:'1px solid rgba(6,182,212,0.2)' }}>
+                              <span style={{ color:'#f8fafc' }}>{displayValue}</span>
                             </div>
-                          ) : (
-                            <span style={{ fontSize: '0.88rem', color: '#f1f5f9' }}>{s.question_text}</span>
-                          )}
-                        </td>
-                        {/* ניחוש */}
-                        <td style={{ padding: '8px 6px', textAlign: 'center', fontSize: '0.88rem', color: '#94a3b8' }}>
-                          {s.prediction || '—'}
-                        </td>
-                        {/* תוצאה */}
-                        <td style={{ padding: '8px 6px', textAlign: 'center', fontSize: '0.88rem', color: '#f1f5f9', fontWeight: 600 }}>
-                          {s.actual_result || '—'}
-                        </td>
-                        {/* ניקוד */}
-                        <td style={{ padding: '8px 6px', textAlign: 'center' }}>
-                          <span style={{
-                            display: 'inline-block', background: badgeBg, color: 'white',
-                            fontSize: '0.85rem', fontWeight: 700,
-                            padding: '3px 10px', borderRadius: '999px',
-                            minWidth: '52px', textAlign: 'center',
-                          }}>
-                            {s.score}/{s.max_score}
-                          </span>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-              </>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : null}
+                </CardContent>
+              </Card>
             )}
           </div>
-        </DialogContent>
-      </Dialog>
+
+          {loadingPredictions && (
+            <div className="flex items-center justify-center py-4 mt-4">
+              <Loader2 className="w-6 h-6 animate-spin ml-2" style={{ color:'#06b6d4' }} />
+              <span style={{ color:'#06b6d4' }}>טוען ניחושים...</span>
+            </div>
+          )}
+
+          <div className="vs-mobile-chips" style={{ display:"block" }}>
+            <style>{`@media (min-width: 768px) { .vs-mobile-chips { display: none !important; } }`}</style>
+            {selectedParticipant && !loadingPredictions && (specialTables.length > 0 || roundTables.length > 0 || locationTables.length > 0 || israeliTable || playoffWinnersTable || qualifiersTables.length > 0) && (
+              <div style={{ marginBottom:'20px' }}>{renderStageChips(allButtons, openSections, toggleSection)}</div>
+            )}
+          </div>
+
+          {!selectedParticipant && !loadingPredictions && (
+            <Alert className="mt-4" style={{ background:'rgba(30,41,59,0.6)', border:'1px solid rgba(6,182,212,0.2)', color:'#f8fafc' }}>
+              <FileText className="w-4 h-4" style={{ color:'#06b6d4' }} />
+              <AlertDescription style={{ color:'#94a3b8' }}>בחר משתתף כדי לראות את הניחושים שלו.</AlertDescription>
+            </Alert>
+          )}
+        </div>
+      </div>
+
+      <div className="p-3 md:p-6 max-w-7xl mx-auto">
+        {selectedParticipant && !loadingPredictions ? (
+          <div style={{ display:'flex', gap:'20px', alignItems:'flex-start' }}>
+            <div style={{ display:'none' }} className="vs-sidebar-desktop">{renderSidebar()}</div>
+            <style>{`@media (min-width: 768px) { .vs-sidebar-desktop { display: block !important; } }`}</style>
+            <div style={{ flex:1, minWidth:0 }}>
+              {allButtons.map(button => {
+                if (!openSections[button.sectionKey]) return null;
+                if (button.sectionKey === 'rounds') {
+                  return (
+                    <div key="rounds-section" className="mb-6 space-y-6">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        {roundTables.map(table => (
+                          <RoundTableReadOnly key={table.id} table={table} teams={data.teams} predictions={getCombinedPredictionsMap()} isEditMode={isEditMode && isAdmin} handlePredictionEdit={handlePredictionEdit} />
+                        ))}
+                      </div>
+                      <StandingsTable roundTables={roundTables} teams={data.teams} data={getCombinedPredictionsMap()} type="predictions" />
+                    </div>
+                  );
+                } else if (button.sectionKey.startsWith('round_')) {
+                  const tableId = button.sectionKey.replace('round_', '');
+                  const table = roundTables.find(t => t.id === tableId);
+                  if (table) return (
+                    <div key={button.sectionKey} className="mb-6">
+                      <RoundTableReadOnly key={table.id} table={table} teams={data.teams} predictions={getCombinedPredictionsMap()} isEditMode={isEditMode && isAdmin} handlePredictionEdit={handlePredictionEdit} />
+                      {table.specialQuestions && table.specialQuestions.length > 0 && <div className="mt-4">{renderSpecialQuestions({ ...table, questions: table.specialQuestions })}</div>}
+                    </div>
+                  );
+                } else if (button.sectionKey.startsWith('qual_')) {
+                  const tableId = button.sectionKey.replace('qual_', '');
+                  const table = qualifiersTables.find(t => t.id === tableId);
+                  if (table) return <div key={button.sectionKey} className="mb-6">{renderQualifiersTable(table)}</div>;
+                } else if (button.sectionKey === 'israeli' && israeliTable) {
+                  return <div key="israeli-section" className="mb-6"><RoundTableReadOnly table={israeliTable} teams={data.teams} predictions={getCombinedPredictionsMap()} isEditMode={isEditMode && isAdmin} handlePredictionEdit={handlePredictionEdit} /></div>;
+                } else if (button.sectionKey === 'locations') {
+                  return <div key="locations-section" className="mb-6 grid grid-cols-1 md:grid-cols-2 gap-6">{locationTables.map(table => <div key={table.id}>{renderSpecialQuestions(table)}</div>)}</div>;
+                } else if (button.sectionKey === 'playoffWinners' && playoffWinnersTable) {
+                  return <div key="playoffWinners-section" className="mb-6">{renderSpecialQuestions(playoffWinnersTable)}</div>;
+                } else {
+                  const specificSpecialTable = specialTables.find(t => t.id === button.key);
+                  if (specificSpecialTable) return <div key={specificSpecialTable.id} className="mb-6">{renderSpecialQuestions(specificSpecialTable)}</div>;
+                }
+                return null;
+              })}
+            </div>
+          </div>
+        ) : null}
+      </div>
+
+      {isAdmin && (
+        <>
+          <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+            <DialogContent className="max-w-2xl" dir="rtl" style={{ background:'#1e293b', border:'1px solid rgba(6,182,212,0.3)' }}>
+              <DialogHeader>
+                <DialogTitle className="2xl font-bold flex items-center gap-2" style={{ color:'#f8fafc' }}>
+                  <AlertTriangle className="w-6 h-6" style={{ color:'#ef4444' }} /> ניהול משתתפים
+                </DialogTitle>
+                <DialogDescription className="text-slate-300">
+                  לחץ על כפתור המחיקה כדי למחוק את כל הניחושים של משתתף. <strong className="text-red-300">פעולה זו אינה הפיכה!</strong>
+                </DialogDescription>
+              </DialogHeader>
+              <div className="max-h-[60vh] overflow-y-auto">
+                {participantStats.length === 0 ? (
+                  <div className="text-center py-8 flex flex-col items-center justify-center">
+                    <Loader2 className="w-8 h-8 animate-spin mb-2" style={{ color:'#94a3b8' }} />
+                    <span style={{ color:'#94a3b8' }}>טוען נתונים...</span>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {participantStats.map(stat => (
+                      <div key={stat.name} className="flex items-center justify-between p-3 rounded-lg border hover:bg-slate-700/50" style={{ background:'rgba(15,23,42,0.6)', border:'1px solid rgba(6,182,212,0.2)' }}>
+                        <div>
+                          <p className="font-medium" style={{ color:'#f8fafc' }}>{stat.name}</p>
+                          <p className="text-sm" style={{ color:'#94a3b8' }}>{stat.predictionsCount} ניחושים</p>
+                        </div>
+                        <Button onClick={() => handleDeleteParticipant(stat.name)} disabled={deletingParticipant === stat.name} variant="destructive" size="sm">
+                          {deletingParticipant === stat.name ? <><Loader2 className="w-4 h-4 ml-2" />מוחק...</> : <><Trash2 className="w-4 h-4 ml-2" />מחק</>}
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </DialogContent>
+          </Dialog>
+
+          <Dialog open={showMissingReport} onOpenChange={setShowMissingReport}>
+            <DialogContent className="max-w-6xl max-h-[90vh]" dir="rtl" style={{ background:'#1e293b', border:'1px solid rgba(6,182,212,0.3)' }}>
+              <DialogHeader>
+                <DialogTitle className="text-2xl font-bold flex items-center gap-2" style={{ color:'#f8fafc' }}>
+                  <AlertTriangle className="w-6 h-6" style={{ color:'#fcd34d' }} /> דוח ניחושים חסרים
+                </DialogTitle>
+                <DialogDescription className="text-slate-300">שאלות עם ניחושים חסרים, ממוינות לפי סדר השלבים</DialogDescription>
+              </DialogHeader>
+              <div className="overflow-y-auto max-h-[70vh]">
+                {loadingMissing ? (
+                  <div className="text-center py-8 flex flex-col items-center justify-center">
+                    <Loader2 className="w-8 h-8 animate-spin mb-2" style={{ color:'#94a3b8' }} />
+                    <span style={{ color:'#94a3b8' }}>מחשב...</span>
+                  </div>
+                ) : missingPredictions.length === 0 ? (
+                  <div className="text-center py-8" style={{ color:'#10b981' }}>
+                    <CheckCircle className="w-12 h-12 mx-auto mb-3" style={{ color:'#10b981' }} />
+                    <p className="text-lg font-bold">מצוין! כל המשתתפים ענו על כל השאלות!</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="p-3 rounded-lg" style={{ background:'rgba(251,191,36,0.1)', border:'1px solid rgba(251,191,36,0.3)' }}>
+                      <p className="text-sm font-bold" style={{ color:'#fcd34d' }}>נמצאו {missingPredictions.length} שאלות עם ניחושים חסרים (סה"כ {missingPredictions.reduce((sum, m) => sum + m.missing_count, 0)} ניחושים)</p>
+                    </div>
+                    <table className="w-full">
+                      <thead style={{ position:'sticky', top:0, zIndex:10, background:'#1e293b', borderBottom:'2px solid rgba(6,182,212,0.3)' }}>
+                        <tr>
+                          <th className="text-center p-2 text-sm" style={{ color:'#94a3b8', width:'80px' }}>טבלה</th>
+                          <th className="text-center p-2 text-sm" style={{ color:'#94a3b8', width:'60px' }}>מס׳</th>
+                          <th className="text-right p-2 text-sm" style={{ color:'#94a3b8' }}>שאלה</th>
+                          <th className="text-center p-2 text-sm" style={{ color:'#94a3b8', width:'80px' }}>חסרים</th>
+                          <th className="text-right p-2 text-sm" style={{ color:'#94a3b8', width:'200px' }}>משתתפים</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {missingPredictions.map((item, idx) => (
+                          <tr key={idx} className="hover:bg-slate-700/50" style={{ borderBottom:'1px solid rgba(6,182,212,0.1)' }}>
+                            <td className="text-center p-2"><Badge variant="outline" style={{ borderColor:'#06b6d4', color:'#06b6d4' }}>{item.table_id}</Badge></td>
+                            <td className="text-center p-2"><Badge variant="outline" style={{ borderColor:'#0ea5e9', color:'#0ea5e9' }}>{item.question_id}</Badge></td>
+                            <td className="text-right p-2 text-sm" style={{ color:'#f8fafc' }}>{item.question_text}</td>
+                            <td className="text-center p-2"><Badge className="text-white font-bold" style={{ background:'#ef4444', boxShadow:'0 0 10px rgba(239,68,68,0.4)' }}>{item.missing_count}</Badge></td>
+                            <td className="text-right p-2 text-xs" style={{ color:'#94a3b8' }}>{item.missing_participants.slice(0,3).join(', ')}{item.missing_participants.length > 3 && ` ועוד ${item.missing_participants.length - 3}...`}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </DialogContent>
+          </Dialog>
+        </>
+      )}
     </div>
   );
 }
