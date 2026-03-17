@@ -681,7 +681,7 @@ export default function LeaderboardNew() {
                   {participantDetails.qualifyingSections.map(sec => {
                     const { bonusEarned } = sec;
                     return (
-                      <div key={sec.tableId} style={{ marginBottom:'12px', background:'rgba(249,115,22,0.06)', border:'1px solid rgba(249,115,22,0.25)', borderRadius:'10px', padding:'10px 12px' }}>
+                      <div key={sec.tableId} style={{ marginBottom:'12px', background:'rgba(30,41,59,0.5)', border:'1px solid var(--tp-20)', borderRadius:'10px', padding:'10px 12px' }}>
                         <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'8px' }}>
                           <span style={{ fontSize:'0.82rem', fontWeight:700, color:'#f97316' }}>📋 {sec.tableDesc}</span>
                           <span style={{ fontSize:'0.75rem', padding:'2px 8px', borderRadius:'999px', background: bonusEarned ? '#059669' : sec.allResultsIn ? '#dc2626' : 'rgba(100,116,139,0.3)', color:'white', fontWeight:700 }}>
@@ -695,7 +695,7 @@ export default function LeaderboardNew() {
                             const bg    = p.isAdv ? 'rgba(16,185,129,0.10)' : p.isElim ? 'rgba(239,68,68,0.08)' : 'rgba(15,23,42,0.3)';
                             const score = !p.pred ? `?/${p.pts}` : sec.hasAnyResult ? (p.isAdv ? `+${p.pts}` : p.isElim ? '0' : `?/${p.pts}`) : `?/${p.pts}`;
                             return (
-                              <div key={i} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'5px 8px', borderRadius:'6px', background: bg, border:`1px solid ${p.isAdv ? 'rgba(16,185,129,0.25)' : p.isElim ? 'rgba(239,68,68,0.20)' : 'rgba(249,115,22,0.10)'}` }}>
+                              <div key={i} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'5px 8px', borderRadius:'6px', background: bg, border:`1px solid ${p.isAdv ? 'rgba(16,185,129,0.25)' : p.isElim ? 'rgba(239,68,68,0.20)' : 'rgba(71,85,105,0.3)'}` }}>
                                 <span style={{ fontSize:'0.82rem', color, fontWeight: p.isAdv ? 700 : 400 }}>{icon} {p.pred || <span style={{color:'#475569'}}>—</span>}</span>
                                 <span style={{ fontSize:'0.72rem', fontWeight:700, color: p.isAdv ? '#34d399' : p.isElim ? '#f87171' : '#64748b', marginRight:'6px' }}>{score}</span>
                               </div>
