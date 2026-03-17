@@ -589,6 +589,69 @@ function InsightCard({ insight }) {
   );
 }
 
+// ─── SpecialTeamListChart — גרף מרוכז לרשימת קבוצות (שלב הבתים) ──────────────
+function SpecialTeamListChart({ table, qualifierData, lockedPanel, lockPanel, closePanel }) {
+  const { chartData, advCount, participantsMap } = qualifierData;
+  const total = chartData.reduce((s, d) => s + d.count, 0);
+  const panelKey = `special_qual_${table.id}`;
+  return (
+    <Card style={{ background: 'rgba(30,41,59,0.6)', border: '1px solid rgba(139,92,246,0.35)' }}>
+      <CardHeader>
+        <CardTitle style={{ color: '#8b5cf6' }}>📋 {table.description}</CardTitle>
+        <p style={{ fontSize: '0.78rem', color: '#94a3b8', marginTop: 4 }}>
+          {advCount} חריצים • ניתוח כולל ללא תלות במיקום • לחץ על קבוצה לנעילת רשימה
+        </p>
+      </CardHeader>
+      <CardContent className="px-2 pb-6">
+        {lockedPanel[panelKey] && (
+          <ParticipantPanel
+            title={lockedPanel[panelKey].title}
+            count={lockedPanel[panelKey].count}
+            percentage={lockedPanel[panelKey].percentage}
+            participants={lockedPanel[panelKey].participants}
+            color="#8b5cf6"
+            onClose={() => closePanel(panelKey)}
+          />
+        )}
+        {chartData.length > 0 ? (
+          <div dir="ltr">
+            <ResponsiveContainer width="100%" height={Math.max(400, chartData.length * 34)}>
+              <BarChart data={chartData} layout="vertical" margin={{ top: 10, right: 60, left: 0, bottom: 10 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#334155" horizontal={false} />
+                <XAxis type="number" stroke="#94a3b8" tick={{ fontSize: 11, fill: '#94a3b8' }} />
+                <YAxis type="category" dataKey="team" width={190} stroke="#334155" tick={{ fontSize: 12, fill: '#f8fafc', fontFamily: 'Rubik,Heebo,sans-serif' }} />
+                <Tooltip
+                  cursor={{ fill: 'rgba(139,92,246,0.08)' }}
+                  content={({ payload }) => payload?.[0] ? (
+                    <div style={{ background: '#0a0f1a', border: '1px solid #8b5cf6', borderRadius: 6, padding: '8px 12px', pointerEvents: 'none' }}>
+                      <p style={{ color: '#8b5cf6', fontWeight: 700, fontSize: '0.85rem' }}>{payload[0].payload.team}</p>
+                      <p style={{ color: '#f8fafc', fontSize: '0.8rem' }}>{payload[0].value} בחירות ({total > 0 ? ((payload[0].value / total) * 100).toFixed(1) : 0}%)</p>
+                      <p style={{ color: '#64748b', fontSize: '0.7rem', marginTop: 2 }}>לחץ לנעילה</p>
+                    </div>
+                  ) : null}
+                />
+                <Bar
+                  dataKey="count"
+                  radius={[0, 6, 6, 0]}
+                  label={{ position: 'right', fill: '#94a3b8', fontSize: 11, formatter: v => v }}
+                  onClick={data => {
+                    const p2 = total > 0 ? ((data.count / total) * 100).toFixed(1) : 0;
+                    lockPanel(panelKey, { title: data.team, count: data.count, percentage: p2, participants: participantsMap[data.team] || [], color: '#8b5cf6' });
+                  }}
+                >
+                  {chartData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} style={{ cursor: 'pointer' }} />)}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        ) : (
+          <div className="text-center py-12" style={{ color: '#94a3b8' }}>אין נתונים עדיין</div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 // ─── Main component ───────────────────────────────────────────────────────────
 export default function Statistics() {
   const [loading,          setLoading         ] = useState(true);
@@ -1205,43 +1268,14 @@ export default function Statistics() {
                   <div key={ts.table.id}>
                     <h2 className="text-2xl font-bold text-white mb-4">{ts.table.description}</h2>
 
-                    {/* ✅ רשימת קבוצות מרוכזת — גרף אחד (כמו עולות/מיקומים) */}
-                    {ts.qualifierData&&ts.qualifierData.isSpecialTeamList?(()=>{
-                      const {chartData,advCount,participantsMap}=ts.qualifierData;
-                      const total=chartData.reduce((s,d)=>s+d.count,0);
-                      const panelKey=`special_qual_${ts.table.id}`;
-                      return(
-                        <Card style={{background:'rgba(30,41,59,0.6)',border:'1px solid rgba(139,92,246,0.35)'}}>
-                          <CardHeader>
-                            <CardTitle style={{color:'#8b5cf6'}}>📋 {ts.table.description}</CardTitle>
-                            <p style={{fontSize:'0.78rem',color:'#94a3b8',marginTop:4}}>
-                              {advCount} חריצים • ניתוח כולל ללא תלות במיקום • לחץ לנעילת רשימה
-                            </p>
-                          </CardHeader>
-                          <CardContent className="px-2 pb-6">
-                            {lockedPanel[panelKey]&&(
-                              <ParticipantPanel title={lockedPanel[panelKey].title} count={lockedPanel[panelKey].count} percentage={lockedPanel[panelKey].percentage} participants={lockedPanel[panelKey].participants} color="#8b5cf6" onClose={()=>closePanel(panelKey)}/>
-                            )}
-                            {chartData.length>0?(
-                              <div dir="ltr">
-                              <ResponsiveContainer width="100%" height={Math.max(400,chartData.length*34)}>
-                                <BarChart data={chartData} layout="vertical" margin={{top:10,right:60,left:0,bottom:10}}>
-                                  <CartesianGrid strokeDasharray="3 3" stroke="#334155" horizontal={false}/>
-                                  <XAxis type="number" stroke="#94a3b8" tick={{fontSize:11,fill:'#94a3b8'}}/>
-                                  <YAxis type="category" dataKey="team" width={190} stroke="#334155" tick={{fontSize:12,fill:'#f8fafc',fontFamily:'Rubik,Heebo,sans-serif'}}/>
-                                  <Tooltip cursor={{fill:'rgba(139,92,246,0.08)'}} content={({payload})=>payload?.[0]?<div style={{background:'#0a0f1a',border:'1px solid #8b5cf6',borderRadius:6,padding:'8px 12px',pointerEvents:'none'}}><p style={{color:'#8b5cf6',fontWeight:700,fontSize:'0.85rem'}}>{payload[0].payload.team}</p><p style={{color:'#f8fafc',fontSize:'0.8rem'}}>{payload[0].value} בחירות ({total>0?((payload[0].value/total)*100).toFixed(1):0}%)</p><p style={{color:'#64748b',fontSize:'0.7rem',marginTop:2}}>לחץ לנעילה</p></div>:null}/>
-                                  <Bar dataKey="count" radius={[0,6,6,0]} label={{position:'right',fill:'#94a3b8',fontSize:11,formatter:v=>v}}
-                                    onClick={data=>{const p2=total>0?((data.count/total)*100).toFixed(1):0;lockPanel(panelKey,{title:data.team,count:data.count,percentage:p2,participants:participantsMap[data.team]||[],color:'#8b5cf6'});}}>
-                                    {chartData.map((_,i)=><Cell key={i} fill={COLORS[i%COLORS.length]} style={{cursor:'pointer'}}/>)}
-                                  </Bar>
-                                </BarChart>
-                              </ResponsiveContainer>
-                              </div>
-                            ):<div className="text-center py-12" style={{color:'#94a3b8'}}>אין נתונים עדיין</div>}
-                          </CardContent>
-                        </Card>
-                      );
-                    })()}
+                    {/* ✅ רשימת קבוצות מרוכזת — גרף אחד */}
+                    {ts.qualifierData?.isSpecialTeamList && <SpecialTeamListChart
+                      table={ts.table}
+                      qualifierData={ts.qualifierData}
+                      lockedPanel={lockedPanel}
+                      lockPanel={lockPanel}
+                      closePanel={closePanel}
+                    />}
 
                     {!ts.qualifierData?.isSpecialTeamList && ts.locationsData&&(
                       <div className="space-y-4">
