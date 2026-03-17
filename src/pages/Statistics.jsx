@@ -736,10 +736,12 @@ export default function Statistics() {
       }).sort((a,b)=>(parseInt(a.id.replace('T',''))||0)-(parseInt(b.id.replace('T',''))||0));
 
       // ✅ זיהוי qualifier: לפי תיאור OR לפי table_id (T4/T5/T6)
-      // ✅ Qualifier = לפי stage_type='qualifiers' בלבד — לא לפי ID!
-      // בנוקאאוט: T4,T6,T8 הם qualifiers; T5,T7,T9 הם special
-      // בשלב הבתים: טבלות עולות לפי stage_type
-      const isQualTable = t => t.questions[0]?.stage_type === 'qualifiers';
+      // ✅ Qualifier = stage_type='qualifiers' OR תיאור מפורש של רשימת עולות
+      // (בשלב הבתים הטבלה "שתנצחנה" עשויה להיות stage_type שונה)
+      const QUAL_DESC_PATTERNS = ['שתנצחנה','שיעלו','שתעפלנה','שתעפל'];
+      const isQualTable = t =>
+        t.questions[0]?.stage_type === 'qualifiers' ||
+        QUAL_DESC_PATTERNS.some(p => (t.description||'').includes(p));
       setQualifierTables(allSpecial.filter(t => isQualTable(t)));
       setSpecialTables(allSpecial.filter(t => !isQualTable(t)));
     } catch(e){console.error(e);}
@@ -969,28 +971,12 @@ export default function Statistics() {
       });
     }
 
-    // 3. שאלות פלייאוף מיוחדות (כחול בהיר) — stage_type=playoff/groups ב-special tables
-    const playoffSpecial=specialTables.filter(t=>
-      t.questions[0]?.stage_type==='playoff'||
-      t.questions[0]?.stage_type==='groups'||
-      t.description?.includes('פלייאוף')||
-      t.description?.includes('מקומות')
-    );
-    if(playoffSpecial.length>0){
-      groups.push({
-        label:'🔵 שלבי פלייאוף', color:'#06b6d4', activeBg:'#0891b2',
-        buttons:playoffSpecial.map(t=>({key:t.id,description:t.description}))
-      });
-    }
-
-    // 4. שאלות מיוחדות (סגול) — stage_type=special
-    const regularSpecial=specialTables.filter(t=>
-      !['playoff','groups'].includes(t.questions[0]?.stage_type) &&
-      !t.description?.includes('פלייאוף') &&
-      !t.description?.includes('מקומות')
-    );
+    // 3+4. שאלות מיוחדות (סגול) — כל special tables ביחד, כולל playoff/groups
+    // אין קטגוריית "שלבי פלייאוף" נפרדת — הכל תחת "שאלות מיוחדות"
     const specialBtns=[];
-    regularSpecial.forEach(t=>{if(t.id!=='T1')specialBtns.push({key:t.id,description:t.description});});
+    specialTables.forEach(t=>{
+      if(t.id!=='T1') specialBtns.push({key:t.id,description:t.description});
+    });
     if(israeliTable) specialBtns.push({key:`round_${israeliTable.id}`,description:israeliTable.description});
     if(playoffTable) specialBtns.push({key:playoffTable.id,description:playoffTable.description});
     if(specialBtns.length>0) groups.push({label:'✨ שאלות מיוחדות',color:'#8b5cf6',activeBg:'#7c3aed',buttons:specialBtns});
