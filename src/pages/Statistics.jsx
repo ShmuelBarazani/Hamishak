@@ -673,16 +673,10 @@ export default function Statistics() {
       }).sort((a,b)=>(parseInt(a.id.replace('T',''))||0)-(parseInt(b.id.replace('T',''))||0));
 
       // ✅ זיהוי qualifier: לפי תיאור OR לפי table_id (T4/T5/T6)
+      // ✅ Qualifier = רק לפי table_id (T4/T5/T6) — לא לפי תיאור.
+      // טבלאות עם שמות כמו "שיעלו לחצי גמר" בשלב הנוקאאוט שייכות ל"מיוחדות", לא ל"עולות".
       const QUAL_IDS = new Set(['T4','T5','T6']);
-      const isQualTable = t => {
-        const desc = t.description||'';
-        return QUAL_IDS.has(t.id) ||
-          desc.includes('רשימת הקבוצות שיעלו') ||
-          desc.includes('שתנצחנה') ||
-          desc.includes('שתנצח') ||
-          desc.includes('שתעפלנה') ||
-          desc.includes('עולות לשמינית');
-      };
+      const isQualTable = t => QUAL_IDS.has(t.id);
       setQualifierTables(allSpecial.filter(t=>isQualTable(t)));
       setSpecialTables(allSpecial.filter(t=>!isQualTable(t)));
     } catch(e){console.error(e);}
@@ -820,6 +814,44 @@ export default function Statistics() {
         // ── Special (text/misc) ──────────────────────────────────────────
         } else {
           if(table.id!=='T1'){
+
+            // ✅ זיהוי "רשימת קבוצות" בשלב הבתים:
+            // טבלה שכל שאלותיה הן חריצי קבוצות (שלמות, ≥1) עם validation_list של קבוצות
+            // → מציג גרף מרוכז אחד (כמו qualifiers) ולא גרף לכל חריץ
+            const slots = table.questions.filter(q => {
+              const n = parseFloat(q.question_id);
+              return Number.isInteger(n) && n >= 1;
+            });
+            const isTeamListTable = slots.length >= 4 && slots.every(q =>
+              !q.home_team && !q.away_team && (
+                q.validation_list?.toLowerCase().includes('קבוצ') ||
+                q.stage_type === 'qualifiers' ||
+                (table.description||'').includes('שתנצח') ||
+                (table.description||'').includes('שיעלו') ||
+                (table.description||'').includes('שתעפל')
+              )
+            );
+
+            if (isTeamListTable) {
+              // גרף מרוכז — כמה משתתפים בחרו כל קבוצה (ללא תלות במיקום)
+              const slotIds = new Set(slots.map(s => s.id));
+              const teamCounts = {}, participantsMap = {};
+              allPredictions.forEach(p => {
+                if (!slotIds.has(p.question_id) || !p.text_prediction?.trim()) return;
+                const team = cleanTeam(normalizeTeam(p.text_prediction.trim()));
+                if (!team || team.toLowerCase() === 'null') return;
+                teamCounts[team] = (teamCounts[team]||0) + 1;
+                if (!participantsMap[team]) participantsMap[team] = new Set();
+                participantsMap[team].add(p.participant_name);
+              });
+              const pm = {};
+              Object.entries(participantsMap).forEach(([t,s]) => { pm[t] = [...s].sort((a,b) => a.localeCompare(b,'he')); });
+              ts.qualifierData = {
+                chartData: Object.entries(teamCounts).sort((a,b) => b[1]-a[1]).map(([team,count]) => ({team,count})),
+                cfg: null, advCount: slots.length, participantsMap: pm,
+                isSpecialTeamList: true,
+              };
+            } else {
             for(const q of table.questions){
               const qPreds=allPredictions.filter(p=>p.question_id===q.id);
               // dedup per participant (last prediction)
@@ -844,6 +876,7 @@ export default function Statistics() {
               const chart=Object.entries(answerCounts).sort((a,b)=>b[1]-a[1]).map(([ans,c])=>({answer:ans,count:c,percentage:total>0?((c/total)*100).toFixed(1):0}));
               ts.questions.push({question:q,totalAnswers:total,chartData:alternateSlice(chart),mostPopular:chart[0]||{answer:'-',count:0,percentage:0},diversity:chart.length});
             }
+            } // end else isTeamListTable
           }
         }
         ssd[table.id]=ts;
@@ -970,7 +1003,7 @@ export default function Statistics() {
             <div style={{fontSize:'0.58rem',fontWeight:'700',letterSpacing:'0.12em',textTransform:'uppercase',color:'#475569',marginBottom:'10px'}}>בחר שלב</div>
             {sidebarGroups.map(group=>(
               <div key={group.label} style={{marginBottom:'12px'}}>
-                <div style={{fontSize:'0.62rem',fontWeight:'700',color:group.color,letterSpacing:'0.06em',marginBottom:'5px',paddingRight:'6px',borderRight:`3px solid ${group.color}`,opacity:0.95}}>{group.label}</div>
+                <div style={{fontSize:'0.82rem',fontWeight:'800',color:group.color,letterSpacing:'0.04em',marginBottom:'6px',paddingRight:'8px',borderRight:`3px solid ${group.color}`}}>{group.label}</div>
                 {group.buttons.map(btn=>{
                   const active=selectedSection===btn.key;
                   return(
@@ -1172,7 +1205,45 @@ export default function Statistics() {
                   <div key={ts.table.id}>
                     <h2 className="text-2xl font-bold text-white mb-4">{ts.table.description}</h2>
 
-                    {ts.locationsData?(
+                    {/* ✅ רשימת קבוצות מרוכזת — גרף אחד (כמו עולות/מיקומים) */}
+                    {ts.qualifierData&&ts.qualifierData.isSpecialTeamList?(()=>{
+                      const {chartData,advCount,participantsMap}=ts.qualifierData;
+                      const total=chartData.reduce((s,d)=>s+d.count,0);
+                      const panelKey=`special_qual_${ts.table.id}`;
+                      return(
+                        <Card style={{background:'rgba(30,41,59,0.6)',border:'1px solid rgba(139,92,246,0.35)'}}>
+                          <CardHeader>
+                            <CardTitle style={{color:'#8b5cf6'}}>📋 {ts.table.description}</CardTitle>
+                            <p style={{fontSize:'0.78rem',color:'#94a3b8',marginTop:4}}>
+                              {advCount} חריצים • ניתוח כולל ללא תלות במיקום • לחץ לנעילת רשימה
+                            </p>
+                          </CardHeader>
+                          <CardContent className="px-2 pb-6">
+                            {lockedPanel[panelKey]&&(
+                              <ParticipantPanel title={lockedPanel[panelKey].title} count={lockedPanel[panelKey].count} percentage={lockedPanel[panelKey].percentage} participants={lockedPanel[panelKey].participants} color="#8b5cf6" onClose={()=>closePanel(panelKey)}/>
+                            )}
+                            {chartData.length>0?(
+                              <div dir="ltr">
+                              <ResponsiveContainer width="100%" height={Math.max(400,chartData.length*34)}>
+                                <BarChart data={chartData} layout="vertical" margin={{top:10,right:60,left:0,bottom:10}}>
+                                  <CartesianGrid strokeDasharray="3 3" stroke="#334155" horizontal={false}/>
+                                  <XAxis type="number" stroke="#94a3b8" tick={{fontSize:11,fill:'#94a3b8'}}/>
+                                  <YAxis type="category" dataKey="team" width={190} stroke="#334155" tick={{fontSize:12,fill:'#f8fafc',fontFamily:'Rubik,Heebo,sans-serif'}}/>
+                                  <Tooltip cursor={{fill:'rgba(139,92,246,0.08)'}} content={({payload})=>payload?.[0]?<div style={{background:'#0a0f1a',border:'1px solid #8b5cf6',borderRadius:6,padding:'8px 12px',pointerEvents:'none'}}><p style={{color:'#8b5cf6',fontWeight:700,fontSize:'0.85rem'}}>{payload[0].payload.team}</p><p style={{color:'#f8fafc',fontSize:'0.8rem'}}>{payload[0].value} בחירות ({total>0?((payload[0].value/total)*100).toFixed(1):0}%)</p><p style={{color:'#64748b',fontSize:'0.7rem',marginTop:2}}>לחץ לנעילה</p></div>:null}/>
+                                  <Bar dataKey="count" radius={[0,6,6,0]} label={{position:'right',fill:'#94a3b8',fontSize:11,formatter:v=>v}}
+                                    onClick={data=>{const p2=total>0?((data.count/total)*100).toFixed(1):0;lockPanel(panelKey,{title:data.team,count:data.count,percentage:p2,participants:participantsMap[data.team]||[],color:'#8b5cf6'});}}>
+                                    {chartData.map((_,i)=><Cell key={i} fill={COLORS[i%COLORS.length]} style={{cursor:'pointer'}}/>)}
+                                  </Bar>
+                                </BarChart>
+                              </ResponsiveContainer>
+                              </div>
+                            ):<div className="text-center py-12" style={{color:'#94a3b8'}}>אין נתונים עדיין</div>}
+                          </CardContent>
+                        </Card>
+                      );
+                    })()
+
+                    }:{ts.locationsData?(
                       <div className="space-y-4">
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                           <Card className="bg-slate-800/40 border-slate-700"><CardContent className="p-4"><p className="text-sm text-slate-400">סה"כ בחירות</p><p className="text-3xl font-bold text-cyan-400">{ts.locationsData.totalPredictions}</p></CardContent></Card>
