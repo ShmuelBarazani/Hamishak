@@ -474,33 +474,41 @@ function LayoutContent({ children }) {
 
         {/* ── Mobile top bar ── */}
         <header className="lm-topbar mobile-topbar">
-          {/* לוגו + שם משחק — לחיץ לפתיחת drawer */}
-          <button
-            onClick={()=>setSidebarOpen(s=>!s)}
-            style={{
-              display:'flex',alignItems:'center',gap:10,flex:1,
-              background:'none',border:'none',cursor:'pointer',textAlign:'right',
-              padding:'8px 0',
-              WebkitTapHighlightColor:'transparent',touchAction:'manipulation',
-            }}
-          >
+          {/* לוגו + שם משחק */}
+          <div style={{display:'flex',alignItems:'center',gap:10,flex:1,minWidth:0}}>
             {currentGame?.game_icon ? (
-              <img src={currentGame.game_icon} alt="logo" style={{width:46,height:46,borderRadius:10,objectFit:'contain',flexShrink:0,border:'1px solid var(--tp-20)'}}/>
+              <img src={currentGame.game_icon} alt="logo" style={{width:44,height:44,borderRadius:10,objectFit:'contain',flexShrink:0,border:'1px solid var(--tp-20)'}}/>
             ) : (
-              <div style={{width:46,height:46,borderRadius:10,background:'var(--tp-10)',border:'1px dashed var(--tp-25)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'1.4rem',flexShrink:0}}>⚽</div>
+              <div style={{width:44,height:44,borderRadius:10,background:'var(--tp-10)',border:'1px dashed var(--tp-25)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'1.4rem',flexShrink:0}}>⚽</div>
             )}
-            <div style={{flex:1,minWidth:0,textAlign:'right'}}>
-              <div style={{fontWeight:800,fontSize:'1.05rem',color:'var(--text)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',lineHeight:1.2}}>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontWeight:800,fontSize:'1rem',color:'var(--text)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',lineHeight:1.2}}>
                 {currentGame?.game_name || 'בחר משחק'}
               </div>
               {currentGame?.game_subtitle && (
-                <div style={{fontSize:'0.85rem',fontWeight:700,color:'var(--tp)',marginTop:1}}>
+                <div style={{fontSize:'0.82rem',fontWeight:700,color:'var(--tp)',marginTop:1}}>
                   {currentGame.game_subtitle}
                 </div>
               )}
             </div>
-            {/* חץ להחלפת משחק */}
-            <div style={{flexShrink:0,color:'var(--tp)',opacity:0.7,fontSize:'1.2rem'}}>☰</div>
+          </div>
+          {/* כפתור תפריט — גדול וקל ללחיצה */}
+          <button
+            onClick={()=>setSidebarOpen(s=>!s)}
+            style={{
+              display:'flex',alignItems:'center',justifyContent:'center',
+              width:48,height:48,flexShrink:0,
+              background:'var(--tp-12)',border:'1px solid var(--tp-25)',
+              borderRadius:12,cursor:'pointer',
+              WebkitTapHighlightColor:'transparent',touchAction:'manipulation',
+              color:'var(--tp)',
+            }}
+          >
+            <svg width="22" height="18" viewBox="0 0 22 18" fill="none">
+              <rect x="0" y="0" width="22" height="2.5" rx="1.25" fill="currentColor"/>
+              <rect x="0" y="7.75" width="16" height="2.5" rx="1.25" fill="currentColor"/>
+              <rect x="0" y="15.5" width="22" height="2.5" rx="1.25" fill="currentColor"/>
+            </svg>
           </button>
         </header>
 
@@ -509,7 +517,7 @@ function LayoutContent({ children }) {
         </RouteGuard>
 
         {/* ── Mobile bottom navigation bar ── */}
-        <nav className="lm-bottom-nav mobile-topbar">
+        <nav className="lm-bottom-nav">
           {mainNav.slice(0,5).map(item => {
             const active = isActive(item.url);
             return (
@@ -521,40 +529,41 @@ function LayoutContent({ children }) {
                 }}
                 style={{
                   display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',
-                  flex:1,gap:3,padding:'8px 4px',textDecoration:'none',
-                  color: active ? 'var(--tp)' : (item.disabled ? '#334155' : '#64748b'),
-                  background: active ? 'var(--tp-10)' : 'transparent',
-                  borderTop: active ? '2px solid var(--tp)' : '2px solid transparent',
+                  flex:1,gap:3,padding:'4px 2px',textDecoration:'none',
+                  color: active ? 'var(--tp)' : (item.disabled ? '#334155' : '#94a3b8'),
+                  background: active ? 'var(--tp-12)' : 'transparent',
+                  borderTop: active ? '3px solid var(--tp)' : '3px solid transparent',
                   transition:'all 0.15s',
                   WebkitTapHighlightColor:'transparent',touchAction:'manipulation',
                   cursor: item.disabled ? 'not-allowed' : 'pointer',
+                  minWidth:0,
                 }}
               >
-                <item.icon size={24}/>
-                <span style={{fontSize:'0.65rem',fontWeight:active?700:500,whiteSpace:'nowrap',fontFamily:'Rubik,Heebo,sans-serif'}}>
+                <item.icon size={28}/>
+                <span style={{fontSize:'0.75rem',fontWeight:active?800:500,whiteSpace:'nowrap',fontFamily:'Rubik,Heebo,sans-serif',lineHeight:1}}>
                   {item.title}
                 </span>
               </Link>
             );
           })}
-          {/* כפתור "עוד" — פותח drawer */}
+          {/* כפתור "עוד" */}
           <button
             onClick={()=>setSidebarOpen(s=>!s)}
             style={{
               display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',
-              flex:1,gap:3,padding:'8px 4px',background:'none',border:'none',
-              color: sidebarOpen ? 'var(--tp)' : '#64748b',
-              borderTop: sidebarOpen ? '2px solid var(--tp)' : '2px solid transparent',
+              flex:1,gap:3,padding:'4px 2px',background:'none',border:'none',
+              color: sidebarOpen ? 'var(--tp)' : '#94a3b8',
+              borderTop: sidebarOpen ? '3px solid var(--tp)' : '3px solid transparent',
               cursor:'pointer',WebkitTapHighlightColor:'transparent',touchAction:'manipulation',
               fontFamily:'Rubik,Heebo,sans-serif',
             }}
           >
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <circle cx="12" cy="5" r="1.5" fill="currentColor" stroke="none"/>
-              <circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none"/>
-              <circle cx="12" cy="19" r="1.5" fill="currentColor" stroke="none"/>
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor">
+              <circle cx="12" cy="5" r="2"/>
+              <circle cx="12" cy="12" r="2"/>
+              <circle cx="12" cy="19" r="2"/>
             </svg>
-            <span style={{fontSize:'0.65rem',fontWeight:500,whiteSpace:'nowrap'}}>עוד</span>
+            <span style={{fontSize:'0.72rem',fontWeight:500,whiteSpace:'nowrap',lineHeight:1}}>עוד</span>
           </button>
         </nav>
 
@@ -1090,6 +1099,8 @@ const GLOBAL_STYLES = `
     -webkit-overflow-scrolling: touch;
     background: var(--bg1); transition: background 0.4s;
   }
+  /* bottom nav hidden by default on desktop */
+  .lm-bottom-nav { display: none; }
 
   /* ── Mobile topbar ────────────────────────────── */
   .lm-topbar {
@@ -1150,18 +1161,21 @@ const GLOBAL_STYLES = `
   }
 
   /* ══════════════════════════════════════════════════════════════════
-     MOBILE COMPLETE REDESIGN
-     עיצוב מובייל מחדש — מקיף, מעמיק, לכל עמודי האפליקציה
+     MOBILE COMPLETE REDESIGN — גדול, ברור, שמיש
   ══════════════════════════════════════════════════════════════════ */
   @media (max-width: 768px) {
 
-    /* ─── Base ──────────────────────────────────────────────── */
-    html, body, #root {
-      overflow-x: hidden !important;
-      max-width: 100vw !important;
+    /* ─── Base scaling ──────────────────────────────────────── */
+    html {
+      font-size: 18px !important;
       -webkit-text-size-adjust: 100%;
     }
-    body { font-size: 15px !important; }
+    body {
+      font-size: 18px !important;
+      line-height: 1.5 !important;
+      overflow-x: hidden !important;
+    }
+    * { box-sizing: border-box; }
     .lm-root, .lm-main, .lm-page { overflow-x: hidden !important; }
 
     /* ─── Show/hide ─────────────────────────────────────────── */
@@ -1169,181 +1183,137 @@ const GLOBAL_STYLES = `
     .mobile-topbar   { display: flex !important; }
     .lm-overlay      { display: block !important; }
 
-    /* ─── Top bar ───────────────────────────────────────────── */
-    .lm-topbar { height: 64px !important; padding: 0 12px !important; }
-
-    /* ─── Bottom nav ────────────────────────────────────────── */
-    .lm-bottom-nav {
-      position: fixed; bottom: 0; left: 0; right: 0;
-      height: 62px; display: flex !important; align-items: stretch;
-      background: var(--sidebar); border-top: 1px solid var(--tp-15);
-      z-index: 30; box-shadow: 0 -4px 24px rgba(0,0,0,0.5);
-      padding-bottom: env(safe-area-inset-bottom, 0px);
+    /* ─── Top bar — bigger ──────────────────────────────────── */
+    .lm-topbar {
+      height: 72px !important;
+      padding: 0 16px !important;
     }
-    .lm-page--mobile-padded { padding-bottom: 70px !important; }
+
+    /* ─── Bottom nav — prominent ────────────────────────────── */
+    .lm-bottom-nav {
+      position: fixed !important;
+      bottom: 0 !important; left: 0 !important; right: 0 !important;
+      height: 68px !important;
+      display: flex !important;
+      align-items: stretch !important;
+      background: var(--sidebar) !important;
+      border-top: 2px solid var(--tp-25) !important;
+      z-index: 9999 !important;
+      box-shadow: 0 -6px 30px rgba(0,0,0,0.6) !important;
+      padding-bottom: env(safe-area-inset-bottom, 0px) !important;
+    }
+
+    /* ─── Content padding for bottom nav ───────────────────── */
+    .lm-page--mobile-padded {
+      padding-bottom: calc(76px + env(safe-area-inset-bottom, 0px)) !important;
+    }
+    .lm-page {
+      padding-bottom: calc(76px + env(safe-area-inset-bottom, 0px)) !important;
+    }
 
     /* ─── Drawer ────────────────────────────────────────────── */
     .lm-sidebar--mobile {
-      position: fixed; top: 0; right: -105vw; width: 85vw;
-      height: 100dvh; z-index: 50; overflow-y: auto;
-      transition: right 0.28s cubic-bezier(0.4,0,0.2,1);
+      position: fixed !important;
+      top: 0 !important; right: -105vw !important; width: 88vw !important;
+      height: 100dvh !important; z-index: 50 !important; overflow-y: auto !important;
+      transition: right 0.28s cubic-bezier(0.4,0,0.2,1) !important;
     }
-    .lm-sidebar--mobile.open { right: 0; box-shadow: -12px 0 60px rgba(0,0,0,0.7); }
+    .lm-sidebar--mobile.open { right: 0 !important; box-shadow: -12px 0 60px rgba(0,0,0,0.7) !important; }
 
     /* ─── Headings ──────────────────────────────────────────── */
-    h1 { font-size: 1.35rem !important; }
-    h2 { font-size: 1.15rem !important; }
-    h3 { font-size: 1rem !important; }
+    h1 { font-size: 1.6rem !important; font-weight: 800 !important; }
+    h2 { font-size: 1.3rem !important; font-weight: 700 !important; }
+    h3 { font-size: 1.1rem !important; }
 
-    /* ─── Nav items in drawer ───────────────────────────────── */
-    .lm-nav-item { font-size: 1.05rem !important; padding: 14px 16px !important; min-height: 52px !important; }
-    .lm-nav-icon { width: 24px !important; height: 24px !important; }
-    .lm-sec-label { font-size: 0.78rem !important; }
-
-    /* ─── Cards ─────────────────────────────────────────────── */
-    .card, [class*="Card"], [data-card] {
-      border-radius: 10px !important;
+    /* ─── Nav items in drawer — very large ──────────────────── */
+    .lm-nav-item {
+      font-size: 1.15rem !important;
+      padding: 16px 20px !important;
+      min-height: 56px !important;
+      letter-spacing: 0.01em !important;
     }
+    .lm-nav-icon { width: 26px !important; height: 26px !important; }
+    .lm-sec-label { font-size: 0.85rem !important; }
 
-    /* ─── Buttons — minimum tap target 44px ─────────────────── */
-    button, [role="button"], .btn, a.btn {
-      min-height: 40px;
+    /* ─── Buttons — large tap targets ───────────────────────── */
+    button, [role="button"] {
+      min-height: 48px;
+      font-size: 1rem !important;
       touch-action: manipulation;
       -webkit-tap-highlight-color: transparent;
     }
-    button[class*="Badge"], span[class*="Badge"] { min-height: unset; }
+    /* except badges */
+    [class*="badge"], [class*="Badge"] {
+      min-height: unset !important;
+      font-size: 0.85rem !important;
+      padding: 3px 9px !important;
+    }
 
-    /* ─── Form elements ─────────────────────────────────────── */
+    /* ─── Form elements — prevent iOS zoom ──────────────────── */
     input, select, textarea {
-      font-size: 16px !important; /* prevent iOS zoom */
-      min-height: 44px;
+      font-size: 16px !important;
+      min-height: 48px !important;
     }
     [class*="SelectTrigger"] {
-      min-height: 44px !important;
-      font-size: 15px !important;
+      min-height: 48px !important;
+      font-size: 1rem !important;
     }
+    [class*="SelectValue"] { font-size: 1rem !important; }
 
-    /* ─── Dialogs — full screen on mobile ───────────────────── */
+    /* ─── Tables ────────────────────────────────────────────── */
+    table { font-size: 0.95rem !important; }
+    th, td { padding: 10px 6px !important; font-size: 0.9rem !important; }
+
+    /* ─── Dialogs — bottom sheet style ─────────────────────── */
     [role="dialog"] {
       max-width: 100vw !important;
       width: 100vw !important;
-      max-height: 92dvh !important;
-      height: 92dvh !important;
+      max-height: 94dvh !important;
       margin: 0 !important;
-      border-radius: 16px 16px 0 0 !important;
+      border-radius: 20px 20px 0 0 !important;
       position: fixed !important;
       bottom: 0 !important;
       top: auto !important;
       left: 0 !important;
       right: 0 !important;
       transform: none !important;
-    }
-    /* Dialog close button — bigger */
-    [role="dialog"] button[class*="close"],
-    [role="dialog"] button[aria-label="Close"] {
-      width: 36px !important; height: 36px !important;
-      top: 12px !important; left: 12px !important;
+      overflow-y: auto !important;
     }
 
-    /* ─── Tables — horizontal scroll ────────────────────────── */
-    table {
-      font-size: 0.82rem !important;
-      min-width: 100%;
+    /* ─── Chips / pills — bigger ────────────────────────────── */
+    .vs-mobile-chips button,
+    [style*="border-radius: 999px"],
+    [style*="borderRadius: '999px'"] {
+      font-size: 0.9rem !important;
+      padding: 8px 16px !important;
+      min-height: 40px !important;
     }
-    th, td { padding: 7px 5px !important; font-size: 0.82rem !important; }
 
-    /* ─── Leaderboard table specific ────────────────────────── */
-    .leaderboard-table th:nth-child(4),
-    .leaderboard-table th:nth-child(5),
-    .leaderboard-table td:nth-child(4),
-    .leaderboard-table td:nth-child(5) { display: none !important; }
-
-    /* ─── Grids — single column on mobile ───────────────────── */
-    .grid-cols-2 { grid-template-columns: 1fr !important; }
-    .grid-cols-3 { grid-template-columns: 1fr !important; }
-    .grid-cols-4 { grid-template-columns: 1fr 1fr !important; }
-    .md\\:grid-cols-2 { grid-template-columns: 1fr !important; }
-    .md\\:grid-cols-3 { grid-template-columns: 1fr !important; }
-    .lg\\:grid-cols-3 { grid-template-columns: 1fr !important; }
+    /* ─── Cards ─────────────────────────────────────────────── */
+    .card, [class*="Card"] { border-radius: 12px !important; }
 
     /* ─── Spacing ───────────────────────────────────────────── */
-    .p-6 { padding: 12px !important; }
-    .p-4 { padding: 10px !important; }
-    .px-6 { padding-left: 12px !important; padding-right: 12px !important; }
-    .py-6 { padding-top: 12px !important; padding-bottom: 12px !important; }
-    .gap-6 { gap: 10px !important; }
-    .gap-4 { gap: 8px !important; }
-    .mb-8 { margin-bottom: 16px !important; }
-    .mb-6 { margin-bottom: 12px !important; }
+    .p-6 { padding: 16px !important; }
+    .p-4 { padding: 12px !important; }
+    .p-3 { padding: 10px !important; }
+    .gap-6 { gap: 12px !important; }
+    .gap-4 { gap: 10px !important; }
+    .mb-8 { margin-bottom: 20px !important; }
 
-    /* ─── Flex layouts — only explicit mobile classes ───────── */
-    .mobile-flex-col { flex-direction: column !important; }
-    .md\\:flex-row { flex-direction: column !important; }
-
-    /* ─── Stats cards (Leaderboard top row) ─────────────────── */
-    .stats-grid {
-      grid-template-columns: 1fr 1fr !important;
-      gap: 8px !important;
-    }
-
-    /* ─── Sidebar in pages (AdminResults, Statistics) ───────── */
+    /* ─── Sidebar in pages — hidden on mobile ───────────────── */
     aside[style*="215px"],
     aside[style*="width: 215"],
     .vs-sidebar-desktop { display: none !important; }
 
-    /* ─── ViewSubmissions chips ─────────────────────────────── */
-    .vs-mobile-chips { display: block !important; }
-
-    /* ─── Qualifying tables (2 columns on mobile) ───────────── */
-    .qualifying-grid { grid-template-columns: 1fr !important; }
-
-    /* ─── Score badges ──────────────────────────────────────── */
-    [class*="Badge"] {
-      font-size: 0.78rem !important;
-      padding: 2px 7px !important;
-    }
-
-    /* ─── Max score display in ViewSubmissions ──────────────── */
-    .min-w-\\[135px\\], .max-w-\\[140px\\] {
-      min-width: 100px !important;
-      max-width: 120px !important;
-    }
-
-    /* ─── Round table read only ─────────────────────────────── */
-    .round-table-row {
-      grid-template-columns: 1fr auto !important;
-      font-size: 0.82rem !important;
-    }
-
-    /* ─── Statistics sidebar ────────────────────────────────── */
-    .stats-sidebar { display: none !important; }
-    .stats-content { width: 100% !important; }
-
-    /* ─── AdminResults sidebar ──────────────────────────────── */
-    .admin-sidebar { display: none !important; }
-
-    /* ─── Hide non-essential columns in prediction rows ─────── */
-    .pred-row-optional { display: none !important; }
-
-    /* ─── Sticky headers ────────────────────────────────────── */
-    .sticky { position: -webkit-sticky; position: sticky; }
-
-    /* ─── Safe area ─────────────────────────────────────────── */
-    .lm-page {
-      padding-bottom: max(70px, calc(62px + env(safe-area-inset-bottom))) !important;
-    }
+    /* ─── Full width content on mobile ─────────────────────── */
+    [style*="flex: 1"] { width: 100% !important; }
   }
 
-  /* ── Extra small phones < 480px ────────────────────────────── */
-  @media (max-width: 480px) {
-    body { font-size: 14px !important; }
-    .lm-topbar { height: 60px !important; }
-    .lm-bottom-nav { height: 58px !important; }
-    .lm-page--mobile-padded { padding-bottom: 66px !important; }
-    h1 { font-size: 1.2rem !important; }
-    [role="dialog"] { max-height: 94dvh !important; height: 94dvh !important; }
-    table { font-size: 0.76rem !important; }
-    th, td { padding: 5px 3px !important; font-size: 0.76rem !important; }
+  /* ── Very small phones < 380px ─────────────────────────────── */
+  @media (max-width: 380px) {
+    html { font-size: 16px !important; }
+    .lm-topbar { height: 64px !important; }
+    .lm-bottom-nav { height: 62px !important; }
   }
 
   /* ── Global overrides (Radix, shadcn, Tailwind) ─ */
