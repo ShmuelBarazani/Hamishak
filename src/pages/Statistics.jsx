@@ -1042,8 +1042,9 @@ export default function Statistics() {
 
         <div className="flex flex-col md:flex-row gap-4" style={{alignItems:'flex-start'}}>
 
-          {/* ── Sidebar ── */}
-          <aside style={{width:'220px',flexShrink:0,position:'sticky',top:'70px',alignSelf:'flex-start',maxHeight:'calc(100vh - 90px)',overflowY:'auto',paddingBottom:'16px'}}>
+          {/* ── Sidebar — desktop only ── */}
+          <aside className="stats-sidebar-desktop" style={{width:'220px',flexShrink:0,position:'sticky',top:'70px',alignSelf:'flex-start',maxHeight:'calc(100vh - 90px)',overflowY:'auto',paddingBottom:'16px'}}>
+            <style>{`@media(max-width:768px){.stats-sidebar-desktop{display:none!important}}`}</style>
             <div style={{fontSize:'0.58rem',fontWeight:'700',letterSpacing:'0.12em',textTransform:'uppercase',color:'#475569',marginBottom:'10px'}}>בחר שלב</div>
             {sidebarGroups.map(group=>(
               <div key={group.label} style={{marginBottom:'12px'}}>
@@ -1072,6 +1073,31 @@ export default function Statistics() {
 
           {/* ── Content ── */}
           <div style={{flex:1,minWidth:0}}>
+
+            {/* ── Mobile chips — Statistics ── */}
+            <div className="stats-mobile-chips" style={{marginBottom:'12px'}}>
+              <style>{`@media(min-width:769px){.stats-mobile-chips{display:none!important}}`}</style>
+              <div style={{display:'flex',flexWrap:'wrap',gap:'6px',padding:'4px 0'}}>
+                {sidebarGroups.map(group=>group.buttons.map(btn=>{
+                  const active=selectedSection===btn.key;
+                  return(
+                    <button key={btn.key} onClick={()=>toggleSection(btn.key)} style={{
+                      display:'inline-flex',alignItems:'center',
+                      padding:'7px 12px',borderRadius:'999px',
+                      fontSize:'0.82rem',fontWeight:active?800:500,
+                      color:active?'white':group.color,
+                      background:active?group.activeBg:`${group.color}18`,
+                      border:`1.5px solid ${active?group.color:`${group.color}50`}`,
+                      cursor:'pointer',transition:'all 0.15s',
+                      boxShadow:active?`0 0 8px ${group.color}55`:'none',
+                      fontFamily:'Rubik,Heebo,sans-serif',
+                      WebkitTapHighlightColor:'transparent',
+                      touchAction:'manipulation',
+                    }}>{btn.description}</button>
+                  );
+                }))}
+              </div>
+            </div>
 
             {/* 🤖 AI Insights */}
             {selectedSection==='insights'&&(
