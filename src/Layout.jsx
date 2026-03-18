@@ -586,7 +586,20 @@ function LayoutContent({ children }) {
       <UploadStatusIndicator/>
 
       <Dialog open={showAdminDialog} onOpenChange={setShowAdminDialog}>
-        <DialogContent className="lm-admin-dialog" dir="rtl">
+        <DialogContent className="lm-admin-dialog" dir="rtl" style={{
+          // ✅ על מובייל — דיאלוג קטן ומרכוזי, לא bottom-sheet
+          // מניעת דחיקה ע"י מקלדת
+          position: 'fixed',
+          top: '20%',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          maxWidth: '90vw',
+          width: '90vw',
+          maxHeight: 'none',
+          height: 'auto',
+          borderRadius: '16px',
+          bottom: 'auto',
+        }}>
           <DialogHeader>
             <DialogTitle style={{color:'var(--tp)',display:'flex',alignItems:'center',gap:8}}>
               <Shield size={20}/> התחברות מנהל
@@ -595,10 +608,12 @@ function LayoutContent({ children }) {
           </DialogHeader>
           <div style={{display:'flex',flexDirection:'column',gap:16}}>
             <Input type="password" value={adminPassword} onChange={e=>setAdminPassword(e.target.value)}
-              onKeyPress={e=>e.key==='Enter'&&handleAdminLogin()} placeholder="סיסמה..."/>
+              onKeyPress={e=>e.key==='Enter'&&handleAdminLogin()} placeholder="סיסמה..."
+              autoComplete="current-password"
+              style={{fontSize:'16px'}}/>
             <div style={{display:'flex',gap:10,justifyContent:'flex-end'}}>
               <button onClick={()=>{setShowAdminDialog(false);setAdminPassword("");}} className="btn btn-ghost">ביטול</button>
-              <button onClick={handleAdminLogin} className="btn btn-primary">התחבר כמנהל</button>
+              <button onClick={handleAdminLogin} className="btn btn-primary" style={{minHeight:'44px',fontSize:'1rem',padding:'10px 20px'}}>התחבר כמנהל</button>
             </div>
           </div>
         </DialogContent>
@@ -1278,8 +1293,9 @@ const GLOBAL_STYLES = `
     table { font-size: 0.95rem !important; }
     th, td { padding: 10px 6px !important; font-size: 0.9rem !important; }
 
-    /* ─── Dialogs — bottom sheet style ─────────────────────── */
-    [role="dialog"] {
+
+    /* ─── Dialogs — bottom sheet (לא לדיאלוג מנהל) ──────────── */
+    [role="dialog"]:not([class*="lm-admin"]) {
       max-width: 100vw !important;
       width: 100vw !important;
       max-height: 94dvh !important;
@@ -1292,6 +1308,18 @@ const GLOBAL_STYLES = `
       right: 0 !important;
       transform: none !important;
       overflow-y: auto !important;
+    }
+    /* Admin dialog — מרוכז, מעל המקלדת */
+    .lm-admin-dialog[role="dialog"] {
+      width: 90vw !important;
+      max-width: 90vw !important;
+      max-height: 70dvh !important;
+      height: auto !important;
+      top: 12% !important;
+      bottom: auto !important;
+      left: 5% !important;
+      right: 5% !important;
+      border-radius: 16px !important;
     }
 
     /* ─── Chips / pills — bigger ────────────────────────────── */
