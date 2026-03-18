@@ -1,1366 +1,1541 @@
-import React, { useState, useEffect } from "react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
-import { createPageUrl } from "@/utils";
-import {
-  Users, FileText, BarChart3, Database, Award, PieChart,
-  LogOut, Shield, Edit, Upload, Lock, X, Sun, Moon,
-} from "lucide-react";
-import { supabase } from "@/api/supabaseClient";
+import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Input } from "@/components/ui/input";
-import { UploadStatusProvider } from '@/components/contexts/UploadStatusContext';
-import { GameProvider, useGame } from '@/components/contexts/GameContext';
-import { ThemeProvider, useTheme, THEMES } from '@/components/contexts/ThemeContext';
-import UploadStatusIndicator from '@/components/layout/UploadStatusIndicator';
+import { Prediction, Question, Team, ValidationList, User, SystemSettings } from "@/entities/all";
+import { supabase } from '@/api/supabaseClient';
+import * as db from '@/api/entities';
+import { Users, Loader2, ChevronDown, ChevronUp, FileText, Trash2, AlertTriangle, Trophy, Pencil, Save, Download, Award, CheckCircle } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
+import RoundTableReadOnly from "../components/predictions/RoundTableReadOnly";
+import { calculateQuestionScore, calculateLocationBonus } from "@/components/scoring/ScoreService";
+import StandingsTable from "../components/predictions/StandingsTable";
+import { useGame } from "@/components/contexts/GameContext";
 
-// ─── Route access ─────────────────────────────────────────────────────────────
-const ROUTE_ACCESS = {
-  LeaderboardNew: 'public', ViewSubmissions: 'public',
-  AdminResults: 'public',   Statistics: 'public',
-  PredictionForm: 'user',   JoinGame: 'user',
-  AdminImport: 'admin', ManageGameParticipants: 'admin',
-  UserManagement: 'admin',  FormBuilder: 'admin',
-  SystemOverview: 'admin',  CreateGame: 'admin',
-};
+function ParticipantTotalScore({ participantName, gameId }) {
+  const [totalScore, setTotalScore] = useState(null);
+  const [loading, setLoading] = useState(true);
 
-function getPageName(pathname) {
-  const map = {
-    'leaderboard':'LeaderboardNew','view-submissions':'ViewSubmissions',
-    'admin-results':'AdminResults','statistics':'Statistics',
-    'prediction-form':'PredictionForm','join-game':'JoinGame',
-    'admin-import':'AdminImport','manage-game':'ManageGameParticipants',
-    'user-management':'UserManagement','form-builder':'FormBuilder',
-    'system-overview':'SystemOverview','create-game':'CreateGame',
-  };
-  const lower = pathname.toLowerCase();
-  for (const [k,v] of Object.entries(map)) if (lower.includes(k)) return v;
-  return null;
-}
-
-function RouteGuard({ children, currentUser, isAdmin, loading }) {
-  const location = useLocation(), navigate = useNavigate();
-  const { toast } = useToast();
   useEffect(() => {
-    if (loading) return;
-    const page = getPageName(location.pathname);
-    if (!page) return;
-    const req = ROUTE_ACCESS[page] || 'public';
-    if (req === 'admin' && !isAdmin) {
-      toast({ title:"אין הרשאה", description:"דף זה מיועד למנהלים בלבד.", variant:"destructive", duration:3000 });
-      navigate(createPageUrl("LeaderboardNew"), { replace:true });
-    } else if (req === 'user' && !currentUser) {
-      toast({ title:"נדרשת התחברות", description:"יש להתחבר כדי לגשת לדף זה.", variant:"destructive", duration:3000 });
-      navigate('/login', { replace:true });
-    }
-  }, [location.pathname, currentUser, isAdmin, loading]);
-  return <>{children}</>;
-}
+    const loadScore = async () => {
+      if (!participantName || !gameId) { setLoading(false); return; }
+      try {
+        const rankingData = await db.Ranking.filter({ game_id: gameId, participant_name: participantName }, null, 1);
+        if (rankingData && rankingData.length > 0) setTotalScore(rankingData[0].current_score);
+        else setTotalScore(null);
+      } catch (error) {
+        console.error("Failed to load participant score:", error);
+        setTotalScore(null);
+      }
+      setLoading(false);
+    };
+    loadScore();
+  }, [participantName, gameId]);
 
-// ─── Theme Picker ─────────────────────────────────────────────────────────────
-function ThemePicker() {
-  const { themeId, setTheme, allThemes, isDark, setIsDark } = useTheme();
-  const [open, setOpen] = useState(false);
+  if (loading) return <Loader2 className="w-4 h-4 animate-spin" style={{ color: '#06b6d4' }} />;
+  if (totalScore === null) return null;
 
   return (
-    <div className="lm-theme-section">
+    <Badge className="text-white text-sm px-3 py-1 flex items-center gap-1.5" style={{ 
+      background: 'linear-gradient(135deg, #06b6d4 0%, #0ea5e9 100%)',
+      boxShadow: '0 0 10px rgba(6, 182, 212, 0.4)'
+    }}>
+      <Award className="w-4 h-4" />
+      סה"כ: {totalScore} נקודות
+    </Badge>
+  );
+}
 
-      {/* Dark / Light toggle */}
-      <button
-        className="lm-darkmode-btn"
-        onClick={() => setIsDark(!isDark)}
-        title={isDark ? 'עבור למצב בהיר' : 'עבור למצב כהה'}
-      >
-        <span className="lm-darkmode-track">
-          <span className={`lm-darkmode-knob${isDark ? '' : ' light'}`}>
-            {isDark ? <Moon size={11}/> : <Sun size={11}/>}
-          </span>
-        </span>
-        <span className="lm-darkmode-label">
-          {isDark ? 'מצב כהה' : 'מצב בהיר'}
-        </span>
-      </button>
+export default function ViewSubmissions() {
 
-      {/* Theme trigger */}
-      <button className="lm-theme-trigger" onClick={() => setOpen(o => !o)}>
-        <div className="lm-theme-dots">
-          {allThemes[themeId]?.previewColors?.map((c, i) => (
-            <span key={i} style={{ background: c, width:10, height:10, borderRadius:'50%', display:'inline-block' }}/>
-          ))}
+  const [loading, setLoading] = useState(true);
+  const [loadingPredictions, setLoadingPredictions] = useState(false);
+  const [data, setData] = useState({ predictions: [], questions: [], teams: [], validationLists: [], locationPredsByTableQ: {}, locationActualsByTableQ: {} });
+  const [selectedParticipant, setSelectedParticipant] = useState(null);
+  const [openSections, setOpenSections] = useState({});
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [deletingParticipant, setDeletingParticipant] = useState(null);
+  const [participantStats, setParticipantStats] = useState([]);
+  const [currentUser, setCurrentUser] = useState(null);
+
+  const [participantQuestions, setParticipantQuestions] = useState([]);
+  const [roundTables, setRoundTables] = useState([]);
+  const [israeliTable, setIsraeliTable] = useState(null);
+  const [specialTables, setSpecialTables] = useState([]);
+  const [locationTables, setLocationTables] = useState([]);
+  const [playoffWinnersTable, setPlayoffWinnersTable] = useState(null);
+  const [qualifiersTables, setQualifiersTables] = useState([]);
+  const [allParticipants, setAllParticipants] = useState([]);
+
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [editedPredictions, setEditedPredictions] = useState({});
+  const [savingChanges, setSavingChanges] = useState(false);
+
+  const [teamValidationList, setTeamValidationList] = useState([]);
+  const [exporting, setExporting] = useState(false);
+  const [showMissingReport, setShowMissingReport] = useState(false);
+  const [missingPredictions, setMissingPredictions] = useState([]);
+  const [loadingMissing, setLoadingMissing] = useState(false);
+
+  const { toast } = useToast();
+  const { currentGame } = useGame();
+
+  const isAdmin = currentUser?.role === 'admin' || currentUser?.user_metadata?.role === 'admin';
+
+  useEffect(() => {
+    const loadUser = async () => {
+      try {
+        const isAuth = await supabase.auth.getSession().then(r => !!r.data.session);
+        if (isAuth) {
+          const user = await supabase.auth.getUser().then(r => r.data.user);
+          setCurrentUser(user);
+        } else setCurrentUser(null);
+      } catch (error) {
+        console.error("Failed to load current user:", error);
+        setCurrentUser(null);
+      }
+    };
+    loadUser();
+  }, []);
+
+  useEffect(() => {
+    const loadData = async () => {
+      if (!currentGame) { setLoading(false); return; }
+      setLoading(true);
+      try {
+        const questions = await Question.filter({ game_id: currentGame.id }, "-created_at", 10000);
+
+        let uniqueParticipants = [];
+        try {
+          const { data: gpData, error: gpErr } = await supabase
+            .from('game_participants')
+            .select('participant_name')
+            .eq('game_id', currentGame.id)
+            .order('participant_name');
+          if (!gpErr && gpData && gpData.length > 0)
+            uniqueParticipants = gpData.map(r => r.participant_name).filter(Boolean);
+        } catch(e) { console.warn('game_participants fallback', e); }
+
+        if (uniqueParticipants.length === 0) {
+          const PAGE = 1000;
+          let allPredNames = [], from = 0, keepGoing = true, iter = 0;
+          while (keepGoing && iter < 20) {
+            const { data: chunk } = await supabase
+              .from('game_predictions')
+              .select('participant_name')
+              .eq('game_id', currentGame.id)
+              .range(from, from + PAGE - 1);
+            if (!chunk || chunk.length === 0) break;
+            allPredNames = allPredNames.concat(chunk);
+            keepGoing = chunk.length === PAGE;
+            from += PAGE;
+            iter++;
+          }
+          uniqueParticipants = [...new Set(allPredNames.map(p => p.participant_name))].sort();
+        }
+
+        const teamsData = currentGame.teams_data || [];
+        const validationListsData = currentGame.validation_lists || [];
+        const teamsMap = teamsData.reduce((acc, team) => { acc[team.name] = team; return acc; }, {});
+        const listsMap = validationListsData.reduce((acc, list) => { acc[list.list_name] = list.options; return acc; }, {});
+
+        const teamListObj = validationListsData.find(list =>
+          list.list_name?.toLowerCase().includes('קבוצ') &&
+          !list.list_name?.toLowerCase().includes('מוקדמות')
+        );
+        if (teamListObj) setTeamValidationList(teamListObj.options);
+
+        setAllParticipants(uniqueParticipants);
+
+        const rTables = {}, sTables = {};
+        questions.forEach(q => {
+          if (!q.table_id) return;
+          if ((q.table_id === 'T20' || q.table_id === 'T3') && q.question_text && !q.home_team) {
+            let teams = null;
+            if (q.question_text.includes(' נגד ')) teams = q.question_text.split(' נגד ').map(t => t.trim());
+            else if (q.question_text.includes(' - ')) teams = q.question_text.split(' - ').map(t => t.trim());
+            if (teams && teams.length === 2) { q.home_team = teams[0]; q.away_team = teams[1]; }
+          }
+
+          const tableCollection = (q.home_team && q.away_team) ? rTables : sTables;
+          let tableId = q.table_id;
+          let tableDescription = q.table_description;
+
+          if (q.stage_name && q.stage_name.includes('בית')) { tableId = q.stage_name; tableDescription = q.stage_name; }
+          else if (q.table_description?.includes('שאלות מיוחדות') && q.stage_order && q.table_id !== 'T10') {
+            tableId = `custom_order_${q.stage_order}`; tableDescription = q.stage_name || q.table_description;
+          }
+          if (q.table_id === 'T12') tableDescription = 'שלב הליגה - פינת הגאווה הישראלית - 7 בוםםםםםםםםםם !!!';
+          else if (q.table_id === 'T13') tableDescription = 'שלב ראש בראש - "מבול מטאורים של כוכבים (*)"';
+
+          if (!tableCollection[tableId]) {
+            tableCollection[tableId] = {
+              id: tableId,
+              description: tableDescription || (q.home_team && q.away_team ? `מחזור ${tableId.replace('T','')}` : `שאלות ${tableId.replace('T','')}`),
+              questions: []
+            };
+          }
+          tableCollection[tableId].questions.push(q);
+        });
+
+        const t20Table = rTables['T20'];
+        delete rTables['T20'];
+        setIsraeliTable(t20Table || null);
+
+        const participantQns = sTables['T1'] ? sTables['T1'].questions : [];
+        const uniqueParticipantQns = participantQns.reduce((acc, current) => {
+          if (!acc.find(item => item.question_text === current.question_text)) acc.push(current);
+          return acc;
+        }, []);
+        setParticipantQuestions(uniqueParticipantQns);
+        delete sTables['T1'];
+
+        const sortedRoundTables = Object.values(rTables).sort((a,b) => {
+          const aIsGroup = a.id.includes('בית'), bIsGroup = b.id.includes('בית');
+          if (aIsGroup && !bIsGroup) return -1;
+          if (!aIsGroup && bIsGroup) return 1;
+          if (aIsGroup && bIsGroup) return a.id.charAt(a.id.length-1).localeCompare(b.id.charAt(b.id.length-1), 'he');
+          return (parseInt(a.id.replace('T',''))||0) - (parseInt(b.id.replace('T',''))||0);
+        });
+        setRoundTables(sortedRoundTables);
+
+        const locationTableIds = ['T9', 'T14', 'T15', 'T16', 'T17'];
+        const locationGroup = Object.values(sTables)
+          .filter(table => locationTableIds.includes(table.id))
+          .sort((a,b) => (parseInt(a.id.replace('T',''))||0) - (parseInt(b.id.replace('T',''))||0));
+        setLocationTables(locationGroup);
+
+        const t19Table = sTables['T19'];
+        setPlayoffWinnersTable(t19Table || null);
+
+        const allSpecialTables = Object.values(sTables).filter(table => {
+          const desc = table.description?.trim();
+          const isGroup = table.id.includes('בית') || desc?.includes('בית');
+          const stageType = table.questions[0]?.stage_type;
+          return desc && !/^\d+$/.test(desc) && !locationTableIds.includes(table.id) && table.id !== 'T19' && !isGroup && stageType !== 'qualifiers';
+        }).sort((a,b) => {
+          const orderA = a.questions[0]?.stage_order || 999, orderB = b.questions[0]?.stage_order || 999;
+          if (orderA !== orderB) return orderA - orderB;
+          return (parseInt(a.id.replace('T',''))||0) - (parseInt(b.id.replace('T',''))||0);
+        });
+        setSpecialTables(allSpecialTables);
+
+        const t10Special = sTables['T10'];
+        if (t10Special) {
+          const t10Round = Object.values(rTables).find(t => t.id === 'T10');
+          if (t10Round) t10Round.specialQuestions = t10Special.questions;
+        }
+
+        const allQualifiersTables = Object.values(sTables).filter(table => {
+          const stageType = table.questions[0]?.stage_type;
+          return stageType === 'qualifiers';
+        }).sort((a,b) => {
+          const orderA = a.questions[0]?.stage_order || 999, orderB = b.questions[0]?.stage_order || 999;
+          return orderA - orderB;
+        });
+        setQualifiersTables(allQualifiersTables);
+
+        setData(prev => ({ ...prev, questions, teams: teamsMap, validationLists: listsMap }));
+      } catch (error) {
+        console.error("Error loading data:", error);
+      }
+      setLoading(false);
+    };
+    loadData();
+  }, [currentGame]);
+
+  useEffect(() => {
+    const loadParticipantPredictions = async () => {
+      if (!selectedParticipant) {
+        setData(prev => ({ ...prev, predictions: [] }));
+        setEditedPredictions({});
+        setIsEditMode(false);
+        return;
+      }
+      setLoadingPredictions(true);
+      try {
+        const predictions = await Prediction.filter({ participant_name: selectedParticipant }, "-created_at", 5000);
+
+        const locationTableIds = ['T14', 'T15', 'T16', 'T17', 'T19'];
+        const locationPredsByTableQ = {};
+        try {
+          const { data: locQuestions } = await supabase
+            .from('questions')
+            .select('id, table_id, question_id, actual_result')
+            .in('table_id', locationTableIds);
+
+          if (locQuestions && locQuestions.length > 0) {
+            const uuidToKey = {};
+            locQuestions.forEach(q => { uuidToKey[q.id] = `${q.table_id}_${q.question_id}`; });
+
+            predictions.forEach(p => {
+              const key = uuidToKey[p.question_id];
+              if (key) {
+                if (!locationPredsByTableQ[key] || new Date(p.created_at) > new Date(locationPredsByTableQ[key].created_at))
+                  locationPredsByTableQ[key] = { text_prediction: p.text_prediction, created_at: p.created_at };
+              }
+            });
+
+            const locationActualsByTableQ = {};
+            locQuestions.forEach(q => {
+              if (q.actual_result && q.actual_result.trim() !== '' && q.actual_result !== '__CLEAR__')
+                locationActualsByTableQ[`${q.table_id}_${q.question_id}`] = q.actual_result;
+            });
+            setData(prev => ({ ...prev, predictions, locationPredsByTableQ, locationActualsByTableQ }));
+          } else {
+            setData(prev => ({ ...prev, predictions, locationPredsByTableQ, locationActualsByTableQ: {} }));
+          }
+        } catch (e) { console.error('Error building locationPredsByTableQ:', e); }
+
+        setEditedPredictions({});
+        setIsEditMode(false);
+      } catch (error) { console.error("Error loading participant predictions:", error); }
+      setLoadingPredictions(false);
+    };
+    loadParticipantPredictions();
+  }, [selectedParticipant, currentUser]);
+
+  const participantPredictions = useMemo(() => {
+    if (!selectedParticipant) return {};
+    const tempPreds = {};
+    data.predictions.forEach(p => {
+      const existing = tempPreds[p.question_id];
+      if (!existing || new Date(p.created_at) > new Date(existing.created_at))
+        tempPreds[p.question_id] = { text_prediction: p.text_prediction, home_prediction: p.home_prediction, away_prediction: p.away_prediction, created_at: p.created_at };
+    });
+    const predMap = {};
+    for (const [qid, pred] of Object.entries(tempPreds)) {
+      if (pred.home_prediction !== null && pred.home_prediction !== undefined &&
+          pred.away_prediction !== null && pred.away_prediction !== undefined)
+        predMap[qid] = pred.home_prediction + '-' + pred.away_prediction;
+      else predMap[qid] = pred.text_prediction;
+    }
+    return predMap;
+  }, [selectedParticipant, data.predictions]);
+
+  const getPredictionValueForDisplay = useCallback((questionId) => {
+    return editedPredictions[questionId] !== undefined ? editedPredictions[questionId] : participantPredictions[questionId];
+  }, [editedPredictions, participantPredictions]);
+
+  const getLocationPred = useCallback((question) => {
+    const locationTableIds = ['T14', 'T15', 'T16', 'T17', 'T19'];
+    if (!locationTableIds.includes(question.table_id)) return null;
+    const direct = participantPredictions[question.id];
+    if (direct !== undefined && direct !== '') return direct;
+    const key = `${question.table_id}_${question.question_id}`;
+    const fallback = data.locationPredsByTableQ?.[key];
+    return fallback ? (fallback.text_prediction || '') : '';
+  }, [participantPredictions, data.locationPredsByTableQ]);
+
+  const getCombinedPredictionsMap = useCallback(() => ({
+    ...participantPredictions,
+    ...editedPredictions,
+  }), [participantPredictions, editedPredictions]);
+
+  const participantDetails = useMemo(() => {
+    if (!selectedParticipant) return {};
+    const details = { name: selectedParticipant };
+    participantQuestions.forEach(q => {
+      const pred = data.predictions.find(p => p.question_id === q.id);
+      if (pred) details[q.id] = pred.text_prediction;
+    });
+    return details;
+  }, [selectedParticipant, participantQuestions, data.predictions]);
+
+  const loadParticipantStats = async () => {
+    if (!currentGame) return;
+    try {
+      const allPredictions = await Prediction.filter({ game_id: currentGame.id }, null, 10000);
+      const stats = {};
+      allPredictions.forEach(pred => {
+        if (!stats[pred.participant_name]) stats[pred.participant_name] = 0;
+        stats[pred.participant_name]++;
+      });
+      const statsArray = Object.entries(stats).map(([name, count]) => ({ name, predictionsCount: count }))
+        .sort((a, b) => a.name.localeCompare(b.name, 'he'));
+      setParticipantStats(statsArray);
+    } catch (error) {
+      console.error("Error loading participant stats:", error);
+      toast({ title: "שגיאה", description: "טעינת נתוני משתתפים נכשלה.", variant: "destructive" });
+    }
+  };
+
+  const handleDeleteParticipant = async (participantName) => {
+    if (!currentGame) return;
+    if (!window.confirm(`האם אתה בטוח שברצונך למחוק את כל הניחושים של "${participantName}"? פעולה זו אינה הפיכה!`)) return;
+    setDeletingParticipant(participantName);
+    try {
+      const predictionsToDelete = await Prediction.filter({ participant_name: participantName, game_id: currentGame.id }, null, 10000);
+      const BATCH_SIZE = 10, DELAY_MS = 500;
+      for (let i = 0; i < predictionsToDelete.length; i += BATCH_SIZE) {
+        const batch = predictionsToDelete.slice(i, i + BATCH_SIZE);
+        await Promise.all(batch.map(pred => Prediction.delete(pred.id)));
+        toast({ title: "מוחק...", description: `נמחקו ${Math.min(i+BATCH_SIZE, predictionsToDelete.length)}/${predictionsToDelete.length}`, className: "bg-yellow-900/30 border-yellow-500 text-yellow-200" });
+        if (i + BATCH_SIZE < predictionsToDelete.length) await new Promise(resolve => setTimeout(resolve, DELAY_MS));
+      }
+      toast({ title: "נמחק בהצלחה!", description: `נמחקו ${predictionsToDelete.length} ניחושים של ${participantName}.`, className: "bg-green-900/30 border-green-500 text-green-200" });
+      setAllParticipants(prev => prev.filter(p => p !== participantName));
+      if (selectedParticipant === participantName) setSelectedParticipant(null);
+      await loadParticipantStats();
+    } catch (error) {
+      console.error("Error deleting participant:", error);
+      toast({ title: "שגיאה", description: "מחיקת המשתתף נכשלה: " + error.message, variant: "destructive" });
+    } finally { setDeletingParticipant(null); }
+  };
+
+  const handlePredictionEdit = (questionId, newValue) => {
+    if (!isEditMode) return;
+    const originalValue = participantPredictions[questionId] || '';
+    if (newValue === originalValue) {
+      setEditedPredictions(prev => { const n = { ...prev }; delete n[questionId]; return n; });
+    } else {
+      setEditedPredictions(prev => ({ ...prev, [questionId]: newValue }));
+    }
+  };
+
+  const handleSaveChanges = async () => {
+    const changedPredictions = Object.entries(editedPredictions);
+    if (changedPredictions.length === 0) {
+      toast({ title: "אין שינויים", description: "לא בוצעו שינויים בניחושים", className: "bg-blue-900/30 border-blue-500 text-blue-200" });
+      return;
+    }
+    setSavingChanges(true);
+    try {
+      let updatedCount = 0;
+      for (const [questionId, newValue] of changedPredictions) {
+        const prediction = data.predictions.find(p => p.question_id === questionId);
+        if (prediction) { await Prediction.update(prediction.id, { text_prediction: newValue }); updatedCount++; }
+        else { await Prediction.create({ question_id: questionId, participant_name: selectedParticipant, text_prediction: newValue }); updatedCount++; }
+      }
+      toast({ title: "שינויים נשמרו!", description: `עודכנו ${updatedCount} ניחושים עבור ${selectedParticipant}`, className: "bg-green-900/30 border-green-500 text-green-200" });
+      const reloadPreds = await Prediction.filter({ participant_name: selectedParticipant }, "-created_at", 5000);
+      setData(prev => ({ ...prev, predictions: reloadPreds }));
+      setEditedPredictions({});
+      setIsEditMode(false);
+    } catch (error) {
+      console.error("Error saving changes:", error);
+      toast({ title: "שגיאה", description: "שמירת השינויים נכשלה", variant: "destructive" });
+    }
+    setSavingChanges(false);
+  };
+
+  const toggleSection = (sectionId) => setOpenSections(prev => ({...prev, [sectionId]: !prev[sectionId]}));
+
+  const handleMissingReport = async () => {
+    if (!currentGame) return;
+    setLoadingMissing(true);
+    setShowMissingReport(true);
+    try {
+      let allPredictions = [], skip = 0;
+      while (true) {
+        const batch = await Prediction.filter({ game_id: currentGame.id }, null, 10000, skip);
+        allPredictions = [...allPredictions, ...batch];
+        if (batch.length < 10000) break;
+        skip += 10000;
+      }
+      const predictionsByParticipant = {};
+      allPredictions.forEach(pred => {
+        if (!predictionsByParticipant[pred.participant_name]) predictionsByParticipant[pred.participant_name] = {};
+        const existing = predictionsByParticipant[pred.participant_name][pred.question_id];
+        if (!existing || new Date(pred.created_at) > new Date(existing.created_at))
+          predictionsByParticipant[pred.participant_name][pred.question_id] = pred;
+      });
+      const participants = Object.keys(predictionsByParticipant).sort();
+      const missingByQuestion = {};
+      data.questions.forEach(q => {
+        if (q.table_id === 'T1') return;
+        const questionKey = `${q.table_id}.${q.question_id}`;
+        const missingParticipants = [];
+        participants.forEach(participant => {
+          const participantPredictions = predictionsByParticipant[participant];
+          const pred = participantPredictions[q.id];
+          const hasPrediction = pred && pred.text_prediction !== null && pred.text_prediction !== undefined &&
+                                pred.text_prediction.toString().trim() !== '' && pred.text_prediction !== '__CLEAR__';
+          if (!hasPrediction) missingParticipants.push(participant);
+        });
+        if (missingParticipants.length > 0) {
+          missingByQuestion[questionKey] = {
+            table_id: q.table_id, table_description: q.table_description || q.stage_name || '',
+            question_id: q.question_id,
+            question_text: q.question_text || `${(q.home_team || '').replace(/\s*\([^)]+\)\s*$/, '').trim()} נגד ${(q.away_team || '').replace(/\s*\([^)]+\)\s*$/, '').trim()}`,
+            stage_order: q.stage_order || 0,
+            missing_count: missingParticipants.length,
+            missing_participants: missingParticipants.sort((a, b) => a.localeCompare(b, 'he'))
+          };
+        }
+      });
+      const missingArray = Object.entries(missingByQuestion)
+        .map(([key, data]) => ({ ...data, full_id: key }))
+        .sort((a, b) => {
+          if (a.stage_order !== b.stage_order) return a.stage_order - b.stage_order;
+          const tableA = parseInt(a.table_id.replace('T', '')) || 0, tableB = parseInt(b.table_id.replace('T', '')) || 0;
+          if (tableA !== tableB) return tableA - tableB;
+          return (parseFloat(a.question_id) || 0) - (parseFloat(b.question_id) || 0);
+        });
+      setMissingPredictions(missingArray);
+    } catch (error) {
+      console.error("Error generating missing report:", error);
+      toast({ title: "שגיאה", description: "יצירת הדוח נכשלה", variant: "destructive" });
+    }
+    setLoadingMissing(false);
+  };
+
+  const handleExportData = async () => {
+    if (!currentGame) return;
+    setExporting(true);
+    try {
+      let allPredictions = [], skip = 0;
+      while (true) {
+        const batch = await Prediction.filter({ game_id: currentGame.id }, null, 10000, skip);
+        allPredictions = [...allPredictions, ...batch];
+        if (batch.length < 10000) break;
+        skip += 10000;
+      }
+      const questionsMap = {};
+      data.questions.forEach(q => { questionsMap[q.id] = q; });
+      const participants = [...new Set(allPredictions.map(p => p.participant_name))].sort();
+      const headers = ['שלב', 'מס\' שאלה', 'שאלה', 'רשימת אימות', ...participants];
+      const predictionsByQuestion = {};
+      allPredictions.forEach(p => {
+        if (!predictionsByQuestion[p.question_id]) predictionsByQuestion[p.question_id] = {};
+        predictionsByQuestion[p.question_id][p.participant_name] = p.text_prediction || '';
+      });
+      const sortedQuestions = [...data.questions].sort((a, b) => {
+        const stageOrderA = a.stage_order || 0, stageOrderB = b.stage_order || 0;
+        if (stageOrderA !== stageOrderB) return stageOrderA - stageOrderB;
+        return (parseFloat(a.question_id) || 0) - (parseFloat(b.question_id) || 0);
+      });
+      const rows = sortedQuestions.map(q => {
+        const stageName = q.stage_name || q.table_description || q.table_id || '';
+        const questionId = q.question_id || '';
+        const questionText = q.question_text || `${q.home_team || ''} נגד ${q.away_team || ''}`;
+        const validationList = q.validation_list || '';
+        const participantValues = participants.map(p => {
+          let pred = predictionsByQuestion[q.id]?.[p] || '';
+          if (pred && pred.includes('-')) pred = "'" + pred;
+          return pred;
+        });
+        let safeQuestionText = questionText;
+        if (safeQuestionText && safeQuestionText.includes('-')) safeQuestionText = "'" + safeQuestionText;
+        return [stageName, questionId, safeQuestionText, validationList, ...participantValues];
+      });
+      const csvContent = [headers, ...rows].map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
+      const BOM = '\uFEFF';
+      const blob = new Blob([BOM + csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `predictions_export_${currentGame.game_name}_${new Date().toISOString().split('T')[0]}.csv`;
+      link.click();
+      toast({ title: "ייצוא הושלם!", description: `יוצאו ${sortedQuestions.length} שאלות עבור ${participants.length} משתתפים`, className: "bg-green-900/30 border-green-500 text-green-200" });
+    } catch (error) {
+      console.error("Error exporting data:", error);
+      toast({ title: "שגיאה", description: "ייצוא הנתונים נכשל", variant: "destructive" });
+    }
+    setExporting(false);
+  };
+
+  const stripCountry = (name) => name ? name.replace(/\s*\([^)]+\)\s*$/, '').trim() : name;
+
+  const findMatchedTeamName = useCallback((predictionName) => {
+    if (!predictionName || teamValidationList.length === 0) return predictionName;
+    const trimmedPrediction = predictionName.trim();
+    if (teamValidationList.includes(trimmedPrediction)) return trimmedPrediction;
+    const baseName = trimmedPrediction.split('(')[0].trim();
+    const normalizeTeamName = (name) => name
+      .replace(/קרבאך/g, 'קרבאח').replace(/קראבח/g, 'קרבאח').replace(/קראבך/g, 'קרבאח')
+      .replace(/ת"א/g, 'תל אביב').replace(/ת.א/g, 'תל אביב');
+    const normalizedBaseName = normalizeTeamName(baseName);
+    for (const validName of teamValidationList) {
+      const validBaseName = validName.split('(')[0].trim();
+      if (normalizeTeamName(validBaseName) === normalizedBaseName) return validName;
+    }
+    return trimmedPrediction;
+  }, [teamValidationList]);
+
+  const getMaxPossibleScore = (question) => {
+    if (question.table_id === 'T20' && question.home_team && question.away_team) return 6;
+    if (question.possible_points != null && question.possible_points > 0) return question.possible_points;
+    if (question.actual_result != null && question.actual_result !== '') return 10;
+    if (question.table_id === 'T10') return question.possible_points || 10;
+    return 0;
+  };
+
+  const renderReadOnlySelect = (question, originalValue) => {
+    const isTeamsList = question.validation_list?.toLowerCase().includes('קבוצ');
+    const locationTableIds = ['T14', 'T15', 'T16', 'T17', 'T19'];
+    const isLocationQuestion = locationTableIds.includes(question.table_id);
+
+    let displayTeamNameForReadonly = originalValue;
+    if (isTeamsList && originalValue && isLocationQuestion) displayTeamNameForReadonly = findMatchedTeamName(originalValue);
+    const team = isTeamsList ? data.teams[displayTeamNameForReadonly] : null;
+
+    const maxScore = getMaxPossibleScore(question);
+    const hasValue = originalValue && originalValue.trim() !== '';
+    const hasActualResult = question.actual_result && question.actual_result.trim() !== '' && question.actual_result !== '__CLEAR__';
+    const textColor = hasActualResult ? '#06b6d4' : '#f8fafc';
+    const isQuestion11_1 = question.question_id === '11.1';
+    const isQuestion11_2 = question.question_id === '11.2';
+    const boxWidth = isQuestion11_1 ? 'min-w-[60px] max-w-[65px]' : isQuestion11_2 ? 'min-w-[145px] max-w-[150px]' : 'min-w-[135px] max-w-[140px]';
+
+    if (isEditMode && isAdmin && question.validation_list && data.validationLists[question.validation_list]) {
+      const options = data.validationLists[question.validation_list] || [];
+      const editedValue = editedPredictions[question.id];
+      const currentValue = editedValue !== undefined ? editedValue : originalValue;
+      const selectValue = currentValue || "__CLEAR__";
+      let displayCurrentTeamNameForEdit = currentValue;
+      if (isTeamsList && currentValue && isLocationQuestion) displayCurrentTeamNameForEdit = findMatchedTeamName(currentValue);
+      const currentTeam = isTeamsList ? data.teams[displayCurrentTeamNameForEdit] : null;
+      return (
+        <>
+          <Select value={selectValue} onValueChange={(val) => handlePredictionEdit(question.id, val === "__CLEAR__" ? "" : val)}>
+            <SelectTrigger className={`${boxWidth} h-10`} style={{ background: 'rgba(15,23,42,0.6)', border: '1px solid rgba(6,182,212,0.3)', color: '#f8fafc' }}>
+              {currentValue ? (
+                <div className="flex items-center gap-2 w-full">
+                  {currentTeam?.logo_url && <img src={currentTeam.logo_url} alt={displayCurrentTeamNameForEdit} className="w-4 h-4 rounded-full" onError={(e) => e.target.style.display='none'} />}
+                  <span className="truncate">{displayCurrentTeamNameForEdit}</span>
+                </div>
+              ) : <span className="text-slate-400">{isQuestion11_1 || isQuestion11_2 ? "" : "- בחר -"}</span>}
+            </SelectTrigger>
+            <SelectContent style={{ background: '#1e293b', border: '1px solid rgba(6,182,212,0.3)' }}>
+              <SelectItem value="__CLEAR__" className="hover:bg-cyan-700/20" style={{ color: '#94a3b8' }}>-</SelectItem>
+              {options.map(opt => {
+                const cleanOpt = opt.replace(/\s*\([^)]+\)\s*$/, '').trim();
+                const optTeam = isTeamsList ? (data.teams[opt] || data.teams[cleanOpt]) : null;
+                return (
+                  <SelectItem key={opt} value={opt} className="hover:bg-cyan-700/20" style={{ color: '#f8fafc' }}>
+                    <div className="flex items-center gap-2">
+                      {optTeam?.logo_url && <img src={optTeam.logo_url} alt={cleanOpt} className="w-4 h-4 rounded-full" onError={(e) => e.target.style.display='none'} />}
+                      <span>{cleanOpt}</span>
+                    </div>
+                  </SelectItem>
+                );
+              })}
+            </SelectContent>
+          </Select>
+          <div className="w-12"></div>
+        </>
+      );
+    }
+
+    if (isEditMode && isAdmin && (!question.validation_list || !data.validationLists[question.validation_list])) {
+      const valueForInput = editedPredictions[question.id] !== undefined ? editedPredictions[question.id] : originalValue;
+      return (
+        <div className="flex items-center gap-2">
+          <input type="text" value={valueForInput} onChange={(e) => handlePredictionEdit(question.id, e.target.value)}
+            className="rounded-md px-3 py-2 min-w-[120px] h-10"
+            style={{ background: 'rgba(15,23,42,0.6)', border: '1px solid rgba(6,182,212,0.3)', color: '#f8fafc' }} />
+          <Badge className="bg-slate-600 text-slate-300 text-xs px-1.5 py-0.5 min-w-[45px] justify-center">?/{maxScore}</Badge>
         </div>
-        <span className="lm-theme-name-current">
-          {allThemes[themeId]?.emoji} {allThemes[themeId]?.nameHe}
-        </span>
-        <span className="lm-theme-chevron">{open ? '▲' : '▼'}</span>
-      </button>
+      );
+    }
 
-      {/* Theme panel */}
-      {open && (
-        <div className="lm-theme-panel">
-          {Object.values(allThemes).map(t => {
-            const active = themeId === t.id;
-            const palette = isDark ? t.dark : t.light;
-            return (
-              <button
-                key={t.id}
-                onClick={() => { setTheme(t.id); setOpen(false); }}
-                className={`lm-theme-card${active ? ' active' : ''}`}
-                style={active ? {
-                  border: `1px solid ${palette?.tp || 'var(--tp)'}`,
-                  background: `rgba(${palette?.r||0},${palette?.g||0},${palette?.b||0},0.12)`,
-                } : {}}
-              >
-                {/* Color preview strip */}
-                <div className="lm-theme-strip">
-                  {t.previewColors?.map((c, i) => (
-                    <span key={i} style={{ flex:1, background:c, height:'100%' }}/>
+    if (!hasValue) {
+      return (
+        <>
+          <div className={`rounded-md px-2 py-2 ${boxWidth} flex items-center gap-1`} style={{ background: 'rgba(15,23,42,0.6)', border: '1px solid rgba(6,182,212,0.2)' }}>
+            <span style={{ color: '#94a3b8', fontSize: isQuestion11_1 ? '0.65rem' : '0.875rem' }}>-</span>
+          </div>
+          <div className="w-12"></div>
+        </>
+      );
+    }
+
+    const stripParens = (s) => s ? s.replace(/\s*\([^)]*\)/g, '').replace(/\s+/g, ' ').trim() : '';
+    const isLocQ = ['T14', 'T15', 'T16', 'T17', 'T19'].includes(question.table_id);
+
+    let score;
+    if (isLocQ) {
+      const locKey = `${question.table_id}_${question.question_id}`;
+      const crossGameActual = data.locationActualsByTableQ?.[locKey];
+      const effectiveActual = crossGameActual || question.actual_result || '';
+      if (!effectiveActual || effectiveActual === '__CLEAR__' || !originalValue) {
+        score = null;
+      } else {
+        const predClean = stripParens(originalValue).trim().toLowerCase();
+        const allActualsInTable = Object.entries(data.locationActualsByTableQ || {})
+          .filter(([k]) => k.startsWith(question.table_id + '_'))
+          .map(([, v]) => stripParens(v).trim().toLowerCase()).filter(Boolean);
+        score = allActualsInTable.includes(predClean) ? (question.possible_points || 0) : 0;
+      }
+    } else {
+      // ✅ מעביר את כל שאלות הטבלה — נדרש עבור T4/T5/T6 (isAdvancingTeamSlot)
+      const questionsInTable = data.questions.filter(q => q.table_id === question.table_id);
+      score = calculateQuestionScore(question, originalValue, questionsInTable);
+    }
+
+    let badgeColor = 'bg-slate-600 text-slate-300';
+    if (score !== null) {
+      if (score === maxScore && maxScore > 0) badgeColor = 'bg-green-700 text-green-100';
+      else if (score === 0) badgeColor = 'bg-red-700 text-red-100';
+      else if (maxScore > 0 && score >= maxScore * 0.7) badgeColor = 'bg-blue-700 text-blue-100';
+      else if (score > 0) badgeColor = 'bg-yellow-500 text-white';
+    }
+
+    return (
+      <>
+        <div className={`rounded-md px-2 py-2 ${boxWidth} flex items-center gap-1`} style={{
+          background: hasActualResult ? 'rgba(6,182,212,0.2)' : 'rgba(15,23,42,0.6)',
+          border: hasActualResult ? '1px solid #06b6d4' : '1px solid rgba(6,182,212,0.2)',
+          boxShadow: hasActualResult ? '0 0 10px rgba(6,182,212,0.4)' : 'none'
+        }}>
+          {team?.logo_url && <img src={team.logo_url} alt={displayTeamNameForReadonly} className="w-4 h-4 rounded-full flex-shrink-0" onError={(e) => e.target.style.display='none'} />}
+          <span style={{ color: textColor, fontSize: isQuestion11_1 ? '0.65rem' : '0.875rem', fontWeight: hasActualResult ? '700' : 'normal' }}>{displayTeamNameForReadonly}</span>
+        </div>
+        {score !== null ? (
+          <Badge className={`${badgeColor} text-xs font-bold px-1.5 py-0.5 min-w-[45px] justify-center`}>{score}/{maxScore}</Badge>
+        ) : (
+          <Badge className="bg-slate-600 text-slate-300 text-xs px-1.5 py-0.5 min-w-[45px] justify-center">?/{maxScore}</Badge>
+        )}
+      </>
+    );
+  };
+
+  const renderT10Questions = (table) => {
+    const questions = table.questions;
+    const grouped = {};
+    questions.forEach(q => {
+      const mainId = Math.floor(parseFloat(q.question_id));
+      if (!grouped[mainId]) grouped[mainId] = { main: null, subs: [] };
+      if (q.question_id.includes('.')) grouped[mainId].subs.push(q);
+      else grouped[mainId].main = q;
+    });
+    const sortedMainIds = Object.keys(grouped).sort((a, b) => Number(a) - Number(b));
+
+    const renderTeamPrediction = (questionId, originalValue) => {
+      const valueToDisplay = editedPredictions[questionId] !== undefined ? editedPredictions[questionId] : originalValue;
+      if (!valueToDisplay || valueToDisplay.trim() === '') {
+        return (
+          <>
+            <div className="rounded-md px-2 py-2 min-w-[135px] max-w-[140px] flex items-center gap-1" style={{ background: 'rgba(15,23,42,0.6)', border: '1px solid rgba(6,182,212,0.2)' }}>
+              <span style={{ color: '#94a3b8', fontSize: '0.875rem' }}>-</span>
+            </div>
+            <div className="w-12"></div>
+          </>
+        );
+      }
+      const matchedName = findMatchedTeamName(valueToDisplay);
+      const team = data.teams[matchedName];
+      const q = questions.find(question => question.id === questionId);
+      const hasActualResult = q?.actual_result && q.actual_result.trim() !== '' && q.actual_result !== '__CLEAR__';
+      const textColor = hasActualResult ? '#06b6d4' : '#f8fafc';
+      return (
+        <>
+          <div className="rounded-md px-2 py-2 min-w-[135px] max-w-[140px] flex items-center gap-1" style={{
+            background: hasActualResult ? 'rgba(6,182,212,0.2)' : 'rgba(15,23,42,0.6)',
+            border: hasActualResult ? '1px solid #06b6d4' : '1px solid rgba(6,182,212,0.2)',
+            boxShadow: hasActualResult ? '0 0 10px rgba(6,182,212,0.4)' : 'none'
+          }}>
+            {team?.logo_url && <img src={team.logo_url} alt={matchedName} className="w-4 h-4 rounded-full flex-shrink-0" onError={(e) => e.target.style.display='none'} />}
+            <span style={{ color: textColor, fontSize: '0.875rem', fontWeight: hasActualResult ? '700' : 'normal' }}>{matchedName}</span>
+          </div>
+          <Badge className="bg-slate-600 text-slate-300 text-xs px-1.5 py-0.5 min-w-[45px] justify-center">?/10</Badge>
+        </>
+      );
+    };
+
+    return (
+      <Card className="bg-slate-800/40 border-slate-700 shadow-lg shadow-slate-900/20">
+        <CardHeader className="py-3"><CardTitle className="text-cyan-400">{table.description}</CardTitle></CardHeader>
+        <CardContent className="p-3">
+          <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+          <div className="space-y-3">
+            {sortedMainIds.map(mainId => {
+              const { main, subs } = grouped[mainId];
+              if (!main) return null;
+              const sortedSubs = [...subs].sort((a, b) => parseFloat(a.question_id) - parseFloat(b.question_id));
+              const isTeamQuestion = !!(main.home_team && main.away_team);
+              const mainValue = participantPredictions[main.id] || '';
+              const getSubValue = (sub) => {
+                const subVal = participantPredictions[sub.id] || '';
+                if (sub.question_id === '1.1' && mainValue !== 'אחר') return '';
+                return subVal;
+              };
+
+              if (sortedSubs.length === 0) {
+                return (
+                  <div key={main.id} style={{ display:'grid', gridTemplateColumns:'50px 1fr 160px 50px', gap:'8px', alignItems:'center', padding:'8px 12px', borderRadius:'6px' }} className="bg-slate-700/20 border border-slate-600/30">
+                    <Badge variant="outline" className="border-cyan-400 text-cyan-200 justify-center text-xs h-6 w-full">{main.question_id}</Badge>
+                    <span className="text-right font-medium text-sm text-blue-100 truncate">{main.question_text}</span>
+                    <div className="contents">{renderReadOnlySelect(main, participantPredictions[main.id] || "")}</div>
+                  </div>
+                );
+              }
+
+              if (sortedSubs.length === 1) {
+                return (
+                  <div key={main.id} style={{ display:'grid', gridTemplateColumns:'50px minmax(250px, 2fr) 160px 50px 1fr 50px minmax(180px, 1.5fr) 160px 50px', gap:'8px', alignItems:'center', padding:'8px 12px', borderRadius:'6px' }} className="bg-slate-700/20 border border-slate-600/30">
+                    <Badge variant="outline" className="border-cyan-400 text-cyan-200 justify-center text-xs h-6 w-full">{main.question_id}</Badge>
+                    <span className="text-right font-medium text-sm text-blue-100">{main.question_text}</span>
+                    <div className="contents">{isTeamQuestion ? renderTeamPrediction(main.id, participantPredictions[main.id] || "") : renderReadOnlySelect(main, participantPredictions[main.id] || "")}</div>
+                    <div></div>
+                    <Badge variant="outline" className="border-cyan-400 text-cyan-200 justify-center text-xs h-6 w-full">{sortedSubs[0].question_id}</Badge>
+                    <span className="text-right font-medium text-sm text-blue-100">{sortedSubs[0].question_text}</span>
+                    <div className="contents">{isTeamQuestion ? renderTeamPrediction(sortedSubs[0].id, getSubValue(sortedSubs[0])) : renderReadOnlySelect(sortedSubs[0], getSubValue(sortedSubs[0]))}</div>
+                  </div>
+                );
+              }
+
+              return (
+                <div key={main.id} style={{ display:'grid', gridTemplateColumns:'45px 1fr 140px 45px 45px 1fr 140px 45px 45px 1fr 140px 45px', gap:'6px', alignItems:'center', padding:'8px 12px', borderRadius:'6px' }} className="bg-slate-700/20 border border-slate-600/30">
+                  <Badge variant="outline" className="border-cyan-400 text-cyan-200 justify-center text-xs h-6 w-full">{main.question_id}</Badge>
+                  <span className="text-right font-medium text-sm text-blue-100 truncate">{main.question_text}</span>
+                  <div className="contents">{isTeamQuestion ? renderTeamPrediction(main.id, participantPredictions[main.id] || "") : renderReadOnlySelect(main, participantPredictions[main.id] || "")}</div>
+                  {sortedSubs.map(sub => (
+                    <React.Fragment key={sub.id}>
+                      <Badge variant="outline" className="border-cyan-400 text-cyan-200 justify-center text-xs h-6 w-full">{sub.question_id}</Badge>
+                      <span className="text-right font-medium text-sm text-blue-100 truncate">{sub.question_text}</span>
+                      <div className="contents">{isTeamQuestion ? renderTeamPrediction(sub.id, getSubValue(sub)) : renderReadOnlySelect(sub, getSubValue(sub))}</div>
+                    </React.Fragment>
                   ))}
                 </div>
-                {/* Info */}
-                <div className="lm-theme-card-info">
-                  <span className="lm-theme-card-emoji">{t.emoji}</span>
-                  <span className="lm-theme-card-name" style={{ fontFamily: t.font }}>
-                    {t.nameHe}
+              );
+            })}
+          </div>{/* end space-y-3 */}
+          </div>{/* end overflow-x wrapper */}
+        </CardContent>
+      </Card>
+    );
+  };
+
+  const ADVANCING_CONFIG_VS = { T4: { count: 8, bonus: 16 }, T5: { count: 4, bonus: 12 }, T6: { count: 2, bonus: 6 } };
+
+  // ✅ נרמול שמות — הסרת "(מדינה)"
+  const normTeam = (name) =>
+    (name || '').replace(/\s*\([^)]+\)\s*$/, '').replace(/\s+/g, ' ').trim().toLowerCase();
+
+  // ✅ בניית קבוצות עולות ומודחות
+  const buildAdvancingAndEliminated = (slots, tableId) => {
+    // עולות — מתוצאות האמת של חריצי הטבלה
+    const advancingSet = new Set(
+      slots
+        .filter(q => q.actual_result && q.actual_result !== '__CLEAR__')
+        .map(q => normTeam(q.actual_result))
+    );
+    // מודחות — הצד שלא עלה מכל זוג ב-T3
+    const t3Qs = data.questions.filter(q => q.table_id === 'T3' && q.home_team && q.away_team);
+    const eliminatedSet = new Set();
+    advancingSet.forEach(adv => {
+      t3Qs.forEach(q => {
+        const h = normTeam(q.home_team), a = normTeam(q.away_team);
+        if (h === adv && !advancingSet.has(a)) eliminatedSet.add(a);
+        if (a === adv && !advancingSet.has(h)) eliminatedSet.add(h);
+      });
+    });
+    return { advancingSet, eliminatedSet };
+  };
+
+  const renderQualifiersTable = (table) => {
+    const cfg = ADVANCING_CONFIG_VS[table.id];
+    const advCount = cfg ? cfg.count : 999;
+    const seenIds = new Set();
+    const slots = (table.questions || [])
+      .filter(q => {
+        const n = parseFloat(q.question_id);
+        if (!Number.isInteger(n) || n < 1 || n > advCount) return false;
+        if (seenIds.has(n)) return false;
+        seenIds.add(n);
+        return true;
+      })
+      .sort((a, b) => parseFloat(a.question_id) - parseFloat(b.question_id));
+
+    const { advancingSet, eliminatedSet } = buildAdvancingAndEliminated(slots, table.id);
+    const hasAnyResult = advancingSet.size > 0;
+    const allResultsIn = slots.length > 0 && slots.every(q => q.actual_result && q.actual_result !== '__CLEAR__');
+    const pointsPerSlot = slots[0]?.possible_points || 0;
+    const totalPossible = slots.length * pointsPerSlot;
+
+    // בונוס שלב
+    let stageBonusEarned = false;
+    if (selectedParticipant && allResultsIn && cfg) {
+      const pMap = getCombinedPredictionsMap();
+      const guessedSet = new Set(
+        slots.map(q => normTeam(pMap[q.id] ?? pMap[q.question_id] ?? '')).filter(Boolean)
+      );
+      stageBonusEarned = [...advancingSet].every(t => guessedSet.has(t));
+    }
+
+    // ✅ ניחושים — לפי זהות קבוצה, ללא מיקום
+    const pMap = getCombinedPredictionsMap();
+    const allPreds = slots.map(q => {
+      const raw = pMap[q.id] ?? pMap[q.question_id] ?? '';
+      return (typeof raw === 'string' ? raw : (raw?.text_prediction || '')).trim();
+    });
+
+    return (
+      <div style={{ background: 'rgba(30,41,59,0.6)', border: '1px solid var(--tp-20)', borderRadius: '12px', padding: '16px', backdropFilter: 'blur(10px)' }}>
+        <h3 className="text-right font-bold text-base mb-3" style={{ color: '#f97316' }}>📋 {table.description}</h3>
+
+        {/* בונוס שלב */}
+        {cfg && (
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'8px 14px', borderRadius:'8px', marginBottom:'10px', background: stageBonusEarned ? 'rgba(16,185,129,0.12)' : 'rgba(234,179,8,0.08)', border: `1px solid ${stageBonusEarned ? 'rgba(16,185,129,0.45)' : 'rgba(234,179,8,0.35)'}` }}>
+            <div className="flex items-center gap-2">
+              <span style={{ fontSize: '1rem' }}>🏆</span>
+              <div>
+                <p style={{ fontSize: '0.78rem', fontWeight: '700', color: stageBonusEarned ? '#6ee7b7' : '#fde68a' }}>{stageBonusEarned ? '✅ בונוס שלב!' : '🏆 בונוס שלב'}</p>
+                <p style={{ fontSize: '0.70rem', color: '#94a3b8' }}>{stageBonusEarned ? `כל ${advCount} הקבוצות נכונות!` : allResultsIn ? `פגיעה בכל ${advCount} → +${cfg.bonus} נק'` : `ממתין לתוצאות...`}</p>
+              </div>
+            </div>
+            <Badge style={{ fontSize:'0.95rem', fontWeight:'800', padding:'4px 12px', background: stageBonusEarned ? '#059669' : allResultsIn ? '#dc2626' : 'rgba(100,116,139,0.3)', color:'#fff', border: stageBonusEarned ? '1px solid #10b981' : allResultsIn ? '1px solid #ef4444' : '1px solid rgba(100,116,139,0.4)' }}>
+              {stageBonusEarned ? `+${cfg.bonus}` : allResultsIn ? `0/${cfg.bonus}` : `?/${cfg.bonus}`}
+            </Badge>
+          </div>
+        )}
+
+        <div style={{ textAlign:'left', marginBottom:'10px' }}>
+          <span style={{ fontSize:'0.72rem', color:'#94a3b8' }}>
+            {pointsPerSlot} נק' לכל קבוצה נכונה • סה"כ אפשרי: {totalPossible} נק'{cfg ? ` + בונוס ${cfg.bonus} נק'` : ''}
+          </span>
+        </div>
+
+        {/* ✅ ניחושים לפי זהות — 2 עמודות */}
+        <div className="grid grid-cols-2 gap-2">
+          {allPreds.map((pred, i) => {
+            const norm = normTeam(pred);
+            const isAdv  = pred && advancingSet.has(norm);
+            const isElim = pred && !isAdv && eliminatedSet.has(norm);
+            const isGray = !pred || (!isAdv && !isElim);
+
+            const bg     = isAdv ? 'rgba(16,185,129,0.12)' : isElim ? 'rgba(239,68,68,0.10)' : 'rgba(15,23,42,0.4)';
+            const border = isAdv ? 'rgba(16,185,129,0.35)'  : isElim ? 'rgba(239,68,68,0.30)'  : 'rgba(71,85,105,0.30)';
+            const color  = isAdv ? '#34d399'                 : isElim ? '#f87171'                : '#94a3b8';
+            const icon   = isAdv ? '✅'                       : isElim ? '❌'                     : '❓';
+            const scoreText = !pred ? `?/${pointsPerSlot}` : hasAnyResult ? (isAdv ? `+${pointsPerSlot}` : isElim ? '0' : `?/${pointsPerSlot}`) : `?/${pointsPerSlot}`;
+            const scoreBg   = isAdv ? '#16a34a' : isElim ? '#dc2626' : 'rgba(100,116,139,0.25)';
+
+            return (
+              <div key={i} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'8px 10px', borderRadius:'8px', background: bg, border:`1px solid ${border}`, gap:'8px' }}>
+                <div style={{ display:'flex', alignItems:'center', gap:'6px', minWidth:0 }}>
+                  <span style={{ fontSize:'0.9rem', flexShrink:0 }}>{pred ? icon : '—'}</span>
+                  <span style={{ fontSize:'0.84rem', fontWeight: isAdv ? 700 : 500, color, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                    {pred || <span style={{ color:'#475569' }}>לא מולא</span>}
                   </span>
-                  {active && <span className="lm-theme-check" style={{ color: palette?.tp || 'var(--tp)' }}>✓</span>}
                 </div>
-              </button>
+                <Badge style={{ fontSize:'0.75rem', fontWeight:700, background: scoreBg, color:'white', border:'none', minWidth:'44px', textAlign:'center', padding:'3px 8px', flexShrink:0 }}>
+                  {scoreText}
+                </Badge>
+              </div>
             );
           })}
         </div>
+      </div>
+    );
+  };
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // renderSpecialQuestions — THE FIX IS HERE
+  // כל <div className="flex items-center gap-2"> שעוטף renderReadOnlySelect
+  // הוחלף ב-<div className="contents"> כדי שהילדים יתפסו עמודות grid נפרדות
+  // ─────────────────────────────────────────────────────────────────────────────
+  const renderSpecialQuestions = (table) => {
+    const isT10 = table.description.includes('T10') || table.id === 'T10' || table.id.includes('custom_order');
+    if (isT10) return renderT10Questions(table);
+
+    const grouped = {};
+    table.questions.forEach(q => {
+      const mainId = Math.floor(parseFloat(q.question_id));
+      if (!grouped[mainId]) grouped[mainId] = { main: null, subs: [] };
+      if (q.question_id.includes('.')) grouped[mainId].subs.push(q);
+      else grouped[mainId].main = q;
+    });
+    const sortedMainIds = Object.keys(grouped).sort((a, b) => Number(a) - Number(b));
+
+    let bonusInfo = null;
+    const isLocationTable = ['T14', 'T15', 'T16', 'T17', 'T19'].includes(table.id);
+    if (selectedParticipant) {
+      const predForBonus = {};
+      table.questions.forEach(q => {
+        const editedValue = editedPredictions[q.id];
+        if (editedValue !== undefined) predForBonus[q.id] = editedValue;
+        else if (isLocationTable) predForBonus[q.id] = getLocationPred(q) || "";
+        else predForBonus[q.id] = participantPredictions[q.id] || "";
+      });
+      const enrichedQuestions = isLocationTable ? table.questions.map(q => {
+        const locKey = `${q.table_id}_${q.question_id}`;
+        const crossActual = data.locationActualsByTableQ?.[locKey];
+        return crossActual ? { ...q, actual_result: crossActual } : q;
+      }) : table.questions;
+      bonusInfo = calculateLocationBonus(table.id, enrichedQuestions, predForBonus);
+    }
+
+    let teamsBonusPotential = 0, orderBonusPotential = 0;
+    if (isLocationTable) {
+      if (table.id === 'T17') { teamsBonusPotential = 30; orderBonusPotential = 50; }
+      else if (table.id === 'T19') { teamsBonusPotential = 20; orderBonusPotential = 0; }
+      else { teamsBonusPotential = 20; orderBonusPotential = 40; }
+    }
+
+    return (
+      <Card style={{ background: 'rgba(30,41,59,0.6)', border: '1px solid rgba(6,182,212,0.2)', backdropFilter: 'blur(10px)' }}>
+        <CardHeader className="py-3"><CardTitle style={{ color: '#06b6d4' }}>{table.description}</CardTitle></CardHeader>
+        <CardContent className="p-3">
+          <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+          <div className="space-y-2">
+            {sortedMainIds.map(mainId => {
+              const { main, subs } = grouped[mainId];
+              if (!main) return null;
+              const sortedSubs = [...subs].sort((a, b) => parseFloat(a.question_id) - parseFloat(b.question_id));
+              const isLocTable = ['T14', 'T15', 'T16', 'T17', 'T19'].includes(table.id);
+              const mainOriginalValue = editedPredictions[main.id] !== undefined
+                ? editedPredictions[main.id]
+                : (isLocTable ? (getLocationPred(main) || '') : (participantPredictions[main.id] || ''));
+
+              // ── 0 תתי-שאלות — 4 עמודות ──────────────────────────────────
+              if (sortedSubs.length === 0) {
+                return (
+                  <div key={main.id} style={{ display:'grid', gridTemplateColumns:'50px 1fr 160px 50px', gap:'8px', alignItems:'center', padding:'8px 12px', borderRadius:'6px', background:'rgba(15,23,42,0.4)', border:'1px solid rgba(6,182,212,0.1)' }}>
+                    <Badge variant="outline" className="justify-center text-xs h-6 w-full" style={{ borderColor:'#06b6d4', color:'#06b6d4' }}>{main.question_id}</Badge>
+                    <span className="text-right font-medium text-sm truncate" style={{ color:'#f8fafc' }}>{main.question_text}</span>
+                    {/* ✅ FIX: contents — שני הילדים תופסים עמודות 3+4 */}
+                    <div className="contents">{renderReadOnlySelect(main, mainOriginalValue)}</div>
+                  </div>
+                );
+              }
+
+              // ── 1 תת-שאלה — 9 עמודות ────────────────────────────────────
+              if (sortedSubs.length === 1) {
+                const subOriginalValue = editedPredictions[sortedSubs[0].id] !== undefined
+                  ? editedPredictions[sortedSubs[0].id]
+                  : (isLocTable ? (getLocationPred(sortedSubs[0]) || '') : (participantPredictions[sortedSubs[0].id] || ''));
+                return (
+                  <div key={main.id} style={{ display:'grid', gridTemplateColumns:'50px minmax(250px, 2fr) 160px 50px 1fr 50px minmax(180px, 1.5fr) 160px 50px', gap:'8px', alignItems:'center', padding:'8px 12px', borderRadius:'6px', background:'rgba(15,23,42,0.4)', border:'1px solid rgba(6,182,212,0.1)' }}>
+                    <Badge variant="outline" className="justify-center text-xs h-6 w-full" style={{ borderColor:'#06b6d4', color:'#06b6d4' }}>{main.question_id}</Badge>
+                    <span className="text-right font-medium text-sm text-blue-100">{main.question_text}</span>
+                    {/* ✅ FIX: עמודות 3+4 */}
+                    <div className="contents">{renderReadOnlySelect(main, mainOriginalValue)}</div>
+                    <div></div>
+                    <Badge variant="outline" className="justify-center text-xs h-6 w-full" style={{ borderColor:'#06b6d4', color:'#06b6d4' }}>{sortedSubs[0].question_id}</Badge>
+                    <span className="text-right font-medium text-sm text-blue-100">{sortedSubs[0].question_text}</span>
+                    {/* ✅ FIX: עמודות 8+9 */}
+                    <div className="contents">{renderReadOnlySelect(sortedSubs[0], subOriginalValue)}</div>
+                  </div>
+                );
+              }
+
+              // ── 2 תתי-שאלות — 12 עמודות ─────────────────────────────────
+              return (
+                <div key={main.id} style={{ display:'grid', gridTemplateColumns:'45px 1fr 140px 45px 45px 1fr 140px 45px 45px 1fr 140px 45px', gap:'6px', alignItems:'center', padding:'8px 12px', borderRadius:'6px', background:'rgba(15,23,42,0.4)', border:'1px solid rgba(6,182,212,0.1)' }}>
+                  <Badge variant="outline" className="justify-center text-xs h-6 w-full" style={{ borderColor:'#06b6d4', color:'#06b6d4' }}>{main.question_id}</Badge>
+                  <span className="text-right font-medium text-sm truncate" style={{ color:'#f8fafc' }}>{main.question_text}</span>
+                  {/* ✅ FIX: עמודות 3+4 */}
+                  <div className="contents">{renderReadOnlySelect(main, mainOriginalValue)}</div>
+                  {sortedSubs.map(sub => {
+                    const subOriginalValue = editedPredictions[sub.id] !== undefined
+                      ? editedPredictions[sub.id]
+                      : (isLocTable ? (getLocationPred(sub) || '') : (participantPredictions[sub.id] || ''));
+                    return (
+                      <React.Fragment key={sub.id}>
+                        <Badge variant="outline" className="justify-center text-xs h-6 w-full" style={{ borderColor:'#06b6d4', color:'#06b6d4' }}>{sub.question_id}</Badge>
+                        <span className="text-right font-medium text-sm truncate" style={{ color:'#f8fafc' }}>{sub.question_text}</span>
+                        {/* ✅ FIX: עמודות נפרדות לכל תת-שאלה */}
+                        <div className="contents">{renderReadOnlySelect(sub, subOriginalValue)}</div>
+                      </React.Fragment>
+                    );
+                  })}
+                </div>
+              );
+            })}
+          </div>{/* end space-y-2 */}
+          </div>{/* end overflow-x wrapper */}
+
+          {isLocationTable && selectedParticipant && (
+            <div className="mt-4 grid grid-cols-2 gap-3">
+              <div className={`p-3 rounded-lg border ${bonusInfo?.allCorrect ? 'bg-gradient-to-r from-green-900/40 to-emerald-900/40 border-green-600/50' : bonusInfo !== null ? 'bg-gradient-to-r from-red-900/40 to-red-800/40 border-red-600/50' : 'bg-gradient-to-r from-slate-800/40 to-slate-700/40 border-slate-600/50'}`}>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Trophy className={`w-5 h-5 ${bonusInfo?.allCorrect ? 'text-green-400' : bonusInfo !== null ? 'text-red-400' : 'text-slate-400'}`} />
+                    <div>
+                      <p className={`font-bold text-sm ${bonusInfo?.allCorrect ? 'text-green-200' : bonusInfo !== null ? 'text-red-200' : 'text-slate-300'}`}>{bonusInfo?.allCorrect ? '✅' : bonusInfo !== null ? '❌' : '⏳'} בונוס עולות</p>
+                      <p className={`text-xs ${bonusInfo?.allCorrect ? 'text-green-300' : bonusInfo !== null ? 'text-red-300' : 'text-slate-400'}`}>{bonusInfo?.allCorrect ? 'כל הקבוצות נכונות!' : bonusInfo !== null ? 'לא כל הקבוצות' : 'ממתין לתוצאות...'}</p>
+                    </div>
+                  </div>
+                  <Badge className={`text-lg font-bold px-3 py-1 ${bonusInfo?.allCorrect ? 'bg-green-600 text-white' : bonusInfo !== null ? 'bg-red-600 text-white' : 'bg-slate-600 text-slate-300'}`}>
+                    {bonusInfo?.allCorrect ? `+${bonusInfo.teamsBonus}` : bonusInfo !== null ? '0' : '?'}/{teamsBonusPotential}
+                  </Badge>
+                </div>
+              </div>
+              {table.id !== 'T19' && (
+                <div className={`p-3 rounded-lg border ${bonusInfo?.perfectOrder ? 'bg-gradient-to-r from-yellow-900/40 to-orange-900/40 border-yellow-600/50' : bonusInfo !== null ? 'bg-gradient-to-r from-red-900/40 to-red-800/40 border-red-600/50' : 'bg-gradient-to-r from-slate-800/40 to-slate-700/40 border-slate-600/50'}`}>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Trophy className={`w-5 h-5 ${bonusInfo?.perfectOrder ? 'text-yellow-400' : bonusInfo !== null ? 'text-red-400' : 'text-slate-400'}`} />
+                      <div>
+                        <p className={`font-bold text-sm ${bonusInfo?.perfectOrder ? 'text-yellow-200' : bonusInfo !== null ? 'text-red-200' : 'text-slate-300'}`}>{bonusInfo?.perfectOrder ? '✨' : bonusInfo !== null ? '❌' : '⏳'} בונוס מיקום</p>
+                        <p className={`text-xs ${bonusInfo?.perfectOrder ? 'text-yellow-300' : bonusInfo !== null ? 'text-red-300' : 'text-slate-400'}`}>{bonusInfo?.perfectOrder ? 'סדר מושלם!' : bonusInfo?.allCorrect ? 'לא בסדר המדויק' : bonusInfo !== null ? 'לא כל הקבוצות' : 'ממתין לתוצאות...'}</p>
+                      </div>
+                    </div>
+                    <Badge className={`text-lg font-bold px-3 py-1 ${bonusInfo?.perfectOrder ? 'bg-yellow-600 text-white' : bonusInfo !== null ? 'bg-red-600 text-white' : 'bg-slate-600 text-slate-300'}`}>
+                      {bonusInfo?.perfectOrder ? `+${bonusInfo.orderBonus}` : bonusInfo !== null ? '0' : '?'}/{orderBonusPotential}
+                    </Badge>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    );
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-screen" style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%)' }}>
+        <Loader2 className="w-8 h-8 animate-spin" style={{ color: '#06b6d4' }} />
+        <span className="ml-3" style={{ color: '#06b6d4' }}>טוען נתונים...</span>
+      </div>
+    );
+  }
+
+  const hasChanges = Object.keys(editedPredictions).length > 0;
+  const TEXT_LENGTH_THRESHOLD = 18;
+
+  const renderStageChips = (allButtonsList, openSectionsMap, toggleSectionFn) => {
+    // ✅ גלילה אופקית — לא wrap — לא תופס חצי מסך
+    const allChips = allButtonsList.map(button => {
+      const active = openSectionsMap[button.sectionKey];
+      const type = button.stageType || 'special';
+      const colors = {
+        playoff:    { color:'#3b82f6', bg:'rgba(59,130,246,0.15)',  border:'rgba(59,130,246,0.4)'  },
+        league:     { color:'#3b82f6', bg:'rgba(59,130,246,0.15)',  border:'rgba(59,130,246,0.4)'  },
+        groups:     { color:'#06b6d4', bg:'rgba(6,182,212,0.15)',   border:'rgba(6,182,212,0.4)'   },
+        rounds:     { color:'#06b6d4', bg:'rgba(6,182,212,0.15)',   border:'rgba(6,182,212,0.4)'   },
+        special:    { color:'#8b5cf6', bg:'rgba(139,92,246,0.15)', border:'rgba(139,92,246,0.4)'  },
+        qualifiers: { color:'#f97316', bg:'rgba(249,115,22,0.15)',  border:'rgba(249,115,22,0.4)'  },
+        other:      { color:'#64748b', bg:'rgba(100,116,139,0.12)', border:'rgba(100,116,139,0.3)' },
+      };
+      const c = colors[type] || colors.other;
+      return { button, active, c };
+    });
+
+    return (
+      <div style={{
+        overflowX:'auto', WebkitOverflowScrolling:'touch',
+        padding:'8px 16px', scrollbarWidth:'none',
+        msOverflowStyle:'none',
+      }}>
+        <style>{`.stage-chips-row::-webkit-scrollbar{display:none}`}</style>
+        <div className="stage-chips-row" style={{
+          display:'flex', gap:'8px', flexWrap:'nowrap',
+          width:'max-content',
+        }}>
+          {allChips.map(({button, active, c}) => (
+            <button
+              key={button.key}
+              onClick={() => toggleSectionFn(button.sectionKey)}
+              style={{
+                display:'inline-flex', alignItems:'center', flexShrink:0,
+                padding:'10px 18px', borderRadius:'999px',
+                fontSize:'1rem', fontWeight: active ? 800 : 500,
+                color: active ? 'white' : c.color,
+                background: active ? c.color : c.bg,
+                border:`2px solid ${active ? c.color : c.border}`,
+                cursor:'pointer', transition:'all 0.15s',
+                boxShadow: active ? `0 0 12px ${c.color}66` : 'none',
+                fontFamily:'Rubik, Heebo, sans-serif',
+                whiteSpace:'nowrap', letterSpacing:'0.01em',
+                WebkitTapHighlightColor:'transparent',
+                touchAction:'manipulation',
+                minHeight:'44px',
+              }}
+            >
+              {button.description}
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  const renderSidebar = () => {
+    const groupMap = {
+      playoff:    { label: '⚽ משחקי פלייאוף', color: '#3b82f6', bg: 'rgba(59,130,246,0.10)',  border: 'rgba(59,130,246,0.30)',  activeBg: '#2563eb',  activeShadow: '0 2px 10px rgba(59,130,246,0.44)' },
+      league:     { label: '⚽ משחקי ליגה',    color: '#3b82f6', bg: 'rgba(59,130,246,0.10)',  border: 'rgba(59,130,246,0.30)',  activeBg: '#2563eb',  activeShadow: '0 2px 10px rgba(59,130,246,0.44)' },
+      groups:     { label: '🏠 שלב הבתים',     color: '#06b6d4', bg: 'rgba(6,182,212,0.10)',   border: 'rgba(6,182,212,0.30)',   activeBg: '#0891b2',  activeShadow: '0 2px 10px rgba(6,182,212,0.44)'  },
+      rounds:     { label: '⚽ מחזורים',        color: '#06b6d4', bg: 'rgba(6,182,212,0.10)',   border: 'rgba(6,182,212,0.30)',   activeBg: '#0891b2',  activeShadow: '0 2px 10px rgba(6,182,212,0.44)'  },
+      special:    { label: '✨ שאלות מיוחדות', color: '#8b5cf6', bg: 'rgba(139,92,246,0.10)', border: 'rgba(139,92,246,0.30)', activeBg: '#7c3aed',  activeShadow: '0 2px 10px rgba(139,92,246,0.44)' },
+      qualifiers: { label: '📋 רשימות עולות',  color: '#f97316', bg: 'rgba(249,115,22,0.10)',  border: 'rgba(249,115,22,0.30)',  activeBg: '#ea580c',  activeShadow: '0 2px 10px rgba(249,115,22,0.44)' },
+      other:      { label: '📌 נוסף',           color: '#64748b', bg: 'rgba(100,116,139,0.08)', border: 'rgba(100,116,139,0.20)', activeBg: '#475569',  activeShadow: '0 2px 8px rgba(100,116,139,0.30)'  },
+    };
+    const grouped = {};
+    allButtons.forEach(btn => {
+      const t = btn.stageType || (btn.sectionKey === 'rounds' ? 'rounds' : btn.sectionKey.startsWith('round_') ? 'playoff' : btn.sectionKey.startsWith('qual_') ? 'qualifiers' : 'special');
+      if (!grouped[t]) grouped[t] = [];
+      grouped[t].push(btn);
+    });
+    const order = ['rounds','league','groups','playoff','special','qualifiers','other'];
+    const sortedGroups = order.filter(t => grouped[t]);
+    return (
+      <aside style={{ width:'215px', flexShrink:0, position:'sticky', top:'70px', alignSelf:'flex-start', maxHeight:'calc(100vh - 90px)', overflowY:'auto', paddingBottom:'16px' }}>
+        <div style={{ background:'rgba(13,18,30,0.9)', borderRadius:'12px', border:'1px solid rgba(6,182,212,0.12)', padding:'14px 10px', backdropFilter:'blur(10px)' }}>
+          <div style={{ fontSize:'0.5rem', fontWeight:'800', letterSpacing:'0.18em', textTransform:'uppercase', color:'#334155', marginBottom:'14px', paddingRight:'2px' }}>בחירת שלב</div>
+          {sortedGroups.map(type => {
+            const info = groupMap[type] || groupMap.other;
+            return (
+              <div key={type} style={{ marginBottom:'14px' }}>
+                <div style={{ fontSize:'0.55rem', fontWeight:'700', letterSpacing:'0.08em', textTransform:'uppercase', color:info.color, marginBottom:'5px', paddingRight:'2px', opacity:0.85 }}>{info.label}</div>
+                <div style={{ display:'flex', flexDirection:'column', gap:'3px' }}>
+                  {grouped[type].map(btn => {
+                    const active = openSections[btn.sectionKey];
+                    return (
+                      <button key={btn.key} onClick={() => toggleSection(btn.sectionKey)} style={{ display:'block', width:'100%', textAlign:'right', padding:'7px 10px', borderRadius:'8px', fontSize:'0.8rem', fontWeight: active ? '700' : '400', color: active ? 'white' : info.color, background: active ? info.activeBg : info.bg, border:`1px solid ${active ? info.color : info.border}`, cursor:'pointer', transition:'all 0.15s', boxShadow: active ? (info.activeShadow || `0 2px 10px ${info.color}44`) : 'none', fontFamily:'Rubik, Heebo, sans-serif', lineHeight:'1.35' }}>
+                        {btn.description}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </aside>
+    );
+  };
+
+  const allButtons = [];
+
+  if (roundTables.length > 0) {
+    const allAreGroups = roundTables.every(table => table.id.includes('בית') || table.description?.includes('בית'));
+    if (allAreGroups) {
+      const firstRoundTableId = roundTables[0]?.id || 'T2';
+      const description = 'שלב הבתים';
+      allButtons.push({ numericId: parseInt(firstRoundTableId.replace('T','').replace(/\D/g,''),10), key:'rounds', description, sectionKey:'rounds', stageType:'rounds', isLongText: description.length > TEXT_LENGTH_THRESHOLD });
+    } else {
+      roundTables.forEach(table => {
+        const description = table.description || table.id;
+        allButtons.push({ numericId: parseInt(table.id.replace('T','').replace(/\D/g,''),10)||0, key:`round_${table.id}`, description, stageType: table.questions[0]?.stage_type || 'playoff', sectionKey:`round_${table.id}`, isLongText: description.length > TEXT_LENGTH_THRESHOLD });
+      });
+    }
+  }
+
+  specialTables.forEach(table => {
+    const description = table.description;
+    allButtons.push({ numericId: table.questions[0]?.stage_order || parseInt(table.id.replace('T','').replace(/\D/g,''),10), key:table.id, description, stageType: table.questions[0]?.stage_type || 'special', sectionKey:table.id, isLongText: description.length > TEXT_LENGTH_THRESHOLD });
+  });
+
+  if (locationTables.length > 0) {
+    const firstLocationTableId = locationTables[0]?.id || 'T14';
+    const description = 'מיקומים בתום שלב הבתים';
+    allButtons.push({ numericId: parseInt(firstLocationTableId.replace('T',''),10), key:'locations', description, stageType:'qualifiers', sectionKey:'locations', isLongText: description.length > TEXT_LENGTH_THRESHOLD });
+  }
+
+  qualifiersTables.forEach(table => {
+    const description = table.description || table.id;
+    allButtons.push({ numericId: table.questions[0]?.stage_order || parseInt(table.id.replace('T',''))||0, key:`qual_${table.id}`, description, stageType:'qualifiers', sectionKey:`qual_${table.id}`, isLongText: description.length > TEXT_LENGTH_THRESHOLD });
+  });
+
+  if (israeliTable) {
+    const description = israeliTable.description;
+    allButtons.push({ numericId: parseInt(israeliTable.id.replace('T',''),10), key:israeliTable.id, description, stageType:'special', sectionKey:'israeli', isLongText: description.length > TEXT_LENGTH_THRESHOLD });
+  }
+
+  if (playoffWinnersTable) {
+    const description = playoffWinnersTable.description;
+    allButtons.push({ numericId: parseInt(playoffWinnersTable.id.replace('T',''),10), key:playoffWinnersTable.id, description, stageType:'qualifiers', sectionKey:'playoffWinners', isLongText: description.length > TEXT_LENGTH_THRESHOLD });
+  }
+
+  allButtons.sort((a, b) => {
+    if (a.sectionKey === 'rounds' && b.sectionKey !== 'rounds') return -1;
+    if (b.sectionKey === 'rounds' && a.sectionKey !== 'rounds') return 1;
+    return a.numericId - b.numericId;
+  });
+
+  return (
+    <div className="min-h-screen" dir="rtl" style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%)', overflowX: 'hidden', maxWidth: '100vw' }}>
+      <style>{`
+        /* ── ViewSubmissions mobile fixes ── */
+        @media (max-width: 768px) {
+
+          /* שורות grid — גלילה אופקית מקומית */
+          .vs-grid-row {
+            overflow-x: auto !important;
+            -webkit-overflow-scrolling: touch !important;
+            padding-bottom: 4px !important;
+          }
+
+          /* כרטיס שאלה פשוטה (4 עמודות) — הפוך לכרטיס */
+          .vs-simple-row {
+            display: flex !important;
+            flex-wrap: wrap !important;
+            align-items: center !important;
+            gap: 6px !important;
+            padding: 10px 12px !important;
+          }
+          .vs-simple-row .vs-q-id   { flex: 0 0 auto; }
+          .vs-simple-row .vs-q-text { flex: 1 1 100%; font-size: 0.88rem !important; }
+          .vs-simple-row .vs-q-val  { flex: 1 1 auto; }
+          .vs-simple-row .vs-score  { flex: 0 0 auto; }
+
+          /* פונטים */
+          .vs-q-text  { font-size: 0.88rem !important; }
+          .vs-score   { font-size: 0.8rem !important; }
+
+          /* Sidebar: הסתר במובייל */
+          .vs-sidebar-desktop { display: none !important; }
+
+          /* Header buttons — smaller */
+          .sticky .btn, .sticky button {
+            font-size: 0.78rem !important;
+            padding: 6px 10px !important;
+          }
+        }
+
+        /* Extra small */
+        @media (max-width: 480px) {
+          .vs-simple-row .vs-q-text { font-size: 0.82rem !important; }
+        }
+      `}</style>
+      <div className="sticky top-0 z-30 backdrop-blur-sm shadow-lg" style={{ background: 'rgba(15,23,42,0.95)', borderBottom: '1px solid rgba(6,182,212,0.2)' }}>
+        <div className="p-3 md:p-6 max-w-7xl mx-auto">
+          <div className="flex flex-col md:flex-row justify-between items-start gap-2 md:gap-0 mb-3 md:mb-4">
+            <div>
+              <h1 className="text-xl md:text-3xl font-bold mb-1 md:mb-2 flex items-center gap-2 md:gap-3" style={{ color:'#f8fafc', textShadow:'0 0 10px rgba(6,182,212,0.3)' }}>
+                <Users className="w-5 h-5 md:w-8 md:h-8" style={{ color:'#06b6d4' }} />
+                צפייה בניחושים
+              </h1>
+              <p className="text-xs md:text-base" style={{ color:'#94a3b8' }}>בחר משתתף כדי לראות את הניחושים שלו.</p>
+            </div>
+            <div className="flex gap-1.5 md:gap-3 flex-wrap w-full md:w-auto">
+              {isAdmin && selectedParticipant && !loadingPredictions && (
+                <>
+                  {!isEditMode ? (
+                    <Button onClick={() => setIsEditMode(true)} variant="outline" style={{ borderColor:'rgba(6,182,212,0.5)', color:'#06b6d4', background:'rgba(30,41,59,0.4)' }} className="hover:bg-cyan-500/20">
+                      <Pencil className="w-4 h-4 ml-2" /> ערוך ניחושים
+                    </Button>
+                  ) : (
+                    <>
+                      <Button onClick={() => { setEditedPredictions({}); setIsEditMode(false); }} variant="outline" style={{ borderColor:'rgba(148,163,184,0.5)', color:'#94a3b8', background:'rgba(30,41,59,0.4)' }} className="hover:bg-slate-500/20" disabled={savingChanges}>ביטול</Button>
+                      <Button onClick={handleSaveChanges} disabled={Object.keys(editedPredictions).length === 0 || savingChanges}
+                        style={{ background: Object.keys(editedPredictions).length > 0 ? 'linear-gradient(135deg, #06b6d4 0%, #0ea5e9 100%)' : 'rgba(71,85,105,0.5)', boxShadow: Object.keys(editedPredictions).length > 0 ? '0 0 20px rgba(6,182,212,0.4)' : 'none', color: Object.keys(editedPredictions).length > 0 ? 'white' : '#64748b' }}>
+                        {savingChanges ? <><Loader2 className="w-4 h-4 animate-spin ml-2" />שומר...</> : <><Save className="w-4 h-4 ml-2" />שמור שינויים {Object.keys(editedPredictions).length > 0 && `(${Object.keys(editedPredictions).length})`}</>}
+                      </Button>
+                    </>
+                  )}
+                </>
+              )}
+              {isAdmin && (
+                <>
+                  <Button onClick={handleExportData} disabled={exporting} variant="outline" style={{ borderColor:'rgba(34,197,94,0.5)', color:'#86efac', background:'rgba(30,41,59,0.4)' }} className="hover:bg-green-500/20">
+                    {exporting ? <><Loader2 className="w-4 h-4 ml-2 animate-spin" />מייצא...</> : <><Download className="w-4 h-4 ml-2" />ייצוא לקובץ</>}
+                  </Button>
+                  <Button onClick={() => { loadParticipantStats(); setShowDeleteDialog(true); }} variant="outline" style={{ borderColor:'rgba(239,68,68,0.5)', color:'#fca5a5', background:'rgba(30,41,59,0.4)' }} className="hover:bg-red-500/20">
+                    <Trash2 className="w-4 h-4 ml-2" /> ניהול משתתפים
+                  </Button>
+                </>
+              )}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <Card style={{ background:'rgba(30,41,59,0.6)', border:'1px solid rgba(6,182,212,0.2)', backdropFilter:'blur(10px)' }}>
+              <CardHeader className="py-2"><CardTitle className="text-sm" style={{ color:'#06b6d4' }}>בחר משתתף</CardTitle></CardHeader>
+              <CardContent className="p-3 flex justify-start">
+                <Select onValueChange={setSelectedParticipant} value={selectedParticipant || ''}>
+                  <SelectTrigger className="w-48 h-8 text-sm" style={{ background:'rgba(15,23,42,0.6)', border:'1px solid rgba(6,182,212,0.3)', color:'#f8fafc' }}>
+                    <SelectValue placeholder="בחר שם..." className="text-right" />
+                  </SelectTrigger>
+                  <SelectContent className="max-w-[200px]" position="popper" align="start" style={{ background:'#1e293b', border:'1px solid rgba(6,182,212,0.3)' }}>
+                    {allParticipants.map(p => (
+                      <SelectItem key={p} value={p} className="hover:bg-cyan-500/20 text-right pr-8" style={{ color:'#f8fafc' }}>{p}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </CardContent>
+            </Card>
+
+            {selectedParticipant && (
+              <Card style={{ background:'rgba(30,41,59,0.6)', border:'1px solid rgba(6,182,212,0.2)', backdropFilter:'blur(10px)' }}>
+                <CardHeader className="py-2">
+                  <CardTitle className="text-sm flex items-center justify-between" style={{ color:'#06b6d4' }}>
+                    <span>פרטי המשתתף</span>
+                    <ParticipantTotalScore participantName={selectedParticipant} gameId={currentGame?.id} />
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="p-3">
+                  {participantQuestions.length > 0 ? (
+                    <div className="grid grid-cols-3 gap-2">
+                      {participantQuestions.map(q => {
+                        const isNameField = q.question_text?.includes("שם");
+                        const displayValue = isNameField ? selectedParticipant : (participantDetails[q.id] || '-');
+                        return (
+                          <div key={q.id} className="text-right">
+                            <label className="text-xs font-medium mb-1 block" style={{ color:'#94a3b8' }}>{q.question_text}</label>
+                            <div className="rounded-md px-2 py-1 text-sm text-right" style={{ background:'rgba(15,23,42,0.6)', border:'1px solid rgba(6,182,212,0.2)' }}>
+                              <span style={{ color:'#f8fafc' }}>{displayValue}</span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : null}
+                </CardContent>
+              </Card>
+            )}
+          </div>
+
+          {loadingPredictions && (
+            <div className="flex items-center justify-center py-4 mt-4">
+              <Loader2 className="w-6 h-6 animate-spin ml-2" style={{ color:'#06b6d4' }} />
+              <span style={{ color:'#06b6d4' }}>טוען ניחושים...</span>
+            </div>
+          )}
+
+          <div className="vs-mobile-chips" style={{ display:"block" }}>
+            <style>{`@media (min-width: 768px) { .vs-mobile-chips { display: none !important; } }`}</style>
+            {selectedParticipant && !loadingPredictions && (specialTables.length > 0 || roundTables.length > 0 || locationTables.length > 0 || israeliTable || playoffWinnersTable || qualifiersTables.length > 0) && (
+              <div style={{ marginBottom:'20px' }}>{renderStageChips(allButtons, openSections, toggleSection)}</div>
+            )}
+          </div>
+
+          {!selectedParticipant && !loadingPredictions && (
+            <Alert className="mt-4" style={{ background:'rgba(30,41,59,0.6)', border:'1px solid rgba(6,182,212,0.2)', color:'#f8fafc' }}>
+              <FileText className="w-4 h-4" style={{ color:'#06b6d4' }} />
+              <AlertDescription style={{ color:'#94a3b8' }}>בחר משתתף כדי לראות את הניחושים שלו.</AlertDescription>
+            </Alert>
+          )}
+        </div>
+      </div>
+
+      <div className="p-3 md:p-6 max-w-7xl mx-auto">
+        {selectedParticipant && !loadingPredictions ? (
+          <div style={{ display:'flex', gap:'20px', alignItems:'flex-start' }}>
+            <div style={{ display:'none' }} className="vs-sidebar-desktop">{renderSidebar()}</div>
+            <style>{`@media (min-width: 768px) { .vs-sidebar-desktop { display: block !important; } }`}</style>
+            <div style={{ flex:1, minWidth:0 }}>
+              {allButtons.map(button => {
+                if (!openSections[button.sectionKey]) return null;
+                if (button.sectionKey === 'rounds') {
+                  return (
+                    <div key="rounds-section" className="mb-6 space-y-6">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        {roundTables.map(table => (
+                          <RoundTableReadOnly key={table.id} table={table} teams={data.teams} predictions={getCombinedPredictionsMap()} isEditMode={isEditMode && isAdmin} handlePredictionEdit={handlePredictionEdit} />
+                        ))}
+                      </div>
+                      <StandingsTable roundTables={roundTables} teams={data.teams} data={getCombinedPredictionsMap()} type="predictions" />
+                    </div>
+                  );
+                } else if (button.sectionKey.startsWith('round_')) {
+                  const tableId = button.sectionKey.replace('round_', '');
+                  const table = roundTables.find(t => t.id === tableId);
+                  if (table) return (
+                    <div key={button.sectionKey} className="mb-6">
+                      <RoundTableReadOnly key={table.id} table={table} teams={data.teams} predictions={getCombinedPredictionsMap()} isEditMode={isEditMode && isAdmin} handlePredictionEdit={handlePredictionEdit} />
+                      {table.specialQuestions && table.specialQuestions.length > 0 && <div className="mt-4">{renderSpecialQuestions({ ...table, questions: table.specialQuestions })}</div>}
+                    </div>
+                  );
+                } else if (button.sectionKey.startsWith('qual_')) {
+                  const tableId = button.sectionKey.replace('qual_', '');
+                  const table = qualifiersTables.find(t => t.id === tableId);
+                  if (table) return <div key={button.sectionKey} className="mb-6">{renderQualifiersTable(table)}</div>;
+                } else if (button.sectionKey === 'israeli' && israeliTable) {
+                  return <div key="israeli-section" className="mb-6"><RoundTableReadOnly table={israeliTable} teams={data.teams} predictions={getCombinedPredictionsMap()} isEditMode={isEditMode && isAdmin} handlePredictionEdit={handlePredictionEdit} /></div>;
+                } else if (button.sectionKey === 'locations') {
+                  return <div key="locations-section" className="mb-6 grid grid-cols-1 md:grid-cols-2 gap-6">{locationTables.map(table => <div key={table.id}>{renderSpecialQuestions(table)}</div>)}</div>;
+                } else if (button.sectionKey === 'playoffWinners' && playoffWinnersTable) {
+                  return <div key="playoffWinners-section" className="mb-6">{renderSpecialQuestions(playoffWinnersTable)}</div>;
+                } else {
+                  const specificSpecialTable = specialTables.find(t => t.id === button.key);
+                  if (specificSpecialTable) return <div key={specificSpecialTable.id} className="mb-6">{renderSpecialQuestions(specificSpecialTable)}</div>;
+                }
+                return null;
+              })}
+            </div>
+          </div>
+        ) : null}
+      </div>
+
+      {isAdmin && (
+        <>
+          <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+            <DialogContent className="max-w-2xl" dir="rtl" style={{ background:'#1e293b', border:'1px solid rgba(6,182,212,0.3)' }}>
+              <DialogHeader>
+                <DialogTitle className="2xl font-bold flex items-center gap-2" style={{ color:'#f8fafc' }}>
+                  <AlertTriangle className="w-6 h-6" style={{ color:'#ef4444' }} /> ניהול משתתפים
+                </DialogTitle>
+                <DialogDescription className="text-slate-300">
+                  לחץ על כפתור המחיקה כדי למחוק את כל הניחושים של משתתף. <strong className="text-red-300">פעולה זו אינה הפיכה!</strong>
+                </DialogDescription>
+              </DialogHeader>
+              <div className="max-h-[60vh] overflow-y-auto">
+                {participantStats.length === 0 ? (
+                  <div className="text-center py-8 flex flex-col items-center justify-center">
+                    <Loader2 className="w-8 h-8 animate-spin mb-2" style={{ color:'#94a3b8' }} />
+                    <span style={{ color:'#94a3b8' }}>טוען נתונים...</span>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {participantStats.map(stat => (
+                      <div key={stat.name} className="flex items-center justify-between p-3 rounded-lg border hover:bg-slate-700/50" style={{ background:'rgba(15,23,42,0.6)', border:'1px solid rgba(6,182,212,0.2)' }}>
+                        <div>
+                          <p className="font-medium" style={{ color:'#f8fafc' }}>{stat.name}</p>
+                          <p className="text-sm" style={{ color:'#94a3b8' }}>{stat.predictionsCount} ניחושים</p>
+                        </div>
+                        <Button onClick={() => handleDeleteParticipant(stat.name)} disabled={deletingParticipant === stat.name} variant="destructive" size="sm">
+                          {deletingParticipant === stat.name ? <><Loader2 className="w-4 h-4 ml-2" />מוחק...</> : <><Trash2 className="w-4 h-4 ml-2" />מחק</>}
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </DialogContent>
+          </Dialog>
+
+          <Dialog open={showMissingReport} onOpenChange={setShowMissingReport}>
+            <DialogContent className="max-w-6xl max-h-[90vh]" dir="rtl" style={{ background:'#1e293b', border:'1px solid rgba(6,182,212,0.3)' }}>
+              <DialogHeader>
+                <DialogTitle className="text-2xl font-bold flex items-center gap-2" style={{ color:'#f8fafc' }}>
+                  <AlertTriangle className="w-6 h-6" style={{ color:'#fcd34d' }} /> דוח ניחושים חסרים
+                </DialogTitle>
+                <DialogDescription className="text-slate-300">שאלות עם ניחושים חסרים, ממוינות לפי סדר השלבים</DialogDescription>
+              </DialogHeader>
+              <div className="overflow-y-auto max-h-[70vh]">
+                {loadingMissing ? (
+                  <div className="text-center py-8 flex flex-col items-center justify-center">
+                    <Loader2 className="w-8 h-8 animate-spin mb-2" style={{ color:'#94a3b8' }} />
+                    <span style={{ color:'#94a3b8' }}>מחשב...</span>
+                  </div>
+                ) : missingPredictions.length === 0 ? (
+                  <div className="text-center py-8" style={{ color:'#10b981' }}>
+                    <CheckCircle className="w-12 h-12 mx-auto mb-3" style={{ color:'#10b981' }} />
+                    <p className="text-lg font-bold">מצוין! כל המשתתפים ענו על כל השאלות!</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="p-3 rounded-lg" style={{ background:'rgba(251,191,36,0.1)', border:'1px solid rgba(251,191,36,0.3)' }}>
+                      <p className="text-sm font-bold" style={{ color:'#fcd34d' }}>נמצאו {missingPredictions.length} שאלות עם ניחושים חסרים (סה"כ {missingPredictions.reduce((sum, m) => sum + m.missing_count, 0)} ניחושים)</p>
+                    </div>
+                    <table className="w-full">
+                      <thead style={{ position:'sticky', top:0, zIndex:10, background:'#1e293b', borderBottom:'2px solid rgba(6,182,212,0.3)' }}>
+                        <tr>
+                          <th className="text-center p-2 text-sm" style={{ color:'#94a3b8', width:'80px' }}>טבלה</th>
+                          <th className="text-center p-2 text-sm" style={{ color:'#94a3b8', width:'60px' }}>מס׳</th>
+                          <th className="text-right p-2 text-sm" style={{ color:'#94a3b8' }}>שאלה</th>
+                          <th className="text-center p-2 text-sm" style={{ color:'#94a3b8', width:'80px' }}>חסרים</th>
+                          <th className="text-right p-2 text-sm" style={{ color:'#94a3b8', width:'200px' }}>משתתפים</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {missingPredictions.map((item, idx) => (
+                          <tr key={idx} className="hover:bg-slate-700/50" style={{ borderBottom:'1px solid rgba(6,182,212,0.1)' }}>
+                            <td className="text-center p-2"><Badge variant="outline" style={{ borderColor:'#06b6d4', color:'#06b6d4' }}>{item.table_id}</Badge></td>
+                            <td className="text-center p-2"><Badge variant="outline" style={{ borderColor:'#0ea5e9', color:'#0ea5e9' }}>{item.question_id}</Badge></td>
+                            <td className="text-right p-2 text-sm" style={{ color:'#f8fafc' }}>{item.question_text}</td>
+                            <td className="text-center p-2"><Badge className="text-white font-bold" style={{ background:'#ef4444', boxShadow:'0 0 10px rgba(239,68,68,0.4)' }}>{item.missing_count}</Badge></td>
+                            <td className="text-right p-2 text-xs" style={{ color:'#94a3b8' }}>{item.missing_participants.slice(0,3).join(', ')}{item.missing_participants.length > 3 && ` ועוד ${item.missing_participants.length - 3}...`}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </DialogContent>
+          </Dialog>
+        </>
       )}
     </div>
   );
 }
-
-// ─── Layout Content ───────────────────────────────────────────────────────────
-function LayoutContent({ children }) {
-  const [currentUser, setCurrentUser] = useState(null);
-  const [loading,     setLoading    ] = useState(true);
-  const [showAdminDialog, setShowAdminDialog] = useState(false);
-  const [adminPassword,   setAdminPassword  ] = useState("");
-  const [sidebarOpen,     setSidebarOpen    ] = useState(false);
-  const { toast } = useToast();
-  const location  = useLocation();
-
-  const {
-    currentGame, games, selectGame,
-    loading: gamesLoading,
-    currentUser: gameContextUser,
-  } = useGame();
-
-  const g = currentGame ? `?gameId=${currentGame.id}` : '';
-
-  const publicItems = [
-    { title:"טבלת דירוג",     url:createPageUrl("LeaderboardNew")  + g, icon:Award,    group:"main" },
-    { title:"צפייה בניחושים", url:createPageUrl("ViewSubmissions") + g, icon:Users,    group:"main" },
-    { title:"תוצאות אמת",     url:createPageUrl("AdminResults")    + g, icon:BarChart3,group:"main" },
-    { title:"סטטיסטיקות",     url:createPageUrl("Statistics")      + g, icon:PieChart, group:"main" },
-  ];
-  const userItems = [
-    { title:"מילוי ניחושים",  url:createPageUrl("PredictionForm")  + g, icon:FileText, group:"main" },
-  ];
-  const adminItems = [
-    { title:"ניהול משתתפים", url:createPageUrl("ManageGameParticipants"), icon:Users,    group:"admin" },
-    { title:"ייבוא ניחושים",  url:createPageUrl("AdminImport"),           icon:Upload,   group:"admin" },
-    { title:"ניהול משתמשים", url:createPageUrl("UserManagement"),         icon:Shield,   group:"admin" },
-    { title:"בניית שאלון",   url:createPageUrl("FormBuilder") + g,        icon:FileText, group:"admin" },
-    { title:"סקירת מערכת",   url:createPageUrl("SystemOverview"),         icon:Database, group:"admin" },
-  ];
-
-  useEffect(() => { loadUser(); }, []);
-  useEffect(() => { setSidebarOpen(false); }, [location.pathname]);
-  useEffect(() => {
-    document.body.style.overflow = sidebarOpen ? 'hidden' : '';
-    return () => { document.body.style.overflow = ''; };
-  }, [sidebarOpen]);
-
-  const loadUser = async () => {
-    try { setCurrentUser(await supabase.auth.getUser().then(r => r.data.user)); }
-    catch { setCurrentUser(null); }
-    setLoading(false);
-  };
-
-  const handleLogout = async () => {
-    try { await supabase.auth.signOut(); setCurrentUser(null); window.location.href = createPageUrl("LeaderboardNew"); }
-    catch (e) { console.error(e); }
-  };
-
-  const handleAdminLogin = async () => {
-    if (adminPassword === "champ11") {
-      try {
-        if (!currentUser) { window.location.href = '/login'; return; }
-        await supabase.auth.updateUser({ role:"admin" });
-        const u = await supabase.auth.getUser().then(r => r.data.user);
-        setCurrentUser(u); setShowAdminDialog(false); setAdminPassword("");
-        toast({ title:"התחברת כמנהל!", className:"bg-green-100 text-green-800", duration:2000 });
-      } catch {
-        toast({ title:"שגיאה", description:"לא ניתן לעדכן הרשאות", variant:"destructive", duration:2000 });
-      }
-    } else {
-      toast({ title:"סיסמה שגויה", variant:"destructive", duration:2000 });
-      setAdminPassword("");
-    }
-  };
-
-  const effectiveUser = gameContextUser || currentUser;
-  const supabaseRole  = effectiveUser?.role || effectiveUser?.user_metadata?.role || null;
-  const isAdmin       = supabaseRole === "admin";
-
-  const allNavItems = [
-    ...publicItems.map(i => ({ ...i, disabled: !currentGame })),
-    ...(effectiveUser ? userItems.map(i => ({ ...i, disabled: !currentGame })) : []),
-    ...(isAdmin ? adminItems.map(i => ({
-      ...i,
-      disabled: i.group==='admin' && !currentGame && i.title!=='ניהול משתמשים' && i.title!=='סקירת מערכת',
-    })) : []),
-  ];
-  const mainNav  = allNavItems.filter(i => i.group==="main");
-  const adminNav = allNavItems.filter(i => i.group==="admin");
-  const isActive = (url) => window.location.pathname.includes(url.split('?')[0]);
-
-  const NavItem = ({ item, onClick }) => {
-    const active = isActive(item.url);
-    return (
-      <Link
-        to={item.disabled ? '#' : item.url}
-        onClick={e => {
-          if (item.disabled) {
-            e.preventDefault();
-            toast({ title:"בחר משחק", description:"נא לבחור משחק תחילה", variant:"destructive", duration:2000 });
-          }
-          // ✅ תמיד סגור את הסיידבר — גם בלחיצה על אותו עמוד
-          if (onClick) onClick();
-        }}
-        className={`lm-nav-item${active?' active':''}${item.disabled?' disabled':''}`}
-        style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
-      >
-        <span className="lm-nav-icon"><item.icon size={20}/></span>
-        <span className="lm-nav-label">{item.title}</span>
-        {active && <span className="lm-nav-bar"/>}
-      </Link>
-    );
-  };
-
-  const SidebarInner = ({ onItemClick }) => (
-    <div className="lm-sidebar-inner">
-
-      {/* ── Logo ── */}
-      <div style={{
-        display:'flex', alignItems:'center', gap:'14px',
-        padding:'20px 16px 14px',
-      }}>
-        {/* לוגו — inline style מבטיח גודל נכון */}
-        {currentGame?.game_icon ? (
-          <div style={{position:'relative', flexShrink:0}}>
-            <img
-              src={currentGame.game_icon}
-              alt={currentGame.game_name}
-              style={{
-                width:'130px', height:'130px',
-                objectFit:'contain', borderRadius:'16px',
-                border:'1px solid var(--tp-20)', display:'block',
-              }}
-            />
-            <div style={{
-              position:'absolute', inset:'-10px', borderRadius:'24px',
-              background:'radial-gradient(circle, var(--tp-18) 0%, transparent 70%)',
-              pointerEvents:'none',
-            }}/>
-          </div>
-        ) : (
-          <div style={{
-            width:'130px', height:'130px', borderRadius:'16px', flexShrink:0,
-            border:'1px dashed var(--tp-25)', background:'var(--tp-05)',
-            display:'flex', alignItems:'center', justifyContent:'center', fontSize:'48px',
-          }}>⚽</div>
-        )}
-
-        {/* טקסט — שתי שורות ברורות */}
-        <div style={{flex:1, minWidth:0, display:'flex', flexDirection:'column', gap:'6px'}}>
-          {currentGame ? (
-            <>
-              <div style={{
-                fontSize:'1.05rem', fontWeight:900, color:'var(--text)',
-                lineHeight:1.3, wordBreak:'break-word',
-              }}>
-                {currentGame.game_name}
-              </div>
-              {currentGame.game_subtitle && (
-                <div style={{
-                  fontSize:'1rem', fontWeight:800, color:'var(--tp)',
-                  lineHeight:1.2, wordBreak:'break-word',
-                }}>
-                  {currentGame.game_subtitle}
-                </div>
-              )}
-            </>
-          ) : (
-            <div style={{fontSize:'1rem', fontWeight:500, color:'var(--text-muted)'}}>
-              בחר משחק
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* ── Stars ── */}
-      <div className="lm-stars" aria-hidden="true">
-        {[0,1,2,3,4].map(i=><span key={i} className="lm-star" style={{'--i':i}}>★</span>)}
-      </div>
-
-      {/* ── Game selector ── */}
-      <div className="lm-game-selector">
-        <div className="lm-sec-label lm-sec-label--primary">🎮 משחק פעיל</div>
-        <Select
-          value={currentGame?.id || ''}
-          onValueChange={gameId => { const gx=games.find(x=>x.id===gameId); if(gx) selectGame(gx); }}
-          disabled={gamesLoading || games.length===0}
-        >
-          <SelectTrigger className="lm-select-trigger">
-            <SelectValue placeholder="בחר משחק">
-              {currentGame ? (
-                <div style={{textAlign:'right',lineHeight:'1.2'}}>
-                  <div style={{fontWeight:700,fontSize:'0.82rem'}}>{currentGame.game_name}</div>
-                  {currentGame.game_subtitle && (
-                    <div style={{fontSize:'0.7rem',color:'var(--tp)',opacity:0.85,marginTop:'1px'}}>{currentGame.game_subtitle}</div>
-                  )}
-                </div>
-              ) : "בחר משחק"}
-            </SelectValue>
-          </SelectTrigger>
-          <SelectContent className="lm-select-content">
-            {games.map(game=>(
-              <SelectItem key={game.id} value={game.id}>
-                <div>
-                  <div style={{fontWeight:700,fontSize:'0.85rem'}}>{game.game_name}</div>
-                  {game.game_subtitle && <div style={{fontSize:'0.7rem',color:'var(--tp)',opacity:0.8}}>{game.game_subtitle}</div>}
-                </div>
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        {isAdmin && currentGame && (
-          <Link to={createPageUrl("CreateGame")} className="lm-edit-game"><Edit size={10}/> ערוך משחק</Link>
-        )}
-      </div>
-
-      {/* ── Navigation ── */}
-      <nav className="lm-nav">
-        {mainNav.length > 0 && (
-          <><div className="lm-sec-label">ראשי</div>
-          {mainNav.map(item=><NavItem key={item.title} item={item} onClick={onItemClick}/>)}</>
-        )}
-        {!effectiveUser && (
-          <button className="lm-login-prompt" onClick={()=>window.location.href='/login'}>
-            <Lock size={15}/><span>מילוי ניחושים</span><span className="lm-login-badge">התחבר</span>
-          </button>
-        )}
-        {adminNav.length > 0 && (
-          <><div className="lm-sec-label lm-sec-label--admin">ניהול</div>
-          {adminNav.map(item=><NavItem key={item.title} item={item} onClick={onItemClick}/>)}</>
-        )}
-      </nav>
-
-      {/* ── Theme picker ── */}
-      <ThemePicker/>
-
-      {/* ── User footer ── */}
-      <div className="lm-user-footer">
-        {effectiveUser ? (
-          <div className="lm-user-row">
-            <div className="lm-avatar">
-              {(effectiveUser.user_metadata?.full_name || effectiveUser.email || '?')[0].toUpperCase()}
-            </div>
-            <div className="lm-user-info-block">
-              <div className="lm-user-name">{effectiveUser.user_metadata?.full_name || effectiveUser.email}</div>
-              <div className="lm-user-role" style={{color:isAdmin?'var(--tp)':'#64748b'}}>
-                {isAdmin ? '👑 מנהל' : '✅ משתתף'}
-              </div>
-            </div>
-            <button onClick={handleLogout} className="btn btn-danger btn-icon btn-sm lm-logout-btn" title="התנתק">
-              <LogOut size={14}/>
-            </button>
-          </div>
-        ) : (
-          <button onClick={()=>window.location.href='/login'} className="btn btn-secondary btn-wide">
-            <Shield size={15}/> התחבר / הירשם
-          </button>
-        )}
-      </div>
-    </div>
-  );
-
-  if (loading || gamesLoading) {
-    return (
-      <div className="lm-loading">
-        <div className="lm-loading-spinner"/>
-        <span>טוען...</span>
-      </div>
-    );
-  }
-
-  return (
-    <div dir="rtl" className="lm-root">
-      {/* ── Desktop sidebar ── */}
-      <aside className="lm-sidebar desktop-sidebar"><SidebarInner onItemClick={null}/></aside>
-
-      {/* ── Mobile overlay (for "more" menu) ── */}
-      <div className={`lm-overlay${sidebarOpen?' visible':''}`} onClick={()=>setSidebarOpen(false)} aria-hidden="true"/>
-
-      {/* ── Mobile "more" drawer (admin items only) ── */}
-      <aside className={`lm-sidebar lm-sidebar--mobile mobile-sidebar${sidebarOpen?' open':''}`}>
-        <button onClick={()=>setSidebarOpen(false)} className="lm-close-btn"><X size={22}/></button>
-        <div style={{padding:'60px 12px 16px'}}>
-          {/* Game info in drawer */}
-          {currentGame && (
-            <div style={{display:'flex',alignItems:'center',gap:12,padding:'12px 8px',marginBottom:16,background:'var(--tp-10)',borderRadius:12,border:'1px solid var(--tp-20)'}}>
-              {currentGame.game_icon && <img src={currentGame.game_icon} alt="" style={{width:48,height:48,borderRadius:10,objectFit:'contain'}}/>}
-              <div>
-                <div style={{fontWeight:800,fontSize:'0.95rem',color:'var(--text)'}}>{currentGame.game_name}</div>
-                {currentGame.game_subtitle && <div style={{fontSize:'0.82rem',color:'var(--tp)',fontWeight:700}}>{currentGame.game_subtitle}</div>}
-              </div>
-            </div>
-          )}
-          {/* Game switcher */}
-          {games.length > 1 && (
-            <div style={{marginBottom:16}}>
-              <div style={{fontSize:'0.7rem',fontWeight:700,color:'#475569',marginBottom:6,letterSpacing:'0.08em'}}>החלפת משחק</div>
-              {games.map(game=>(
-                <button key={game.id} onClick={()=>{selectGame(game);setSidebarOpen(false);}} style={{
-                  display:'flex',alignItems:'center',gap:10,width:'100%',
-                  padding:'10px 12px',borderRadius:10,marginBottom:4,cursor:'pointer',
-                  background:currentGame?.id===game.id?'var(--tp-15)':'rgba(30,41,59,0.5)',
-                  border:`1px solid ${currentGame?.id===game.id?'var(--tp)':'rgba(71,85,105,0.3)'}`,
-                  color:currentGame?.id===game.id?'var(--tp)':'var(--text)',
-                  fontFamily:'Rubik,Heebo,sans-serif',textAlign:'right',
-                }}>
-                  {game.game_icon && <img src={game.game_icon} alt="" style={{width:32,height:32,borderRadius:8,objectFit:'contain',flexShrink:0}}/>}
-                  <div style={{flex:1,textAlign:'right'}}>
-                    <div style={{fontWeight:700,fontSize:'0.85rem'}}>{game.game_name}</div>
-                    {game.game_subtitle && <div style={{fontSize:'0.75rem',opacity:0.8}}>{game.game_subtitle}</div>}
-                  </div>
-                  {currentGame?.id===game.id && <span style={{color:'var(--tp)',fontSize:'1rem'}}>✓</span>}
-                </button>
-              ))}
-            </div>
-          )}
-          {/* Admin items */}
-          {isAdmin && (
-            <div>
-              <div style={{fontSize:'0.7rem',fontWeight:700,color:'#475569',marginBottom:6,letterSpacing:'0.08em'}}>ניהול</div>
-              {adminNav.map(item=>(
-                <NavItem key={item.title} item={item} onClick={()=>setSidebarOpen(false)}/>
-              ))}
-            </div>
-          )}
-          {/* Login/logout */}
-          <div style={{marginTop:16,borderTop:'1px solid var(--tp-10)',paddingTop:16}}>
-            {effectiveUser ? (
-              <button onClick={handleLogout} style={{display:'flex',alignItems:'center',gap:10,width:'100%',padding:'12px',borderRadius:10,background:'rgba(239,68,68,0.1)',border:'1px solid rgba(239,68,68,0.3)',color:'#ef4444',cursor:'pointer',fontFamily:'Rubik,Heebo,sans-serif',fontSize:'0.9rem'}}>
-                <LogOut size={18}/> התנתקות
-              </button>
-            ) : (
-              <button onClick={()=>{setShowAdminDialog(true);setSidebarOpen(false);}} style={{display:'flex',alignItems:'center',gap:10,width:'100%',padding:'12px',borderRadius:10,background:'var(--tp-10)',border:'1px solid var(--tp-25)',color:'var(--tp)',cursor:'pointer',fontFamily:'Rubik,Heebo,sans-serif',fontSize:'0.9rem'}}>
-                <Shield size={18}/> כניסת מנהל
-              </button>
-            )}
-          </div>
-        </div>
-      </aside>
-
-      <div className="lm-main" key={currentGame?.id || 'no-game'}>
-
-        {/* ── Mobile top bar ── */}
-        <header className="lm-topbar mobile-topbar">
-          {/* כל ה-topbar לחיץ לפתיחת drawer */}
-          <button
-            onClick={()=>setSidebarOpen(s=>!s)}
-            style={{
-              display:'flex', alignItems:'center', gap:14, flex:1,
-              background:'none', border:'none', cursor:'pointer',
-              padding:'0', height:'100%', textAlign:'right',
-              WebkitTapHighlightColor:'transparent', touchAction:'manipulation',
-            }}
-          >
-            {/* לוגו */}
-            {currentGame?.game_icon ? (
-              <img src={currentGame.game_icon} alt="" style={{
-                width:58, height:58, borderRadius:12, objectFit:'contain',
-                flexShrink:0, border:'2px solid var(--tp-30)',
-              }}/>
-            ) : (
-              <div style={{
-                width:58, height:58, borderRadius:12, flexShrink:0,
-                background:'var(--tp-10)', border:'2px dashed var(--tp-25)',
-                display:'flex', alignItems:'center', justifyContent:'center', fontSize:'2rem',
-              }}>⚽</div>
-            )}
-            {/* שם המשחק */}
-            <div style={{flex:1, minWidth:0, textAlign:'right'}}>
-              <div style={{
-                fontWeight:900, fontSize:'1.25rem', color:'var(--text)',
-                overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', lineHeight:1.2,
-              }}>
-                {currentGame?.game_name || 'המישק'}
-              </div>
-              {currentGame?.game_subtitle && (
-                <div style={{fontSize:'1rem', fontWeight:700, color:'var(--tp)', marginTop:2}}>
-                  {currentGame.game_subtitle}
-                </div>
-              )}
-            </div>
-            {/* אייקון ☰ */}
-            <div style={{
-              flexShrink:0, width:46, height:46, borderRadius:10,
-              background:'var(--tp-12)', border:'1px solid var(--tp-25)',
-              display:'flex', alignItems:'center', justifyContent:'center',
-            }}>
-              <svg width="22" height="16" viewBox="0 0 22 16" fill="currentColor" style={{color:'var(--tp)'}}>
-                <rect x="0" y="0"  width="22" height="2.5" rx="1.25"/>
-                <rect x="0" y="6.75" width="16" height="2.5" rx="1.25"/>
-                <rect x="0" y="13.5" width="22" height="2.5" rx="1.25"/>
-              </svg>
-            </div>
-          </button>
-        </header>
-
-        <RouteGuard currentUser={effectiveUser} isAdmin={isAdmin} loading={loading||gamesLoading}>
-          <main className="lm-page lm-page--mobile-padded">{children}</main>
-        </RouteGuard>
-
-        {/* ── Mobile bottom navigation bar ── */}
-        <nav className="lm-bottom-nav">
-          {mainNav.slice(0,5).map(item => {
-            const active = isActive(item.url);
-            return (
-              <Link
-                key={item.title}
-                to={item.disabled ? '#' : item.url}
-                onClick={e => {
-                  if (item.disabled) { e.preventDefault(); toast({title:"בחר משחק",description:"נא לבחור משחק",variant:"destructive",duration:2000}); }
-                }}
-                style={{
-                  display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',
-                  flex:1,gap:3,padding:'4px 2px',textDecoration:'none',
-                  color: active ? 'var(--tp)' : (item.disabled ? '#334155' : '#94a3b8'),
-                  background: active ? 'var(--tp-12)' : 'transparent',
-                  borderTop: active ? '3px solid var(--tp)' : '3px solid transparent',
-                  transition:'all 0.15s',
-                  WebkitTapHighlightColor:'transparent',touchAction:'manipulation',
-                  cursor: item.disabled ? 'not-allowed' : 'pointer',
-                  minWidth:0,
-                }}
-              >
-                <item.icon size={28}/>
-                <span style={{fontSize:'0.75rem',fontWeight:active?800:500,whiteSpace:'nowrap',fontFamily:'Rubik,Heebo,sans-serif',lineHeight:1}}>
-                  {item.title}
-                </span>
-              </Link>
-            );
-          })}
-          {/* כפתור "עוד" */}
-          <button
-            onClick={()=>setSidebarOpen(s=>!s)}
-            style={{
-              display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',
-              flex:1,gap:3,padding:'4px 2px',background:'none',border:'none',
-              color: sidebarOpen ? 'var(--tp)' : '#94a3b8',
-              borderTop: sidebarOpen ? '3px solid var(--tp)' : '3px solid transparent',
-              cursor:'pointer',WebkitTapHighlightColor:'transparent',touchAction:'manipulation',
-              fontFamily:'Rubik,Heebo,sans-serif',
-            }}
-          >
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor">
-              <circle cx="12" cy="5" r="2"/>
-              <circle cx="12" cy="12" r="2"/>
-              <circle cx="12" cy="19" r="2"/>
-            </svg>
-            <span style={{fontSize:'0.72rem',fontWeight:500,whiteSpace:'nowrap',lineHeight:1}}>עוד</span>
-          </button>
-        </nav>
-
-      </div>
-
-      <UploadStatusIndicator/>
-
-      <Dialog open={showAdminDialog} onOpenChange={setShowAdminDialog}>
-        <DialogContent className="lm-admin-dialog" dir="rtl">
-          <DialogHeader>
-            <DialogTitle style={{color:'var(--tp)',display:'flex',alignItems:'center',gap:8}}>
-              <Shield size={20}/> התחברות מנהל
-            </DialogTitle>
-            <DialogDescription style={{color:'var(--text-muted)'}}>הזן את סיסמת המנהל</DialogDescription>
-          </DialogHeader>
-          <div style={{display:'flex',flexDirection:'column',gap:16}}>
-            <Input type="password" value={adminPassword} onChange={e=>setAdminPassword(e.target.value)}
-              onKeyPress={e=>e.key==='Enter'&&handleAdminLogin()} placeholder="סיסמה..."/>
-            <div style={{display:'flex',gap:10,justifyContent:'flex-end'}}>
-              <button onClick={()=>{setShowAdminDialog(false);setAdminPassword("");}} className="btn btn-ghost">ביטול</button>
-              <button onClick={handleAdminLogin} className="btn btn-primary">התחבר כמנהל</button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-    </div>
-  );
-}
-
-// ─── Root export ──────────────────────────────────────────────────────────────
-export default function Layout({ children, currentPageName }) {
-  return (
-    <ThemeProvider>
-      <UploadStatusProvider>
-        <GameProvider>
-          <style>{GLOBAL_STYLES}</style>
-          <LayoutContent currentPageName={currentPageName}>{children}</LayoutContent>
-        </GameProvider>
-      </UploadStatusProvider>
-    </ThemeProvider>
-  );
-}
-
-// ═════════════════════════════════════════════════════════════════════════════
-//  GLOBAL STYLES — כל CSS גלובלי כולל btn system, cards, ו-theme variables
-// ═════════════════════════════════════════════════════════════════════════════
-const GLOBAL_STYLES = `
-  /* ThemeContext מטפל ב-font injection + רקעים + CSS vars.
-     כאן רק layout, components, ו-utilities. */
-
-  /* ══════════════════════════════════════════════════
-     CSS VARIABLES — כל הערכים מגיעים מ-ThemeContext
-     =====================================================
-     --bg1, --bg2, --bg3        : רקעים
-     --sidebar                  : רקע סיידבר
-     --tp                       : צבע ראשי
-     --tp-03 ... --tp-50        : ראשי + שקיפות
-     --text, --text-muted       : טקסט
-     --card-bg, --card-border   : כרטיסים
-     --font-main                : גופן
-  ══════════════════════════════════════════════════ */
-
-  /* Default values (overridden at runtime by ThemeContext) */
-  :root {
-    --bg1:         #070d1a;
-    --bg2:         #0d1929;
-    --bg3:         #0a1422;
-    --sidebar:     rgba(5,8,16,0.99);
-    --sidebar-bdr: rgba(6,182,212,0.10);
-    --tp:          #06b6d4;
-    --tp-dark:     #0891b2;
-    --tp-03:       rgba(6,182,212,0.03);
-    --tp-05:       rgba(6,182,212,0.05);
-    --tp-08:       rgba(6,182,212,0.08);
-    --tp-10:       rgba(6,182,212,0.10);
-    --tp-12:       rgba(6,182,212,0.12);
-    --tp-15:       rgba(6,182,212,0.15);
-    --tp-18:       rgba(6,182,212,0.18);
-    --tp-20:       rgba(6,182,212,0.20);
-    --tp-25:       rgba(6,182,212,0.25);
-    --tp-30:       rgba(6,182,212,0.30);
-    --tp-40:       rgba(6,182,212,0.40);
-    --tp-50:       rgba(6,182,212,0.50);
-    --tp-glow:     0 0 20px rgba(6,182,212,0.30);
-    --text:        #e2e8f0;
-    --text-muted:  #64748b;
-    --text-sub:    #475569;
-    --card-bg:     rgba(13,25,41,0.95);
-    --card-border: rgba(6,182,212,0.10);
-    --gold:        #f59e0b;
-    --font-main:   'Rubik', 'Heebo', sans-serif;
-  }
-
-  /* ── Reset ─────────────────────────────────────── */
-  *, *::before, *::after { box-sizing: border-box; }
-  html, body {
-    margin: 0; padding: 0;
-    width: 100%; height: 100%;
-    transition: background 0.4s ease, color 0.3s ease;
-  }
-  #root { height: 100%; }
-
-  /* Scrollbar */
-  ::-webkit-scrollbar { width: 5px; height: 5px; }
-  ::-webkit-scrollbar-track { background: transparent; }
-  ::-webkit-scrollbar-thumb { background: var(--tp-25); border-radius: 3px; }
-  ::-webkit-scrollbar-thumb:hover { background: var(--tp-40); }
-
-  /* ══════════════════════════════════════════════════
-     BUTTON SYSTEM
-     className="btn btn-primary"
-     className="btn btn-secondary btn-sm"
-     className="btn btn-danger btn-icon"
-     className="btn btn-ghost btn-wide"
-  ══════════════════════════════════════════════════ */
-  .btn {
-    display: inline-flex; align-items: center; justify-content: center;
-    gap: 7px; padding: 9px 18px; border-radius: 8px;
-    font-family: var(--font-main) !important;
-    font-size: 0.88rem; font-weight: 600; line-height: 1;
-    cursor: pointer; border: 1px solid transparent;
-    text-decoration: none; white-space: nowrap; user-select: none;
-    -webkit-tap-highlight-color: transparent;
-    transition: background 0.18s, border-color 0.18s, box-shadow 0.18s, transform 0.12s, opacity 0.18s, filter 0.18s;
-  }
-  .btn:active:not(:disabled):not([disabled]) { transform: scale(0.97); }
-  .btn:disabled, .btn[disabled] { opacity: 0.4; cursor: not-allowed; pointer-events: none; }
-
-  .btn-primary   { background: var(--tp); color: #fff; border-color: transparent; }
-  .btn-primary:hover:not(:disabled) { filter: brightness(1.12); box-shadow: 0 4px 20px var(--tp-30); }
-
-  .btn-secondary { background: var(--tp-10); color: var(--tp); border-color: var(--tp-30); }
-  .btn-secondary:hover:not(:disabled) { background: var(--tp-20); border-color: var(--tp-50); box-shadow: 0 0 14px var(--tp-20); }
-
-  .btn-ghost { background: transparent; color: var(--text-muted); border-color: rgba(148,163,184,0.20); }
-  .btn-ghost:hover:not(:disabled) { background: rgba(148,163,184,0.08); color: var(--text); }
-
-  .btn-danger { background: rgba(239,68,68,0.08); color: #ef4444; border-color: rgba(239,68,68,0.22); }
-  .btn-danger:hover:not(:disabled) { background: rgba(239,68,68,0.16); border-color: rgba(239,68,68,0.45); }
-
-  .btn-success { background: rgba(34,197,94,0.10); color: #22c55e; border-color: rgba(34,197,94,0.25); }
-  .btn-success:hover:not(:disabled) { background: rgba(34,197,94,0.18); border-color: rgba(34,197,94,0.45); }
-
-  .btn-warning { background: rgba(245,158,11,0.10); color: #f59e0b; border-color: rgba(245,158,11,0.25); }
-  .btn-warning:hover:not(:disabled) { background: rgba(245,158,11,0.18); }
-
-  .btn-sm   { padding: 5px 12px; font-size: 0.78rem; border-radius: 7px; gap: 5px; }
-  .btn-lg   { padding: 12px 26px; font-size: 0.95rem; border-radius: 10px; gap: 9px; }
-  .btn-icon { padding: 8px; aspect-ratio: 1; }
-  .btn-icon.btn-sm { padding: 6px; }
-  .btn-wide { width: 100%; }
-
-  /* ══════════════════════════════════════════════════
-     CARD SYSTEM
-     className="card"
-  ══════════════════════════════════════════════════ */
-  .card {
-    background: var(--card-bg, var(--bg2));
-    border: 1px solid var(--card-border, var(--tp-10));
-    border-radius: 12px; padding: 20px 24px;
-    transition: border-color 0.2s, box-shadow 0.2s;
-  }
-  .card:hover { border-color: var(--tp-20); }
-  .card-sm { padding: 14px 18px; border-radius: 10px; }
-  .card-elevated { box-shadow: 0 4px 24px rgba(0,0,0,0.35); }
-
-  /* ══════════════════════════════════════════════════
-     BADGE SYSTEM
-  ══════════════════════════════════════════════════ */
-  .badge {
-    display: inline-flex; align-items: center; gap: 4px;
-    padding: 3px 10px; border-radius: 20px;
-    font-size: 0.72rem; font-weight: 700; letter-spacing: 0.03em; border: 1px solid transparent;
-  }
-  .badge-primary { background: var(--tp-12); color: var(--tp); border-color: var(--tp-25); }
-  .badge-success { background: rgba(34,197,94,0.10); color: #22c55e; border-color: rgba(34,197,94,0.25); }
-  .badge-danger  { background: rgba(239,68,68,0.10); color: #ef4444; border-color: rgba(239,68,68,0.25); }
-  .badge-warning { background: rgba(245,158,11,0.10); color: #f59e0b; border-color: rgba(245,158,11,0.25); }
-  .badge-gray    { background: rgba(148,163,184,0.10); color: #94a3b8; border-color: rgba(148,163,184,0.20); }
-
-  /* ══════════════════════════════════════════════════
-     INPUT SYSTEM
-  ══════════════════════════════════════════════════ */
-  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
-  select, textarea {
-    background: var(--bg1) !important;
-    border: 1px solid var(--tp-20) !important;
-    color: var(--text) !important;
-    border-radius: 8px !important;
-    font-family: var(--font-main) !important;
-    transition: border-color 0.2s, box-shadow 0.2s !important;
-  }
-  input:focus, select:focus, textarea:focus {
-    border-color: var(--tp-50) !important;
-    box-shadow: 0 0 0 3px var(--tp-12) !important;
-    outline: none !important;
-  }
-
-  /* ── Layout shell ─────────────────────────────── */
-  .lm-root {
-    display: flex;
-    height: 100dvh;
-    overflow: hidden;
-    background: var(--bg1);
-    transition: background 0.4s ease;
-  }
-
-  /* ── Sidebar ──────────────────────────────────── */
-  .lm-sidebar {
-    width: 300px !important; flex-shrink: 0;
-    height: 100dvh;
-    display: flex; flex-direction: column;
-    background: var(--sidebar);
-    border-left: 1px solid var(--sidebar-bdr, var(--tp-10));
-    overflow: hidden; z-index: 40; position: relative;
-    transition: background 0.4s ease;
-  }
-  .lm-sidebar::before {
-    content: '';
-    position: absolute; top: -90px; right: -90px;
-    width: 280px; height: 280px;
-    background: radial-gradient(circle, var(--tp-12) 0%, transparent 70%);
-    pointer-events: none; z-index: 0;
-    transition: background 0.4s;
-  }
-  .lm-sidebar::after {
-    content: '';
-    position: absolute; inset: 0;
-    background-image:
-      repeating-linear-gradient(0deg,  transparent, transparent 27px, var(--tp-03) 28px),
-      repeating-linear-gradient(90deg, transparent, transparent 27px, var(--tp-03) 28px);
-    pointer-events: none; z-index: 0;
-  }
-  .lm-sidebar-inner {
-    position: relative; z-index: 1;
-    display: flex; flex-direction: column; height: 100%;
-    overflow-y: auto; scrollbar-width: none;
-  }
-  .lm-sidebar-inner::-webkit-scrollbar { display: none; }
-
-  .lm-sidebar--mobile {
-    position: fixed; top: 0; right: -310px;
-    height: 100dvh; z-index: 50;
-    transition: right 0.30s cubic-bezier(0.4,0,0.2,1), box-shadow 0.30s ease;
-  }
-  .lm-sidebar--mobile.open { right: 0; box-shadow: -12px 0 60px rgba(0,0,0,0.65); }
-
-  .lm-close-btn {
-    position: absolute; top: 12px; left: 12px;
-    background: transparent; border: none; color: var(--text-muted);
-    cursor: pointer; padding: 5px; z-index: 2; border-radius: 6px;
-    transition: color 0.15s, background 0.15s;
-  }
-  .lm-close-btn:hover { color: var(--text); background: var(--tp-08); }
-
-  /* ── Overlay ──────────────────────────────────── */
-  .lm-overlay {
-    display: none; position: fixed; inset: 0; z-index: 49;
-    background: rgba(0,0,0,0.65); backdrop-filter: blur(4px);
-    opacity: 0; transition: opacity 0.30s ease; pointer-events: none;
-  }
-  .lm-overlay.visible { opacity: 1; pointer-events: all; }
-
-  /* ── Logo (96px) ──────────────────────────────── */
-  .lm-logo-area {
-    display: flex;
-    align-items: center;
-    gap: 14px;
-    padding: 20px 16px 14px;
-  }
-  .lm-logo-img-wrap { position: relative; flex-shrink: 0; }
-  .lm-logo-img {
-    width: 130px; height: 130px;
-    object-fit: contain; border-radius: 16px;
-    border: 1px solid var(--tp-20); display: block;
-  }
-  .lm-logo-glow {
-    position: absolute; inset: -10px; border-radius: 24px;
-    background: radial-gradient(circle, var(--tp-18) 0%, transparent 70%);
-    pointer-events: none; animation: lm-pulse 3.5s ease-in-out infinite;
-    transition: background 0.4s;
-  }
-  @keyframes lm-pulse {
-    0%,100% { opacity: 0.4; transform: scale(1); }
-    50%      { opacity: 1.0; transform: scale(1.08); }
-  }
-  .lm-logo-placeholder {
-    width: 130px; height: 130px; border-radius: 16px; flex-shrink: 0;
-    border: 1px dashed var(--tp-25); background: var(--tp-05);
-    display: flex; align-items: center; justify-content: center; font-size: 48px;
-  }
-  .lm-logo-text {
-    flex: 1; min-width: 0;
-    display: flex; flex-direction: column; gap: 6px;
-  }
-  .lm-logo-title {
-    font-size: 1.05rem;
-    font-weight: 900;
-    color: var(--text);
-    line-height: 1.25;
-    word-break: break-word;
-    overflow-wrap: break-word;
-    /* לא חוצים ל-3 שורות — מציגים הכל */
-    transition: color 0.3s;
-  }
-  .lm-logo-title--dim { color: var(--text-muted); font-weight: 500; }
-  .lm-logo-season {
-    font-size: 1rem;
-    font-weight: 800;
-    color: var(--tp);
-    line-height: 1.2;
-    word-break: break-word;
-    transition: color 0.3s;
-  }
-
-  /* ── Stars ────────────────────────────────────── */
-  .lm-stars {
-    display: flex; justify-content: center; gap: 6px;
-    padding: 0 18px 12px; position: relative;
-  }
-  .lm-stars::after {
-    content: ''; position: absolute; bottom: 0; left: 18px; right: 18px; height: 1px;
-    background: linear-gradient(90deg, transparent, var(--tp-30), transparent);
-  }
-  .lm-star {
-    font-size: 11px; color: var(--gold); opacity: 0;
-    filter: drop-shadow(0 0 5px var(--gold));
-    animation: lm-star-in 0.5s ease forwards;
-    animation-delay: calc(var(--i) * 0.08s + 0.4s);
-    transition: color 0.3s;
-  }
-  @keyframes lm-star-in { to { opacity: 0.9; } }
-
-  /* ── Game selector ────────────────────────────── */
-  .lm-game-selector {
-    padding: 10px 14px;
-    border-bottom: 1px solid var(--tp-08);
-    background: var(--tp-03);
-  }
-  .lm-sec-label {
-    font-size: 0.7rem; font-weight: 800; letter-spacing: 0.12em;
-    text-transform: uppercase; color: var(--text-sub); padding: 0 4px 7px;
-  }
-  .lm-sec-label--primary { color: var(--tp); opacity: 1; font-size: 0.72rem; }
-  .lm-sec-label--admin   { color: var(--gold); opacity: 0.9; margin-top: 16px; font-size: 0.7rem; }
-
-  .lm-select-trigger {
-    background: var(--bg1) !important; border: 1px solid var(--tp-20) !important;
-    color: var(--text) !important; font-size: 0.84rem !important; font-weight: 600 !important;
-    height: 38px !important; border-radius: 8px !important;
-    transition: border-color 0.2s, box-shadow 0.2s !important;
-  }
-  .lm-select-content {
-    background: var(--bg2) !important; border: 1px solid var(--tp-30) !important;
-    color: var(--text) !important; z-index: 9999 !important;
-    border-radius: 10px !important; overflow: hidden !important;
-  }
-  .lm-edit-game {
-    display: inline-flex; align-items: center; gap: 4px;
-    margin-top: 6px; font-size: 0.68rem; color: var(--text-muted);
-    text-decoration: none; transition: color 0.15s;
-  }
-  .lm-edit-game:hover { color: var(--tp); }
-
-  /* ── Navigation ───────────────────────────────── */
-  .lm-nav {
-    flex: 1; padding: 12px 10px;
-    display: flex; flex-direction: column; gap: 2px;
-    overflow-y: auto; scrollbar-width: none;
-  }
-  .lm-nav::-webkit-scrollbar { display: none; }
-
-  .lm-nav-item {
-    position: relative; display: flex; align-items: center; gap: 10px;
-    padding: 10px 13px; border-radius: 10px; text-decoration: none;
-    font-size: 0.96rem; font-weight: 500; color: var(--text-muted);
-    transition: background 0.18s, color 0.18s, transform 0.14s;
-    cursor: pointer;
-  }
-  .lm-nav-item:hover:not(.disabled) { background: var(--tp-08); color: var(--text); transform: translateX(-3px); }
-  .lm-nav-item.active { background: var(--tp-12); color: var(--tp); font-weight: 700; }
-  .lm-nav-item.disabled { opacity: 0.35; cursor: not-allowed; }
-  .lm-nav-icon { width:20px; height:20px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
-  .lm-nav-label { flex: 1; }
-  .lm-nav-bar {
-    position: absolute; right: 0; top: 50%; transform: translateY(-50%);
-    width: 3px; height: 60%; border-radius: 2px 0 0 2px;
-    background: var(--tp); box-shadow: 0 0 12px var(--tp-40);
-    animation: lm-bar-in 0.22s ease;
-  }
-  @keyframes lm-bar-in {
-    from { transform: translateY(-50%) scaleY(0); }
-    to   { transform: translateY(-50%) scaleY(1); }
-  }
-
-  .lm-login-prompt {
-    display: flex; align-items: center; gap: 10px;
-    width: 100%; padding: 10px 13px; border-radius: 10px;
-    background: var(--tp-05); border: 1px dashed var(--tp-20);
-    color: var(--text-muted); font-size: 0.92rem; font-weight: 500;
-    font-family: var(--font-main) !important; cursor: pointer; text-align: right;
-    transition: background 0.15s, color 0.15s;
-  }
-  .lm-login-prompt:hover { background: var(--tp-10); color: var(--text); }
-  .lm-login-badge {
-    font-size: 0.62rem; font-weight: 700; margin-right: auto;
-    background: var(--tp-15); color: var(--tp);
-    padding: 2px 8px; border-radius: 20px; letter-spacing: 0.05em;
-  }
-
-  /* ══════════════════════════════════════════════════
-     THEME SECTION (replaces old ThemePicker)
-  ══════════════════════════════════════════════════ */
-  .lm-theme-section {
-    padding: 10px 12px;
-    border-top: 1px solid var(--tp-08);
-    display: flex; flex-direction: column; gap: 6px;
-  }
-
-  /* Dark/light toggle */
-  .lm-darkmode-btn {
-    display: flex; align-items: center; gap: 10px;
-    width: 100%; background: transparent; border: none;
-    cursor: pointer; font-family: var(--font-main) !important;
-    padding: 6px 4px; border-radius: 8px; transition: background 0.15s;
-  }
-  .lm-darkmode-btn:hover { background: var(--tp-05); }
-  .lm-darkmode-track {
-    position: relative; width: 36px; height: 20px;
-    background: var(--tp-20); border: 1px solid var(--tp-30);
-    border-radius: 10px; flex-shrink: 0;
-    transition: background 0.25s;
-  }
-  .lm-darkmode-knob {
-    position: absolute; top: 2px; right: 2px;
-    width: 16px; height: 16px; border-radius: 50%;
-    background: var(--tp); color: #fff;
-    display: flex; align-items: center; justify-content: center;
-    transition: transform 0.25s cubic-bezier(0.4,0,0.2,1), background 0.25s;
-    box-shadow: 0 1px 4px rgba(0,0,0,0.4);
-  }
-  .lm-darkmode-knob.light { transform: translateX(-16px); background: var(--gold); }
-  .lm-darkmode-label { font-size: 0.75rem; font-weight: 600; color: var(--text-muted); }
-
-  /* Theme selector trigger */
-  .lm-theme-trigger {
-    display: flex; align-items: center; gap: 8px;
-    width: 100%; background: var(--tp-05);
-    border: 1px solid var(--tp-15); border-radius: 9px;
-    padding: 8px 10px; cursor: pointer;
-    font-family: var(--font-main) !important;
-    transition: background 0.15s, border-color 0.15s;
-  }
-  .lm-theme-trigger:hover { background: var(--tp-10); border-color: var(--tp-25); }
-  .lm-theme-dots { display: flex; gap: 3px; align-items: center; }
-  .lm-theme-name-current { flex: 1; font-size: 0.82rem; font-weight: 600; color: var(--text); text-align: right; }
-  .lm-theme-chevron { font-size: 0.6rem; color: var(--text-muted); }
-
-  /* Theme panel */
-  .lm-theme-panel {
-    display: grid; grid-template-columns: 1fr 1fr;
-    gap: 6px; margin-top: 4px;
-    animation: lm-panel-in 0.18s ease;
-  }
-  @keyframes lm-panel-in {
-    from { opacity: 0; transform: translateY(-6px); }
-    to   { opacity: 1; transform: translateY(0); }
-  }
-
-  .lm-theme-card {
-    display: flex; flex-direction: column; gap: 6px;
-    padding: 8px; border-radius: 10px;
-    background: var(--tp-05); border: 1px solid var(--tp-10);
-    cursor: pointer; transition: background 0.15s, border-color 0.15s, transform 0.12s;
-    font-family: var(--font-main) !important;
-  }
-  .lm-theme-card:hover { background: var(--tp-10); transform: scale(1.03); }
-  .lm-theme-card.active { transform: scale(1.02); }
-
-  /* Color strip */
-  .lm-theme-strip {
-    width: 100%; height: 20px; border-radius: 6px; overflow: hidden;
-    display: flex; border: 1px solid rgba(255,255,255,0.06);
-  }
-
-  .lm-theme-card-info {
-    display: flex; align-items: center; gap: 5px;
-  }
-  .lm-theme-card-emoji { font-size: 14px; }
-  .lm-theme-card-name  { font-size: 0.75rem; font-weight: 700; color: var(--text); flex: 1; }
-  .lm-theme-check      { font-size: 0.8rem; font-weight: 700; }
-
-  /* ── User footer ──────────────────────────────── */
-  .lm-user-footer { padding: 12px 14px 16px; border-top: 1px solid var(--tp-10); }
-  .lm-user-row { display: flex; align-items: center; gap: 10px; }
-  .lm-avatar {
-    width: 36px; height: 36px; border-radius: 50%; flex-shrink: 0;
-    background: linear-gradient(135deg, var(--tp), #8b5cf6);
-    display: flex; align-items: center; justify-content: center;
-    font-size: 0.82rem; font-weight: 800; color: white;
-    box-shadow: 0 0 14px var(--tp-25);
-  }
-  .lm-user-info-block { flex: 1; min-width: 0; }
-  .lm-user-name {
-    font-size: 0.82rem; font-weight: 600; color: var(--text);
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  }
-  .lm-user-role { font-size: 0.68rem; margin-top: 1px; }
-  .lm-logout-btn { flex-shrink: 0; }
-
-  /* ── Loading ──────────────────────────────────── */
-  .lm-loading {
-    display: flex; flex-direction: column; align-items: center;
-    justify-content: center; height: 100dvh; gap: 16px;
-    color: var(--text-muted); font-size: 0.9rem;
-    background: var(--bg1);
-  }
-  .lm-loading-spinner {
-    width: 38px; height: 38px;
-    border: 3px solid var(--tp-15); border-top-color: var(--tp);
-    border-radius: 50%; animation: lm-spin 0.8s linear infinite;
-  }
-  @keyframes lm-spin { to { transform: rotate(360deg); } }
-
-  /* ── Main content ─────────────────────────────── */
-  .lm-main {
-    flex: 1; display: flex; flex-direction: column;
-    height: 100dvh; overflow: hidden; min-width: 0;
-    background: var(--bg1); transition: background 0.4s;
-  }
-  .lm-page {
-    flex: 1; overflow-y: auto; overflow-x: hidden;
-    -webkit-overflow-scrolling: touch;
-    background: var(--bg1); transition: background 0.4s;
-  }
-  /* bottom nav hidden by default on desktop */
-  .lm-bottom-nav { display: none; }
-
-  /* ── Mobile topbar ────────────────────────────── */
-  .lm-topbar {
-    display: none; align-items: center; justify-content: space-between;
-    padding: 0 14px; height: 62px; flex-shrink: 0;
-    background: var(--sidebar);
-    border-bottom: 1px solid var(--tp-10);
-    position: sticky; top: 0; z-index: 30;
-    transition: background 0.4s;
-  }
-  .lm-topbar-brand {
-    display: flex; align-items: center; gap: 10px;
-    font-size: 1rem; font-weight: 800; color: var(--text);
-    flex: 1; overflow: hidden; min-width: 0;
-  }
-  .lm-topbar-img {
-    width: 42px; height: 42px;
-    object-fit: contain; border-radius: 10px; flex-shrink: 0;
-  }
-
-  /* ── Hamburger — גדול יותר ────────────────────── */
-  .lm-hamburger {
-    display: flex; flex-direction: column; justify-content: center; gap: 6px;
-    width: 46px; height: 46px; padding: 10px;
-    background: var(--tp-08); border: 1px solid var(--tp-20);
-    border-radius: 10px; cursor: pointer; flex-shrink: 0;
-    transition: background 0.15s;
-  }
-  .lm-hamburger:hover { background: var(--tp-15); }
-  .lm-hamburger span {
-    display: block; height: 2.5px; background: var(--tp);
-    border-radius: 2px;
-    transition: transform 0.28s ease, opacity 0.28s ease, width 0.28s ease;
-    transform-origin: center;
-  }
-  .lm-hamburger span:nth-child(1) { width: 24px; }
-  .lm-hamburger span:nth-child(2) { width: 16px; }
-  .lm-hamburger span:nth-child(3) { width: 24px; }
-  .lm-hamburger.open span:nth-child(1) { transform: translateY(8.5px) rotate(45deg); width: 24px; }
-  .lm-hamburger.open span:nth-child(2) { opacity: 0; transform: scaleX(0); }
-  .lm-hamburger.open span:nth-child(3) { transform: translateY(-8.5px) rotate(-45deg); width: 24px; }
-
-  /* ── Admin dialog ─────────────────────────────── */
-  .lm-admin-dialog {
-    background: linear-gradient(135deg, var(--bg3) 0%, var(--bg1) 100%) !important;
-    border: 1px solid var(--tp-30) !important; border-radius: 14px !important;
-  }
-
-  /* ── Responsive ───────────────────────────────── */
-  @media (max-width: 768px) {
-    .desktop-sidebar { display: none !important; }
-    .mobile-topbar   { display: flex !important; }
-    .lm-overlay      { display: block !important; }
-  }
-  @media (min-width: 769px) {
-    .mobile-sidebar { display: none !important; }
-    .mobile-topbar  { display: none !important; }
-  }
-
-  /* ══════════════════════════════════════════════════════════════════
-     MOBILE COMPLETE REDESIGN — גדול, ברור, שמיש
-  ══════════════════════════════════════════════════════════════════ */
-  @media (max-width: 768px) {
-
-    /* ─── Base scaling ──────────────────────────────────────── */
-    html {
-      font-size: 18px !important;
-      -webkit-text-size-adjust: 100%;
-    }
-    body {
-      font-size: 18px !important;
-      line-height: 1.5 !important;
-      overflow-x: hidden !important;
-    }
-    * { box-sizing: border-box; }
-    .lm-root, .lm-main, .lm-page { overflow-x: hidden !important; }
-
-    /* ─── Show/hide ─────────────────────────────────────────── */
-    .desktop-sidebar { display: none !important; }
-    .mobile-topbar   { display: flex !important; }
-    .lm-overlay      { display: block !important; }
-
-    /* ─── Top bar — bigger ──────────────────────────────────── */
-    .lm-topbar {
-      height: 82px !important;
-      padding: 0 16px !important;
-    }
-
-    /* ─── Bottom nav — prominent ────────────────────────────── */
-    .lm-bottom-nav {
-      position: fixed !important;
-      bottom: 0 !important; left: 0 !important; right: 0 !important;
-      height: 68px !important;
-      display: flex !important;
-      align-items: stretch !important;
-      background: var(--sidebar) !important;
-      border-top: 2px solid var(--tp-25) !important;
-      z-index: 9999 !important;
-      box-shadow: 0 -6px 30px rgba(0,0,0,0.6) !important;
-      padding-bottom: env(safe-area-inset-bottom, 0px) !important;
-    }
-
-    /* ─── Content padding for bottom nav ───────────────────── */
-    .lm-page--mobile-padded {
-      padding-bottom: calc(76px + env(safe-area-inset-bottom, 0px)) !important;
-    }
-    .lm-page {
-      padding-bottom: calc(76px + env(safe-area-inset-bottom, 0px)) !important;
-    }
-
-    /* ─── Drawer ────────────────────────────────────────────── */
-    .lm-sidebar--mobile {
-      position: fixed !important;
-      top: 0 !important; right: -105vw !important; width: 88vw !important;
-      height: 100dvh !important; z-index: 50 !important; overflow-y: auto !important;
-      transition: right 0.28s cubic-bezier(0.4,0,0.2,1) !important;
-    }
-    .lm-sidebar--mobile.open { right: 0 !important; box-shadow: -12px 0 60px rgba(0,0,0,0.7) !important; }
-
-    /* ─── Headings ──────────────────────────────────────────── */
-    h1 { font-size: 1.6rem !important; font-weight: 800 !important; }
-    h2 { font-size: 1.3rem !important; font-weight: 700 !important; }
-    h3 { font-size: 1.1rem !important; }
-
-    /* ─── Nav items in drawer — very large ──────────────────── */
-    .lm-nav-item {
-      font-size: 1.15rem !important;
-      padding: 16px 20px !important;
-      min-height: 56px !important;
-      letter-spacing: 0.01em !important;
-    }
-    .lm-nav-icon { width: 26px !important; height: 26px !important; }
-    .lm-sec-label { font-size: 0.85rem !important; }
-
-    /* ─── Buttons — large tap targets ───────────────────────── */
-    button, [role="button"] {
-      min-height: 48px;
-      font-size: 1rem !important;
-      touch-action: manipulation;
-      -webkit-tap-highlight-color: transparent;
-    }
-    /* except badges */
-    [class*="badge"], [class*="Badge"] {
-      min-height: unset !important;
-      font-size: 0.85rem !important;
-      padding: 3px 9px !important;
-    }
-
-    /* ─── Form elements — prevent iOS zoom ──────────────────── */
-    input, select, textarea {
-      font-size: 16px !important;
-      min-height: 48px !important;
-    }
-    [class*="SelectTrigger"] {
-      min-height: 48px !important;
-      font-size: 1rem !important;
-    }
-    [class*="SelectValue"] { font-size: 1rem !important; }
-
-    /* ─── Tables ────────────────────────────────────────────── */
-    table { font-size: 0.95rem !important; }
-    th, td { padding: 10px 6px !important; font-size: 0.9rem !important; }
-
-    /* ─── Dialogs — bottom sheet style ─────────────────────── */
-    [role="dialog"] {
-      max-width: 100vw !important;
-      width: 100vw !important;
-      max-height: 94dvh !important;
-      margin: 0 !important;
-      border-radius: 20px 20px 0 0 !important;
-      position: fixed !important;
-      bottom: 0 !important;
-      top: auto !important;
-      left: 0 !important;
-      right: 0 !important;
-      transform: none !important;
-      overflow-y: auto !important;
-    }
-
-    /* ─── Chips / pills — bigger ────────────────────────────── */
-    .vs-mobile-chips button,
-    [style*="border-radius: 999px"],
-    [style*="borderRadius: '999px'"] {
-      font-size: 0.9rem !important;
-      padding: 8px 16px !important;
-      min-height: 40px !important;
-    }
-
-    /* ─── Cards ─────────────────────────────────────────────── */
-    .card, [class*="Card"] { border-radius: 12px !important; }
-
-    /* ─── Spacing ───────────────────────────────────────────── */
-    .p-6 { padding: 16px !important; }
-    .p-4 { padding: 12px !important; }
-    .p-3 { padding: 10px !important; }
-    .gap-6 { gap: 12px !important; }
-    .gap-4 { gap: 10px !important; }
-    .mb-8 { margin-bottom: 20px !important; }
-
-    /* ─── Sidebar in pages — hidden on mobile ───────────────── */
-    aside[style*="215px"],
-    aside[style*="width: 215"],
-    .vs-sidebar-desktop { display: none !important; }
-
-    /* ─── Full width content on mobile ─────────────────────── */
-    [style*="flex: 1"] { width: 100% !important; }
-  }
-
-  /* ── Very small phones < 380px ─────────────────────────────── */
-  @media (max-width: 380px) {
-    html { font-size: 16px !important; }
-    .lm-topbar { height: 64px !important; }
-    .lm-bottom-nav { height: 62px !important; }
-  }
-
-  /* ── Global overrides (Radix, shadcn, Tailwind) ─ */
-  thead tr th, thead tr td { background: var(--bg2) !important; }
-
-  [data-radix-select-viewport],
-  [data-radix-popper-content-wrapper] > div {
-    background: var(--bg2) !important; border: 1px solid var(--tp-25) !important;
-  }
-  [role="option"]:hover, [data-highlighted] { background: var(--tp-15) !important; color: var(--text) !important; }
-
-  .bg-card   { background: var(--card-bg) !important; }
-  .border-border { border-color: var(--card-border) !important; }
-  .nav-item:hover { background: var(--tp-10) !important; color: var(--text) !important; }
-
-  .text-cyan-400  { color: var(--tp) !important; }
-  .text-cyan-300  { color: var(--tp) !important; opacity: 0.85; }
-  .border-cyan-400 { border-color: var(--tp) !important; }
-  .border-cyan-700\\/50 { border-color: var(--tp-50) !important; }
-  .hover\\:bg-cyan-900\\/20:hover { background: var(--tp-10) !important; }
-  .hover\\:border-cyan-700\\/50:hover { border-color: var(--tp-50) !important; }
-
-  /* ── Light mode adjustments for main content ─── */
-  .hm-light .lm-page,
-  .hm-light .lm-main {
-    background: var(--bg1);
-  }
-  .hm-light .card {
-    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
-  }
-  .hm-light input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
-  .hm-light select,
-  .hm-light textarea {
-    background: #ffffff !important;
-  }
-`;
