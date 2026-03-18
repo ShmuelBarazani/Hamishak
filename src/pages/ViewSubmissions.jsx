@@ -1111,14 +1111,10 @@ export default function ViewSubmissions() {
 
     return (
       <div style={{
-        overflowX:'auto', WebkitOverflowScrolling:'touch',
-        padding:'8px 16px', scrollbarWidth:'none',
-        msOverflowStyle:'none',
+        padding:'8px 12px',
       }}>
-        <style>{`.stage-chips-row::-webkit-scrollbar{display:none}`}</style>
         <div className="stage-chips-row" style={{
-          display:'flex', gap:'8px', flexWrap:'nowrap',
-          width:'max-content',
+          display:'flex', gap:'6px', flexWrap:'wrap',
         }}>
           {allChips.map(({button, active, c}) => (
             <button
@@ -1126,8 +1122,8 @@ export default function ViewSubmissions() {
               onClick={() => toggleSectionFn(button.sectionKey)}
               style={{
                 display:'inline-flex', alignItems:'center', flexShrink:0,
-                padding:'10px 18px', borderRadius:'999px',
-                fontSize:'1rem', fontWeight: active ? 800 : 500,
+                padding:'8px 14px', borderRadius:'999px',
+                fontSize:'0.9rem', fontWeight: active ? 800 : 500,
                 color: active ? 'white' : c.color,
                 background: active ? c.color : c.bg,
                 border:`2px solid ${active ? c.color : c.border}`,
