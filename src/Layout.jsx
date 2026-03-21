@@ -341,8 +341,10 @@ function LayoutContent({ children }) {
             ))}
           </SelectContent>
         </Select>
-        {isAdmin && currentGame && (
-          <Link to={createPageUrl("CreateGame")} className="lm-edit-game"><Edit size={10}/> ערוך משחק</Link>
+        {isAdmin && (
+          <Link to={createPageUrl("CreateGame")} className="lm-edit-game">
+            <Edit size={13}/> ערוך / הוסף משחק
+          </Link>
         )}
       </div>
 
@@ -978,11 +980,23 @@ const GLOBAL_STYLES = `
     border-radius: 10px !important; overflow: hidden !important;
   }
   .lm-edit-game {
-    display: inline-flex; align-items: center; gap: 4px;
-    margin-top: 6px; font-size: 0.68rem; color: var(--text-muted);
-    text-decoration: none; transition: color 0.15s;
+    display: flex; align-items: center; gap: 6px;
+    margin-top: 8px; padding: 7px 12px;
+    font-size: 0.8rem; font-weight: 600;
+    color: var(--tp);
+    text-decoration: none;
+    background: var(--tp-10);
+    border: 1px solid var(--tp-25);
+    border-radius: 8px;
+    transition: all 0.15s;
+    width: 100%;
+    justify-content: center;
   }
-  .lm-edit-game:hover { color: var(--tp); }
+  .lm-edit-game:hover {
+    background: var(--tp-20);
+    border-color: var(--tp-50);
+    box-shadow: 0 0 10px var(--tp-20);
+  }
 
   /* ── Navigation ───────────────────────────────── */
   .lm-nav {
@@ -1422,4 +1436,3 @@ const GLOBAL_STYLES = `
     background: #ffffff !important;
   }
 `;
-
