@@ -1354,6 +1354,23 @@ export default function ViewSubmissions() {
                       {participantQuestions.map(q => {
                         const isNameField = q.question_text?.includes("שם");
                         const displayValue = isNameField ? selectedParticipant : (participantDetails[q.id] || '-');
+                        // ✅ עריכת T1 למנהל
+                        if (isEditMode && isAdmin && !isNameField) {
+                          const editedVal = editedPredictions[q.id];
+                          const currentVal = editedVal !== undefined ? editedVal : (participantDetails[q.id] || '');
+                          return (
+                            <div key={q.id} className="text-right">
+                              <label className="text-xs font-medium mb-1 block" style={{ color:'#06b6d4' }}>{q.question_text}</label>
+                              <input
+                                type="text"
+                                value={currentVal}
+                                onChange={e => handlePredictionEdit(q.id, e.target.value)}
+                                className="w-full rounded-md px-2 py-1 text-sm text-right"
+                                style={{ background:'rgba(15,23,42,0.8)', border:'1px solid rgba(6,182,212,0.5)', color:'#f8fafc', outline:'none' }}
+                              />
+                            </div>
+                          );
+                        }
                         return (
                           <div key={q.id} className="text-right">
                             <label className="text-xs font-medium mb-1 block" style={{ color:'#94a3b8' }}>{q.question_text}</label>
