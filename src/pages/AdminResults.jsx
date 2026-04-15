@@ -14,13 +14,12 @@ import { useGame } from "@/components/contexts/GameContext";
 import { calculateTotalScore } from "@/components/scoring/ScoreService";
 
 // ── שאלות שתומכות בריבוי תשובות (||| separator) ──────────────────────────────
-// question_id שייך לשאלות שבהן יכולים להיות מספר זוכים/תשובות נכונות
 const MULTI_ANSWER_QUESTIONS = new Set([
-  'T2_1',   // מלך השערים
-  'T2_2',   // קבוצה הכי הרבה שערים
-  'T2_3',   // קבוצה הכי הרבה פנדלים
-  'T2_8',   // תוצאת תיקו שכיחה
-  'T2_10',  // תוצאה שכיחה ביותר
+  'T2_1',
+  'T2_2',
+  'T2_3',
+  'T2_8',
+  'T2_10',
 ]);
 
 const isMultiAnswerQuestion = (q) => {
@@ -168,7 +167,6 @@ export default function AdminResults() {
       setLocationTables(Object.values(sTables).filter(t => locationTableIds.includes(t.id)).sort((a,b) => parseInt(a.id.replace('T','')) - parseInt(b.id.replace('T',''))));
       setPlayoffWinnersTable(sTables['T19'] || null);
 
-      // ✅ תיקון: T10 כבר לא מוחרג — מופיע ב-special tables
       const allSpecialTables = Object.values(sTables).filter(t => {
         const desc = t.description?.trim();
         return desc && !/^\d+$/.test(desc)
@@ -215,13 +213,12 @@ export default function AdminResults() {
     setResults(prev => ({ ...prev, [questionId]: value === '' ? '__CLEAR__' : value }));
   };
 
-  // ── Multi-answer: מוסיף/מסיר תשובה מהרשימה |||  ────────────────────────
   const handleMultiAnswerAdd = (questionId, newAnswer, currentValue) => {
     if (!newAnswer.trim()) return;
     const existing = (currentValue && currentValue !== '__CLEAR__')
       ? currentValue.split('|||').map(v => v.trim()).filter(Boolean)
       : [];
-    if (existing.includes(newAnswer.trim())) return; // כבר קיים
+    if (existing.includes(newAnswer.trim())) return;
     const updated = [...existing, newAnswer.trim()].join('|||');
     handleResultChange(questionId, updated);
   };
@@ -376,13 +373,11 @@ export default function AdminResults() {
 
     const clearAll = () => handleResultChange(question.id, '__CLEAR__');
 
-    // תצוגת הכפתור המרכזי
     const triggerLabel = currentAnswers.length === 0
       ? 'בחר...'
       : currentAnswers.map(a => a.replace(/\s*\([^)]+\)\s*$/, '').trim()).join(', ');
 
     if (!hasOptions) {
-      // טקסט חופשי עם ריבוי תשובות
       return (
         <div style={{ minWidth: '220px' }}>
           {currentAnswers.length > 0 && (
@@ -414,7 +409,6 @@ export default function AdminResults() {
       );
     }
 
-    // ── Checkbox dropdown (כמו בתמונה) ──────────────────────────────────────
     return (
       <MultiCheckboxDropdown
         options={options}
@@ -429,7 +423,6 @@ export default function AdminResults() {
   };
 
   const renderSelectWithLogos = (question, value, onChange, selectClassName = "w-[200px]") => {
-    // ✅ שאלות עם ריבוי תשובות — widget מיוחד
     if (isMultiAnswerQuestion(question)) {
       return renderMultiAnswerInput(question, value);
     }
@@ -486,7 +479,7 @@ export default function AdminResults() {
             const isS11 = sn.includes('רבע גמר') || td.includes('רבע גמר');
             const isS12 = sn.includes('חצי גמר') || td.includes('חצי גמר');
             const isS13 = (sn.includes('גמר') && !sn.includes('רבע') && !sn.includes('חצי')) || (td.includes('גמר') && !td.includes('רבע') && !td.includes('חצי'));
-            const isTeamOpt = isTeamsList; // רק עבור validation_list של קבוצות
+            const isTeamOpt = isTeamsList;
             const alreadySelected = isTeamOpt && (
               (isS11 && selectedT11Teams.has(opt) && safeVal !== opt) ||
               (isS12 && selectedT12Teams.has(opt) && safeVal !== opt) ||
@@ -525,7 +518,7 @@ export default function AdminResults() {
     T3: { points: 16, desc: 'ניקוד בכל משחקי שמינית הגמר' },
     T4: { points: 16, desc: 'ניחוש כל 8 קבוצות רבע הגמר' },
     T5: { points: 12, desc: 'ניחוש כל 4 קבוצות חצי הגמר' },
-    T6: { points: 6,  desc: 'ניחוש שתי קבוצות הגמר' },
+    T6: { points: 6,  desc: 'ניחוש 4 קבוצות הגמר' }, // ✅ תוקן מ-"שתי קבוצות" ל-"4 קבוצות"
   };
 
   const renderBonusBanner = (tableId) => {
@@ -544,7 +537,8 @@ export default function AdminResults() {
     );
   };
 
-  const ADVANCING_CONFIG = { T4: 8, T5: 4, T6: 2 };
+  // ✅ תוקן: T6 מ-2 ל-4
+  const ADVANCING_CONFIG = { T4: 8, T5: 4, T6: 4 };
 
   const renderAdvancingTeamTable = (table) => {
     const count = ADVANCING_CONFIG[table.id];
@@ -586,7 +580,6 @@ export default function AdminResults() {
       <Card className="bg-slate-800/40 border-cyan-700 shadow-lg shadow-cyan-900/20">
         <CardHeader className="py-3">
           <CardTitle className="text-cyan-400">{table.description}</CardTitle>
-          {/* הסבר על תמיכה בריבוי תשובות */}
           {table.questions.some(q => isMultiAnswerQuestion(q)) && (
             <p style={{ fontSize: '0.72rem', color: '#f97316', marginTop: '4px' }}>
               ✦ שאלות מסומנות תומכות בריבוי תשובות נכונות — לחץ + להוספה
@@ -608,14 +601,12 @@ export default function AdminResults() {
                   border: '1px solid var(--tp-12)', background: 'rgba(0,0,0,0.22)',
                   position: 'relative',
                 }}>
-                  {/* שאלה ראשית — שורה אחת */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: sortedSubs.length > 0 ? '6px' : 0 }}>
                     <Badge variant="outline" style={{ borderColor: 'var(--tp-50)', color: 'var(--tp)', minWidth: '36px', textAlign: 'center', flexShrink: 0, fontSize: '0.72rem' }}>{main.question_id}</Badge>
                     <span style={{ flex: 1, fontSize: '0.85rem', color: '#f1f5f9', fontWeight: '500', textAlign: 'right' }}>{main.question_text}</span>
                     {renderSelectWithLogos(main, results[main.id] || '', val => handleResultChange(main.id, val === '__CLEAR__' ? '' : val), 'w-[160px]')}
                     {main.possible_points && <Badge style={{ borderColor: 'var(--tp-35)', color: 'var(--tp)', background: 'var(--tp-08)', fontSize: '0.68rem', flexShrink: 0, whiteSpace: 'nowrap' }}>{main.possible_points} נק'</Badge>}
                   </div>
-                  {/* תת-שאלות — כל אחת בשורה */}
                   {sortedSubs.map((sub) => (
                     <div key={sub.id} style={{ display: 'flex', alignItems: 'center', gap: '6px', paddingRight: '42px', marginTop: '4px', paddingTop: '4px', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
                       <Badge variant="outline" style={{ borderColor: 'rgba(139,92,246,0.45)', color: '#a78bfa', minWidth: '36px', textAlign: 'center', flexShrink: 0, fontSize: '0.72rem' }}>{sub.question_id}</Badge>
@@ -694,7 +685,6 @@ export default function AdminResults() {
   const allButtons = [];
   roundTables.forEach(t => {
     const st = t.questions[0]?.stage_type;
-    // ✅ "שלב הליגה" במקום "שלב הבתים"
     const stageType = st === 'groups' ? 'groups' : st === 'rounds' ? 'rounds' : st === 'league' ? 'league' : 'playoff';
     allButtons.push({ numericId: t.stage_order || parseInt(t.id.replace('T','').replace(/\D/g,''))||0, stageType, key: `round_${t.id}`, description: t.description || t.id, sectionKey: `round_${t.id}` });
   });
@@ -717,7 +707,6 @@ export default function AdminResults() {
     const groupMap = {
       playoff:    { label: '⚽ משחקי פלייאוף', color: '#3b82f6', bg: 'rgba(59,130,246,0.10)',  border: 'rgba(59,130,246,0.30)',  activeBg: '#2563eb',  activeShadow: '0 2px 10px rgba(59,130,246,0.44)' },
       league:     { label: '⚽ משחקי ליגה',    color: '#3b82f6', bg: 'rgba(59,130,246,0.10)',  border: 'rgba(59,130,246,0.30)',  activeBg: '#2563eb',  activeShadow: '0 2px 10px rgba(59,130,246,0.44)' },
-      // ✅ "שלב הליגה" במקום "שלב הבתים"
       groups:     { label: '🏠 שלב הליגה',     color: '#06b6d4', bg: 'rgba(6,182,212,0.10)',   border: 'rgba(6,182,212,0.30)',   activeBg: '#0891b2',  activeShadow: '0 2px 10px rgba(6,182,212,0.44)'  },
       rounds:     { label: '⚽ מחזורים',        color: '#06b6d4', bg: 'rgba(6,182,212,0.10)',   border: 'rgba(6,182,212,0.30)',   activeBg: '#0891b2',  activeShadow: '0 2px 10px rgba(6,182,212,0.44)'  },
       special:    { label: '✨ שאלות מיוחדות', color: '#8b5cf6', bg: 'rgba(139,92,246,0.10)', border: 'rgba(139,92,246,0.30)', activeBg: '#7c3aed',  activeShadow: '0 2px 10px rgba(139,92,246,0.44)' },
@@ -835,12 +824,11 @@ export default function AdminResults() {
   );
 }
 
-// ── MultiCheckboxDropdown — dropdown עם checkboxes כמו בתמונה ────────────────
+// ── MultiCheckboxDropdown ────────────────────────────────────────────────────
 function MultiCheckboxDropdown({ options, selected, onToggle, onClear, findTeam, isAdmin, triggerLabel }) {
   const [open, setOpen] = useState(false);
   const ref = React.useRef(null);
 
-  // סגור בלחיצה מחוץ
   useEffect(() => {
     const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
     document.addEventListener('mousedown', handler);
@@ -851,7 +839,6 @@ function MultiCheckboxDropdown({ options, selected, onToggle, onClear, findTeam,
 
   return (
     <div ref={ref} style={{ position: 'relative', minWidth: '200px' }}>
-      {/* Trigger */}
       <button
         onClick={() => isAdmin && setOpen(o => !o)}
         style={{
@@ -870,7 +857,6 @@ function MultiCheckboxDropdown({ options, selected, onToggle, onClear, findTeam,
         <span style={{ marginRight: '6px', fontSize: '0.7rem', opacity: 0.6 }}>▼</span>
       </button>
 
-      {/* Dropdown */}
       {open && (
         <div style={{
           position: 'absolute', top: '100%', right: 0, zIndex: 100,
@@ -879,7 +865,6 @@ function MultiCheckboxDropdown({ options, selected, onToggle, onClear, findTeam,
           borderRadius: '8px', marginTop: '4px',
           boxShadow: '0 8px 24px rgba(0,0,0,0.6)',
         }}>
-          {/* נקה הכל */}
           <div
             onClick={() => { onClear(); setOpen(false); }}
             style={{
@@ -893,7 +878,6 @@ function MultiCheckboxDropdown({ options, selected, onToggle, onClear, findTeam,
             <span style={{ fontSize: '0.85rem' }}>✕</span>
           </div>
 
-          {/* אפשרויות */}
           {options.map(opt => {
             const isChecked = selected.includes(opt);
             const team = findTeam?.(opt);
@@ -910,7 +894,6 @@ function MultiCheckboxDropdown({ options, selected, onToggle, onClear, findTeam,
                 }}
                 className="hover:bg-cyan-700/20"
               >
-                {/* Checkbox */}
                 <div style={{
                   width: 16, height: 16, borderRadius: '4px', flexShrink: 0,
                   border: `2px solid ${isChecked ? 'var(--tp)' : '#475569'}`,
@@ -919,12 +902,10 @@ function MultiCheckboxDropdown({ options, selected, onToggle, onClear, findTeam,
                 }}>
                   {isChecked && <span style={{ color: 'white', fontSize: '10px', lineHeight: 1 }}>✓</span>}
                 </div>
-                {/* לוגו */}
                 {team?.logo_url && (
                   <img src={team.logo_url} alt={label} style={{ width: 18, height: 18, borderRadius: '50%' }}
                     onError={e => e.target.style.display = 'none'} />
                 )}
-                {/* שם */}
                 <span style={{ fontSize: '0.85rem', color: isChecked ? 'var(--tp)' : '#f8fafc', fontWeight: isChecked ? 600 : 400 }}>
                   {label}
                 </span>
