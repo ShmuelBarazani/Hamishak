@@ -5,20 +5,20 @@
  * - משחקים רגילים: 10 = תוצאה מדויקת | 7 = תוצאה + הפרש | 5 = תוצאה בלבד | 0 = טעות
  * - משחקים T20 (ישראלי): 6 = תוצאה מדויקת | 4 = תוצאה + הפרש | 2 = תוצאה בלבד | 0 = טעות
  * - שאלות טקסט: possible_points = נכון | 0 = טעות
- * - T4/T5/T6 (רשימות עולות): ניקוד לפי נוכחות — אין משמעות לסדר
+ * - T4/T6/T8 (רשימות עולות): ניקוד לפי נוכחות — אין משמעות לסדר
  *
  * 🏆 בונוסי שלבים:
  * - T3  (שמינית גמר - משחקים):      כל המשחקים עם ניקוד > 0 → +16
  * - T4  (עולות לרבע גמר, 8 קבוצות): כל 8 הקבוצות → +16
- * - T5  (עולות לחצי גמר, 4 קבוצות): כל 4 הקבוצות → +12
- * - T6  (עולות לגמר, 4 קבוצות):     כל 4 הקבוצות  → +6
+ * - T6  (עולות לחצי גמר, 4 קבוצות): כל 4 הקבוצות → +12
+ * - T8  (עולות לגמר, 2 קבוצות):     שתי הקבוצות  → +6
  */
 
 // ─── קונפיגורציית טבלאות עולות ──────────────────────────────────────────────
 const ADVANCING_TEAM_TABLES = {
-  T4: { advancingCount: 8, bonusPoints: 16 },
-  T5: { advancingCount: 4, bonusPoints: 12 },
-  T6: { advancingCount: 4, bonusPoints: 6  }, // ✅ תוקן מ-2 ל-4
+  T4: { advancingCount: 8, bonusPoints: 16 }, // רבע גמר
+  T6: { advancingCount: 4, bonusPoints: 12 }, // חצי גמר ✅
+  T8: { advancingCount: 2, bonusPoints: 6  }, // גמר ✅ חדש
 };
 
 // ── מזהי טבלאות מיקומים ──────────────────────────────────────────────────────
@@ -42,7 +42,7 @@ function cleanText(text) {
 function normalizeResult(text) {
   if (!text) return '';
   return String(text)
-    .replace(/\s*\([^)]+\)\s*$/, '') // הסרת "(מדינה)" מסוף השם
+    .replace(/\s*\([^)]+\)\s*$/, '')
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -72,21 +72,10 @@ function getResultType(home, away) {
   return 'draw';
 }
 
-/**
- * ✅ תיקון קריטי: isAdvancingTeamSlot
- *
- * בעיה: T5 מכיל גם שאלות מיוחדות (stage_type='special') עם question_id
- * בטווח 1-4 — אותו טווח כמו חריצי הקבוצות העולות.
- *
- * הפתרון: שאלה היא "חריץ עולה" רק אם stage_type הוא 'qualifiers'
- * (או לא מוגדר כ-'special'/'playoff'/'locations').
- * שאלות עם stage_type='special' הן שאלות טקסט רגילות.
- */
 function isAdvancingTeamSlot(question) {
   const config = ADVANCING_TEAM_TABLES[question.table_id];
   if (!config) return false;
 
-  // ❌ שאלות עם stage_type מפורש שאינו qualifiers — לא חריץ עולה
   if (question.stage_type &&
       question.stage_type !== 'qualifiers' &&
       question.stage_type !== '') {
@@ -152,16 +141,13 @@ export function calculateQuestionScore(question, prediction, allQuestionsInTable
   if (question.table_id === 'T1') return null;
   if (!prediction || String(prediction).trim() === '') return null;
 
-  // ✅ תיקון קריטי: עבור חריצי עולות (T4/T5/T6) —
-  // בדוק לפי נוכחות ברשימה גם אם לחריץ הספציפי אין actual_result עדיין.
-  // הניקוד נקבע לפי תוצאות האמת של שאר החריצים באותה טבלה.
   if (isAdvancingTeamSlot(question)) {
     const advancingActuals = allQuestionsInTable
       .filter(q => isAdvancingTeamSlot(q))
       .filter(q => q.actual_result && q.actual_result.trim() !== '' && q.actual_result !== '__CLEAR__')
       .map(q => cleanText(normalizeResult(q.actual_result)).toLowerCase());
 
-    if (advancingActuals.length === 0) return null; // עדיין אין תוצאות כלל
+    if (advancingActuals.length === 0) return null;
 
     const cleanPred = cleanText(normalizeResult(prediction)).toLowerCase();
     return advancingActuals.includes(cleanPred) ? (question.possible_points || 0) : 0;
@@ -187,7 +173,6 @@ export function calculateQuestionScore(question, prediction, allQuestionsInTable
   const isPredScore     = isScoreFormat(normalizedPred);
   const isMatchQuestion = !!(question.home_team && question.away_team);
 
-  // ── משחקים (תוצאת X-Y) ──────────────────────────────────────────────────
   if (isActualScore && isPredScore && isMatchQuestion) {
     const [actualHome, actualAway] = parseScore(normalizedActual);
     const [predHome,   predAway  ] = parseScore(normalizedPred);
@@ -211,7 +196,6 @@ export function calculateQuestionScore(question, prediction, allQuestionsInTable
     }
   }
 
-  // ── ניקוד לפי נוכחות — T_TOP_FINISHERS / T_THIRD_PLACE ─────────────────
   const isPresenceStage  = ['T_TOP_FINISHERS'].includes(question.table_id);
   const isThirdPlaceMain = question.table_id === 'T_THIRD_PLACE' && !question.question_id.includes('.');
 
@@ -224,12 +208,10 @@ export function calculateQuestionScore(question, prediction, allQuestionsInTable
     return actualTeams.includes(cleanPred) ? (question.possible_points || 0) : 0;
   }
 
-  // ── טבלאות מיקומים — ניקוד מחושב ברמת הטבלה בלבד ──────────────────────
   if (isLocationTable(question.table_id, allQuestionsInTable)) {
     return null;
   }
 
-  // ── שאלות טקסט רגילות (כולל תשובות מרובות עם |||) ──────────────────────
   const cleanPred = cleanText(normalizedPred).toLowerCase();
 
   if (actualResult.includes('|||')) {
@@ -297,7 +279,6 @@ export function calculateLocationBonus(tableId, questions, predictions) {
   }
 
   const allCorrect = correctTeams === mainQuestions.length;
-
   const pointsPerTeam = tableId === 'T19' ? 30 : 20;
   const basicScore = correctTeams * pointsPerTeam;
 
@@ -346,7 +327,6 @@ function calculateAdvancingBonus(tableId, allQuestions, predictions) {
   const config = ADVANCING_TEAM_TABLES[tableId];
   if (!config) return 0;
 
-  // ✅ רק חריצי עולות — לא שאלות special
   const advancingSlots = allQuestions.filter(
     q => q.table_id === tableId && isAdvancingTeamSlot(q)
   );
@@ -459,14 +439,14 @@ export function calculateTotalScore(questions, predictions) {
     });
   }
 
-  // ─── 🏆 בונוסים T4/T5/T6 ─────────────────────────────────────────────────
+  // ─── 🏆 בונוסים T4/T6/T8 ─────────────────────────────────────────────────
   const BONUS_LABELS = {
     T4: { label: '🏆 בונוס שלב — רבע גמר',  desc: 'ניחש את כל 8 קבוצות רבע הגמר' },
-    T5: { label: '🏆 בונוס שלב — חצי גמר',  desc: 'ניחש את כל 4 קבוצות חצי הגמר' },
-    T6: { label: '🏆 בונוס שלב — גמר',       desc: 'ניחש את כל 4 קבוצות הגמר'      },
+    T6: { label: '🏆 בונוס שלב — חצי גמר',  desc: 'ניחש את כל 4 קבוצות חצי הגמר' },
+    T8: { label: '🏆 בונוס שלב — גמר',       desc: 'ניחש את שתי קבוצות הגמר'       },
   };
 
-  for (const tableId of ['T4', 'T5', 'T6']) {
+  for (const tableId of ['T4', 'T6', 'T8']) {
     const advBonus = calculateAdvancingBonus(tableId, questions, predictions);
     if (advBonus > 0) {
       total += advBonus;
