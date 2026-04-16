@@ -73,6 +73,10 @@ export default function LeaderboardNew() {
     return all;
   };
 
+  /**
+   * ✅ תיקון: גם מגדיר home_team/away_team ממשחקי T3/T20 שמאוחסנים ב-question_text בלבד
+   * (זהה ל-AdminResults.jsx) — כדי ש-allMatchQs יכלול אותם ויאפשר צביעת ❌ נכונה
+   */
   const loadQuestionsForGame = async (gameId) => {
     let all = [], from = 0;
     const PAGE = 1000;
@@ -86,6 +90,25 @@ export default function LeaderboardNew() {
       if (data.length < PAGE) break;
       from += PAGE;
     }
+
+    // ✅ derive home_team/away_team מ-question_text עבור משחקי נוקאאוט
+    all.forEach(q => {
+      if (q.home_team && q.away_team) return; // כבר מוגדר
+      if (!q.question_text) return;
+      const sep = q.question_text.includes(' נגד ')
+        ? ' נגד '
+        : q.question_text.includes(' - ')
+          ? ' - '
+          : null;
+      if (sep) {
+        const parts = q.question_text.split(sep).map(t => t.trim());
+        if (parts.length === 2) {
+          q.home_team = parts[0];
+          q.away_team = parts[1];
+        }
+      }
+    });
+
     return all.filter(q => q.table_id && q.table_id !== 'T1');
   };
 
@@ -321,8 +344,14 @@ export default function LeaderboardNew() {
         return (parseFloat(a.question_id_display) || 999) - (parseFloat(b.question_id_display) || 999);
       });
 
-      // ✅ תיקון: כל המשחקים (לא רק T3) משמשים לזיהוי קבוצות שנפלו
-      const normT = n => (n || '').replace(/\s*\([^)]+\)\s*$/, '').replace(/\s+/g, ' ').trim().toLowerCase();
+      // ── qualifying sections ────────────────────────────────────────────────
+      const normT = n => (n || '')
+        .replace(/\s*\([^)]+\)\s*$/, '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .toLowerCase();
+
+      // ✅ כל שאלות המשחק (כולל T3/T7 נוקאאוט) — לזיהוי קבוצות שנפלו
       const allMatchQs = allQuestions.filter(q => q.home_team && q.away_team);
 
       const qualTableMap = {};
@@ -346,9 +375,10 @@ export default function LeaderboardNew() {
             tSlots.filter(q => q.actual_result && q.actual_result !== '__CLEAR__')
                   .map(q => normT(q.actual_result))
           );
+
+          // ✅ תיקון: חיפוש ב-allMatchQs שכולל עכשיו גם משחקי T3/נוקאאוט
           const elimSet = new Set();
           advSet.forEach(adv => {
-            // ✅ תיקון: חיפוש בכל המשחקים — לא רק T3
             allMatchQs.forEach(q => {
               const h = normT(q.home_team), a = normT(q.away_team);
               if (h === adv && !advSet.has(a)) elimSet.add(a);
@@ -595,33 +625,18 @@ export default function LeaderboardNew() {
         <DialogContent
           dir="rtl"
           style={{
-            maxWidth: '52vw',
-            width: '52vw',
-            maxHeight: '82vh',
-            height: '82vh',
-            display: 'flex',
-            flexDirection: 'column',
+            maxWidth: '52vw', width: '52vw',
+            maxHeight: '82vh', height: '82vh',
+            display: 'flex', flexDirection: 'column',
             background: 'linear-gradient(135deg, var(--bg1) 0%, var(--bg3) 100%)',
             border: '1px solid var(--tp-20)',
             boxShadow: '0 0 30px var(--tp-25)',
-            borderRadius: '14px',
-            padding: '0',
-            overflow: 'hidden',
+            borderRadius: '14px', padding: '0', overflow: 'hidden',
           }}
         >
           {/* ── Header ── */}
-          <DialogHeader style={{
-            padding: '16px 24px 14px',
-            borderBottom: '1px solid var(--tp-20)',
-            flexShrink: 0,
-          }}>
-            <DialogTitle style={{
-              fontSize: '1.35rem',
-              fontWeight: 800,
-              color: '#f8fafc',
-              textAlign: 'right',
-              marginBottom: '8px',
-            }}>
+          <DialogHeader style={{ padding: '16px 24px 14px', borderBottom: '1px solid var(--tp-20)', flexShrink: 0 }}>
+            <DialogTitle style={{ fontSize: '1.35rem', fontWeight: 800, color: '#f8fafc', textAlign: 'right', marginBottom: '8px' }}>
               {selectedParticipant}
             </DialogTitle>
             <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '12px' }}>
@@ -632,11 +647,7 @@ export default function LeaderboardNew() {
                 </div>
               ) : (
                 <>
-                  <Badge style={{
-                    background: 'var(--tp)', color: 'white',
-                    fontSize: '1rem', fontWeight: 700,
-                    padding: '5px 16px', borderRadius: '999px',
-                  }}>
+                  <Badge style={{ background: 'var(--tp)', color: 'white', fontSize: '1rem', fontWeight: 700, padding: '5px 16px', borderRadius: '999px' }}>
                     סה"כ: {participantDetails?.totalScore} נקודות
                   </Badge>
                   <span style={{ fontSize: '0.85rem', color: '#94a3b8' }}>
@@ -655,7 +666,6 @@ export default function LeaderboardNew() {
               </div>
             ) : (
               <>
-              {/* ✅ טבלאות עולות — לפי זהות קבוצה */}
               {participantDetails?.qualifyingSections?.length > 0 && (
                 <div style={{ padding:'8px 16px 4px' }}>
                   {participantDetails.qualifyingSections.map(sec => {
@@ -700,17 +710,7 @@ export default function LeaderboardNew() {
                       { label: 'תוצאה', w: '80px'  },
                       { label: 'ניקוד', w: '74px'  },
                     ].map(h => (
-                      <th key={h.label} style={{
-                        width: h.w,
-                        background: 'var(--bg1)',
-                        color: '#64748b',
-                        fontSize: '0.75rem',
-                        fontWeight: 600,
-                        textAlign: 'center',
-                        padding: '8px 6px',
-                        letterSpacing: '0.04em',
-                        borderBottom: '1px solid var(--tp-15)',
-                      }}>
+                      <th key={h.label} style={{ width: h.w, background: 'var(--bg1)', color: '#64748b', fontSize: '0.75rem', fontWeight: 600, textAlign: 'center', padding: '8px 6px', letterSpacing: '0.04em', borderBottom: '1px solid var(--tp-15)' }}>
                         {h.label}
                       </th>
                     ))}
@@ -719,51 +719,40 @@ export default function LeaderboardNew() {
                 <tbody>
                   {participantDetails?.scores?.map((s, i) => {
 
-                    // ── שורת בונוס שלב ─────────────────────────────────────
                     if (s.isStageBonusRow) {
                       return (
                         <tr key={i} style={{ background: 'rgba(16,185,129,0.08)', borderRight: '3px solid #10b981' }}>
                           <td style={{ padding: '8px 6px', textAlign: 'center' }}>
-                            <span style={{ display: 'inline-block', borderRadius: '999px', padding: '2px 8px', fontSize: '0.72rem', border: '1px solid #10b981', color: '#10b981', background: 'rgba(16,185,129,0.1)' }}>
-                              {s.table_id}
-                            </span>
+                            <span style={{ display: 'inline-block', borderRadius: '999px', padding: '2px 8px', fontSize: '0.72rem', border: '1px solid #10b981', color: '#10b981', background: 'rgba(16,185,129,0.1)' }}>{s.table_id}</span>
                           </td>
                           <td style={{ padding: '8px 6px', textAlign: 'center', fontSize: '0.85rem' }}>🏆</td>
                           <td colSpan={3} style={{ padding: '8px 6px', textAlign: 'right' }}>
                             <span style={{ color: '#6ee7b7', fontSize: '0.88rem', fontWeight: 600 }}>{s.question_text}</span>
                           </td>
                           <td style={{ padding: '8px 6px', textAlign: 'center' }}>
-                            <span style={{ display: 'inline-block', background: '#059669', color: 'white', fontSize: '0.85rem', fontWeight: 700, padding: '3px 10px', borderRadius: '999px' }}>
-                              +{s.score}
-                            </span>
+                            <span style={{ display: 'inline-block', background: '#059669', color: 'white', fontSize: '0.85rem', fontWeight: 700, padding: '3px 10px', borderRadius: '999px' }}>+{s.score}</span>
                           </td>
                         </tr>
                       );
                     }
 
-                    // ── שורת מיקומים ──────────────────────────────────────
                     if (s.isLocationSummary) {
                       return (
                         <tr key={i} style={{ background: 'rgba(249,115,22,0.08)', borderRight: '3px solid #f97316' }}>
                           <td style={{ padding: '8px 6px', textAlign: 'center' }}>
-                            <span style={{ display: 'inline-block', borderRadius: '999px', padding: '2px 8px', fontSize: '0.72rem', border: '1px solid #f97316', color: '#f97316', background: 'rgba(249,115,22,0.1)' }}>
-                              {s.table_id}
-                            </span>
+                            <span style={{ display: 'inline-block', borderRadius: '999px', padding: '2px 8px', fontSize: '0.72rem', border: '1px solid #f97316', color: '#f97316', background: 'rgba(249,115,22,0.1)' }}>{s.table_id}</span>
                           </td>
                           <td style={{ padding: '8px 6px', textAlign: 'center', color: '#94a3b8', fontSize: '0.85rem' }}>📋</td>
                           <td colSpan={3} style={{ padding: '8px 6px', textAlign: 'right' }}>
                             <span style={{ color: '#fdba74', fontSize: '0.88rem', fontWeight: 600 }}>{s.question_text}</span>
                           </td>
                           <td style={{ padding: '8px 6px', textAlign: 'center' }}>
-                            <span style={{ display: 'inline-block', background: '#ea580c', color: 'white', fontSize: '0.85rem', fontWeight: 700, padding: '3px 10px', borderRadius: '999px' }}>
-                              +{s.score}
-                            </span>
+                            <span style={{ display: 'inline-block', background: '#ea580c', color: 'white', fontSize: '0.85rem', fontWeight: 700, padding: '3px 10px', borderRadius: '999px' }}>+{s.score}</span>
                           </td>
                         </tr>
                       );
                     }
 
-                    // ── שורת שאלה רגילה ───────────────────────────────────
                     let badgeBg = '#475569';
                     if (s.score === s.max_score && s.max_score > 0) badgeBg = '#16a34a';
                     else if (s.score >= 7)  badgeBg = '#2563eb';
@@ -776,40 +765,26 @@ export default function LeaderboardNew() {
                         onMouseLeave={e => e.currentTarget.style.background = 'rgba(30,41,59,0.5)'}
                       >
                         <td style={{ padding: '8px 6px', textAlign: 'center' }}>
-                          <span style={{ display: 'inline-block', borderRadius: '999px', padding: '2px 8px', fontSize: '0.72rem', border: '1px solid var(--tp)', color: 'var(--tp)', background: 'var(--tp-10)' }}>
-                            {s.table_id}
-                          </span>
+                          <span style={{ display: 'inline-block', borderRadius: '999px', padding: '2px 8px', fontSize: '0.72rem', border: '1px solid var(--tp)', color: 'var(--tp)', background: 'var(--tp-10)' }}>{s.table_id}</span>
                         </td>
                         <td style={{ padding: '8px 6px', textAlign: 'center' }}>
-                          <span style={{ display: 'inline-block', borderRadius: '999px', padding: '2px 8px', fontSize: '0.72rem', border: '1px solid var(--tp)', color: 'var(--tp)', background: 'var(--tp-10)' }}>
-                            {s.question_id_display}
-                          </span>
+                          <span style={{ display: 'inline-block', borderRadius: '999px', padding: '2px 8px', fontSize: '0.72rem', border: '1px solid var(--tp)', color: 'var(--tp)', background: 'var(--tp-10)' }}>{s.question_id_display}</span>
                         </td>
                         <td style={{ padding: '8px 6px', textAlign: 'right' }}>
                           {s.home_team && s.away_team ? (
                             <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '0.88rem', color: '#f1f5f9' }}>
                               <span>{s.home_team_display || s.home_team}</span>
-                              {s.home_team_logo && (
-                                <img src={s.home_team_logo} alt="" style={{ width: 18, height: 18, borderRadius: '50%' }}
-                                  onError={e => e.target.style.display = 'none'} />
-                              )}
+                              {s.home_team_logo && <img src={s.home_team_logo} alt="" style={{ width: 18, height: 18, borderRadius: '50%' }} onError={e => e.target.style.display = 'none'} />}
                               <span style={{ color: '#475569', fontSize: '0.78rem' }}>נגד</span>
-                              {s.away_team_logo && (
-                                <img src={s.away_team_logo} alt="" style={{ width: 18, height: 18, borderRadius: '50%' }}
-                                  onError={e => e.target.style.display = 'none'} />
-                              )}
+                              {s.away_team_logo && <img src={s.away_team_logo} alt="" style={{ width: 18, height: 18, borderRadius: '50%' }} onError={e => e.target.style.display = 'none'} />}
                               <span>{s.away_team_display || s.away_team}</span>
                             </div>
                           ) : (
                             <span style={{ fontSize: '0.88rem', color: '#f1f5f9' }}>{s.question_text}</span>
                           )}
                         </td>
-                        <td style={{ padding: '8px 6px', textAlign: 'center', fontSize: '0.88rem', color: '#94a3b8' }}>
-                          {s.prediction || '—'}
-                        </td>
-                        <td style={{ padding: '8px 6px', textAlign: 'center', fontSize: '0.88rem', color: '#f1f5f9', fontWeight: 600 }}>
-                          {s.actual_result || '—'}
-                        </td>
+                        <td style={{ padding: '8px 6px', textAlign: 'center', fontSize: '0.88rem', color: '#94a3b8' }}>{s.prediction || '—'}</td>
+                        <td style={{ padding: '8px 6px', textAlign: 'center', fontSize: '0.88rem', color: '#f1f5f9', fontWeight: 600 }}>{s.actual_result || '—'}</td>
                         <td style={{ padding: '8px 6px', textAlign: 'center' }}>
                           <span style={{ display: 'inline-block', background: badgeBg, color: 'white', fontSize: '0.85rem', fontWeight: 700, padding: '3px 10px', borderRadius: '999px', minWidth: '52px', textAlign: 'center' }}>
                             {s.score}/{s.max_score}
