@@ -13,13 +13,8 @@ import RoundTableResults from "@/components/predictions/RoundTableResults";
 import { useGame } from "@/components/contexts/GameContext";
 import { calculateTotalScore } from "@/components/scoring/ScoreService";
 
-// ── שאלות שתומכות בריבוי תשובות (||| separator) ──────────────────────────────
 const MULTI_ANSWER_QUESTIONS = new Set([
-  'T2_1',
-  'T2_2',
-  'T2_3',
-  'T2_8',
-  'T2_10',
+  'T2_1', 'T2_2', 'T2_3', 'T2_8', 'T2_10',
 ]);
 
 const isMultiAnswerQuestion = (q) => {
@@ -64,7 +59,6 @@ export default function AdminResults() {
 
   const isAdmin = currentUser?.role === 'admin' || currentUser?.user_metadata?.role === 'admin';
 
-  // ── Helpers ───────────────────────────────────────────────────────────────
   const loadAllQuestions = async (gameId) => {
     let all = [], from = 0;
     const PAGE = 1000;
@@ -110,7 +104,6 @@ export default function AdminResults() {
     return all;
   };
 
-  // ── Load page data ────────────────────────────────────────────────────────
   const loadData = useCallback(async () => {
     if (!currentGame) { setLoading(false); return; }
     setLoading(true);
@@ -231,7 +224,6 @@ export default function AdminResults() {
     handleResultChange(questionId, updated.length > 0 ? updated.join('|||') : '__CLEAR__');
   };
 
-  // ── Calculate score ───────────────────────────────────────────────────────
   const calcParticipantScore = (qs, predictions) => {
     const latest = {};
     predictions.forEach(p => {
@@ -244,7 +236,6 @@ export default function AdminResults() {
     return total;
   };
 
-  // ── Recalculate rankings ──────────────────────────────────────────────────
   const recalculateRankings = async () => {
     if (!currentGame) return;
     setRecalculating(true);
@@ -316,7 +307,6 @@ export default function AdminResults() {
     setRecalculating(false);
   };
 
-  // ── Save results ──────────────────────────────────────────────────────────
   const handleSaveResults = async () => {
     setSaving(true);
     try {
@@ -355,7 +345,6 @@ export default function AdminResults() {
     return teams[base] || null;
   };
 
-  // ── Multi-answer widget ────────────────────────────────────────────────────
   const renderMultiAnswerInput = (question, value) => {
     const currentAnswers = (value && value !== '__CLEAR__')
       ? value.split('|||').map(v => v.trim()).filter(Boolean)
@@ -364,15 +353,10 @@ export default function AdminResults() {
     const hasOptions = options.length > 0;
 
     const toggle = (opt) => {
-      if (currentAnswers.includes(opt)) {
-        handleMultiAnswerRemove(question.id, opt, value);
-      } else {
-        handleMultiAnswerAdd(question.id, opt, value);
-      }
+      if (currentAnswers.includes(opt)) handleMultiAnswerRemove(question.id, opt, value);
+      else handleMultiAnswerAdd(question.id, opt, value);
     };
-
     const clearAll = () => handleResultChange(question.id, '__CLEAR__');
-
     const triggerLabel = currentAnswers.length === 0
       ? 'בחר...'
       : currentAnswers.map(a => a.replace(/\s*\([^)]+\)\s*$/, '').trim()).join(', ');
@@ -383,49 +367,29 @@ export default function AdminResults() {
           {currentAnswers.length > 0 && (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginBottom: '6px' }}>
               {currentAnswers.map((ans, i) => (
-                <div key={i} style={{
-                  display: 'inline-flex', alignItems: 'center', gap: '4px',
-                  background: 'var(--tp-20)', border: '1px solid var(--tp)',
-                  borderRadius: '999px', padding: '2px 8px', fontSize: '0.78rem', color: 'var(--tp)',
-                }}>
+                <div key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', background: 'var(--tp-20)', border: '1px solid var(--tp)', borderRadius: '999px', padding: '2px 8px', fontSize: '0.78rem', color: 'var(--tp)' }}>
                   <span>{ans}</span>
-                  {isAdmin && (
-                    <button onClick={() => handleMultiAnswerRemove(question.id, ans, value)}
-                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', padding: 0, lineHeight: 1 }}>✕</button>
-                  )}
+                  {isAdmin && <button onClick={() => handleMultiAnswerRemove(question.id, ans, value)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', padding: 0, lineHeight: 1 }}>✕</button>}
                 </div>
               ))}
-              {isAdmin && (
-                <button onClick={clearAll} style={{ background: 'none', border: '1px solid #ef4444', borderRadius: '999px', padding: '2px 8px', fontSize: '0.72rem', color: '#ef4444', cursor: 'pointer' }}>
-                  נקה הכל
-                </button>
-              )}
+              {isAdmin && <button onClick={clearAll} style={{ background: 'none', border: '1px solid #ef4444', borderRadius: '999px', padding: '2px 8px', fontSize: '0.72rem', color: '#ef4444', cursor: 'pointer' }}>נקה הכל</button>}
             </div>
           )}
-          {isAdmin && (
-            <MultiAnswerTextInput currentAnswers={currentAnswers} onAdd={(ans) => handleMultiAnswerAdd(question.id, ans, value)} />
-          )}
+          {isAdmin && <MultiAnswerTextInput currentAnswers={currentAnswers} onAdd={(ans) => handleMultiAnswerAdd(question.id, ans, value)} />}
         </div>
       );
     }
 
     return (
       <MultiCheckboxDropdown
-        options={options}
-        selected={currentAnswers}
-        onToggle={toggle}
-        onClear={clearAll}
-        findTeam={findTeam}
-        isAdmin={isAdmin}
-        triggerLabel={triggerLabel}
+        options={options} selected={currentAnswers} onToggle={toggle} onClear={clearAll}
+        findTeam={findTeam} isAdmin={isAdmin} triggerLabel={triggerLabel}
       />
     );
   };
 
   const renderSelectWithLogos = (question, value, onChange, selectClassName = "w-[200px]") => {
-    if (isMultiAnswerQuestion(question)) {
-      return renderMultiAnswerInput(question, value);
-    }
+    if (isMultiAnswerQuestion(question)) return renderMultiAnswerInput(question, value);
 
     const options = validationLists[question.validation_list] || [];
     const isTeamsList = question.validation_list?.toLowerCase().includes('קבוצ') || question.validation_list?.toLowerCase().includes('נבחר');
@@ -436,13 +400,7 @@ export default function AdminResults() {
         <Input
           value={value === '__CLEAR__' ? '' : (value || '')}
           onChange={(e) => onChange(e.target.value)}
-          style={{
-            width: '180px',
-            background: hasResult ? 'var(--tp-20)' : 'rgba(51,65,85,0.5)',
-            borderColor: hasResult ? 'var(--tp)' : 'rgba(100,116,139,1)',
-            color: hasResult ? 'var(--tp)' : '#f8fafc',
-            fontWeight: hasResult ? '700' : 'normal'
-          }}
+          style={{ width: '180px', background: hasResult ? 'var(--tp-20)' : 'rgba(51,65,85,0.5)', borderColor: hasResult ? 'var(--tp)' : 'rgba(100,116,139,1)', color: hasResult ? 'var(--tp)' : '#f8fafc', fontWeight: hasResult ? '700' : 'normal' }}
           placeholder="הזן תוצאה..."
           readOnly={!isAdmin}
         />
@@ -453,18 +411,11 @@ export default function AdminResults() {
 
     return (
       <Select value={safeValue} onValueChange={onChange} disabled={!isAdmin}>
-        <SelectTrigger className={selectClassName} style={{
-          background: hasResult ? 'var(--tp-20)' : 'rgba(51,65,85,0.5)',
-          borderColor: hasResult ? 'var(--tp)' : 'rgba(100,116,139,1)',
-          color: hasResult ? 'var(--tp)' : '#94a3b8',
-          fontWeight: hasResult ? '700' : 'normal'
-        }}>
+        <SelectTrigger className={selectClassName} style={{ background: hasResult ? 'var(--tp-20)' : 'rgba(51,65,85,0.5)', borderColor: hasResult ? 'var(--tp)' : 'rgba(100,116,139,1)', color: hasResult ? 'var(--tp)' : '#94a3b8', fontWeight: hasResult ? '700' : 'normal' }}>
           <SelectValue placeholder="בחר...">
             {!hasResult ? 'בחר...' : (
               <div className="flex items-center gap-2">
-                {isTeamsList && findTeam(value)?.logo_url && (
-                  <img src={findTeam(value).logo_url} alt={value} className="w-5 h-5 rounded-full" onError={e => e.target.style.display='none'} />
-                )}
+                {isTeamsList && findTeam(value)?.logo_url && <img src={findTeam(value).logo_url} alt={value} className="w-5 h-5 rounded-full" onError={e => e.target.style.display='none'} />}
                 <span>{value.replace(/\s*\([^)]+\)\s*$/, '').trim()}</span>
               </div>
             )}
@@ -479,8 +430,7 @@ export default function AdminResults() {
             const isS11 = sn.includes('רבע גמר') || td.includes('רבע גמר');
             const isS12 = sn.includes('חצי גמר') || td.includes('חצי גמר');
             const isS13 = (sn.includes('גמר') && !sn.includes('רבע') && !sn.includes('חצי')) || (td.includes('גמר') && !td.includes('רבע') && !td.includes('חצי'));
-            const isTeamOpt = isTeamsList;
-            const alreadySelected = isTeamOpt && (
+            const alreadySelected = isTeamsList && (
               (isS11 && selectedT11Teams.has(opt) && safeVal !== opt) ||
               (isS12 && selectedT12Teams.has(opt) && safeVal !== opt) ||
               (isS13 && selectedT13Teams.has(opt) && safeVal !== opt)
@@ -500,12 +450,7 @@ export default function AdminResults() {
   };
 
   const renderQuestionRow = (q, cols = 4, widths = { select: '160px' }) => (
-    <div key={q.id} style={{
-      display: 'grid',
-      gridTemplateColumns: isMultiAnswerQuestion(q) ? `50px 1fr auto 50px` : `50px 1fr ${widths.select} 50px`,
-      gap: '8px', alignItems: 'center', padding: '8px 12px', borderRadius: '6px',
-      position: 'relative', overflow: 'visible',
-    }} className="border border-cyan-600/30 bg-slate-700/20">
+    <div key={q.id} style={{ display: 'grid', gridTemplateColumns: isMultiAnswerQuestion(q) ? `50px 1fr auto 50px` : `50px 1fr ${widths.select} 50px`, gap: '8px', alignItems: 'center', padding: '8px 12px', borderRadius: '6px', position: 'relative', overflow: 'visible' }} className="border border-cyan-600/30 bg-slate-700/20">
       <Badge variant="outline" className="border-cyan-400 text-cyan-200 justify-center text-xs h-6 w-full">{q.question_id}</Badge>
       <span className="text-right font-medium text-sm text-blue-100 truncate">{q.question_text}</span>
       {renderSelectWithLogos(q, results[q.id] || '', val => handleResultChange(q.id, val === '__CLEAR__' ? '' : val), `w-[${widths.select}]`)}
@@ -513,23 +458,19 @@ export default function AdminResults() {
     </div>
   );
 
-  // ── בונוסי שלבים ──────────────────────────────────────────────────────────
+  // ── בונוסי שלבים ✅ תוקן T4/T6/T8 ──────────────────────────────────────────
   const STAGE_BONUSES = {
     T3: { points: 16, desc: 'ניקוד בכל משחקי שמינית הגמר' },
-    T4: { points: 16, desc: 'ניחוש כל 8 קבוצות רבע הגמר' },
-    T5: { points: 12, desc: 'ניחוש כל 4 קבוצות חצי הגמר' },
-    T6: { points: 6,  desc: 'ניחוש 4 קבוצות הגמר' }, // ✅ תוקן מ-"שתי קבוצות" ל-"4 קבוצות"
+    T4: { points: 16, desc: 'ניחוש כל 8 קבוצות רבע הגמר'  },
+    T6: { points: 12, desc: 'ניחוש כל 4 קבוצות חצי הגמר'  }, // ✅ תוקן מ-6 ל-12
+    T8: { points: 6,  desc: 'ניחוש שתי קבוצות הגמר'        }, // ✅ חדש
   };
 
   const renderBonusBanner = (tableId) => {
     const bonus = STAGE_BONUSES[tableId];
     if (!bonus) return null;
     return (
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: '10px', justifyContent: 'center',
-        padding: '8px 16px', borderRadius: '8px', marginBottom: '8px',
-        background: 'rgba(234,179,8,0.10)', border: '1px solid rgba(234,179,8,0.40)',
-      }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', justifyContent: 'center', padding: '8px 16px', borderRadius: '8px', marginBottom: '8px', background: 'rgba(234,179,8,0.10)', border: '1px solid rgba(234,179,8,0.40)' }}>
         <span style={{ fontSize: '1.1rem' }}>🏆</span>
         <span style={{ color: '#fde68a', fontSize: '0.82rem', fontWeight: '600' }}>בונוס שלב: +{bonus.points} נקודות</span>
         <span style={{ color: '#fbbf24', fontSize: '0.75rem', opacity: 0.85 }}>— {bonus.desc}</span>
@@ -537,8 +478,8 @@ export default function AdminResults() {
     );
   };
 
-  // ✅ תוקן: T6 מ-2 ל-4
-  const ADVANCING_CONFIG = { T4: 8, T5: 4, T6: 4 };
+  // ✅ תוקן: T4=8, T6=4, T8=2 (הוסר T5)
+  const ADVANCING_CONFIG = { T4: 8, T6: 4, T8: 2 };
 
   const renderAdvancingTeamTable = (table) => {
     const count = ADVANCING_CONFIG[table.id];
@@ -581,9 +522,7 @@ export default function AdminResults() {
         <CardHeader className="py-3">
           <CardTitle className="text-cyan-400">{table.description}</CardTitle>
           {table.questions.some(q => isMultiAnswerQuestion(q)) && (
-            <p style={{ fontSize: '0.72rem', color: '#f97316', marginTop: '4px' }}>
-              ✦ שאלות מסומנות תומכות בריבוי תשובות נכונות — לחץ + להוספה
-            </p>
+            <p style={{ fontSize: '0.72rem', color: '#f97316', marginTop: '4px' }}>✦ שאלות מסומנות תומכות בריבוי תשובות נכונות — לחץ + להוספה</p>
           )}
         </CardHeader>
         <CardContent className="p-3" style={{ overflow: 'visible' }}>
@@ -592,15 +531,9 @@ export default function AdminResults() {
               const { main, subs } = grouped[mainId];
               if (!main) return null;
               const sortedSubs = [...subs].sort((a, b) => parseFloat(a.question_id || a.stage_order) - parseFloat(b.question_id || b.stage_order));
-
               if (sortedSubs.length === 0) return renderQuestionRow(main);
-
               return (
-                <div key={main.id} style={{
-                  padding: '8px 10px', borderRadius: '8px',
-                  border: '1px solid var(--tp-12)', background: 'rgba(0,0,0,0.22)',
-                  position: 'relative',
-                }}>
+                <div key={main.id} style={{ padding: '8px 10px', borderRadius: '8px', border: '1px solid var(--tp-12)', background: 'rgba(0,0,0,0.22)', position: 'relative' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: sortedSubs.length > 0 ? '6px' : 0 }}>
                     <Badge variant="outline" style={{ borderColor: 'var(--tp-50)', color: 'var(--tp)', minWidth: '36px', textAlign: 'center', flexShrink: 0, fontSize: '0.72rem' }}>{main.question_id}</Badge>
                     <span style={{ flex: 1, fontSize: '0.85rem', color: '#f1f5f9', fontWeight: '500', textAlign: 'right' }}>{main.question_text}</span>
@@ -624,7 +557,6 @@ export default function AdminResults() {
     );
   };
 
-  // ── Stage chips ───────────────────────────────────────────────────────────
   const renderStageChips = (buttons) => {
     const groupMap = {
       playoff:    { label: '⚽ פלייאוף',    color: '#3b82f6', bg: 'rgba(59,130,246,0.12)',  border: 'rgba(59,130,246,0.35)' },
@@ -636,11 +568,7 @@ export default function AdminResults() {
       other:      { label: '📌 נוסף',        color: '#64748b', bg: 'rgba(100,116,139,0.10)', border: 'rgba(100,116,139,0.25)' },
     };
     const grouped = {};
-    buttons.forEach(btn => {
-      const t = btn.stageType || 'special';
-      if (!grouped[t]) grouped[t] = [];
-      grouped[t].push(btn);
-    });
+    buttons.forEach(btn => { const t = btn.stageType || 'special'; if (!grouped[t]) grouped[t] = []; grouped[t].push(btn); });
     const order = ['playoff','league','groups','rounds','special','qualifiers','other'];
     return (
       <div style={{ padding: '14px 12px', background: 'rgba(0,0,0,0.40)', borderRadius: '12px', border: '1px solid var(--tp-12)', marginBottom: '16px' }}>
@@ -654,14 +582,7 @@ export default function AdminResults() {
                 {grouped[type].map(btn => {
                   const active = openSections[btn.sectionKey];
                   return (
-                    <button key={btn.key} onClick={() => toggleSection(btn.sectionKey)} style={{
-                      display: 'inline-flex', alignItems: 'center', padding: '5px 12px', borderRadius: '999px',
-                      fontSize: '0.78rem', fontWeight: active ? '700' : '400',
-                      color: active ? 'white' : info.color, background: active ? info.color : info.bg,
-                      border: `1px solid ${active ? info.color : info.border}`, cursor: 'pointer',
-                      transition: 'all 0.15s', boxShadow: active ? `0 0 10px ${info.color}66` : 'none',
-                      fontFamily: 'Rubik, Heebo, sans-serif', whiteSpace: 'nowrap'
-                    }}>{btn.description}</button>
+                    <button key={btn.key} onClick={() => toggleSection(btn.sectionKey)} style={{ display: 'inline-flex', alignItems: 'center', padding: '5px 12px', borderRadius: '999px', fontSize: '0.78rem', fontWeight: active ? '700' : '400', color: active ? 'white' : info.color, background: active ? info.color : info.bg, border: `1px solid ${active ? info.color : info.border}`, cursor: 'pointer', transition: 'all 0.15s', boxShadow: active ? `0 0 10px ${info.color}66` : 'none', fontFamily: 'Rubik, Heebo, sans-serif', whiteSpace: 'nowrap' }}>{btn.description}</button>
                   );
                 })}
               </div>
@@ -681,7 +602,6 @@ export default function AdminResults() {
     );
   }
 
-  // ── Build nav buttons ─────────────────────────────────────────────────────
   const allButtons = [];
   roundTables.forEach(t => {
     const st = t.questions[0]?.stage_type;
@@ -730,15 +650,7 @@ export default function AdminResults() {
                   {grouped[type].map(btn => {
                     const active = openSections[btn.sectionKey];
                     return (
-                      <button key={btn.key} onClick={() => toggleSection(btn.sectionKey)} style={{
-                        display: 'block', width: '100%', textAlign: 'right', padding: '7px 10px',
-                        borderRadius: '8px', fontSize: '0.8rem', fontWeight: active ? '700' : '400',
-                        color: active ? 'white' : info.color, background: active ? info.activeBg : info.bg,
-                        border: `1px solid ${active ? info.color : info.border}`,
-                        cursor: 'pointer', transition: 'all 0.15s',
-                        boxShadow: active ? (info.activeShadow || `0 2px 10px ${info.color}44`) : 'none',
-                        fontFamily: 'Rubik, Heebo, sans-serif', lineHeight: '1.35',
-                      }}>{btn.description}</button>
+                      <button key={btn.key} onClick={() => toggleSection(btn.sectionKey)} style={{ display: 'block', width: '100%', textAlign: 'right', padding: '7px 10px', borderRadius: '8px', fontSize: '0.8rem', fontWeight: active ? '700' : '400', color: active ? 'white' : info.color, background: active ? info.activeBg : info.bg, border: `1px solid ${active ? info.color : info.border}`, cursor: 'pointer', transition: 'all 0.15s', boxShadow: active ? (info.activeShadow || `0 2px 10px ${info.color}44`) : 'none', fontFamily: 'Rubik, Heebo, sans-serif', lineHeight: '1.35' }}>{btn.description}</button>
                     );
                   })}
                 </div>
@@ -768,9 +680,7 @@ export default function AdminResults() {
               <div key={button.key} className="mb-4 space-y-3">
                 {renderBonusBanner(table.id)}
                 <RoundTableResults table={table} teams={teams} results={results} onResultChange={handleResultChange} isAdmin={isAdmin} />
-                {table.specialQuestions?.length > 0 && (
-                  <div className="mt-4">{renderSpecialQuestions({ ...table, questions: table.specialQuestions })}</div>
-                )}
+                {table.specialQuestions?.length > 0 && <div className="mt-4">{renderSpecialQuestions({ ...table, questions: table.specialQuestions })}</div>}
               </div>
             );
           }
@@ -794,25 +704,17 @@ export default function AdminResults() {
               <Trophy className="w-5 h-5 md:w-7 md:h-7" style={{ color: 'var(--tp)' }} />
               {isAdmin ? 'עדכון תוצאות אמת' : 'תוצאות אמת'}
             </h1>
-            <p className="text-xs" style={{ color: '#94a3b8' }}>
-              {isAdmin ? 'עדכן תוצאות ואז לחץ "שמור תוצאות"' : 'צפייה בתוצאות האמיתיות'}
-            </p>
+            <p className="text-xs" style={{ color: '#94a3b8' }}>{isAdmin ? 'עדכן תוצאות ואז לחץ "שמור תוצאות"' : 'צפייה בתוצאות האמיתיות'}</p>
           </div>
           {isAdmin && (
-            <Button size="sm" onClick={handleSaveResults} disabled={saving || recalculating} className="text-white" style={{
-              background: recalculating ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)' : 'linear-gradient(135deg, var(--tp) 0%, var(--tp) 100%)',
-            }}>
-              {saving ? <><Loader2 className="w-4 h-4 animate-spin ml-1" />שומר...</>
-                : recalculating ? <><Loader2 className="w-4 h-4 animate-spin ml-1" />מחשב...</>
-                : <><Save className="w-4 h-4 ml-1" />שמור תוצאות</>}
+            <Button size="sm" onClick={handleSaveResults} disabled={saving || recalculating} className="text-white" style={{ background: recalculating ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)' : 'linear-gradient(135deg, var(--tp) 0%, var(--tp) 100%)' }}>
+              {saving ? <><Loader2 className="w-4 h-4 animate-spin ml-1" />שומר...</> : recalculating ? <><Loader2 className="w-4 h-4 animate-spin ml-1" />מחשב...</> : <><Save className="w-4 h-4 ml-1" />שמור תוצאות</>}
             </Button>
           )}
         </div>
       </div>
       {recalculating && recalcProgress && (
-        <div className="mx-4 mt-2 p-3 rounded-lg text-sm" style={{ background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.3)', color: '#10b981' }}>
-          ⏳ {recalcProgress}
-        </div>
+        <div className="mx-4 mt-2 p-3 rounded-lg text-sm" style={{ background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.3)', color: '#10b981' }}>⏳ {recalcProgress}</div>
       )}
       <div className="md:hidden p-3">{renderStageChips(allButtons)}</div>
       <div className="hidden md:flex flex-row gap-4 p-4 max-w-7xl mx-auto" style={{ alignItems: 'flex-start' }}>
@@ -824,91 +726,37 @@ export default function AdminResults() {
   );
 }
 
-// ── MultiCheckboxDropdown ────────────────────────────────────────────────────
 function MultiCheckboxDropdown({ options, selected, onToggle, onClear, findTeam, isAdmin, triggerLabel }) {
   const [open, setOpen] = useState(false);
   const ref = React.useRef(null);
-
   useEffect(() => {
     const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, []);
-
   const hasSelected = selected.length > 0;
-
   return (
     <div ref={ref} style={{ position: 'relative', minWidth: '200px' }}>
-      <button
-        onClick={() => isAdmin && setOpen(o => !o)}
-        style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          width: '100%', padding: '6px 10px', borderRadius: '6px', cursor: isAdmin ? 'pointer' : 'default',
-          background: hasSelected ? 'var(--tp-20)' : 'rgba(51,65,85,0.5)',
-          border: `1px solid ${hasSelected ? 'var(--tp)' : 'rgba(100,116,139,1)'}`,
-          color: hasSelected ? 'var(--tp)' : '#94a3b8',
-          fontSize: '0.82rem', fontWeight: hasSelected ? '700' : '400',
-          textAlign: 'right', fontFamily: 'Rubik, Heebo, sans-serif',
-        }}
-      >
-        <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {triggerLabel}
-        </span>
+      <button onClick={() => isAdmin && setOpen(o => !o)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', padding: '6px 10px', borderRadius: '6px', cursor: isAdmin ? 'pointer' : 'default', background: hasSelected ? 'var(--tp-20)' : 'rgba(51,65,85,0.5)', border: `1px solid ${hasSelected ? 'var(--tp)' : 'rgba(100,116,139,1)'}`, color: hasSelected ? 'var(--tp)' : '#94a3b8', fontSize: '0.82rem', fontWeight: hasSelected ? '700' : '400', textAlign: 'right', fontFamily: 'Rubik, Heebo, sans-serif' }}>
+        <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{triggerLabel}</span>
         <span style={{ marginRight: '6px', fontSize: '0.7rem', opacity: 0.6 }}>▼</span>
       </button>
-
       {open && (
-        <div style={{
-          position: 'absolute', top: '100%', right: 0, zIndex: 100,
-          minWidth: '220px', maxHeight: '280px', overflowY: 'auto',
-          background: '#1e293b', border: '1px solid #06b6d4',
-          borderRadius: '8px', marginTop: '4px',
-          boxShadow: '0 8px 24px rgba(0,0,0,0.6)',
-        }}>
-          <div
-            onClick={() => { onClear(); setOpen(false); }}
-            style={{
-              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-              padding: '8px 12px', cursor: 'pointer', borderBottom: '1px solid rgba(6,182,212,0.2)',
-              color: '#ef4444', fontSize: '0.82rem', fontWeight: 600,
-            }}
-            className="hover:bg-red-900/20"
-          >
-            <span>נקה הכל</span>
-            <span style={{ fontSize: '0.85rem' }}>✕</span>
+        <div style={{ position: 'absolute', top: '100%', right: 0, zIndex: 100, minWidth: '220px', maxHeight: '280px', overflowY: 'auto', background: '#1e293b', border: '1px solid #06b6d4', borderRadius: '8px', marginTop: '4px', boxShadow: '0 8px 24px rgba(0,0,0,0.6)' }}>
+          <div onClick={() => { onClear(); setOpen(false); }} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', cursor: 'pointer', borderBottom: '1px solid rgba(6,182,212,0.2)', color: '#ef4444', fontSize: '0.82rem', fontWeight: 600 }} className="hover:bg-red-900/20">
+            <span>נקה הכל</span><span style={{ fontSize: '0.85rem' }}>✕</span>
           </div>
-
           {options.map(opt => {
             const isChecked = selected.includes(opt);
             const team = findTeam?.(opt);
             const label = opt.replace(/\s*\([^)]+\)\s*$/, '').trim();
             return (
-              <div
-                key={opt}
-                onClick={() => onToggle(opt)}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: '8px',
-                  padding: '7px 12px', cursor: 'pointer',
-                  background: isChecked ? 'rgba(6,182,212,0.15)' : 'transparent',
-                  borderBottom: '1px solid rgba(255,255,255,0.04)',
-                }}
-                className="hover:bg-cyan-700/20"
-              >
-                <div style={{
-                  width: 16, height: 16, borderRadius: '4px', flexShrink: 0,
-                  border: `2px solid ${isChecked ? 'var(--tp)' : '#475569'}`,
-                  background: isChecked ? 'var(--tp)' : 'transparent',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                }}>
+              <div key={opt} onClick={() => onToggle(opt)} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '7px 12px', cursor: 'pointer', background: isChecked ? 'rgba(6,182,212,0.15)' : 'transparent', borderBottom: '1px solid rgba(255,255,255,0.04)' }} className="hover:bg-cyan-700/20">
+                <div style={{ width: 16, height: 16, borderRadius: '4px', flexShrink: 0, border: `2px solid ${isChecked ? 'var(--tp)' : '#475569'}`, background: isChecked ? 'var(--tp)' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   {isChecked && <span style={{ color: 'white', fontSize: '10px', lineHeight: 1 }}>✓</span>}
                 </div>
-                {team?.logo_url && (
-                  <img src={team.logo_url} alt={label} style={{ width: 18, height: 18, borderRadius: '50%' }}
-                    onError={e => e.target.style.display = 'none'} />
-                )}
-                <span style={{ fontSize: '0.85rem', color: isChecked ? 'var(--tp)' : '#f8fafc', fontWeight: isChecked ? 600 : 400 }}>
-                  {label}
-                </span>
+                {team?.logo_url && <img src={team.logo_url} alt={label} style={{ width: 18, height: 18, borderRadius: '50%' }} onError={e => e.target.style.display = 'none'} />}
+                <span style={{ fontSize: '0.85rem', color: isChecked ? 'var(--tp)' : '#f8fafc', fontWeight: isChecked ? 600 : 400 }}>{label}</span>
               </div>
             );
           })}
@@ -918,22 +766,12 @@ function MultiCheckboxDropdown({ options, selected, onToggle, onClear, findTeam,
   );
 }
 
-// ── Multi-answer text input helper ────────────────────────────────────────────
 function MultiAnswerTextInput({ currentAnswers, onAdd }) {
   const [val, setVal] = useState('');
   return (
     <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-      <Input
-        value={val}
-        onChange={e => setVal(e.target.value)}
-        onKeyDown={e => { if (e.key === 'Enter' && val.trim()) { onAdd(val.trim()); setVal(''); } }}
-        placeholder="הקלד תשובה..."
-        style={{ width: '140px', fontSize: '0.8rem', background: 'rgba(51,65,85,0.5)', borderColor: 'rgba(100,116,139,1)', color: '#f8fafc' }}
-      />
-      <button onClick={() => { if (val.trim()) { onAdd(val.trim()); setVal(''); } }}
-        style={{ background: 'var(--tp)', border: 'none', borderRadius: '6px', padding: '4px 8px', cursor: 'pointer', color: 'white', fontSize: '0.8rem' }}>
-        +
-      </button>
+      <Input value={val} onChange={e => setVal(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && val.trim()) { onAdd(val.trim()); setVal(''); } }} placeholder="הקלד תשובה..." style={{ width: '140px', fontSize: '0.8rem', background: 'rgba(51,65,85,0.5)', borderColor: 'rgba(100,116,139,1)', color: '#f8fafc' }} />
+      <button onClick={() => { if (val.trim()) { onAdd(val.trim()); setVal(''); } }} style={{ background: 'var(--tp)', border: 'none', borderRadius: '6px', padding: '4px 8px', cursor: 'pointer', color: 'white', fontSize: '0.8rem' }}>+</button>
     </div>
   );
 }
