@@ -17,8 +17,8 @@
 // ─── קונפיגורציית טבלאות עולות ──────────────────────────────────────────────
 const ADVANCING_TEAM_TABLES = {
   T4: { advancingCount: 8, bonusPoints: 16 }, // רבע גמר
-  T6: { advancingCount: 4, bonusPoints: 12 }, // חצי גמר ✅
-  T8: { advancingCount: 2, bonusPoints: 6  }, // גמר ✅ חדש
+  T6: { advancingCount: 4, bonusPoints: 12 }, // חצי גמר
+  T8: { advancingCount: 2, bonusPoints: 6  }, // גמר
 };
 
 // ── מזהי טבלאות מיקומים ──────────────────────────────────────────────────────
@@ -39,10 +39,19 @@ function cleanText(text) {
     .trim();
 }
 
+/**
+ * normalizeResult — נרמול טקסט תשובה:
+ * - הסרת סיומת "(מדינה)"
+ * - ✅ הסרת prefix "דקות"/"דקה"/"דק'" (כדי שניחוש "96-97" יתאים לתוצאה "דקות 96-97")
+ * - נרמול רווחים
+ */
 function normalizeResult(text) {
   if (!text) return '';
   return String(text)
-    .replace(/\s*\([^)]+\)\s*$/, '')
+    .replace(/\s*\([^)]+\)\s*$/, '')   // הסרת "(מדינה)" מסוף השם
+    .replace(/^דקות?\s+/u, '')          // ✅ הסרת "דקות " מתחילת הטקסט
+    .replace(/^דקה\s+/u, '')            // ✅ הסרת "דקה " מתחילת הטקסט
+    .replace(/^דק'\s+/u, '')            // ✅ הסרת "דק' " מתחילת הטקסט
     .replace(/\s+/g, ' ')
     .trim();
 }
