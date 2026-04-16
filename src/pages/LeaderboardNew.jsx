@@ -29,7 +29,6 @@ export default function LeaderboardNew() {
   const { toast }       = useToast();
   const { currentGame } = useGame();
 
-  // ─── Auth ──────────────────────────────────────────────────────────────────
   useEffect(() => {
     const loadUser = async () => {
       try {
@@ -51,7 +50,7 @@ export default function LeaderboardNew() {
   };
 
   // ═══════════════════════════════════════════════════════════════════════════
-  //  DB HELPERS — STRICT GAME ISOLATION
+  //  DB HELPERS
   // ═══════════════════════════════════════════════════════════════════════════
 
   const loadAllRankings = async (gameId, orderBy = '-current_score') => {
@@ -73,10 +72,6 @@ export default function LeaderboardNew() {
     return all;
   };
 
-  /**
-   * ✅ תיקון: גם מגדיר home_team/away_team ממשחקי T3/T20 שמאוחסנים ב-question_text בלבד
-   * (זהה ל-AdminResults.jsx) — כדי ש-allMatchQs יכלול אותם ויאפשר צביעת ❌ נכונה
-   */
   const loadQuestionsForGame = async (gameId) => {
     let all = [], from = 0;
     const PAGE = 1000;
@@ -90,25 +85,6 @@ export default function LeaderboardNew() {
       if (data.length < PAGE) break;
       from += PAGE;
     }
-
-    // ✅ derive home_team/away_team מ-question_text עבור משחקי נוקאאוט
-    all.forEach(q => {
-      if (q.home_team && q.away_team) return; // כבר מוגדר
-      if (!q.question_text) return;
-      const sep = q.question_text.includes(' נגד ')
-        ? ' נגד '
-        : q.question_text.includes(' - ')
-          ? ' - '
-          : null;
-      if (sep) {
-        const parts = q.question_text.split(sep).map(t => t.trim());
-        if (parts.length === 2) {
-          q.home_team = parts[0];
-          q.away_team = parts[1];
-        }
-      }
-    });
-
     return all.filter(q => q.table_id && q.table_id !== 'T1');
   };
 
@@ -137,7 +113,6 @@ export default function LeaderboardNew() {
       if (!ex || new Date(pred.created_at) > new Date(ex.created_at))
         latest[pred.question_id] = pred;
     });
-
     const predMap = {};
     for (const [qid, pred] of Object.entries(latest)) {
       if (
@@ -278,7 +253,6 @@ export default function LeaderboardNew() {
       breakdown.forEach(item => {
         if (LOCATION_TABLE_IDS.includes(item.table_id)) {
           locationSums[item.table_id] = (locationSums[item.table_id] || 0) + item.score;
-
         } else if (item.isBonus === true || !allQuestions.find(x => x.id === item.question_id)) {
           if (item.score > 0) {
             bonusRows.push({
@@ -291,11 +265,9 @@ export default function LeaderboardNew() {
               actual_result: '', prediction: '',
               home_team_display: null, away_team_display: null,
               home_team_logo: null, away_team_logo: null,
-              isLocationSummary: false,
-              isStageBonusRow:   true,
+              isLocationSummary: false, isStageBonusRow: true,
             });
           }
-
         } else if (item.score > 0) {
           const q = allQuestions.find(x => x.id === item.question_id);
           if (!q) return;
@@ -317,8 +289,7 @@ export default function LeaderboardNew() {
             away_team_logo:      q.away_team
               ? (teamsMap[q.away_team]?.logo_url || teamsMap[q.away_team.replace(/\s*\([^)]+\)\s*$/, '').trim()]?.logo_url)
               : null,
-            isLocationSummary: false,
-            isStageBonusRow:   false,
+            isLocationSummary: false, isStageBonusRow: false,
           });
         }
       });
@@ -351,9 +322,7 @@ export default function LeaderboardNew() {
         .trim()
         .toLowerCase();
 
-      // ✅ כל שאלות המשחק (כולל T3/T7 נוקאאוט) — לזיהוי קבוצות שנפלו
-      const allMatchQs = allQuestions.filter(q => q.home_team && q.away_team);
-
+      // איסוף כל טבלאות ה-qualifiers
       const qualTableMap = {};
       allQuestions.forEach(q => {
         if (q.stage_type !== 'qualifiers') return;
@@ -363,49 +332,71 @@ export default function LeaderboardNew() {
         qualTableMap[q.table_id].push(q);
       });
 
-      const qualifyingSections = Object.entries(qualTableMap)
-        .sort((a,b) => (parseInt(a[0].replace('T',''))||0) - (parseInt(b[0].replace('T',''))||0))
-        .map(([tableId, tSlots]) => {
-          tSlots.sort((a,b) => parseFloat(a.question_id) - parseFloat(b.question_id));
-          const count = tSlots.length;
-          const bonusPoints = count >= 8 ? 16 : count >= 4 ? 12 : count >= 2 ? 6 : 0;
-          const cfg = { count, bonus: bonusPoints };
+      // ✅ שלב 1: בנה את advSet לכל טבלה (ממוין לפי T-number)
+      const sortedTableIds = Object.keys(qualTableMap)
+        .sort((a, b) => (parseInt(a.replace('T', '')) || 0) - (parseInt(b.replace('T', '')) || 0));
 
-          const advSet = new Set(
-            tSlots.filter(q => q.actual_result && q.actual_result !== '__CLEAR__')
-                  .map(q => normT(q.actual_result))
+      const tableMetaMap = {};
+      sortedTableIds.forEach(tableId => {
+        const tSlots = qualTableMap[tableId];
+        tSlots.sort((a, b) => parseFloat(a.question_id) - parseFloat(b.question_id));
+
+        const advSet = new Set(
+          tSlots
+            .filter(q => q.actual_result && q.actual_result !== '__CLEAR__')
+            .map(q => normT(q.actual_result))
+        );
+        const allResultsIn = tSlots.every(
+          q => q.actual_result && q.actual_result !== '__CLEAR__'
+        );
+        tableMetaMap[tableId] = { tSlots, advSet, allResultsIn };
+      });
+
+      // ✅ שלב 2: לכל טבלה, חשב isElim לפי הלוגיקה:
+      //   קבוצה היא "נפלה" אם:
+      //   א) כל תוצאות הטבלה הנוכחית ידועות והיא לא ב-advSet
+      //   ב) יש טבלה קודמת (שלב קודם) שמלאה והיא לא ב-advSet שלה
+      //      → כלומר, אם לא עלתה לחצי גמר, אין סיכוי שתעלה לגמר
+      const qualifyingSections = sortedTableIds.map((tableId, idx) => {
+        const { tSlots, advSet, allResultsIn } = tableMetaMap[tableId];
+        const count = tSlots.length;
+        const bonusPoints = count >= 8 ? 16 : count >= 4 ? 12 : count >= 2 ? 6 : 0;
+        const cfg = { count, bonus: bonusPoints };
+
+        // טבלאות קודמות שמלאות — בסיס לחישוב "נפל בשלב קודם"
+        const prevCompleteTables = sortedTableIds
+          .slice(0, idx)
+          .map(tid => tableMetaMap[tid])
+          .filter(meta => meta.allResultsIn && meta.advSet.size > 0);
+
+        const preds = tSlots.map(q => {
+          const disp = getPredDisplay(q.id);
+          const norm = normT(disp);
+          const isAdv = disp && advSet.has(norm);
+
+          // ✅ לוגיקת isElim חדשה — ללא תלות במשחקים:
+          // קבוצה נפלה אם:
+          // 1. כל תוצאות השלב הנוכחי ידועות ואינה ב-advSet שלו
+          // 2. לא הופיעה ב-advSet של שלב קודם שהסתיים
+          const isElim = disp && !isAdv && (
+            allResultsIn ||
+            prevCompleteTables.some(prevMeta => !prevMeta.advSet.has(norm))
           );
 
-          // ✅ תיקון: חיפוש ב-allMatchQs שכולל עכשיו גם משחקי T3/נוקאאוט
-          const elimSet = new Set();
-          advSet.forEach(adv => {
-            allMatchQs.forEach(q => {
-              const h = normT(q.home_team), a = normT(q.away_team);
-              if (h === adv && !advSet.has(a)) elimSet.add(a);
-              if (a === adv && !advSet.has(h)) elimSet.add(h);
-            });
-          });
-
-          const preds = tSlots.map(q => {
-            const disp = getPredDisplay(q.id);
-            const norm = normT(disp);
-            const isAdv  = disp && advSet.has(norm);
-            const isElim = disp && !isAdv && elimSet.has(norm);
-            return { pred: disp, isAdv, isElim, pts: q.possible_points || 0 };
-          });
-
-          const guessedSet = new Set(preds.map(p => normT(p.pred)).filter(Boolean));
-          const allResultsIn = tSlots.every(q => q.actual_result && q.actual_result !== '__CLEAR__');
-          const bonusEarned  = allResultsIn && [...advSet].every(t => guessedSet.has(t));
-
-          return {
-            tableId,
-            tableDesc: tSlots[0]?.table_description || tableId,
-            preds, advSet, cfg, bonusEarned,
-            hasAnyResult: advSet.size > 0,
-            allResultsIn,
-          };
+          return { pred: disp, isAdv, isElim, pts: q.possible_points || 0 };
         });
+
+        const guessedSet = new Set(preds.map(p => normT(p.pred)).filter(Boolean));
+        const bonusEarned = allResultsIn && [...advSet].every(t => guessedSet.has(t));
+
+        return {
+          tableId,
+          tableDesc: tSlots[0]?.table_description || tableId,
+          preds, advSet, cfg, bonusEarned,
+          hasAnyResult: advSet.size > 0,
+          allResultsIn,
+        };
+      });
 
       setParticipantDetails({ name: participantName, scores: enriched, totalScore, qualifyingSections });
     } catch (error) {
@@ -476,7 +467,6 @@ export default function LeaderboardNew() {
       style={{ background: 'linear-gradient(135deg, var(--bg1) 0%, var(--bg2) 50%, var(--bg1) 100%)' }}>
       <div className="max-w-7xl mx-auto">
 
-        {/* ── Header ── */}
         <div className="flex flex-col md:flex-row justify-between items-start gap-3 mb-4 md:mb-8">
           <div>
             <h1 className="text-xl md:text-4xl font-bold mb-1 md:mb-2 flex items-center gap-2 md:gap-3"
@@ -507,7 +497,6 @@ export default function LeaderboardNew() {
           )}
         </div>
 
-        {/* ── Stats ── */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-4 mb-4 md:mb-8">
           {[
             { label: 'סה"כ משתתפים', value: rankings.length,     icon: Users,       color: 'var(--tp)' },
@@ -529,7 +518,6 @@ export default function LeaderboardNew() {
           ))}
         </div>
 
-        {/* ── Rankings table ── */}
         <Card style={{ background: 'var(--bg3-60)', border: '1px solid var(--tp-20)', backdropFilter: 'blur(10px)' }}>
           <CardHeader className="py-2 md:py-4">
             <CardTitle className="text-sm md:text-lg" style={{ color: 'var(--tp)' }}>הדירוג הנוכחי</CardTitle>
@@ -615,9 +603,6 @@ export default function LeaderboardNew() {
         </Card>
       </div>
 
-      {/* ════════════════════════════════════════════════════════════════════════
-          PARTICIPANT DETAIL DIALOG
-      ════════════════════════════════════════════════════════════════════════ */}
       <Dialog
         open={selectedParticipant !== null}
         onOpenChange={() => { setSelectedParticipant(null); setParticipantDetails(null); }}
@@ -634,7 +619,6 @@ export default function LeaderboardNew() {
             borderRadius: '14px', padding: '0', overflow: 'hidden',
           }}
         >
-          {/* ── Header ── */}
           <DialogHeader style={{ padding: '16px 24px 14px', borderBottom: '1px solid var(--tp-20)', flexShrink: 0 }}>
             <DialogTitle style={{ fontSize: '1.35rem', fontWeight: 800, color: '#f8fafc', textAlign: 'right', marginBottom: '8px' }}>
               {selectedParticipant}
@@ -658,7 +642,6 @@ export default function LeaderboardNew() {
             </div>
           </DialogHeader>
 
-          {/* ── Body ── */}
           <div style={{ flex: 1, overflow: 'auto', padding: '4px 0 8px' }}>
             {loadingDetails ? (
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '180px' }}>
@@ -683,7 +666,11 @@ export default function LeaderboardNew() {
                             const icon  = p.pred ? (p.isAdv ? '✅' : p.isElim ? '❌' : '❓') : '—';
                             const color = p.isAdv ? '#34d399' : p.isElim ? '#f87171' : '#94a3b8';
                             const bg    = p.isAdv ? 'rgba(16,185,129,0.10)' : p.isElim ? 'rgba(239,68,68,0.08)' : 'rgba(15,23,42,0.3)';
-                            const score = !p.pred ? `?/${p.pts}` : sec.hasAnyResult ? (p.isAdv ? `+${p.pts}` : p.isElim ? '0' : `?/${p.pts}`) : `?/${p.pts}`;
+                            const score = !p.pred
+                              ? `?/${p.pts}`
+                              : sec.hasAnyResult
+                                ? (p.isAdv ? `+${p.pts}` : p.isElim ? '0' : `?/${p.pts}`)
+                                : `?/${p.pts}`;
                             return (
                               <div key={i} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'5px 8px', borderRadius:'6px', background: bg, border:`1px solid ${p.isAdv ? 'rgba(16,185,129,0.25)' : p.isElim ? 'rgba(239,68,68,0.20)' : 'rgba(71,85,105,0.3)'}` }}>
                                 <span style={{ fontSize:'0.82rem', color, fontWeight: p.isAdv ? 700 : 400 }}>{icon} {p.pred || <span style={{color:'#475569'}}>—</span>}</span>
