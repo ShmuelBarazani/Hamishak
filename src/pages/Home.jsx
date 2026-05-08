@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { useGame } from "@/components/contexts/GameContext";
 import { useNavigate } from "react-router-dom";
-import { Loader2, Trophy, ChevronLeft, Calendar, LogIn, LogOut, UserPlus } from "lucide-react";
+import { Loader2, Trophy, ChevronLeft, Calendar, LogIn, LogOut, UserPlus, Pencil, Check, X } from "lucide-react";
 import { supabase } from '@/api/supabaseClient';
 import { useToast } from "@/components/ui/use-toast";
 import LeaderboardNew from "./LeaderboardNew";
@@ -12,6 +12,33 @@ export default function Home() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const [showGamePicker, setShowGamePicker] = useState(false);
+  const [editingName, setEditingName] = useState(false);
+  const [newName, setNewName] = useState('');
+
+  const handleSaveName = async () => {
+    if (!newName.trim()) return;
+    try {
+      await supabase.auth.updateUser({ data: { full_name: newName.trim() } });
+      // עדכן גם ב-game_participants
+      if (currentUser?.email) {
+        const { data: parts } = await supabase
+          .from('game_participants')
+          .select('id')
+          .eq('user_email', currentUser.email);
+        if (parts?.length) {
+          await supabase
+            .from('game_participants')
+            .update({ participant_name: newName.trim() })
+            .eq('user_email', currentUser.email);
+        }
+      }
+      toast({ title: "השם עודכן!", description: newName.trim(), className: "bg-green-900/30 border-green-500 text-green-200" });
+      setEditingName(false);
+      window.location.reload();
+    } catch (e) {
+      toast({ title: "שגיאה", description: "עדכון השם נכשל", variant: "destructive" });
+    }
+  };
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -38,10 +65,44 @@ export default function Home() {
 
           {/* שמאל: מידע משתמש / כפתורי כניסה */}
           {currentUser ? (
-            <div className="flex items-center gap-3">
-              <div style={{ fontSize: '0.8rem', color: '#94a3b8' }}>
-                שלום, <span style={{ color: '#f8fafc', fontWeight: '600' }}>{currentUser.full_name || currentUser.email}</span>
-              </div>
+            <div className="flex items-center gap-3 flex-wrap">
+              {editingName ? (
+                /* מצב עריכת שם */
+                <div className="flex items-center gap-2">
+                  <input
+                    autoFocus
+                    value={newName}
+                    onChange={e => setNewName(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') handleSaveName(); if (e.key === 'Escape') setEditingName(false); }}
+                    placeholder="שם מלא..."
+                    style={{
+                      background: 'rgba(0,0,0,0.4)', border: '1px solid var(--tp-50)',
+                      borderRadius: '8px', padding: '4px 10px', color: '#f8fafc',
+                      fontSize: '0.85rem', width: '160px', outline: 'none'
+                    }}
+                  />
+                  <button onClick={handleSaveName} style={{ color: '#10b981', background: 'none', border: 'none', cursor: 'pointer', padding: '4px' }}>
+                    <Check className="w-4 h-4" />
+                  </button>
+                  <button onClick={() => setEditingName(false)} style={{ color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer', padding: '4px' }}>
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              ) : (
+                /* תצוגת שם רגילה */
+                <div className="flex items-center gap-2">
+                  <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>
+                    שלום, <span style={{ color: '#f8fafc', fontWeight: '600' }}>{currentUser.full_name || currentUser.email}</span>
+                  </span>
+                  <button
+                    onClick={() => { setNewName(currentUser.full_name || ''); setEditingName(true); }}
+                    title="ערוך שם"
+                    style={{ color: '#475569', background: 'none', border: 'none', cursor: 'pointer', padding: '2px' }}
+                  >
+                    <Pencil className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
               <button
                 onClick={handleLogout}
                 style={{
