@@ -18,7 +18,6 @@ export const GameProvider = ({ children }) => {
   const [currentParticipant, setCurrentParticipant] = useState(null);
 
   useEffect(() => {
-    // קבל משתמש נוכחי מ-Supabase
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session?.user) {
         const u = session.user;
@@ -51,25 +50,22 @@ export const GameProvider = ({ children }) => {
     setLoading(true);
     try {
       const allGames = await Game.filter({}, '-created_at', 100);
-
       let visibleGames;
+
       if (user?.user_metadata?.role === 'admin') {
+        // ✅ מנהל רואה את כל המשחקים
         visibleGames = allGames;
-      } else if (user) {
-        const participations = await GameParticipant.filter({ user_email: user.email, is_active: true }, null, 100);
-        const gameIds = participations.map(p => p.game_id);
-        visibleGames = allGames.filter(g => gameIds.includes(g.id) && ['active', 'locked'].includes(g.status));
       } else {
+        // ✅ כל משתמש (מחובר או לא) רואה משחקים פתוחים ונעולים
         visibleGames = allGames.filter(g => ['active', 'locked'].includes(g.status));
       }
 
       setGames(visibleGames);
 
-      // בחר משחק נוכחי
+      // בחר משחק נוכחי — מה ששמור ב-localStorage או הראשון
       const savedGameId = localStorage.getItem('currentGameId');
       const selected = visibleGames.find(g => g.id === savedGameId) || visibleGames[0] || null;
       setCurrentGame(selected);
-
       if (selected) {
         localStorage.setItem('currentGameId', selected.id);
       }
