@@ -1,16 +1,13 @@
 import { supabase } from './supabaseClient';
 
 // ─── עזר גנרי ────────────────────────────────────────────────────────────────
-
 function buildQuery(table, filters = {}, orderBy = null, limit = null, offset = 0) {
   let query = supabase.from(table).select('*');
-
   Object.entries(filters).forEach(([key, value]) => {
     if (value !== undefined && value !== null) {
       query = query.eq(key, value);
     }
   });
-
   if (orderBy) {
     const desc = orderBy.startsWith('-');
     const col = desc ? orderBy.slice(1) : orderBy;
@@ -18,10 +15,8 @@ function buildQuery(table, filters = {}, orderBy = null, limit = null, offset = 
   } else {
     query = query.order('created_at', { ascending: false });
   }
-
   if (limit) query = query.limit(limit);
   if (offset) query = query.range(offset, offset + (limit || 1000) - 1);
-
   return query;
 }
 
@@ -32,35 +27,37 @@ function createEntity(table) {
       if (error) throw error;
       return data || [];
     },
-
     async get(id) {
       const { data, error } = await supabase.from(table).select('*').eq('id', id).single();
       if (error) throw error;
       return data;
     },
-
     async create(payload) {
       const { data, error } = await supabase.from(table).insert(payload).select().single();
       if (error) throw error;
       return data;
     },
-
     async update(id, payload) {
       const { data, error } = await supabase.from(table).update(payload).eq('id', id).select().single();
       if (error) throw error;
       return data;
     },
-
     async delete(id) {
       const { error } = await supabase.from(table).delete().eq('id', id);
       if (error) throw error;
       return true;
     },
-
     async upsert(payload, conflictColumn = 'id') {
       const { data, error } = await supabase.from(table).upsert(payload, { onConflict: conflictColumn }).select().single();
       if (error) throw error;
       return data;
+    },
+    // ✅ נוסף: שמירת מספר רשומות בבת אחת
+    async bulkCreate(payloads) {
+      if (!payloads || payloads.length === 0) return [];
+      const { data, error } = await supabase.from(table).insert(payloads).select();
+      if (error) throw error;
+      return data || [];
     }
   };
 }
