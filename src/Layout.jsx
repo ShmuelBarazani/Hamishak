@@ -123,7 +123,7 @@ function LayoutContent({ children }) {
   const { toast } = useToast();
   const location  = useLocation();
 
-  const { currentGame, games, selectGame, loading: gamesLoading, currentUser: gameContextUser } = useGame();
+  const { currentGame, games, selectGame, loading: gamesLoading, currentUser: gameContextUser, currentParticipant } = useGame();
 
   const g = currentGame ? `?gameId=${currentGame.id}` : '';
 
@@ -324,7 +324,7 @@ function LayoutContent({ children }) {
         {effectiveUser ? (
           <div className="lm-user-row">
             <div className="lm-avatar">
-              {(effectiveUser.user_metadata?.full_name || effectiveUser.email || '?')[0].toUpperCase()}
+              {(currentParticipant?.participant_name || effectiveUser.user_metadata?.full_name || effectiveUser.email || '?')[0].toUpperCase()}
             </div>
             {/* ✅ שם + עריכה */}
             <div className="lm-user-info-block" style={{flex:1,minWidth:0}}>
@@ -339,7 +339,7 @@ function LayoutContent({ children }) {
                 </div>
               ) : (
                 <div style={{display:'flex',alignItems:'center',gap:4}}>
-                  <div className="lm-user-name" style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{effectiveUser.user_metadata?.full_name || effectiveUser.email}</div>
+                  <div className="lm-user-name" style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{currentParticipant?.participant_name || effectiveUser.user_metadata?.full_name || effectiveUser.email}</div>
                   <button onClick={()=>{setNewName(effectiveUser.user_metadata?.full_name||'');setEditingName(true);}} style={{color:'#475569',background:'none',border:'none',cursor:'pointer',padding:2,flexShrink:0}} title="ערוך שם"><Pencil size={12}/></button>
                 </div>
               )}
@@ -430,7 +430,7 @@ function LayoutContent({ children }) {
                 {/* כרטיס משתמש עם עריכת שם */}
                 <div style={{display:'flex',alignItems:'center',gap:8,padding:'8px 12px',background:'var(--tp-08)',borderRadius:10,border:'1px solid var(--tp-15)'}}>
                   <div style={{width:34,height:34,borderRadius:'50%',background:'linear-gradient(135deg,var(--tp),#8b5cf6)',display:'flex',alignItems:'center',justifyContent:'center',fontWeight:800,color:'white',fontSize:'0.9rem',flexShrink:0}}>
-                    {(effectiveUser.user_metadata?.full_name||effectiveUser.email||'?')[0].toUpperCase()}
+                    {(currentParticipant?.participant_name||effectiveUser.user_metadata?.full_name||effectiveUser.email||'?')[0].toUpperCase()}
                   </div>
                   <div style={{flex:1,minWidth:0}}>
                     {editingName ? (
@@ -445,7 +445,7 @@ function LayoutContent({ children }) {
                     ) : (
                       <div style={{display:'flex',alignItems:'center',gap:6}}>
                         <span style={{fontWeight:600,fontSize:'0.9rem',color:'var(--text)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
-                          {effectiveUser.user_metadata?.full_name||effectiveUser.email}
+                          {currentParticipant?.participant_name||effectiveUser.user_metadata?.full_name||effectiveUser.email}
                         </span>
                         <button onClick={()=>{setNewName(effectiveUser.user_metadata?.full_name||'');setEditingName(true);}}
                           style={{color:'#475569',background:'none',border:'none',cursor:'pointer',flexShrink:0,padding:2}} title="ערוך שם">
