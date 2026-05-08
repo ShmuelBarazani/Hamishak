@@ -158,7 +158,6 @@ export default function PredictionForm() {
         let tableId = q.table_id, tableDescription = q.table_description;
         if (q.stage_name && q.stage_name.includes('בית')) { tableId = q.stage_name; tableDescription = q.stage_name; }
         else if (q.table_description?.includes('שאלות מיוחדות') && q.stage_order && q.table_id !== 'T10') { tableId = `custom_order_${q.stage_order}`; tableDescription = q.stage_name || q.table_description; }
-        // ✅ שם הטבלה מגיע מה-DB (table_description) — ללא override קשיח לפי table_id
         if (!tableCollection[tableId]) tableCollection[tableId] = { id: tableId, description: tableDescription || (q.home_team && q.away_team ? `מחזור ${tableId.replace('T','')}` : `שאלות ${tableId.replace('T','')}`), questions: [] };
         tableCollection[tableId].questions.push(q);
       });
@@ -193,7 +192,6 @@ export default function PredictionForm() {
         return desc && !/^\d+$/.test(desc) && !locationTableIds.includes(table.id) && table.id !== 'T19' && !isGroupTable && table.id !== 'T1' && stageType !== 'qualifiers';
       }).sort((a,b) => { const oa = a.questions[0]?.stage_order || 999, ob = b.questions[0]?.stage_order || 999; if (oa !== ob) return oa - ob; return (parseInt(a.id.replace('T','')) || 0) - (parseInt(b.id.replace('T','')) || 0); });
       setSpecialTables(allSpecialTables);
-      // ✅ שמות טבלאות מגיעים מה-DB (table_description) לפי game_id — ללא override קשיח
 
       const t10Special = sTables['T10'];
       if (t10Special) { const t10Round = Object.values(rTables).find(t => t.id === 'T10'); if (t10Round) t10Round.specialQuestions = t10Special.questions; }
@@ -326,6 +324,7 @@ export default function PredictionForm() {
 
   const toggleSection = (sectionId) => { startTransition(() => { setOpenSections(prev => ({ ...prev, [sectionId]: !prev[sectionId] })); }); };
 
+  // ✅ תוקן: modal={false} למניעת חסימת גלילת הדף, maxHeight לגלילה בתוך הרשימה
   const renderSelectWithLogos = (question, value, onChange, customWidth = "w-[180px]") => {
     const options = validationLists[question.validation_list] || [];
     const isTeamsList = question.validation_list?.toLowerCase().includes('קבוצ');
@@ -341,7 +340,8 @@ export default function PredictionForm() {
     const cleanValue = (!value || value === 'null' || value === 'undefined' || value.toLowerCase?.().includes('null')) ? '__CLEAR__' : value;
     return (
       <span style={{ display: 'inline-block', verticalAlign: 'middle' }}>
-        <Select value={cleanValue} onValueChange={onChange}>
+        {/* ✅ modal={false} — מאפשר גלילת הדף בזמן שהדרופדאון פתוח */}
+        <Select value={cleanValue} onValueChange={onChange} modal={false}>
           <SelectTrigger className={customWidth} style={{ background: 'rgba(0,0,0,0.35)', border: '1px solid var(--tp-20)', color: '#f8fafc' }}>
             <SelectValue placeholder="בחר...">
               {cleanValue && cleanValue !== "__CLEAR__" ? (
@@ -351,7 +351,8 @@ export default function PredictionForm() {
               ) : 'בחר...'}
             </SelectValue>
           </SelectTrigger>
-          <SelectContent style={{ background: 'rgba(0,0,0,0.55)', border: '1px solid var(--tp-30)', color: '#f8fafc', backdropFilter: 'blur(5px)' }}>
+          {/* ✅ maxHeight + overflowY — מאפשר גלילה בתוך רשימה ארוכה */}
+          <SelectContent style={{ background: 'rgba(0,0,0,0.55)', border: '1px solid var(--tp-30)', color: '#f8fafc', backdropFilter: 'blur(5px)', maxHeight: '220px', overflowY: 'auto' }}>
             <SelectItem value="__CLEAR__" style={{ color: '#94a3b8' }} className="hover:bg-cyan-900/30">&nbsp;</SelectItem>
             {options.map(opt => {
               const cleanOptName = opt.replace(/\s*\([^)]+\)\s*$/, '').trim();
