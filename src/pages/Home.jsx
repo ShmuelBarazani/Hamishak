@@ -1,48 +1,103 @@
 import React, { useState } from "react";
 import { useGame } from "@/components/contexts/GameContext";
 import { useNavigate } from "react-router-dom";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Loader2, Trophy, FileText, ChevronLeft, Lock, Calendar } from "lucide-react";
+import { Loader2, Trophy, ChevronLeft, Calendar, LogIn, LogOut, UserPlus } from "lucide-react";
+import { supabase } from '@/api/supabaseClient';
+import { useToast } from "@/components/ui/use-toast";
 import LeaderboardNew from "./LeaderboardNew";
 import { createPageUrl } from "@/utils";
 
 export default function Home() {
-  const { games, currentGame, selectGame, loading } = useGame();
+  const { games, currentGame, selectGame, loading, currentUser } = useGame();
   const navigate = useNavigate();
+  const { toast } = useToast();
   const [showGamePicker, setShowGamePicker] = useState(false);
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    window.location.href = '/';
+  };
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen" style={{ background: 'linear-gradient(135deg, var(--bg1) 0%, var(--bg2) 50%, var(--bg1) 100%)' }}>
+      <div className="flex items-center justify-center min-h-screen"
+        style={{ background: 'linear-gradient(135deg, var(--bg1) 0%, var(--bg2) 50%, var(--bg1) 100%)' }}>
         <Loader2 className="w-8 h-8 animate-spin" style={{ color: 'var(--tp)' }} />
       </div>
     );
   }
 
-  // אם אין משחקים זמינים
-  if (!games || games.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-screen gap-6 p-6" dir="rtl"
-        style={{ background: 'linear-gradient(135deg, var(--bg1) 0%, var(--bg2) 50%, var(--bg1) 100%)' }}>
-        <Trophy className="w-16 h-16" style={{ color: 'var(--tp)', opacity: 0.4 }} />
-        <p className="text-xl" style={{ color: '#94a3b8' }}>אין משחקים זמינים כרגע</p>
-      </div>
-    );
-  }
-
-  // אם יש יותר ממשחק אחד — הצג בורר
-  const multipleGames = games.length > 1;
+  const multipleGames = games && games.length > 1;
 
   return (
     <div dir="rtl" style={{ background: 'linear-gradient(135deg, var(--bg1) 0%, var(--bg2) 50%, var(--bg1) 100%)', minHeight: '100vh' }}>
 
+      {/* ===== HEADER: התחברות / יציאה ===== */}
+      <div style={{ background: 'rgba(0,0,0,0.55)', borderBottom: '1px solid var(--tp-15)', padding: '10px 16px' }}>
+        <div className="max-w-7xl mx-auto flex items-center justify-between gap-3">
+
+          {/* שמאל: מידע משתמש / כפתורי כניסה */}
+          {currentUser ? (
+            <div className="flex items-center gap-3">
+              <div style={{ fontSize: '0.8rem', color: '#94a3b8' }}>
+                שלום, <span style={{ color: '#f8fafc', fontWeight: '600' }}>{currentUser.full_name || currentUser.email}</span>
+              </div>
+              <button
+                onClick={handleLogout}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '5px',
+                  fontSize: '0.75rem', color: '#64748b',
+                  background: 'transparent', border: '1px solid rgba(100,116,139,0.3)',
+                  borderRadius: '8px', padding: '4px 10px', cursor: 'pointer'
+                }}
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                התנתק
+              </button>
+            </div>
+          ) : (
+            /* אורח — כפתורי התחברות והרשמה */
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => navigate(createPageUrl('Login'))}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '6px',
+                  fontSize: '0.8rem', fontWeight: '600', color: 'var(--tp)',
+                  background: 'rgba(6,182,212,0.12)', border: '1px solid rgba(6,182,212,0.35)',
+                  borderRadius: '8px', padding: '6px 14px', cursor: 'pointer'
+                }}
+              >
+                <LogIn className="w-4 h-4" />
+                התחבר
+              </button>
+              <button
+                onClick={() => navigate(createPageUrl('Login'))}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '6px',
+                  fontSize: '0.8rem', fontWeight: '600', color: '#10b981',
+                  background: 'rgba(16,185,129,0.10)', border: '1px solid rgba(16,185,129,0.30)',
+                  borderRadius: '8px', padding: '6px 14px', cursor: 'pointer'
+                }}
+              >
+                <UserPlus className="w-4 h-4" />
+                הרשמה
+              </button>
+            </div>
+          )}
+
+          {/* ימין: שם האתר */}
+          <div className="flex items-center gap-2">
+            <Trophy className="w-5 h-5" style={{ color: 'var(--tp)' }} />
+            <span style={{ fontSize: '0.9rem', fontWeight: '700', color: '#f8fafc' }}>המשחק</span>
+          </div>
+        </div>
+      </div>
+
       {/* ===== בורר משחק ===== */}
       {multipleGames && (
-        <div style={{ background: 'rgba(0,0,0,0.50)', borderBottom: '1px solid var(--tp-20)', padding: '10px 16px' }}>
+        <div style={{ background: 'rgba(0,0,0,0.40)', borderBottom: '1px solid var(--tp-12)', padding: '8px 16px' }}>
           <div className="max-w-7xl mx-auto">
 
-            {/* כפתור בורר */}
             <button
               onClick={() => setShowGamePicker(p => !p)}
               style={{
@@ -50,16 +105,14 @@ export default function Home() {
                 background: 'rgba(0,0,0,0.35)', border: '1px solid var(--tp-30)',
                 borderRadius: '10px', padding: '8px 14px', cursor: 'pointer',
                 width: '100%', textAlign: 'right', color: '#f8fafc',
-                transition: 'border-color 0.2s'
               }}
             >
-              {/* אייקון/לוגו משחק נוכחי */}
               {currentGame?.game_icon
                 ? <img src={currentGame.game_icon} alt="" className="w-7 h-7 rounded-lg object-cover" />
                 : <Trophy className="w-5 h-5 flex-shrink-0" style={{ color: 'var(--tp)' }} />
               }
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: '0.9rem', fontWeight: '700', color: '#f8fafc', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <div style={{ fontSize: '0.9rem', fontWeight: '700', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {currentGame?.game_name || 'בחר משחק'}
                 </div>
                 {currentGame?.game_subtitle && (
@@ -69,17 +122,19 @@ export default function Home() {
                 )}
               </div>
               <StatusBadge status={currentGame?.status} />
-              <ChevronLeft className="w-4 h-4 flex-shrink-0" style={{ color: '#64748b', transform: showGamePicker ? 'rotate(-90deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }} />
+              <ChevronLeft className="w-4 h-4 flex-shrink-0" style={{
+                color: '#64748b',
+                transform: showGamePicker ? 'rotate(-90deg)' : 'rotate(0deg)',
+                transition: 'transform 0.2s'
+              }} />
             </button>
 
-            {/* רשימת משחקים */}
             {showGamePicker && (
               <div style={{
                 marginTop: '8px', borderRadius: '12px',
                 border: '1px solid var(--tp-20)',
                 background: 'rgba(10,15,28,0.97)',
-                backdropFilter: 'blur(12px)',
-                overflow: 'hidden'
+                backdropFilter: 'blur(12px)', overflow: 'hidden'
               }}>
                 {games.map((game, idx) => {
                   const isSelected = game.id === currentGame?.id;
@@ -89,8 +144,7 @@ export default function Home() {
                       onClick={() => { selectGame(game); setShowGamePicker(false); }}
                       style={{
                         display: 'flex', alignItems: 'center', gap: '12px',
-                        width: '100%', textAlign: 'right',
-                        padding: '12px 16px',
+                        width: '100%', textAlign: 'right', padding: '12px 16px',
                         background: isSelected ? 'rgba(6,182,212,0.12)' : 'transparent',
                         borderBottom: idx < games.length - 1 ? '1px solid var(--tp-10)' : 'none',
                         cursor: 'pointer', transition: 'background 0.15s',
@@ -130,12 +184,18 @@ export default function Home() {
       )}
 
       {/* ===== תוכן: לוח דירוג ===== */}
-      <LeaderboardNew />
+      {(!games || games.length === 0) ? (
+        <div className="flex flex-col items-center justify-center gap-6 p-12">
+          <Trophy className="w-16 h-16" style={{ color: 'var(--tp)', opacity: 0.3 }} />
+          <p style={{ color: '#64748b' }}>אין משחקים זמינים כרגע</p>
+        </div>
+      ) : (
+        <LeaderboardNew />
+      )}
     </div>
   );
 }
 
-// קומפוננטת Badge לסטטוס
 function StatusBadge({ status }) {
   const config = {
     active:  { label: 'פתוח',  bg: 'rgba(16,185,129,0.15)', color: '#10b981', border: 'rgba(16,185,129,0.35)' },
