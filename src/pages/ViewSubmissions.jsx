@@ -598,7 +598,7 @@ export default function ViewSubmissions() {
     const textColor = hasActualResult ? '#06b6d4' : '#f8fafc';
     const isQuestion11_1 = question.question_id === '11.1';
     const isQuestion11_2 = question.question_id === '11.2';
-    const boxWidth = isQuestion11_1 ? 'min-w-[60px] max-w-[65px]' : isQuestion11_2 ? 'min-w-[145px] max-w-[150px]' : 'min-w-[135px] max-w-[140px]';
+    const boxWidth = isQuestion11_1 ? 'min-w-[60px] max-w-[65px]' : isQuestion11_2 ? 'min-w-[115px] max-w-[125px]' : 'min-w-[105px] max-w-[125px]';
 
     if (isEditMode && isAdmin && question.validation_list && data.validationLists[question.validation_list]) {
       const options = data.validationLists[question.validation_list] || [];
@@ -647,7 +647,7 @@ export default function ViewSubmissions() {
           <input type="text" value={valueForInput} onChange={(e) => handlePredictionEdit(question.id, e.target.value)}
             className="rounded-md px-3 py-2 min-w-[120px] h-10"
             style={{ background: 'rgba(15,23,42,0.6)', border: '1px solid rgba(6,182,212,0.3)', color: '#f8fafc' }} />
-          <Badge className="bg-slate-600 text-slate-300 text-xs px-1.5 py-0.5 min-w-[45px] justify-center">?/{maxScore}</Badge>
+          <Badge className="bg-slate-600 text-slate-300 text-xs px-1.5 py-0.5 min-w-[40px] justify-center">?/{maxScore}</Badge>
         </div>
       );
     }
@@ -705,9 +705,9 @@ export default function ViewSubmissions() {
           <span style={{ color: textColor, fontSize: isQuestion11_1 ? '0.65rem' : '0.875rem', fontWeight: hasActualResult ? '700' : 'normal' }}>{displayTeamNameForReadonly}</span>
         </div>
         {score !== null ? (
-          <Badge className={`${badgeColor} text-xs font-bold px-1.5 py-0.5 min-w-[45px] justify-center`}>{score}/{maxScore}</Badge>
+          <Badge className={`${badgeColor} text-xs font-bold px-1.5 py-0.5 min-w-[40px] justify-center`}>{score}/{maxScore}</Badge>
         ) : (
-          <Badge className="bg-slate-600 text-slate-300 text-xs px-1.5 py-0.5 min-w-[45px] justify-center">?/{maxScore}</Badge>
+          <Badge className="bg-slate-600 text-slate-300 text-xs px-1.5 py-0.5 min-w-[40px] justify-center">?/{maxScore}</Badge>
         )}
       </>
     );
@@ -729,7 +729,7 @@ export default function ViewSubmissions() {
       if (!valueToDisplay || valueToDisplay.trim() === '') {
         return (
           <>
-            <div className="rounded-md px-2 py-2 min-w-[135px] max-w-[140px] flex items-center gap-1" style={{ background: 'rgba(15,23,42,0.6)', border: '1px solid rgba(6,182,212,0.2)' }}>
+            <div className="rounded-md px-2 py-2 min-w-[105px] max-w-[125px] flex items-center gap-1" style={{ background: 'rgba(15,23,42,0.6)', border: '1px solid rgba(6,182,212,0.2)' }}>
               <span style={{ color: '#94a3b8', fontSize: '0.875rem' }}>-</span>
             </div>
             <div className="w-12"></div>
@@ -743,7 +743,7 @@ export default function ViewSubmissions() {
       const textColor = hasActualResult ? '#06b6d4' : '#f8fafc';
       return (
         <>
-          <div className="rounded-md px-2 py-2 min-w-[135px] max-w-[140px] flex items-center gap-1" style={{
+          <div className="rounded-md px-2 py-2 min-w-[105px] max-w-[125px] flex items-center gap-1" style={{
             background: hasActualResult ? 'rgba(6,182,212,0.2)' : 'rgba(15,23,42,0.6)',
             border: hasActualResult ? '1px solid #06b6d4' : '1px solid rgba(6,182,212,0.2)',
             boxShadow: hasActualResult ? '0 0 10px rgba(6,182,212,0.4)' : 'none'
@@ -751,7 +751,7 @@ export default function ViewSubmissions() {
             {team?.logo_url && <img src={team.logo_url} alt={matchedName} className="w-4 h-4 rounded-full flex-shrink-0" onError={(e) => e.target.style.display='none'} />}
             <span style={{ color: textColor, fontSize: '0.875rem', fontWeight: hasActualResult ? '700' : 'normal' }}>{matchedName}</span>
           </div>
-          <Badge className="bg-slate-600 text-slate-300 text-xs px-1.5 py-0.5 min-w-[45px] justify-center">?/10</Badge>
+          <Badge className="bg-slate-600 text-slate-300 text-xs px-1.5 py-0.5 min-w-[40px] justify-center">?/10</Badge>
         </>
       );
     };
@@ -776,7 +776,7 @@ export default function ViewSubmissions() {
 
               if (sortedSubs.length === 0) {
                 return (
-                  <div key={main.id} style={{ display:'grid', gridTemplateColumns:'50px 1fr 160px 50px', gap:'8px', alignItems:'center', padding:'8px 12px', borderRadius:'6px' }} className="bg-slate-700/20 border border-slate-600/30">
+                  <div key={main.id} style={{ display:'grid', gridTemplateColumns:'40px 1fr 140px 44px', gap:'5px', alignItems:'center', padding:'8px 8px', borderRadius:'6px' }} className="bg-slate-700/20 border border-slate-600/30">
                     <Badge variant="outline" className="border-cyan-400 text-cyan-200 justify-center text-xs h-6 w-full">{main.question_id}</Badge>
                     <span className="text-right font-medium text-sm text-blue-100 truncate">{main.question_text}</span>
                     <div className="contents">{renderReadOnlySelect(main, participantPredictions[main.id] || "")}</div>
@@ -786,11 +786,10 @@ export default function ViewSubmissions() {
 
               if (sortedSubs.length === 1) {
                 return (
-                  <div key={main.id} style={{ display:'grid', gridTemplateColumns:'50px minmax(250px, 2fr) 160px 50px 1fr 50px minmax(180px, 1.5fr) 160px 50px', gap:'8px', alignItems:'center', padding:'8px 12px', borderRadius:'6px' }} className="bg-slate-700/20 border border-slate-600/30">
+                  <div key={main.id} style={{ display:'grid', gridTemplateColumns:'38px minmax(140px, 1.5fr) 125px 44px 38px minmax(120px, 1.2fr) 125px 44px', gap:'5px', alignItems:'center', padding:'8px 8px', borderRadius:'6px' }} className="bg-slate-700/20 border border-slate-600/30">
                     <Badge variant="outline" className="border-cyan-400 text-cyan-200 justify-center text-xs h-6 w-full">{main.question_id}</Badge>
                     <span className="text-right font-medium text-sm text-blue-100">{main.question_text}</span>
                     <div className="contents">{isTeamQuestion ? renderTeamPrediction(main.id, participantPredictions[main.id] || "") : renderReadOnlySelect(main, participantPredictions[main.id] || "")}</div>
-                    <div></div>
                     <Badge variant="outline" className="border-cyan-400 text-cyan-200 justify-center text-xs h-6 w-full">{sortedSubs[0].question_id}</Badge>
                     <span className="text-right font-medium text-sm text-blue-100">{sortedSubs[0].question_text}</span>
                     <div className="contents">{isTeamQuestion ? renderTeamPrediction(sortedSubs[0].id, getSubValue(sortedSubs[0])) : renderReadOnlySelect(sortedSubs[0], getSubValue(sortedSubs[0]))}</div>
@@ -799,7 +798,7 @@ export default function ViewSubmissions() {
               }
 
               return (
-                <div key={main.id} style={{ display:'grid', gridTemplateColumns:'45px 1fr 140px 45px 45px 1fr 140px 45px 45px 1fr 140px 45px', gap:'6px', alignItems:'center', padding:'8px 12px', borderRadius:'6px' }} className="bg-slate-700/20 border border-slate-600/30">
+                <div key={main.id} style={{ display:'grid', gridTemplateColumns:'36px 1fr 110px 42px 36px 1fr 110px 42px 36px 1fr 110px 42px', gap:'5px', alignItems:'center', padding:'8px 8px', borderRadius:'6px' }} className="bg-slate-700/20 border border-slate-600/30">
                   <Badge variant="outline" className="border-cyan-400 text-cyan-200 justify-center text-xs h-6 w-full">{main.question_id}</Badge>
                   <span className="text-right font-medium text-sm text-blue-100 truncate">{main.question_text}</span>
                   <div className="contents">{isTeamQuestion ? renderTeamPrediction(main.id, participantPredictions[main.id] || "") : renderReadOnlySelect(main, participantPredictions[main.id] || "")}</div>
@@ -1006,7 +1005,7 @@ export default function ViewSubmissions() {
               // ── 0 תתי-שאלות — 4 עמודות ──────────────────────────────────
               if (sortedSubs.length === 0) {
                 return (
-                  <div key={main.id} style={{ display:'grid', gridTemplateColumns:'50px 1fr 160px 50px', gap:'8px', alignItems:'center', padding:'8px 12px', borderRadius:'6px', background:'rgba(15,23,42,0.4)', border:'1px solid rgba(6,182,212,0.1)' }}>
+                  <div key={main.id} style={{ display:'grid', gridTemplateColumns:'40px 1fr 140px 44px', gap:'5px', alignItems:'center', padding:'8px 8px', borderRadius:'6px', background:'rgba(15,23,42,0.4)', border:'1px solid rgba(6,182,212,0.1)' }}>
                     <Badge variant="outline" className="justify-center text-xs h-6 w-full" style={{ borderColor:'#06b6d4', color:'#06b6d4' }}>{main.question_id}</Badge>
                     <span className="text-right font-medium text-sm truncate" style={{ color:'#f8fafc' }}>{main.question_text}</span>
                     <div className="contents">{renderReadOnlySelect(main, mainOriginalValue)}</div>
@@ -1020,11 +1019,10 @@ export default function ViewSubmissions() {
                   ? editedPredictions[sortedSubs[0].id]
                   : (isLocTable ? (getLocationPred(sortedSubs[0]) || '') : (participantPredictions[sortedSubs[0].id] || ''));
                 return (
-                  <div key={main.id} style={{ display:'grid', gridTemplateColumns:'50px minmax(250px, 2fr) 160px 50px 1fr 50px minmax(180px, 1.5fr) 160px 50px', gap:'8px', alignItems:'center', padding:'8px 12px', borderRadius:'6px', background:'rgba(15,23,42,0.4)', border:'1px solid rgba(6,182,212,0.1)' }}>
+                  <div key={main.id} style={{ display:'grid', gridTemplateColumns:'38px minmax(140px, 1.5fr) 125px 44px 38px minmax(120px, 1.2fr) 125px 44px', gap:'5px', alignItems:'center', padding:'8px 8px', borderRadius:'6px', background:'rgba(15,23,42,0.4)', border:'1px solid rgba(6,182,212,0.1)' }}>
                     <Badge variant="outline" className="justify-center text-xs h-6 w-full" style={{ borderColor:'#06b6d4', color:'#06b6d4' }}>{main.question_id}</Badge>
                     <span className="text-right font-medium text-sm text-blue-100">{main.question_text}</span>
                     <div className="contents">{renderReadOnlySelect(main, mainOriginalValue)}</div>
-                    <div></div>
                     <Badge variant="outline" className="justify-center text-xs h-6 w-full" style={{ borderColor:'#06b6d4', color:'#06b6d4' }}>{sortedSubs[0].question_id}</Badge>
                     <span className="text-right font-medium text-sm text-blue-100">{sortedSubs[0].question_text}</span>
                     <div className="contents">{renderReadOnlySelect(sortedSubs[0], subOriginalValue)}</div>
@@ -1034,7 +1032,7 @@ export default function ViewSubmissions() {
 
               // ── 2 תתי-שאלות — 12 עמודות ─────────────────────────────────
               return (
-                <div key={main.id} style={{ display:'grid', gridTemplateColumns:'45px 1fr 140px 45px 45px 1fr 140px 45px 45px 1fr 140px 45px', gap:'6px', alignItems:'center', padding:'8px 12px', borderRadius:'6px', background:'rgba(15,23,42,0.4)', border:'1px solid rgba(6,182,212,0.1)' }}>
+                <div key={main.id} style={{ display:'grid', gridTemplateColumns:'36px 1fr 110px 42px 36px 1fr 110px 42px 36px 1fr 110px 42px', gap:'5px', alignItems:'center', padding:'8px 8px', borderRadius:'6px', background:'rgba(15,23,42,0.4)', border:'1px solid rgba(6,182,212,0.1)' }}>
                   <Badge variant="outline" className="justify-center text-xs h-6 w-full" style={{ borderColor:'#06b6d4', color:'#06b6d4' }}>{main.question_id}</Badge>
                   <span className="text-right font-medium text-sm truncate" style={{ color:'#f8fafc' }}>{main.question_text}</span>
                   <div className="contents">{renderReadOnlySelect(main, mainOriginalValue)}</div>
