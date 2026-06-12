@@ -493,31 +493,47 @@ export default function PredictionForm() {
               const renderControl = (q) => q.validation_list && validationLists[q.validation_list]
                 ? renderSelectWithLogos(q, predictions[q.id] || "", (val) => handlePredictionChange(q.id, val), "w-full")
                 : <Input value={predictions[q.id] || ""} onChange={(e) => handlePredictionChange(q.id, e.target.value)} className="h-9 text-sm w-full" placeholder="הזן תשובה..." style={{ background: 'rgba(0,0,0,0.35)', border: '1px solid var(--tp-20)', color: '#f8fafc' }} />;
+              const ptsBadge = (q, sub) => q.possible_points ? <Badge style={{ borderColor: sub ? 'rgba(139,92,246,0.35)' : 'var(--tp-35)', color: sub ? '#a78bfa' : 'var(--tp)', background: sub ? 'rgba(139,92,246,0.08)' : 'var(--tp-08)', fontSize: '0.66rem', whiteSpace: 'nowrap', justifySelf: 'center', padding: '2px 4px' }}>{q.possible_points} נק'</Badge> : <span />;
+              const numBadge = (q, sub) => <Badge variant="outline" style={{ borderColor: sub ? 'rgba(139,92,246,0.45)' : 'var(--tp-50)', color: sub ? '#a78bfa' : 'var(--tp)', textAlign: 'center', fontSize: '0.7rem', justifySelf: 'stretch' }} className="justify-center h-6">{q.question_id}</Badge>;
+
+              // ✅ פריסת גריד צפופה — זהה לצפייה בניחושים
+              if (sortedSubs.length === 0) {
+                return (
+                  <div key={main.id} style={{ display: 'grid', gridTemplateColumns: '40px 1fr 150px 44px', gap: '5px', alignItems: 'center', padding: '7px 8px', borderRadius: '8px', border: '1px solid var(--tp-12)', background: 'rgba(0,0,0,0.22)' }}>
+                    {numBadge(main, false)}
+                    <span style={{ fontSize: '0.84rem', color: '#f1f5f9', textAlign: 'right', lineHeight: '1.35', minWidth: 0 }}>{main.question_text}</span>
+                    <div style={{ minWidth: 0 }}>{renderControl(main)}</div>
+                    {ptsBadge(main, false)}
+                  </div>
+                );
+              }
+              if (sortedSubs.length === 1) {
+                const sub = sortedSubs[0];
+                return (
+                  <div key={main.id} style={{ display: 'grid', gridTemplateColumns: '38px minmax(130px, 1.5fr) 130px 44px 38px minmax(110px, 1.2fr) 130px 44px', gap: '5px', alignItems: 'center', padding: '7px 8px', borderRadius: '8px', border: '1px solid var(--tp-12)', background: 'rgba(0,0,0,0.22)' }}>
+                    {numBadge(main, false)}
+                    <span style={{ fontSize: '0.82rem', color: '#f1f5f9', textAlign: 'right', lineHeight: '1.35', minWidth: 0 }}>{main.question_text}</span>
+                    <div style={{ minWidth: 0 }}>{renderControl(main)}</div>
+                    {ptsBadge(main, false)}
+                    {numBadge(sub, true)}
+                    <span style={{ fontSize: '0.8rem', color: '#cbd5e1', textAlign: 'right', lineHeight: '1.35', minWidth: 0 }}>{sub.question_text}</span>
+                    <div style={{ minWidth: 0 }}>{renderControl(sub)}</div>
+                    {ptsBadge(sub, true)}
+                  </div>
+                );
+              }
               return (
-                // ✅ layout אנכי — שאלה מלאה בשורה, בקרה מתחת
-                <div key={main.id} style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--tp-12)', background: 'rgba(0,0,0,0.22)' }}>
-                  {/* שורה 1: מספר + טקסט שאלה מלא */}
-                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
-                    <Badge variant="outline" style={{ borderColor: 'var(--tp-50)', color: 'var(--tp)', minWidth: '32px', textAlign: 'center', flexShrink: 0, fontSize: '0.72rem', marginTop: '1px' }}>{main.question_id}</Badge>
-                    <span style={{ flex: 1, fontSize: '0.88rem', color: '#f1f5f9', textAlign: 'right', lineHeight: '1.5', fontWeight: '500' }}>{main.question_text}</span>
-                  </div>
-                  {/* שורה 2: בקרה + נקודות */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <div style={{ flex: 1 }}>{renderControl(main)}</div>
-                    {main.possible_points && <Badge style={{ borderColor: 'var(--tp-35)', color: 'var(--tp)', background: 'var(--tp-08)', fontSize: '0.7rem', flexShrink: 0, whiteSpace: 'nowrap' }}>{main.possible_points} נק'</Badge>}
-                  </div>
-                  {/* תת-שאלות */}
-                  {sortedSubs.map((sub) => (
+                <div key={main.id} style={{ display: 'grid', gridTemplateColumns: '36px 1fr 110px 42px 36px 1fr 110px 42px 36px 1fr 110px 42px', gap: '5px', alignItems: 'center', padding: '7px 8px', borderRadius: '8px', border: '1px solid var(--tp-12)', background: 'rgba(0,0,0,0.22)' }}>
+                  {numBadge(main, false)}
+                  <span style={{ fontSize: '0.8rem', color: '#f1f5f9', textAlign: 'right', lineHeight: '1.35', minWidth: 0 }}>{main.question_text}</span>
+                  <div style={{ minWidth: 0 }}>{renderControl(main)}</div>
+                  {ptsBadge(main, false)}
+                  {sortedSubs.map(sub => (
                     <React.Fragment key={sub.id}>
-                      <div style={{ height: '1px', background: 'rgba(255,255,255,0.06)', margin: '0 -4px' }} />
-                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
-                        <Badge variant="outline" style={{ borderColor: 'rgba(139,92,246,0.45)', color: '#a78bfa', minWidth: '32px', textAlign: 'center', flexShrink: 0, fontSize: '0.72rem', marginTop: '1px' }}>{sub.question_id}</Badge>
-                        <span style={{ flex: 1, fontSize: '0.85rem', color: '#cbd5e1', textAlign: 'right', lineHeight: '1.5' }}>{sub.question_text}</span>
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <div style={{ flex: 1 }}>{renderControl(sub)}</div>
-                        {sub.possible_points && <Badge style={{ borderColor: 'rgba(139,92,246,0.35)', color: '#a78bfa', background: 'rgba(139,92,246,0.08)', fontSize: '0.7rem', flexShrink: 0, whiteSpace: 'nowrap' }}>{sub.possible_points} נק'</Badge>}
-                      </div>
+                      {numBadge(sub, true)}
+                      <span style={{ fontSize: '0.8rem', color: '#cbd5e1', textAlign: 'right', lineHeight: '1.35', minWidth: 0 }}>{sub.question_text}</span>
+                      <div style={{ minWidth: 0 }}>{renderControl(sub)}</div>
+                      {ptsBadge(sub, true)}
                     </React.Fragment>
                   ))}
                 </div>
