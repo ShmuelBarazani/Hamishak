@@ -20,6 +20,47 @@ const WC_GAME_ID = '30032806-6216-496f-ac32-fb628e181742';
 
 const ADVANCING_CONFIG = { T4:{count:8,bonus:16}, T5:{count:4,bonus:12}, T6:{count:2,bonus:6} };
 
+// 📅 מיפוי קשיח של כל ימי מונדיאל 2026 → שלב (גם בלי משחקים מזוהים)
+const WC_STAGE_BY_DAY = (() => {
+  const m = {};
+  const add = (mon, from, to, stage) => { for (let d = from; d <= to; d++) m[`${mon}-${d}`] = stage; };
+  add(6, 11, 27, 'שלב הבתים');
+  add(6, 28, 30, 'שלב 1/16');
+  add(7, 1, 3,  'שלב 1/16');
+  add(7, 4, 7,  'שמינית הגמר');
+  add(7, 9, 11, 'רבע הגמר');
+  add(7, 14, 15,'חצי הגמר');
+  add(7, 18, 18,'משחק על המקום השלישי');
+  add(7, 19, 19,'הגמר 🏆');
+  return m;
+})();
+
+// 💼 קבוצות מקצוע — לפי סדר בדיקה (הראשון שתואם מנצח)
+const PROFESSION_GROUPS = [
+  { name:'כספים וכלכלה 💰',     keywords:['רו"ח','רו״ח','רואה חשבון','רואי חשבון','כלכלן','קלקלן','כספים','חשב','בנק','שוק ההון','השקעות','ביטוח','גזבר','פנסיוני','פיננס','נדל"ן','נדל״ן'] },
+  { name:'הייטק וטכנולוגיה 💻', keywords:['מתכנת','תוכנה','מפתח','it','אינטל','intel','הייטק','היי טק','הייטקס','דאטה','אנליסט','r&d','מערכות מידע','טכנולוגיה','qa','סייבר','אפליסט'] },
+  { name:'הנדסה 🛠️',            keywords:['מהנדס','מהנדל','הנדסאי','אדריכל'] },
+  { name:'משפטים ⚖️',           keywords:['עורך דין','עו"ד','עו״ד','שופט','משפט'] },
+  { name:'חינוך והוראה 🎓',     keywords:['מורה','מחנך','הוראה','מרצה','גננת','אנגלית'] },
+  { name:'ביטחון וחירום 🪖',    keywords:['חייל','צה"ל','צה״ל','כבאי','שוטר','כוחות הביטחון','טייס','קצין','לוכד עריקים','מסווג'] },
+  { name:'בריאות וטיפול 🩺',    keywords:['רופא','פסיכולוג','וטרינר','מטפל','רפואה','אח ','פיזיותרפ'] },
+  { name:'סטודנטים ותלמידים 📚',keywords:['סטודנט','תלמיד'] },
+  { name:'חקלאות וטבע 🌾',      keywords:['רפתן','רועה','כוורן','דייג','כבשים','חקלא'] },
+  { name:'ספורט ⚽',             keywords:['מאמן','כדורגלן','כדורסל','מגן ימני','קפטן','ספורט'] },
+  { name:'יצירה ועיצוב 🎨',     keywords:['מעצב','במאי','עורך וידאו','מתופף','דוגמן','צלם','מוזיק'] },
+  { name:'ניהול ותפעול 📦',     keywords:['מנהל','סמנכ','דיירקטור','מנכ"ל','מנכ״ל','לוגיסטיקה','רכש','תפעול','ייצוא','שיווק','מרקטינג','מכירות','bd','עצמאי','בעלים','מסעדן'] },
+  { name:'כפיים ושירותים 🔧',   keywords:['סנדלר','פחח','בנאי','נהג','דוור','הנדימן','מציל','הסעות','שיער','מסגר','חשמלאי','אינסטלטור','שיפוצ'] },
+];
+const OTHER_PROF_GROUP = 'מקצועות אחרים ויצירתיים 🃏';
+const classifyProfession = raw => {
+  if (!raw || !raw.trim()) return null;
+  const t = raw.trim().toLowerCase().replace(/[״"]/g, '"');
+  for (const g of PROFESSION_GROUPS) {
+    if (g.keywords.some(k => t.includes(k.toLowerCase().replace(/[״"]/g, '"')))) return g.name;
+  }
+  return OTHER_PROF_GROUP;
+};
+
 // ─── Utils ────────────────────────────────────────────────────────────────────
 const NC = new Map(), CC = new Map(), PC = new Map();
 const normalizeTeam = n => { if(!n) return n; if(NC.has(n)) return NC.get(n); const r=n.replace(/קרבאך/g,'קרבאח').replace(/קראבח/g,'קרבאח').replace(/קראבך/g,'קרבאח').trim(); NC.set(n,r); return r; };
@@ -47,33 +88,55 @@ const alternateSlice = data => {
   return res;
 };
 
+// ⚡ טעינה מקבילית — count ואז כל הצ'אנקים בבת אחת (פי ~20 מהיר יותר)
+const PRED_COLS = 'id,question_id,participant_name,text_prediction,home_prediction,away_prediction,created_at';
 const loadAllPreds = async gameId => {
-  let all=[],from=0;
-  while(true){
-    const{data,error}=await supabase.from('predictions').select('*').eq('game_id',gameId).range(from,from+999);
-    if(error){console.warn('predictions fetch error:',error.message);break;}
-    if(!data?.length) break;
-    all=all.concat(data);
-    if(data.length<1000) break;
-    from+=1000;
-  }
-  if(all.length>0) return all;
-  let allFb=[],off=0;const seen=new Set();let mx=20;
+  try {
+    const { count, error: cErr } = await supabase.from('predictions')
+      .select('id', { count: 'exact', head: true }).eq('game_id', gameId);
+    if (cErr) throw cErr;
+    if (!count) return [];
+    const CHUNK = 1000;
+    const jobs = [];
+    for (let from = 0; from < count; from += CHUNK) {
+      jobs.push(
+        supabase.from('predictions').select(PRED_COLS).eq('game_id', gameId)
+          .order('id', { ascending: true })
+          .range(from, Math.min(from + CHUNK - 1, count - 1))
+      );
+    }
+    const results = await Promise.all(jobs);
+    let all = [];
+    for (const r of results) {
+      if (r.error) throw r.error;
+      if (r.data?.length) all = all.concat(r.data);
+    }
+    if (all.length > 0) return all;
+  } catch (e) { console.warn('parallel predictions fetch failed, falling back:', e.message); }
+  // fallback סדרתי
+  let allFb=[],off=0;const seen=new Set();let mx=80;
   while(mx-->0){const b=await db.Prediction.filter({game_id:gameId},null,1000,off);if(!b?.length)break;const n=b.filter(p=>!seen.has(p.id));if(!n.length)break;n.forEach(p=>seen.add(p.id));allFb=allFb.concat(n);if(b.length<1000)break;off+=1000;}
   return allFb;
 };
 
 const loadAllRankings = async gameId => {
-  let all=[],from=0;
-  while(true){
-    const{data,error}=await supabase.from('rankings').select('*').eq('game_id',gameId).range(from,from+499);
-    if(error){console.warn('rankings fetch error:',error.message);break;}
-    if(!data?.length) break;
-    all=all.concat(data);
-    if(data.length<500) break;
-    from+=500;
-  }
-  return all;
+  try {
+    const { count, error: cErr } = await supabase.from('rankings')
+      .select('participant_name', { count: 'exact', head: true }).eq('game_id', gameId);
+    if (cErr) throw cErr;
+    if (!count) return [];
+    const CHUNK = 500;
+    const jobs = [];
+    for (let from = 0; from < count; from += CHUNK) {
+      jobs.push(supabase.from('rankings').select('*').eq('game_id', gameId)
+        .order('participant_name', { ascending: true })
+        .range(from, Math.min(from + CHUNK - 1, count - 1)));
+    }
+    const results = await Promise.all(jobs);
+    let all = [];
+    for (const r of results) { if (!r.error && r.data?.length) all = all.concat(r.data); }
+    return all;
+  } catch (e) { console.warn('rankings fetch failed:', e.message); return []; }
 };
 
 // ─── Participant Panel (click-to-lock) ────────────────────────────────────────
@@ -568,6 +631,34 @@ function computeInsights(allQuestions, allPredictions, teams) {
     }
   }
 
+  // ── 🆕 15. פילוח לפי מקצוע 💼 ──────────────────────────────────────
+  {
+    const profQ = allQuestions.find(q=>q.table_id==='T1'&&(q.question_text||'').includes('מקצוע'));
+    if(profQ){
+      const groups={};
+      preds.filter(p=>p.question_id===profQ.id&&p.text_prediction?.trim()).forEach(p=>{
+        const g=classifyProfession(p.text_prediction);
+        if(!g) return;
+        if(!groups[g]) groups[g]={count:0,members:[]};
+        groups[g].count++;
+        groups[g].members.push({name:p.participant_name,raw:p.text_prediction.trim()});
+      });
+      const arr=Object.entries(groups).map(([name,v])=>({name,value:v.count,members:v.members.sort((a,b)=>a.name.localeCompare(b.name,'he'))})).sort((a,b)=>b.value-a.value);
+      const totalProf=arr.reduce((s,d)=>s+d.value,0);
+      if(arr.length>=2){
+        insights.push({
+          id:'professions', icon:'💼', title:'פילוח המשתתפים לפי מקצוע',
+          category:'ניתוח משתתפים',
+          color:'#0ea5e9',
+          summary:`הקבוצה הגדולה: ${arr[0].name} עם ${arr[0].value} משתתפים (${pct(arr[0].value,totalProf)}%)`,
+          chartType:'profession',
+          professionData:arr,
+          detail:`${totalProf} משתתפים מילאו מקצוע. הסיווג אוטומטי לפי מילות מפתח — לחץ על קבוצה לרשימת החברים והמקצוע המקורי שלהם.`,
+        });
+      }
+    }
+  }
+
   return insights;
 }
 
@@ -575,7 +666,35 @@ function computeInsights(allQuestions, allPredictions, teams) {
 function InsightCard({ insight }) {
   const [expanded, setExpanded] = useState(false);
 
+  const [profOpen, setProfOpen] = useState(null);
+
   const renderChart = () => {
+    // 💼 professions — ברים לחיצים עם רשימת חברים
+    if (insight.chartType === 'profession') {
+      const max = Math.max(...insight.professionData.map(d=>d.value),1);
+      return (
+        <div style={{display:'flex',flexDirection:'column',gap:5,marginTop:8}}>
+          {insight.professionData.map((d,i)=>(
+            <div key={i}>
+              <div onClick={()=>setProfOpen(profOpen===d.name?null:d.name)} style={{display:'grid',gridTemplateColumns:'minmax(150px,42%) 1fr 34px',gap:8,alignItems:'center',cursor:'pointer',padding:'3px 4px',borderRadius:6,background:profOpen===d.name?'rgba(14,165,233,0.12)':'transparent'}}>
+                <span style={{fontSize:'0.8rem',color:'#f8fafc',fontWeight:profOpen===d.name?700:400}}>{d.name}</span>
+                <div style={{height:14,borderRadius:4,overflow:'hidden',background:'rgba(255,255,255,0.04)'}}>
+                  <div style={{width:`${(d.value/max)*100}%`,height:'100%',background:COLORS[i%COLORS.length],borderRadius:4}}></div>
+                </div>
+                <span style={{fontSize:'0.74rem',color:'#94a3b8',textAlign:'left',fontWeight:700}}>{d.value}</span>
+              </div>
+              {profOpen===d.name&&(
+                <div style={{display:'flex',flexWrap:'wrap',gap:4,padding:'6px 8px',background:'rgba(10,15,26,0.6)',borderRadius:6,margin:'3px 0 5px',border:'1px solid rgba(14,165,233,0.25)'}}>
+                  {d.members.map((m,k)=><span key={k} title={m.raw} style={{background:'#1e293b',color:'#f8fafc',padding:'3px 8px',borderRadius:4,fontSize:'0.72rem'}}>{m.name} <span style={{color:'#64748b'}}>({m.raw})</span></span>)}
+                </div>
+              )}
+            </div>
+          ))}
+          <p style={{color:'#475569',fontSize:'0.68rem',marginTop:2}}>לחץ על קבוצה לרשימת המשתתפים</p>
+        </div>
+      );
+    }
+
     // 💀 murder list
     if (insight.chartType === 'murder') {
       return (
@@ -1287,7 +1406,7 @@ export default function Statistics() {
 
   // ── 📅 calendar render ──
   const renderCalendar = () => {
-    if(!hasDates) return null;
+    if(!hasDates&&!isWC) return null;
     const M=CAL_MONTHS[calMonthIdx];
     const firstDow=new Date(M.y,M.m,1).getDay();
     const daysIn=new Date(M.y,M.m+1,0).getDate();
@@ -1308,25 +1427,29 @@ export default function Statistics() {
             if(d===null) return <span key={`e${i}`}/>;
             const key=`${M.m+1}-${d}`;
             const has=!!matchesByDay[key];
+            const stage=isWC?WC_STAGE_BY_DAY[key]:null;
+            const clickable=has||!!stage;
             const isToday=todayD.getFullYear()===M.y&&todayD.getMonth()===M.m&&todayD.getDate()===d;
             const sel=selectedSection===`day_${key}`;
             return (
               <span key={d}
-                onClick={has?()=>toggleSection(`day_${key}`):undefined}
+                onClick={clickable?()=>toggleSection(`day_${key}`):undefined}
+                title={stage||''}
                 style={{fontSize:'0.72rem',textAlign:'center',padding:'5px 0',borderRadius:6,
-                  color:sel?'#fff':has?'#cbd5e1':'#334155',
-                  background:sel?'#0891b2':has?'rgba(6,182,212,0.10)':'transparent',
-                  border:sel?'1px solid #22d3ee':isToday?'1px solid #f59e0b':has?'1px solid rgba(6,182,212,0.22)':'1px solid transparent',
+                  color:sel?'#fff':has?'#cbd5e1':stage?'#7dd3fc':'#334155',
+                  background:sel?'#0891b2':has?'rgba(6,182,212,0.10)':stage?'rgba(59,130,246,0.08)':'transparent',
+                  border:sel?'1px solid #22d3ee':isToday?'1px solid #f59e0b':has?'1px solid rgba(6,182,212,0.22)':stage?'1px solid rgba(59,130,246,0.18)':'1px solid transparent',
                   fontWeight:sel?700:isToday?700:400,
-                  cursor:has?'pointer':'default',
+                  cursor:clickable?'pointer':'default',
                   boxShadow:sel?'0 0 8px rgba(6,182,212,0.5)':'none'}}>
                 {d}
               </span>
             );
           })}
         </div>
-        <div style={{display:'flex',gap:10,marginTop:6,fontSize:'0.58rem',color:'#64748b',justifyContent:'center'}}>
-          <span><span style={{display:'inline-block',width:7,height:7,borderRadius:'50%',background:'#0891b2',marginLeft:3,verticalAlign:'middle'}}></span>יום משחקים</span>
+        <div style={{display:'flex',gap:8,marginTop:6,fontSize:'0.58rem',color:'#64748b',justifyContent:'center',flexWrap:'wrap'}}>
+          <span><span style={{display:'inline-block',width:7,height:7,borderRadius:'50%',background:'#0891b2',marginLeft:3,verticalAlign:'middle'}}></span>משחקים</span>
+          <span><span style={{display:'inline-block',width:7,height:7,borderRadius:'50%',background:'rgba(59,130,246,0.5)',marginLeft:3,verticalAlign:'middle'}}></span>שלב נוקאאוט</span>
           <span><span style={{display:'inline-block',width:7,height:7,borderRadius:'50%',border:'1px solid #f59e0b',marginLeft:3,verticalAlign:'middle'}}></span>היום</span>
         </div>
       </div>
@@ -1376,11 +1499,12 @@ export default function Statistics() {
     const key=selectedSection.replace('day_','');
     const [mon,day]=key.split('-').map(Number);
     const matches=matchesByDay[key]||[];
+    const stageName=isWC?WC_STAGE_BY_DAY[key]:null;
     return (
       <Card style={{background:'rgba(30,41,59,0.6)',border:'1px solid rgba(6,182,212,0.25)'}}>
         <CardHeader>
-          <CardTitle style={{color:'#22d3ee'}}>📅 {day}/{mon}/2026 — משחקי היום</CardTitle>
-          <p style={{fontSize:'0.78rem',color:'#94a3b8',marginTop:4}}>{matches.length} משחקים ביום זה</p>
+          <CardTitle style={{color:'#22d3ee'}}>📅 {day}/{mon}/2026{stageName?` — ${stageName}`:' — משחקי היום'}</CardTitle>
+          <p style={{fontSize:'0.78rem',color:'#94a3b8',marginTop:4}}>{matches.length>0?`${matches.length} משחקים ביום זה`:'המשחקים והקבוצות ייקבעו בהמשך הטורניר'}</p>
         </CardHeader>
         <CardContent>
           <div style={{display:'flex',flexDirection:'column',gap:8}}>
@@ -1418,7 +1542,13 @@ export default function Statistics() {
                 </div>
               );
             })}
-            {matches.length===0&&<p style={{color:'#64748b',textAlign:'center',padding:'30px 0'}}>אין משחקים ביום זה</p>}
+            {matches.length===0&&(
+              <div style={{textAlign:'center',padding:'30px 0'}}>
+                <span style={{fontSize:'2.2rem'}}>⚔️</span>
+                <p style={{color:'#7dd3fc',fontWeight:700,marginTop:8}}>{stageName||'אין משחקים ביום זה'}</p>
+                {stageName&&<p style={{color:'#64748b',fontSize:'0.8rem',marginTop:4}}>הקבוצות שיעלו לשלב זה ייקבעו לפי תוצאות השלבים הקודמים — הניחושים כבר נעולים ב-📋 רשימות העולות!</p>}
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -1476,7 +1606,7 @@ export default function Statistics() {
 
   return (
     <div className="min-h-screen p-4 md:p-6" dir="rtl" style={{background:'linear-gradient(135deg,#0f172a 0%,#1e293b 50%,#0f172a 100%)'}}>
-      <div className="max-w-7xl mx-auto">
+      <div className="w-full">
         <h1 className="text-3xl md:text-4xl font-bold mb-2 flex items-center gap-3" style={{color:'#f8fafc',textShadow:'0 0 10px rgba(6,182,212,0.3)'}}>
           <PieChart className="w-8 h-8 md:w-10 md:h-10" style={{color:'#06b6d4'}}/>סטטיסטיקות ותובנות
         </h1>
