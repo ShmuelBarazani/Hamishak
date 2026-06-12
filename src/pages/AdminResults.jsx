@@ -13,16 +13,15 @@ import RoundTableResults from "@/components/predictions/RoundTableResults";
 import { useGame } from "@/components/contexts/GameContext";
 import { calculateTotalScore } from "@/components/scoring/ScoreService";
 
-// ── שאלות שתומכות בריבוי תשובות (||| separator) ──────────────────────────────
+// 🌍 מונדיאל 2026 — לוגיקה ייעודית
+const WC_GAME_ID = '30032806-6216-496f-ac32-fb628e181742';
+
 const MULTI_ANSWER_QUESTIONS = new Set([
-  'T2_1',
-  'T2_2',
-  'T2_3',
-  'T2_8',
-  'T2_10',
+  'T2_1', 'T2_2', 'T2_3', 'T2_8', 'T2_10',
 ]);
 
 const isMultiAnswerQuestion = (q) => {
+  if (q.game_id === WC_GAME_ID) return false; // 🌍 לא רלוונטי למונדיאל
   const key = `${q.table_id}_${q.question_id}`;
   return MULTI_ANSWER_QUESTIONS.has(key);
 };
@@ -51,6 +50,8 @@ export default function AdminResults() {
 
   const { toast } = useToast();
   const { currentGame } = useGame();
+  // 🌍 דגל מונדיאל
+  const isWC = currentGame?.id === WC_GAME_ID;
 
   useEffect(() => {
     const loadUser = async () => {
@@ -64,7 +65,6 @@ export default function AdminResults() {
 
   const isAdmin = currentUser?.role === 'admin' || currentUser?.user_metadata?.role === 'admin';
 
-  // ── Helpers ───────────────────────────────────────────────────────────────
   const loadAllQuestions = async (gameId) => {
     let all = [], from = 0;
     const PAGE = 1000;
@@ -110,9 +110,9 @@ export default function AdminResults() {
     return all;
   };
 
-  // ── Load page data ────────────────────────────────────────────────────────
   const loadData = useCallback(async () => {
     if (!currentGame) { setLoading(false); return; }
+    const wcGame = currentGame.id === WC_GAME_ID;
     setLoading(true);
     try {
       const questions = await loadAllQuestions(currentGame.id);
@@ -130,51 +130,56 @@ export default function AdminResults() {
       const rTables = {}, sTables = {};
       questions.forEach(q => {
         if (!q.table_id) return;
-        if (q.table_id === 'T3' && q.question_text && !q.home_team) {
+        // 🌍 פיצול שמות קבוצות מטקסט — לא במונדיאל
+        if (!wcGame && q.table_id === 'T3' && q.question_text && !q.home_team) {
           const parts = q.question_text.split(' - ');
           if (parts.length === 2) { q.home_team = parts[0].trim(); q.away_team = parts[1].trim(); }
         }
-        if (q.table_id === 'T20' && q.question_text && !q.home_team) {
+        if (!wcGame && q.table_id === 'T20' && q.question_text && !q.home_team) {
           const sep = q.question_text.includes(' נגד ') ? ' נגד ' : q.question_text.includes(' - ') ? ' - ' : null;
           if (sep) { const p = q.question_text.split(sep).map(t => t.trim()); if (p.length === 2) { q.home_team = p[0]; q.away_team = p[1]; } }
         }
 
-        const isKnockoutMatch = q.table_id === 'T3' && q.home_team && q.away_team;
-        const collection = (q.stage_name?.includes('בית') || q.table_description?.includes('בית') || isKnockoutMatch || (q.home_team && q.away_team)) ? rTables : sTables;
+        const isKnockoutMatch = !wcGame && q.table_id === 'T3' && q.home_team && q.away_team;
+        // 🌍 startsWith — רק בתים אמיתיים ("בית א'")
+        const collection = (q.stage_name?.startsWith('בית') || q.table_description?.startsWith('בית') || isKnockoutMatch || (q.home_team && q.away_team)) ? rTables : sTables;
 
         let tableId = q.table_id;
-        let tableDesc = q.table_description;
-        if (q.stage_name?.includes('בית')) { tableId = q.stage_name; tableDesc = q.stage_name; }
+        let tableDesc = q.table_description || q.stage_name;
+        if (q.stage_name?.startsWith('בית')) { tableId = q.stage_name; tableDesc = q.stage_name; }
         else if (q.table_description?.includes('שאלות מיוחדות') && q.stage_order) { tableId = `custom_order_${q.stage_order}`; tableDesc = q.stage_name || q.table_description; }
 
         if (!collection[tableId]) collection[tableId] = { id: tableId, description: tableDesc || tableId, questions: [], stage_order: q.stage_order || 0 };
         collection[tableId].questions.push(q);
       });
 
-      const t20Table = rTables['T20']; delete rTables['T20'];
+      let t20Table = null;
+      if (!wcGame) { t20Table = rTables['T20']; delete rTables['T20']; }
       setIsraeliTable(t20Table || null);
       delete sTables['T1'];
 
       const sortedRoundTables = Object.values(rTables).sort((a, b) => {
-        const aG = a.id.includes('בית'), bG = b.id.includes('בית');
+        const aG = a.id.startsWith('בית'), bG = b.id.startsWith('בית');
         if (aG && !bG) return -1; if (!aG && bG) return 1;
-        if (aG && bG) return a.id.localeCompare(b.id, 'he');
+        // 🌍 מיון בתים לפי stage_order (א'=1 ... יב'=12)
+        if (aG && bG) return (a.stage_order || 0) - (b.stage_order || 0);
         return (parseInt(a.id.replace('T','').replace(/\D/g,'')) || 0) - (parseInt(b.id.replace('T','').replace(/\D/g,'')) || 0);
       });
       setRoundTables(sortedRoundTables);
 
-      const locationTableIds = ['T9','T14','T15','T16','T17'];
+      // 🌍 במונדיאל אין טבלאות מיקומים ואין "מנצחות פלייאוף"
+      const locationTableIds = wcGame ? [] : ['T9','T14','T15','T16','T17'];
       setLocationTables(Object.values(sTables).filter(t => locationTableIds.includes(t.id)).sort((a,b) => parseInt(a.id.replace('T','')) - parseInt(b.id.replace('T',''))));
-      setPlayoffWinnersTable(sTables['T19'] || null);
+      setPlayoffWinnersTable(wcGame ? null : (sTables['T19'] || null));
 
       const allSpecialTables = Object.values(sTables).filter(t => {
         const desc = t.description?.trim();
         return desc && !/^\d+$/.test(desc)
           && !locationTableIds.includes(t.id)
-          && t.id !== 'T19'
-          && !t.id.includes('בית')
+          && (wcGame || t.id !== 'T19')
+          && !t.id.startsWith('בית')
           && t.id !== 'T1'
-          && t.id !== 'T9';
+          && (wcGame || t.id !== 'T9');
       }).sort((a,b) => ((a.stage_order||0) - (b.stage_order||0)) || (parseInt(a.id.replace('T','').replace(/\D/g,'')) - parseInt(b.id.replace('T','').replace(/\D/g,''))));
       setSpecialTables(allSpecialTables);
 
@@ -194,6 +199,8 @@ export default function AdminResults() {
   useEffect(() => { loadData(); }, [loadData]);
 
   useEffect(() => {
+    // 🌍 סימון נבחרות שנבחרו — רלוונטי לנוקאאוט UCL בלבד
+    if (isWC) { setSelectedT11Teams(new Set()); setSelectedT12Teams(new Set()); setSelectedT13Teams(new Set()); return; }
     const filter = (include, exclude=[]) => {
       const qs = allQuestions.filter(q => {
         const sn = q.stage_name || '', td = q.table_description || '';
@@ -206,7 +213,7 @@ export default function AdminResults() {
     setSelectedT11Teams(filter(['רבע גמר']));
     setSelectedT12Teams(filter(['חצי גמר']));
     setSelectedT13Teams(filter(['גמר'],['רבע','חצי']));
-  }, [results, allQuestions]);
+  }, [results, allQuestions, isWC]);
 
   const handleResultChange = (questionId, value) => {
     if (!isAdmin) return;
@@ -231,7 +238,6 @@ export default function AdminResults() {
     handleResultChange(questionId, updated.length > 0 ? updated.join('|||') : '__CLEAR__');
   };
 
-  // ── Calculate score ───────────────────────────────────────────────────────
   const calcParticipantScore = (qs, predictions) => {
     const latest = {};
     predictions.forEach(p => {
@@ -244,7 +250,6 @@ export default function AdminResults() {
     return total;
   };
 
-  // ── Recalculate rankings ──────────────────────────────────────────────────
   const recalculateRankings = async () => {
     if (!currentGame) return;
     setRecalculating(true);
@@ -252,12 +257,15 @@ export default function AdminResults() {
     try {
       let qs = await loadAllQuestions(currentGame.id);
       qs = qs.filter(q => q.table_id && q.table_id !== 'T1');
-      qs.forEach(q => {
-        if (!q.home_team && !q.away_team && q.question_text) {
-          const sep = q.question_text.includes(' נגד ') ? ' נגד ' : q.question_text.includes(' - ') ? ' - ' : null;
-          if (sep) { const p = q.question_text.split(sep).map(t => t.trim()); if (p.length === 2) { q.home_team = p[0]; q.away_team = p[1]; } }
-        }
-      });
+      // 🌍 פיצול שמות מטקסט — לא במונדיאל
+      if (!isWC) {
+        qs.forEach(q => {
+          if (!q.home_team && !q.away_team && q.question_text) {
+            const sep = q.question_text.includes(' נגד ') ? ' נגד ' : q.question_text.includes(' - ') ? ' - ' : null;
+            if (sep) { const p = q.question_text.split(sep).map(t => t.trim()); if (p.length === 2) { q.home_team = p[0]; q.away_team = p[1]; } }
+          }
+        });
+      }
       setRecalcProgress('טוען ניחושים...');
       const preds = await loadAllPredictions(currentGame.id);
       const byParticipant = {};
@@ -316,7 +324,6 @@ export default function AdminResults() {
     setRecalculating(false);
   };
 
-  // ── Save results ──────────────────────────────────────────────────────────
   const handleSaveResults = async () => {
     setSaving(true);
     try {
@@ -355,7 +362,6 @@ export default function AdminResults() {
     return teams[base] || null;
   };
 
-  // ── Multi-answer widget ────────────────────────────────────────────────────
   const renderMultiAnswerInput = (question, value) => {
     const currentAnswers = (value && value !== '__CLEAR__')
       ? value.split('|||').map(v => v.trim()).filter(Boolean)
@@ -364,15 +370,10 @@ export default function AdminResults() {
     const hasOptions = options.length > 0;
 
     const toggle = (opt) => {
-      if (currentAnswers.includes(opt)) {
-        handleMultiAnswerRemove(question.id, opt, value);
-      } else {
-        handleMultiAnswerAdd(question.id, opt, value);
-      }
+      if (currentAnswers.includes(opt)) handleMultiAnswerRemove(question.id, opt, value);
+      else handleMultiAnswerAdd(question.id, opt, value);
     };
-
     const clearAll = () => handleResultChange(question.id, '__CLEAR__');
-
     const triggerLabel = currentAnswers.length === 0
       ? 'בחר...'
       : currentAnswers.map(a => a.replace(/\s*\([^)]+\)\s*$/, '').trim()).join(', ');
@@ -383,49 +384,29 @@ export default function AdminResults() {
           {currentAnswers.length > 0 && (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginBottom: '6px' }}>
               {currentAnswers.map((ans, i) => (
-                <div key={i} style={{
-                  display: 'inline-flex', alignItems: 'center', gap: '4px',
-                  background: 'var(--tp-20)', border: '1px solid var(--tp)',
-                  borderRadius: '999px', padding: '2px 8px', fontSize: '0.78rem', color: 'var(--tp)',
-                }}>
+                <div key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', background: 'var(--tp-20)', border: '1px solid var(--tp)', borderRadius: '999px', padding: '2px 8px', fontSize: '0.78rem', color: 'var(--tp)' }}>
                   <span>{ans}</span>
-                  {isAdmin && (
-                    <button onClick={() => handleMultiAnswerRemove(question.id, ans, value)}
-                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', padding: 0, lineHeight: 1 }}>✕</button>
-                  )}
+                  {isAdmin && <button onClick={() => handleMultiAnswerRemove(question.id, ans, value)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', padding: 0, lineHeight: 1 }}>✕</button>}
                 </div>
               ))}
-              {isAdmin && (
-                <button onClick={clearAll} style={{ background: 'none', border: '1px solid #ef4444', borderRadius: '999px', padding: '2px 8px', fontSize: '0.72rem', color: '#ef4444', cursor: 'pointer' }}>
-                  נקה הכל
-                </button>
-              )}
+              {isAdmin && <button onClick={clearAll} style={{ background: 'none', border: '1px solid #ef4444', borderRadius: '999px', padding: '2px 8px', fontSize: '0.72rem', color: '#ef4444', cursor: 'pointer' }}>נקה הכל</button>}
             </div>
           )}
-          {isAdmin && (
-            <MultiAnswerTextInput currentAnswers={currentAnswers} onAdd={(ans) => handleMultiAnswerAdd(question.id, ans, value)} />
-          )}
+          {isAdmin && <MultiAnswerTextInput currentAnswers={currentAnswers} onAdd={(ans) => handleMultiAnswerAdd(question.id, ans, value)} />}
         </div>
       );
     }
 
     return (
       <MultiCheckboxDropdown
-        options={options}
-        selected={currentAnswers}
-        onToggle={toggle}
-        onClear={clearAll}
-        findTeam={findTeam}
-        isAdmin={isAdmin}
-        triggerLabel={triggerLabel}
+        options={options} selected={currentAnswers} onToggle={toggle} onClear={clearAll}
+        findTeam={findTeam} isAdmin={isAdmin} triggerLabel={triggerLabel}
       />
     );
   };
 
   const renderSelectWithLogos = (question, value, onChange, selectClassName = "w-[200px]") => {
-    if (isMultiAnswerQuestion(question)) {
-      return renderMultiAnswerInput(question, value);
-    }
+    if (isMultiAnswerQuestion(question)) return renderMultiAnswerInput(question, value);
 
     const options = validationLists[question.validation_list] || [];
     const isTeamsList = question.validation_list?.toLowerCase().includes('קבוצ') || question.validation_list?.toLowerCase().includes('נבחר');
@@ -436,13 +417,7 @@ export default function AdminResults() {
         <Input
           value={value === '__CLEAR__' ? '' : (value || '')}
           onChange={(e) => onChange(e.target.value)}
-          style={{
-            width: '180px',
-            background: hasResult ? 'var(--tp-20)' : 'rgba(51,65,85,0.5)',
-            borderColor: hasResult ? 'var(--tp)' : 'rgba(100,116,139,1)',
-            color: hasResult ? 'var(--tp)' : '#f8fafc',
-            fontWeight: hasResult ? '700' : 'normal'
-          }}
+          style={{ width: '100%', maxWidth: '180px', background: hasResult ? 'var(--tp-20)' : 'rgba(51,65,85,0.5)', borderColor: hasResult ? 'var(--tp)' : 'rgba(100,116,139,1)', color: hasResult ? 'var(--tp)' : '#f8fafc', fontWeight: hasResult ? '700' : 'normal' }}
           placeholder="הזן תוצאה..."
           readOnly={!isAdmin}
         />
@@ -453,18 +428,11 @@ export default function AdminResults() {
 
     return (
       <Select value={safeValue} onValueChange={onChange} disabled={!isAdmin}>
-        <SelectTrigger className={selectClassName} style={{
-          background: hasResult ? 'var(--tp-20)' : 'rgba(51,65,85,0.5)',
-          borderColor: hasResult ? 'var(--tp)' : 'rgba(100,116,139,1)',
-          color: hasResult ? 'var(--tp)' : '#94a3b8',
-          fontWeight: hasResult ? '700' : 'normal'
-        }}>
+        <SelectTrigger className={selectClassName} style={{ background: hasResult ? 'var(--tp-20)' : 'rgba(51,65,85,0.5)', borderColor: hasResult ? 'var(--tp)' : 'rgba(100,116,139,1)', color: hasResult ? 'var(--tp)' : '#94a3b8', fontWeight: hasResult ? '700' : 'normal' }}>
           <SelectValue placeholder="בחר...">
             {!hasResult ? 'בחר...' : (
               <div className="flex items-center gap-2">
-                {isTeamsList && findTeam(value)?.logo_url && (
-                  <img src={findTeam(value).logo_url} alt={value} className="w-5 h-5 rounded-full" onError={e => e.target.style.display='none'} />
-                )}
+                {isTeamsList && findTeam(value)?.logo_url && <img src={findTeam(value).logo_url} alt={value} className="w-5 h-5 rounded-full" onError={e => e.target.style.display='none'} />}
                 <span>{value.replace(/\s*\([^)]+\)\s*$/, '').trim()}</span>
               </div>
             )}
@@ -476,11 +444,10 @@ export default function AdminResults() {
             const team = isTeamsList ? findTeam(opt) : null;
             const safeVal = (!value || value === '__CLEAR__') ? '' : value;
             const sn = question.stage_name || '', td = question.table_description || '';
-            const isS11 = sn.includes('רבע גמר') || td.includes('רבע גמר');
-            const isS12 = sn.includes('חצי גמר') || td.includes('חצי גמר');
-            const isS13 = (sn.includes('גמר') && !sn.includes('רבע') && !sn.includes('חצי')) || (td.includes('גמר') && !td.includes('רבע') && !td.includes('חצי'));
-            const isTeamOpt = isTeamsList;
-            const alreadySelected = isTeamOpt && (
+            const isS11 = !isWC && (sn.includes('רבע גמר') || td.includes('רבע גמר'));
+            const isS12 = !isWC && (sn.includes('חצי גמר') || td.includes('חצי גמר'));
+            const isS13 = !isWC && ((sn.includes('גמר') && !sn.includes('רבע') && !sn.includes('חצי')) || (td.includes('גמר') && !td.includes('רבע') && !td.includes('חצי')));
+            const alreadySelected = isTeamsList && (
               (isS11 && selectedT11Teams.has(opt) && safeVal !== opt) ||
               (isS12 && selectedT12Teams.has(opt) && safeVal !== opt) ||
               (isS13 && selectedT13Teams.has(opt) && safeVal !== opt)
@@ -500,36 +467,43 @@ export default function AdminResults() {
   };
 
   const renderQuestionRow = (q, cols = 4, widths = { select: '160px' }) => (
-    <div key={q.id} style={{
-      display: 'grid',
-      gridTemplateColumns: isMultiAnswerQuestion(q) ? `50px 1fr auto 50px` : `50px 1fr ${widths.select} 50px`,
-      gap: '8px', alignItems: 'center', padding: '8px 12px', borderRadius: '6px',
-      position: 'relative', overflow: 'visible',
-    }} className="border border-cyan-600/30 bg-slate-700/20">
+    <div key={q.id} style={{ display: 'grid', gridTemplateColumns: isMultiAnswerQuestion(q) ? `40px 1fr auto 44px` : `40px 1fr ${widths.select} 44px`, gap: '5px', alignItems: 'center', padding: '7px 8px', borderRadius: '6px', position: 'relative', overflow: 'visible' }} className="border border-cyan-600/30 bg-slate-700/20">
       <Badge variant="outline" className="border-cyan-400 text-cyan-200 justify-center text-xs h-6 w-full">{q.question_id}</Badge>
-      <span className="text-right font-medium text-sm text-blue-100 truncate">{q.question_text}</span>
-      {renderSelectWithLogos(q, results[q.id] || '', val => handleResultChange(q.id, val === '__CLEAR__' ? '' : val), `w-[${widths.select}]`)}
+      <span className="text-right font-medium text-sm text-blue-100" style={{ minWidth: 0, lineHeight: '1.35' }}>{q.question_text}</span>
+      {renderSelectWithLogos(q, results[q.id] || '', val => handleResultChange(q.id, val === '__CLEAR__' ? '' : val), `w-full`)}
       <Badge className="text-xs px-2 py-1 justify-center h-6 w-full" style={{ borderColor: 'var(--tp-50)', color: 'var(--tp)', background: 'var(--tp-10)' }}>{q.possible_points || 0}</Badge>
     </div>
   );
 
-  // ── בונוסי שלבים ──────────────────────────────────────────────────────────
+  // ── בונוסי שלבים — נוקאאוט UCL ──────────────────────────────────────────────
   const STAGE_BONUSES = {
     T3: { points: 16, desc: 'ניקוד בכל משחקי שמינית הגמר' },
-    T4: { points: 16, desc: 'ניחוש כל 8 קבוצות רבע הגמר' },
-    T5: { points: 12, desc: 'ניחוש כל 4 קבוצות חצי הגמר' },
-    T6: { points: 6,  desc: 'ניחוש 4 קבוצות הגמר' }, // ✅ תוקן מ-"שתי קבוצות" ל-"4 קבוצות"
+    T4: { points: 16, desc: 'ניחוש כל 8 קבוצות רבע הגמר'  },
+    T6: { points: 12, desc: 'ניחוש כל 4 קבוצות חצי הגמר'  },
+    T8: { points: 6,  desc: 'ניחוש שתי קבוצות הגמר'        },
+  };
+
+  // 🌍 בונוסי שלבים — מונדיאל 2026
+  const WC_STAGE_BONUSES = {
+    T16: { points: 24, desc: 'בונוס מיקום +12 (כל 24 בול) ובונוס עולות +12' },
+    T17: { points: 6,  desc: 'ניחוש כל 12 נבחרות המקום השלישי' },
+    T19: { points: 16, desc: 'ניחוש כל 16 העולות לשמינית הגמר' },
+    T21: { points: 16, desc: 'ניחוש כל 8 העולות לרבע הגמר' },
+    T23: { points: 8,  desc: 'ניחוש כל 4 העולות לחצי הגמר' },
+    T25: { points: 8,  desc: 'ניחוש שתי העולות לגמר' },
   };
 
   const renderBonusBanner = (tableId) => {
-    const bonus = STAGE_BONUSES[tableId];
+    let bonus = null;
+    if (isWC) {
+      if (String(tableId).startsWith('בית')) bonus = { points: 6, desc: 'פגיעה (בול/כיוון) בכל ששת משחקי הבית' };
+      else bonus = WC_STAGE_BONUSES[tableId];
+    } else {
+      bonus = STAGE_BONUSES[tableId];
+    }
     if (!bonus) return null;
     return (
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: '10px', justifyContent: 'center',
-        padding: '8px 16px', borderRadius: '8px', marginBottom: '8px',
-        background: 'rgba(234,179,8,0.10)', border: '1px solid rgba(234,179,8,0.40)',
-      }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', justifyContent: 'center', padding: '8px 16px', borderRadius: '8px', marginBottom: '8px', background: 'rgba(234,179,8,0.10)', border: '1px solid rgba(234,179,8,0.40)' }}>
         <span style={{ fontSize: '1.1rem' }}>🏆</span>
         <span style={{ color: '#fde68a', fontSize: '0.82rem', fontWeight: '600' }}>בונוס שלב: +{bonus.points} נקודות</span>
         <span style={{ color: '#fbbf24', fontSize: '0.75rem', opacity: 0.85 }}>— {bonus.desc}</span>
@@ -537,8 +511,7 @@ export default function AdminResults() {
     );
   };
 
-  // ✅ תוקן: T6 מ-2 ל-4
-  const ADVANCING_CONFIG = { T4: 8, T5: 4, T6: 4 };
+  const ADVANCING_CONFIG = { T4: 8, T6: 4, T8: 2 };
 
   const renderAdvancingTeamTable = (table) => {
     const count = ADVANCING_CONFIG[table.id];
@@ -563,8 +536,44 @@ export default function AdminResults() {
     );
   };
 
+  // 🌍 מונדיאל: ראש בית וסגנית — שורה אחת לכל בית
+  const renderWCGroupLeaders = (table) => {
+    const groupName = (q) => (q?.question_text || '').split('—')[0].trim();
+    const rows = [];
+    for (let g = 1; g <= 12; g++) {
+      const winner = table.questions.find(q => q.question_id === String(g * 2 - 1));
+      const runner = table.questions.find(q => q.question_id === String(g * 2));
+      if (winner || runner) rows.push({ g, winner, runner });
+    }
+    const pts = table.questions[0]?.possible_points || 15;
+    return (
+      <Card className="bg-slate-800/40 shadow-lg" style={{ border: '1px solid rgba(249,115,22,0.35)' }}>
+        <CardHeader className="py-3"><CardTitle style={{ color: '#f97316' }}>📋 {table.description}</CardTitle></CardHeader>
+        <CardContent className="p-3">
+          {renderBonusBanner(table.id)}
+          <div style={{ display: 'grid', gridTemplateColumns: '64px 1fr 1fr', gap: '6px', alignItems: 'center', padding: '4px 8px', marginBottom: '4px' }}>
+            <span style={{ fontSize: '0.7rem', color: '#94a3b8', fontWeight: 700 }}>בית</span>
+            <span style={{ fontSize: '0.7rem', color: '#94a3b8', fontWeight: 700, textAlign: 'center' }}>ראש בית ({pts} נק')</span>
+            <span style={{ fontSize: '0.7rem', color: '#94a3b8', fontWeight: 700, textAlign: 'center' }}>סגנית ({pts} נק')</span>
+          </div>
+          <div className="space-y-2">
+            {rows.map(({ g, winner, runner }) => (
+              <div key={g} style={{ display: 'grid', gridTemplateColumns: '64px 1fr 1fr', gap: '6px', alignItems: 'center', padding: '7px 8px', borderRadius: '8px', border: '1px solid rgba(249,115,22,0.15)', background: 'rgba(0,0,0,0.22)' }}>
+                <Badge variant="outline" className="justify-center text-xs h-6" style={{ borderColor: 'rgba(249,115,22,0.5)', color: '#fb923c' }}>{groupName(winner || runner)}</Badge>
+                <div style={{ minWidth: 0 }}>{winner ? renderSelectWithLogos(winner, results[winner.id] || '', val => handleResultChange(winner.id, val === '__CLEAR__' ? '' : val), 'w-full') : <span />}</div>
+                <div style={{ minWidth: 0 }}>{runner ? renderSelectWithLogos(runner, results[runner.id] || '', val => handleResultChange(runner.id, val === '__CLEAR__' ? '' : val), 'w-full') : <span />}</div>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+    );
+  };
+
   const renderSpecialQuestions = (table) => {
-    if (ADVANCING_CONFIG[table.id]) return renderAdvancingTeamTable(table);
+    if (!isWC && ADVANCING_CONFIG[table.id]) return renderAdvancingTeamTable(table);
+    // 🌍 ראש בית וסגנית — תצוגת שורה לבית
+    if (isWC && table.id === 'T16') return renderWCGroupLeaders(table);
 
     const grouped = {};
     table.questions.forEach((q, idx) => {
@@ -581,27 +590,36 @@ export default function AdminResults() {
         <CardHeader className="py-3">
           <CardTitle className="text-cyan-400">{table.description}</CardTitle>
           {table.questions.some(q => isMultiAnswerQuestion(q)) && (
-            <p style={{ fontSize: '0.72rem', color: '#f97316', marginTop: '4px' }}>
-              ✦ שאלות מסומנות תומכות בריבוי תשובות נכונות — לחץ + להוספה
-            </p>
+            <p style={{ fontSize: '0.72rem', color: '#f97316', marginTop: '4px' }}>✦ שאלות מסומנות תומכות בריבוי תשובות נכונות — לחץ + להוספה</p>
           )}
         </CardHeader>
         <CardContent className="p-3" style={{ overflow: 'visible' }}>
+          {renderBonusBanner(table.id)}
           <div className="space-y-2" style={{ overflow: 'visible' }}>
             {sortedMainIds.map(mainId => {
               const { main, subs } = grouped[mainId];
               if (!main) return null;
               const sortedSubs = [...subs].sort((a, b) => parseFloat(a.question_id || a.stage_order) - parseFloat(b.question_id || b.stage_order));
-
               if (sortedSubs.length === 0) return renderQuestionRow(main);
-
+              // ✅ שאלה + תת-שאלה בשורה אחת (פריסת גריד צפופה)
+              if (sortedSubs.length === 1) {
+                const sub = sortedSubs[0];
+                return (
+                  <div key={main.id} style={{ display: 'grid', gridTemplateColumns: '38px minmax(110px, 1.3fr) 130px 44px 38px minmax(90px, 1fr) 110px 44px', gap: '5px', alignItems: 'center', padding: '7px 8px', borderRadius: '8px', border: '1px solid var(--tp-12)', background: 'rgba(0,0,0,0.22)', position: 'relative', overflow: 'visible' }}>
+                    <Badge variant="outline" style={{ borderColor: 'var(--tp-50)', color: 'var(--tp)', fontSize: '0.7rem' }} className="justify-center h-6">{main.question_id}</Badge>
+                    <span style={{ fontSize: '0.82rem', color: '#f1f5f9', fontWeight: '500', textAlign: 'right', minWidth: 0, lineHeight: '1.35' }}>{main.question_text}</span>
+                    <div style={{ minWidth: 0 }}>{renderSelectWithLogos(main, results[main.id] || '', val => handleResultChange(main.id, val === '__CLEAR__' ? '' : val), 'w-full')}</div>
+                    <Badge style={{ borderColor: 'var(--tp-35)', color: 'var(--tp)', background: 'var(--tp-08)', fontSize: '0.66rem', whiteSpace: 'nowrap', padding: '2px 4px', justifySelf: 'center' }}>{main.possible_points || 0} נק'</Badge>
+                    <Badge variant="outline" style={{ borderColor: 'rgba(139,92,246,0.45)', color: '#a78bfa', fontSize: '0.7rem' }} className="justify-center h-6">{sub.question_id}</Badge>
+                    <span style={{ fontSize: '0.8rem', color: '#cbd5e1', textAlign: 'right', minWidth: 0, lineHeight: '1.35' }}>{sub.question_text}</span>
+                    <div style={{ minWidth: 0 }}>{renderSelectWithLogos(sub, results[sub.id] || '', val => handleResultChange(sub.id, val === '__CLEAR__' ? '' : val), 'w-full')}</div>
+                    <Badge style={{ borderColor: 'rgba(139,92,246,0.35)', color: '#a78bfa', background: 'rgba(139,92,246,0.08)', fontSize: '0.66rem', whiteSpace: 'nowrap', padding: '2px 4px', justifySelf: 'center' }}>{sub.possible_points || 0} נק'</Badge>
+                  </div>
+                );
+              }
               return (
-                <div key={main.id} style={{
-                  padding: '8px 10px', borderRadius: '8px',
-                  border: '1px solid var(--tp-12)', background: 'rgba(0,0,0,0.22)',
-                  position: 'relative',
-                }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: sortedSubs.length > 0 ? '6px' : 0 }}>
+                <div key={main.id} style={{ padding: '8px 10px', borderRadius: '8px', border: '1px solid var(--tp-12)', background: 'rgba(0,0,0,0.22)', position: 'relative' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
                     <Badge variant="outline" style={{ borderColor: 'var(--tp-50)', color: 'var(--tp)', minWidth: '36px', textAlign: 'center', flexShrink: 0, fontSize: '0.72rem' }}>{main.question_id}</Badge>
                     <span style={{ flex: 1, fontSize: '0.85rem', color: '#f1f5f9', fontWeight: '500', textAlign: 'right' }}>{main.question_text}</span>
                     {renderSelectWithLogos(main, results[main.id] || '', val => handleResultChange(main.id, val === '__CLEAR__' ? '' : val), 'w-[160px]')}
@@ -624,23 +642,18 @@ export default function AdminResults() {
     );
   };
 
-  // ── Stage chips ───────────────────────────────────────────────────────────
   const renderStageChips = (buttons) => {
     const groupMap = {
       playoff:    { label: '⚽ פלייאוף',    color: '#3b82f6', bg: 'rgba(59,130,246,0.12)',  border: 'rgba(59,130,246,0.35)' },
       league:     { label: '⚽ ליגה',        color: '#3b82f6', bg: 'rgba(59,130,246,0.12)',  border: 'rgba(59,130,246,0.35)' },
-      groups:     { label: '🏠 שלב הליגה',   color: 'var(--tp)', bg: 'var(--tp-12)', border: 'var(--tp-35)' },
+      groups:     { label: isWC ? '🏠 שלב הבתים' : '🏠 שלב הליגה',   color: 'var(--tp)', bg: 'var(--tp-12)', border: 'var(--tp-35)' },
       rounds:     { label: '⚽ מחזורים',     color: 'var(--tp)', bg: 'var(--tp-12)', border: 'var(--tp-35)' },
       special:    { label: '✨ מיוחדות',     color: '#8b5cf6', bg: 'rgba(139,92,246,0.12)', border: 'rgba(139,92,246,0.35)' },
       qualifiers: { label: '📋 עולות',       color: '#f97316', bg: 'rgba(249,115,22,0.12)',  border: 'rgba(249,115,22,0.35)' },
       other:      { label: '📌 נוסף',        color: '#64748b', bg: 'rgba(100,116,139,0.10)', border: 'rgba(100,116,139,0.25)' },
     };
     const grouped = {};
-    buttons.forEach(btn => {
-      const t = btn.stageType || 'special';
-      if (!grouped[t]) grouped[t] = [];
-      grouped[t].push(btn);
-    });
+    buttons.forEach(btn => { const t = btn.stageType || 'special'; if (!grouped[t]) grouped[t] = []; grouped[t].push(btn); });
     const order = ['playoff','league','groups','rounds','special','qualifiers','other'];
     return (
       <div style={{ padding: '14px 12px', background: 'rgba(0,0,0,0.40)', borderRadius: '12px', border: '1px solid var(--tp-12)', marginBottom: '16px' }}>
@@ -654,14 +667,7 @@ export default function AdminResults() {
                 {grouped[type].map(btn => {
                   const active = openSections[btn.sectionKey];
                   return (
-                    <button key={btn.key} onClick={() => toggleSection(btn.sectionKey)} style={{
-                      display: 'inline-flex', alignItems: 'center', padding: '5px 12px', borderRadius: '999px',
-                      fontSize: '0.78rem', fontWeight: active ? '700' : '400',
-                      color: active ? 'white' : info.color, background: active ? info.color : info.bg,
-                      border: `1px solid ${active ? info.color : info.border}`, cursor: 'pointer',
-                      transition: 'all 0.15s', boxShadow: active ? `0 0 10px ${info.color}66` : 'none',
-                      fontFamily: 'Rubik, Heebo, sans-serif', whiteSpace: 'nowrap'
-                    }}>{btn.description}</button>
+                    <button key={btn.key} onClick={() => toggleSection(btn.sectionKey)} style={{ display: 'inline-flex', alignItems: 'center', padding: '5px 12px', borderRadius: '999px', fontSize: '0.78rem', fontWeight: active ? '700' : '400', color: active ? 'white' : info.color, background: active ? info.color : info.bg, border: `1px solid ${active ? info.color : info.border}`, cursor: 'pointer', transition: 'all 0.15s', boxShadow: active ? `0 0 10px ${info.color}66` : 'none', fontFamily: 'Rubik, Heebo, sans-serif', whiteSpace: 'nowrap' }}>{btn.description}</button>
                   );
                 })}
               </div>
@@ -681,11 +687,12 @@ export default function AdminResults() {
     );
   }
 
-  // ── Build nav buttons ─────────────────────────────────────────────────────
   const allButtons = [];
   roundTables.forEach(t => {
     const st = t.questions[0]?.stage_type;
-    const stageType = st === 'groups' ? 'groups' : st === 'rounds' ? 'rounds' : st === 'league' ? 'league' : 'playoff';
+    // 🌍 בתים אמיתיים מסומנים כקבוצת בתים
+    const isGroupTable = t.id.startsWith('בית');
+    const stageType = isGroupTable ? 'groups' : st === 'groups' ? 'groups' : st === 'rounds' ? 'rounds' : st === 'league' ? 'league' : 'playoff';
     allButtons.push({ numericId: t.stage_order || parseInt(t.id.replace('T','').replace(/\D/g,''))||0, stageType, key: `round_${t.id}`, description: t.description || t.id, sectionKey: `round_${t.id}` });
   });
   specialTables.forEach(t => {
@@ -707,7 +714,7 @@ export default function AdminResults() {
     const groupMap = {
       playoff:    { label: '⚽ משחקי פלייאוף', color: '#3b82f6', bg: 'rgba(59,130,246,0.10)',  border: 'rgba(59,130,246,0.30)',  activeBg: '#2563eb',  activeShadow: '0 2px 10px rgba(59,130,246,0.44)' },
       league:     { label: '⚽ משחקי ליגה',    color: '#3b82f6', bg: 'rgba(59,130,246,0.10)',  border: 'rgba(59,130,246,0.30)',  activeBg: '#2563eb',  activeShadow: '0 2px 10px rgba(59,130,246,0.44)' },
-      groups:     { label: '🏠 שלב הליגה',     color: '#06b6d4', bg: 'rgba(6,182,212,0.10)',   border: 'rgba(6,182,212,0.30)',   activeBg: '#0891b2',  activeShadow: '0 2px 10px rgba(6,182,212,0.44)'  },
+      groups:     { label: isWC ? '🏠 שלב הבתים' : '🏠 שלב הליגה',     color: '#06b6d4', bg: 'rgba(6,182,212,0.10)',   border: 'rgba(6,182,212,0.30)',   activeBg: '#0891b2',  activeShadow: '0 2px 10px rgba(6,182,212,0.44)'  },
       rounds:     { label: '⚽ מחזורים',        color: '#06b6d4', bg: 'rgba(6,182,212,0.10)',   border: 'rgba(6,182,212,0.30)',   activeBg: '#0891b2',  activeShadow: '0 2px 10px rgba(6,182,212,0.44)'  },
       special:    { label: '✨ שאלות מיוחדות', color: '#8b5cf6', bg: 'rgba(139,92,246,0.10)', border: 'rgba(139,92,246,0.30)', activeBg: '#7c3aed',  activeShadow: '0 2px 10px rgba(139,92,246,0.44)' },
       qualifiers: { label: '📋 רשימות עולות',  color: '#f97316', bg: 'rgba(249,115,22,0.10)',  border: 'rgba(249,115,22,0.30)',  activeBg: '#ea580c',  activeShadow: '0 2px 10px rgba(249,115,22,0.44)' },
@@ -730,15 +737,7 @@ export default function AdminResults() {
                   {grouped[type].map(btn => {
                     const active = openSections[btn.sectionKey];
                     return (
-                      <button key={btn.key} onClick={() => toggleSection(btn.sectionKey)} style={{
-                        display: 'block', width: '100%', textAlign: 'right', padding: '7px 10px',
-                        borderRadius: '8px', fontSize: '0.8rem', fontWeight: active ? '700' : '400',
-                        color: active ? 'white' : info.color, background: active ? info.activeBg : info.bg,
-                        border: `1px solid ${active ? info.color : info.border}`,
-                        cursor: 'pointer', transition: 'all 0.15s',
-                        boxShadow: active ? (info.activeShadow || `0 2px 10px ${info.color}44`) : 'none',
-                        fontFamily: 'Rubik, Heebo, sans-serif', lineHeight: '1.35',
-                      }}>{btn.description}</button>
+                      <button key={btn.key} onClick={() => toggleSection(btn.sectionKey)} style={{ display: 'block', width: '100%', textAlign: 'right', padding: '7px 10px', borderRadius: '8px', fontSize: '0.8rem', fontWeight: active ? '700' : '400', color: active ? 'white' : info.color, background: active ? info.activeBg : info.bg, border: `1px solid ${active ? info.color : info.border}`, cursor: 'pointer', transition: 'all 0.15s', boxShadow: active ? (info.activeShadow || `0 2px 10px ${info.color}44`) : 'none', fontFamily: 'Rubik, Heebo, sans-serif', lineHeight: '1.35' }}>{btn.description}</button>
                     );
                   })}
                 </div>
@@ -768,9 +767,7 @@ export default function AdminResults() {
               <div key={button.key} className="mb-4 space-y-3">
                 {renderBonusBanner(table.id)}
                 <RoundTableResults table={table} teams={teams} results={results} onResultChange={handleResultChange} isAdmin={isAdmin} />
-                {table.specialQuestions?.length > 0 && (
-                  <div className="mt-4">{renderSpecialQuestions({ ...table, questions: table.specialQuestions })}</div>
-                )}
+                {table.specialQuestions?.length > 0 && <div className="mt-4">{renderSpecialQuestions({ ...table, questions: table.specialQuestions })}</div>}
               </div>
             );
           }
@@ -794,25 +791,22 @@ export default function AdminResults() {
               <Trophy className="w-5 h-5 md:w-7 md:h-7" style={{ color: 'var(--tp)' }} />
               {isAdmin ? 'עדכון תוצאות אמת' : 'תוצאות אמת'}
             </h1>
-            <p className="text-xs" style={{ color: '#94a3b8' }}>
-              {isAdmin ? 'עדכן תוצאות ואז לחץ "שמור תוצאות"' : 'צפייה בתוצאות האמיתיות'}
-            </p>
+            <p className="text-xs" style={{ color: '#94a3b8' }}>{isAdmin ? 'עדכן תוצאות ואז לחץ "שמור תוצאות"' : 'צפייה בתוצאות האמיתיות'}</p>
           </div>
           {isAdmin && (
-            <Button size="sm" onClick={handleSaveResults} disabled={saving || recalculating} className="text-white" style={{
-              background: recalculating ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)' : 'linear-gradient(135deg, var(--tp) 0%, var(--tp) 100%)',
-            }}>
-              {saving ? <><Loader2 className="w-4 h-4 animate-spin ml-1" />שומר...</>
-                : recalculating ? <><Loader2 className="w-4 h-4 animate-spin ml-1" />מחשב...</>
-                : <><Save className="w-4 h-4 ml-1" />שמור תוצאות</>}
-            </Button>
+            <div className="flex gap-2">
+              <Button size="sm" onClick={recalculateRankings} disabled={saving || recalculating} variant="outline" style={{ borderColor: 'rgba(16,185,129,0.5)', color: '#34d399', background: 'rgba(30,41,59,0.4)' }}>
+                {recalculating ? <><Loader2 className="w-4 h-4 animate-spin ml-1" />מחשב...</> : <><Trophy className="w-4 h-4 ml-1" />חשב דירוג</>}
+              </Button>
+              <Button size="sm" onClick={handleSaveResults} disabled={saving || recalculating} className="text-white" style={{ background: recalculating ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)' : 'linear-gradient(135deg, var(--tp) 0%, var(--tp) 100%)' }}>
+                {saving ? <><Loader2 className="w-4 h-4 animate-spin ml-1" />שומר...</> : recalculating ? <><Loader2 className="w-4 h-4 animate-spin ml-1" />מחשב...</> : <><Save className="w-4 h-4 ml-1" />שמור תוצאות</>}
+              </Button>
+            </div>
           )}
         </div>
       </div>
       {recalculating && recalcProgress && (
-        <div className="mx-4 mt-2 p-3 rounded-lg text-sm" style={{ background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.3)', color: '#10b981' }}>
-          ⏳ {recalcProgress}
-        </div>
+        <div className="mx-4 mt-2 p-3 rounded-lg text-sm" style={{ background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.3)', color: '#10b981' }}>⏳ {recalcProgress}</div>
       )}
       <div className="md:hidden p-3">{renderStageChips(allButtons)}</div>
       <div className="hidden md:flex flex-row gap-4 p-4 max-w-7xl mx-auto" style={{ alignItems: 'flex-start' }}>
@@ -824,91 +818,37 @@ export default function AdminResults() {
   );
 }
 
-// ── MultiCheckboxDropdown ────────────────────────────────────────────────────
 function MultiCheckboxDropdown({ options, selected, onToggle, onClear, findTeam, isAdmin, triggerLabel }) {
   const [open, setOpen] = useState(false);
   const ref = React.useRef(null);
-
   useEffect(() => {
     const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, []);
-
   const hasSelected = selected.length > 0;
-
   return (
     <div ref={ref} style={{ position: 'relative', minWidth: '200px' }}>
-      <button
-        onClick={() => isAdmin && setOpen(o => !o)}
-        style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          width: '100%', padding: '6px 10px', borderRadius: '6px', cursor: isAdmin ? 'pointer' : 'default',
-          background: hasSelected ? 'var(--tp-20)' : 'rgba(51,65,85,0.5)',
-          border: `1px solid ${hasSelected ? 'var(--tp)' : 'rgba(100,116,139,1)'}`,
-          color: hasSelected ? 'var(--tp)' : '#94a3b8',
-          fontSize: '0.82rem', fontWeight: hasSelected ? '700' : '400',
-          textAlign: 'right', fontFamily: 'Rubik, Heebo, sans-serif',
-        }}
-      >
-        <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {triggerLabel}
-        </span>
+      <button onClick={() => isAdmin && setOpen(o => !o)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', padding: '6px 10px', borderRadius: '6px', cursor: isAdmin ? 'pointer' : 'default', background: hasSelected ? 'var(--tp-20)' : 'rgba(51,65,85,0.5)', border: `1px solid ${hasSelected ? 'var(--tp)' : 'rgba(100,116,139,1)'}`, color: hasSelected ? 'var(--tp)' : '#94a3b8', fontSize: '0.82rem', fontWeight: hasSelected ? '700' : '400', textAlign: 'right', fontFamily: 'Rubik, Heebo, sans-serif' }}>
+        <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{triggerLabel}</span>
         <span style={{ marginRight: '6px', fontSize: '0.7rem', opacity: 0.6 }}>▼</span>
       </button>
-
       {open && (
-        <div style={{
-          position: 'absolute', top: '100%', right: 0, zIndex: 100,
-          minWidth: '220px', maxHeight: '280px', overflowY: 'auto',
-          background: '#1e293b', border: '1px solid #06b6d4',
-          borderRadius: '8px', marginTop: '4px',
-          boxShadow: '0 8px 24px rgba(0,0,0,0.6)',
-        }}>
-          <div
-            onClick={() => { onClear(); setOpen(false); }}
-            style={{
-              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-              padding: '8px 12px', cursor: 'pointer', borderBottom: '1px solid rgba(6,182,212,0.2)',
-              color: '#ef4444', fontSize: '0.82rem', fontWeight: 600,
-            }}
-            className="hover:bg-red-900/20"
-          >
-            <span>נקה הכל</span>
-            <span style={{ fontSize: '0.85rem' }}>✕</span>
+        <div style={{ position: 'absolute', top: '100%', right: 0, zIndex: 100, minWidth: '220px', maxHeight: '280px', overflowY: 'auto', background: '#1e293b', border: '1px solid #06b6d4', borderRadius: '8px', marginTop: '4px', boxShadow: '0 8px 24px rgba(0,0,0,0.6)' }}>
+          <div onClick={() => { onClear(); setOpen(false); }} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', cursor: 'pointer', borderBottom: '1px solid rgba(6,182,212,0.2)', color: '#ef4444', fontSize: '0.82rem', fontWeight: 600 }} className="hover:bg-red-900/20">
+            <span>נקה הכל</span><span style={{ fontSize: '0.85rem' }}>✕</span>
           </div>
-
           {options.map(opt => {
             const isChecked = selected.includes(opt);
             const team = findTeam?.(opt);
             const label = opt.replace(/\s*\([^)]+\)\s*$/, '').trim();
             return (
-              <div
-                key={opt}
-                onClick={() => onToggle(opt)}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: '8px',
-                  padding: '7px 12px', cursor: 'pointer',
-                  background: isChecked ? 'rgba(6,182,212,0.15)' : 'transparent',
-                  borderBottom: '1px solid rgba(255,255,255,0.04)',
-                }}
-                className="hover:bg-cyan-700/20"
-              >
-                <div style={{
-                  width: 16, height: 16, borderRadius: '4px', flexShrink: 0,
-                  border: `2px solid ${isChecked ? 'var(--tp)' : '#475569'}`,
-                  background: isChecked ? 'var(--tp)' : 'transparent',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                }}>
+              <div key={opt} onClick={() => onToggle(opt)} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '7px 12px', cursor: 'pointer', background: isChecked ? 'rgba(6,182,212,0.15)' : 'transparent', borderBottom: '1px solid rgba(255,255,255,0.04)' }} className="hover:bg-cyan-700/20">
+                <div style={{ width: 16, height: 16, borderRadius: '4px', flexShrink: 0, border: `2px solid ${isChecked ? 'var(--tp)' : '#475569'}`, background: isChecked ? 'var(--tp)' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   {isChecked && <span style={{ color: 'white', fontSize: '10px', lineHeight: 1 }}>✓</span>}
                 </div>
-                {team?.logo_url && (
-                  <img src={team.logo_url} alt={label} style={{ width: 18, height: 18, borderRadius: '50%' }}
-                    onError={e => e.target.style.display = 'none'} />
-                )}
-                <span style={{ fontSize: '0.85rem', color: isChecked ? 'var(--tp)' : '#f8fafc', fontWeight: isChecked ? 600 : 400 }}>
-                  {label}
-                </span>
+                {team?.logo_url && <img src={team.logo_url} alt={label} style={{ width: 18, height: 18, borderRadius: '50%' }} onError={e => e.target.style.display = 'none'} />}
+                <span style={{ fontSize: '0.85rem', color: isChecked ? 'var(--tp)' : '#f8fafc', fontWeight: isChecked ? 600 : 400 }}>{label}</span>
               </div>
             );
           })}
@@ -918,22 +858,12 @@ function MultiCheckboxDropdown({ options, selected, onToggle, onClear, findTeam,
   );
 }
 
-// ── Multi-answer text input helper ────────────────────────────────────────────
 function MultiAnswerTextInput({ currentAnswers, onAdd }) {
   const [val, setVal] = useState('');
   return (
     <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-      <Input
-        value={val}
-        onChange={e => setVal(e.target.value)}
-        onKeyDown={e => { if (e.key === 'Enter' && val.trim()) { onAdd(val.trim()); setVal(''); } }}
-        placeholder="הקלד תשובה..."
-        style={{ width: '140px', fontSize: '0.8rem', background: 'rgba(51,65,85,0.5)', borderColor: 'rgba(100,116,139,1)', color: '#f8fafc' }}
-      />
-      <button onClick={() => { if (val.trim()) { onAdd(val.trim()); setVal(''); } }}
-        style={{ background: 'var(--tp)', border: 'none', borderRadius: '6px', padding: '4px 8px', cursor: 'pointer', color: 'white', fontSize: '0.8rem' }}>
-        +
-      </button>
+      <Input value={val} onChange={e => setVal(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && val.trim()) { onAdd(val.trim()); setVal(''); } }} placeholder="הקלד תשובה..." style={{ width: '140px', fontSize: '0.8rem', background: 'rgba(51,65,85,0.5)', borderColor: 'rgba(100,116,139,1)', color: '#f8fafc' }} />
+      <button onClick={() => { if (val.trim()) { onAdd(val.trim()); setVal(''); } }} style={{ background: 'var(--tp)', border: 'none', borderRadius: '6px', padding: '4px 8px', cursor: 'pointer', color: 'white', fontSize: '0.8rem' }}>+</button>
     </div>
   );
 }
