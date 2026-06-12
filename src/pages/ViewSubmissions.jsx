@@ -1373,16 +1373,7 @@ export default function ViewSubmissions() {
             <Card style={{ background:'rgba(30,41,59,0.6)', border:'1px solid rgba(6,182,212,0.2)', backdropFilter:'blur(10px)' }}>
               <CardHeader className="py-2"><CardTitle className="text-sm" style={{ color:'#06b6d4' }}>בחר משתתף</CardTitle></CardHeader>
               <CardContent className="p-3 flex justify-start">
-                <Select onValueChange={setSelectedParticipant} value={selectedParticipant || ''}>
-                  <SelectTrigger className="w-48 h-8 text-sm" style={{ background:'rgba(15,23,42,0.6)', border:'1px solid rgba(6,182,212,0.3)', color:'#f8fafc' }}>
-                    <SelectValue placeholder="בחר שם..." className="text-right" />
-                  </SelectTrigger>
-                  <SelectContent className="max-w-[200px]" position="popper" align="start" style={{ background:'#1e293b', border:'1px solid rgba(6,182,212,0.3)' }}>
-                    {allParticipants.map(p => (
-                      <SelectItem key={p} value={p} className="hover:bg-cyan-500/20 text-right pr-8" style={{ color:'#f8fafc' }}>{p}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <ParticipantSearchSelect participants={allParticipants} selected={selectedParticipant} onSelect={setSelectedParticipant} />
               </CardContent>
             </Card>
 
@@ -1594,6 +1585,79 @@ export default function ViewSubmissions() {
             </DialogContent>
           </Dialog>
         </>
+      )}
+    </div>
+  );
+}
+
+
+// 🔍 בוחר משתתף עם חיפוש — הקלדה מסננת את הרשימה
+function ParticipantSearchSelect({ participants, selected, onSelect }) {
+  const [query, setQuery] = useState('');
+  const [open, setOpen] = useState(false);
+  const [highlight, setHighlight] = useState(0);
+  const ref = React.useRef(null);
+  const listRef = React.useRef(null);
+
+  useEffect(() => {
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) { setOpen(false); setQuery(''); } };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const filtered = React.useMemo(() => {
+    const q = query.trim();
+    if (!q) return participants;
+    return participants.filter(p => p.includes(q));
+  }, [participants, query]);
+
+  useEffect(() => { setHighlight(0); }, [query]);
+  useEffect(() => {
+    if (listRef.current) {
+      const el = listRef.current.children[highlight];
+      if (el) el.scrollIntoView({ block: 'nearest' });
+    }
+  }, [highlight, open]);
+
+  const choose = (name) => { onSelect(name); setQuery(''); setOpen(false); };
+
+  const onKeyDown = (e) => {
+    if (!open && (e.key === 'ArrowDown' || e.key === 'Enter')) { setOpen(true); return; }
+    if (e.key === 'ArrowDown') { e.preventDefault(); setHighlight(h => Math.min(h + 1, filtered.length - 1)); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setHighlight(h => Math.max(h - 1, 0)); }
+    else if (e.key === 'Enter') { e.preventDefault(); if (filtered[highlight]) choose(filtered[highlight]); }
+    else if (e.key === 'Escape') { setOpen(false); setQuery(''); }
+  };
+
+  return (
+    <div ref={ref} style={{ position: 'relative', width: '230px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '4px', height: '34px', padding: '0 10px', borderRadius: '6px', background: 'rgba(15,23,42,0.6)', border: '1px solid rgba(6,182,212,0.3)' }}>
+        <input
+          value={open ? query : (selected || '')}
+          onChange={(e) => { setQuery(e.target.value); if (!open) setOpen(true); }}
+          onFocus={() => { setOpen(true); setQuery(''); }}
+          onKeyDown={onKeyDown}
+          placeholder={selected || 'הקלד שם לחיפוש...'}
+          style={{ flex: 1, minWidth: 0, background: 'transparent', border: 'none', outline: 'none', color: '#f8fafc', fontSize: '0.85rem', textAlign: 'right', fontFamily: 'inherit' }}
+        />
+        {selected && !open && (
+          <button onClick={() => { onSelect(null); setQuery(''); }} title="נקה בחירה" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b', fontSize: '0.8rem', padding: '0 2px', lineHeight: 1 }}>✕</button>
+        )}
+        <span onClick={() => { setOpen(o => !o); setQuery(''); }} style={{ cursor: 'pointer', color: '#64748b', fontSize: '0.65rem' }}>▼</span>
+      </div>
+      {open && (
+        <div ref={listRef} style={{ position: 'absolute', top: '100%', right: 0, zIndex: 120, width: '100%', maxHeight: '300px', overflowY: 'auto', background: '#1e293b', border: '1px solid rgba(6,182,212,0.4)', borderRadius: '8px', marginTop: '4px', boxShadow: '0 8px 24px rgba(0,0,0,0.6)' }}>
+          {filtered.length === 0 ? (
+            <div style={{ padding: '10px 12px', color: '#64748b', fontSize: '0.82rem', textAlign: 'right' }}>לא נמצאו שמות מתאימים</div>
+          ) : filtered.map((p, i) => (
+            <div key={p}
+              onClick={() => choose(p)}
+              onMouseEnter={() => setHighlight(i)}
+              style={{ padding: '7px 12px', cursor: 'pointer', fontSize: '0.85rem', textAlign: 'right', color: p === selected ? '#22d3ee' : '#f8fafc', fontWeight: p === selected ? 700 : 400, background: i === highlight ? 'rgba(6,182,212,0.18)' : 'transparent', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+              {p}
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );
