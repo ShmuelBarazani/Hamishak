@@ -413,7 +413,10 @@ export default function PredictionForm() {
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: '1', minWidth: 0 }}>
                         <Badge variant="outline" style={{ borderColor: 'rgba(139,92,246,0.45)', color: '#a78bfa', minWidth: '44px', textAlign: 'center', flexShrink: 0, fontSize: '0.72rem' }}>{sub.question_id}</Badge>
                         <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '0.82rem', color: '#cbd5e1', textAlign: 'right' }}>{sub.question_text}</span>
-                        <div style={{ flexShrink: 0 }}>{renderSelectWithLogos(sub, predictions[sub.id] || "", (val) => handlePredictionChange(sub.id, val), "w-[120px]")}</div>
+                        <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: '5px' }}>
+                          {renderSelectWithLogos(sub, predictions[sub.id] || "", (val) => handlePredictionChange(sub.id, val), "w-[120px]")}
+                          {sub.possible_points && <Badge style={{ borderColor: 'rgba(139,92,246,0.35)', color: '#a78bfa', background: 'rgba(139,92,246,0.08)', fontSize: '0.68rem', flexShrink: 0, whiteSpace: 'nowrap' }}>{sub.possible_points} נק'</Badge>}
+                        </div>
                       </div>
                     </React.Fragment>
                   ))}
