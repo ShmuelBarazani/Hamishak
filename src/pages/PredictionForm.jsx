@@ -142,7 +142,7 @@ export default function PredictionForm() {
       const rTables = {}, sTables = {};
       filteredQuestions.forEach(q => {
         if (!q.table_id) return;
-        if (q.table_id === 'T20' && q.question_text) {
+        if (q.table_id === 'T20' && q.question_text && currentGame?.id !== '30032806-6216-496f-ac32-fb628e181742') {
           let t = null;
           if (q.question_text.includes(' נגד ')) t = q.question_text.split(' נגד ').map(s => s.trim());
           else if (q.question_text.includes(' - ')) t = q.question_text.split(' - ').map(s => s.trim());
@@ -152,17 +152,19 @@ export default function PredictionForm() {
           const parts = q.question_text.split(' - ');
           if (parts.length === 2) { q.home_team = parts[0].trim(); q.away_team = parts[1].trim(); }
         }
-        const isGroupStage = q.stage_name?.includes('בית') || q.table_description?.includes('בית');
+        const isGroupStage = q.stage_name?.startsWith('בית') || q.table_description?.startsWith('בית');
         const isMatchQuestion = q.home_team && q.away_team && ['playoff','league','groups'].includes(q.stage_type);
         const tableCollection = (isGroupStage || isMatchQuestion) ? rTables : sTables;
-        let tableId = q.table_id, tableDescription = q.table_description;
-        if (q.stage_name && q.stage_name.includes('בית')) { tableId = q.stage_name; tableDescription = q.stage_name; }
+        let tableId = q.table_id, tableDescription = q.table_description || q.stage_name;
+        if (q.stage_name && q.stage_name.startsWith('בית')) { tableId = q.stage_name; tableDescription = q.stage_name; }
         else if (q.table_description?.includes('שאלות מיוחדות') && q.stage_order && q.table_id !== 'T10') { tableId = `custom_order_${q.stage_order}`; tableDescription = q.stage_name || q.table_description; }
         if (!tableCollection[tableId]) tableCollection[tableId] = { id: tableId, description: tableDescription || (q.home_team && q.away_team ? `מחזור ${tableId.replace('T','')}` : `שאלות ${tableId.replace('T','')}`), questions: [] };
         tableCollection[tableId].questions.push(q);
       });
 
-      const t20Table = rTables['T20']; delete rTables['T20']; setIsraeliTable(t20Table || null);
+      let t20Table = null;
+      if (currentGame?.id !== '30032806-6216-496f-ac32-fb628e181742') { t20Table = rTables['T20']; delete rTables['T20']; }
+      setIsraeliTable(t20Table || null);
       setParticipantQuestions([
         { id: 'temp_name', question_text: 'שם מלא', table_id: 'T1' },
         { id: 'temp_email', question_text: 'אימייל', table_id: 'T1' },
@@ -171,7 +173,9 @@ export default function PredictionForm() {
         { id: 'temp_age', question_text: 'גיל', table_id: 'T1' }
       ]);
       delete sTables['T1'];
-      const t19Table = sTables['T19']; delete sTables['T19']; setPlayoffWinnersTable(t19Table || null);
+      let t19Table = null;
+      if (currentGame?.id !== '30032806-6216-496f-ac32-fb628e181742') { t19Table = sTables['T19']; delete sTables['T19']; }
+      setPlayoffWinnersTable(t19Table || null);
 
       const sortedRoundTables = Object.values(rTables).sort((a,b) => {
         const aIsGroup = a.id.includes('בית'), bIsGroup = b.id.includes('בית');
@@ -181,7 +185,7 @@ export default function PredictionForm() {
       });
       setRoundTables(sortedRoundTables);
 
-      const locationTableIds = ['T14', 'T15', 'T16', 'T17'];
+      const locationTableIds = currentGame?.id === '30032806-6216-496f-ac32-fb628e181742' ? [] : ['T14', 'T15', 'T16', 'T17'];
       setLocationTables(Object.values(sTables).filter(table => locationTableIds.includes(table.id)).sort((a,b) => (parseInt(a.id.replace('T','')) || 0) - (parseInt(b.id.replace('T','')) || 0)));
 
       const allSpecialTables = Object.values(sTables).filter(table => {
