@@ -15,6 +15,9 @@ import { useGame } from "@/components/contexts/GameContext";
 
 const COLORS = ['#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6','#ec4899','#14b8a6','#f97316','#06b6d4','#84cc16'];
 
+// 🌍 מונדיאל 2026
+const WC_GAME_ID = '30032806-6216-496f-ac32-fb628e181742';
+
 const ADVANCING_CONFIG = { T4:{count:8,bonus:16}, T5:{count:4,bonus:12}, T6:{count:2,bonus:6} };
 
 // ─── Utils ────────────────────────────────────────────────────────────────────
@@ -26,6 +29,16 @@ const parseQId     = id => { if(!id) return 0; if(PC.has(id)) return PC.get(id);
 const pct          = (n,d) => d>0 ? ((n/d)*100).toFixed(1) : '0.0';
 const extractCountry = name => { const m=name?.match(/\(([^)]+)\)$/); return m?m[1]:null; };
 
+// 📅 חילוץ תאריך מטקסט בפורמט "18/6 - 19:00" (יוני-יולי בלבד)
+const parseMatchDate = txt => {
+  if(!txt) return null;
+  const m = String(txt).match(/(\d{1,2})\/(\d{1,2})(?:\s*[-–]\s*(\d{1,2}:\d{2}))?/);
+  if(!m) return null;
+  const day=+m[1], mon=+m[2];
+  if(mon<6||mon>7||day<1||day>31) return null;
+  return { day, mon, time:m[3]||'', key:`${mon}-${day}` };
+};
+
 const alternateSlice = data => {
   if(!data||data.length<=2) return data;
   const s=[...data].sort((a,b)=>(b.value||b.count||0)-(a.value||a.count||0));
@@ -35,7 +48,6 @@ const alternateSlice = data => {
 };
 
 const loadAllPreds = async gameId => {
-  // ✅ טוען מ-predictions (לא game_predictions view) כדי לקבל home_prediction/away_prediction
   let all=[],from=0;
   while(true){
     const{data,error}=await supabase.from('predictions').select('*').eq('game_id',gameId).range(from,from+999);
@@ -46,10 +58,22 @@ const loadAllPreds = async gameId => {
     from+=1000;
   }
   if(all.length>0) return all;
-  // fallback
   let allFb=[],off=0;const seen=new Set();let mx=20;
   while(mx-->0){const b=await db.Prediction.filter({game_id:gameId},null,1000,off);if(!b?.length)break;const n=b.filter(p=>!seen.has(p.id));if(!n.length)break;n.forEach(p=>seen.add(p.id));allFb=allFb.concat(n);if(b.length<1000)break;off+=1000;}
   return allFb;
+};
+
+const loadAllRankings = async gameId => {
+  let all=[],from=0;
+  while(true){
+    const{data,error}=await supabase.from('rankings').select('*').eq('game_id',gameId).range(from,from+499);
+    if(error){console.warn('rankings fetch error:',error.message);break;}
+    if(!data?.length) break;
+    all=all.concat(data);
+    if(data.length<500) break;
+    from+=500;
+  }
+  return all;
 };
 
 // ─── Participant Panel (click-to-lock) ────────────────────────────────────────
@@ -83,7 +107,6 @@ function computeInsights(allQuestions, allPredictions, teams) {
 
   const qById = Object.fromEntries(allQuestions.map(q=>[q.id,q]));
 
-  // dedup: last prediction per participant per question
   const latestPred = {};
   allPredictions.forEach(p => {
     const key = `${p.participant_name}_${p.question_id}`;
@@ -124,31 +147,7 @@ function computeInsights(allQuestions, allPredictions, teams) {
     }
   }
 
-  // ── 2. העדפת מדינות ────────────────────────────────────────────────────
-  {
-    const countryCounts = {};
-    const advQIds = new Set(allQuestions.filter(q=>['T4','T5','T6'].includes(q.table_id)&&!q.home_team).map(q=>q.id));
-    preds.forEach(p=>{
-      if(!advQIds.has(p.question_id)||!p.text_prediction?.trim()) return;
-      const country = extractCountry(p.text_prediction);
-      if(country) countryCounts[country]=(countryCounts[country]||0)+1;
-    });
-    const sorted=Object.entries(countryCounts).sort((a,b)=>b[1]-a[1]).slice(0,8);
-    if(sorted.length>0){
-      const topCountry=sorted[0][0];
-      insights.push({
-        id:'country_pref', icon:'🌍', title:'העדפת מדינות',
-        category:'העדפות',
-        color:'#10b981',
-        summary:`${topCountry} היא המדינה הכי מנוחשת לשלוח קבוצות לשלבים הבאים`,
-        chartData:sorted.map(([name,value])=>({name,value})),
-        chartType:'bar_h',
-        detail:`המנחשים מעדיפים קבוצות מ-${topCountry} (${sorted[0][1]} בחירות). זה משקף אהדה, היכרות, או ציפייה ריאלית.`,
-      });
-    }
-  }
-
-  // ── 3. יחס כן/לא ───────────────────────────────────────────────────────
+  // ── 2. יחס כן/לא ───────────────────────────────────────────────────────
   {
     const yesNoQIds = new Set(allQuestions.filter(q=>q.validation_list?.includes('כן_לא')||q.validation_list?.includes('כן/לא')).map(q=>q.id));
     let yes=0,no=0;
@@ -170,13 +169,12 @@ function computeInsights(allQuestions, allPredictions, teams) {
     }
   }
 
-  // ── 4. קונצנזוס לעומת מחלוקת ──────────────────────────────────────────
+  // ── 3. קונצנזוס לעומת מחלוקת ──────────────────────────────────────────
   {
     const qAgreement = [];
     allQuestions.filter(q=>q.table_id!=='T1').forEach(q=>{
-      // כולל שאלות match (עם normalized text_prediction)
       const qPreds = preds.filter(p => p.question_id === q.id && p.text_prediction?.trim());
-      if (qPreds.length < 3) return; // מינימום 3 תשובות
+      if (qPreds.length < 3) return;
       const counts = {};
       qPreds.forEach(p => { const v = p.text_prediction.trim(); counts[v] = (counts[v]||0)+1; });
       const vals = Object.values(counts);
@@ -191,7 +189,6 @@ function computeInsights(allQuestions, allPredictions, teams) {
     });
     qAgreement.sort((a,b)=>b.agreement-a.agreement);
     const highConsensus = qAgreement.slice(0,3);
-    // מחלוקת = הכי הרבה תשובות שונות (גיוון), לא הכי נמוך הסכמה
     const byDiversity = [...qAgreement].sort((a,b)=>b.uniqueAnswers-a.uniqueAnswers);
     const highDispute  = byDiversity.slice(0,3);
     if (qAgreement.length > 0) {
@@ -216,9 +213,8 @@ function computeInsights(allQuestions, allPredictions, teams) {
     }
   }
 
-  // ── 5. מנחשי אאוטסיידר — מי בחר הכי נדיר ─────────────────────────────
+  // ── 4. אינדיווידואליסטים לעומת עדר ─────────────────────────────────────
   {
-    // build answer popularity per question
     const qAnswerPop = {};
     allQuestions.filter(q=>q.table_id!=='T1').forEach(q=>{
       const qPreds=preds.filter(p=>p.question_id===q.id&&p.text_prediction?.trim());
@@ -227,14 +223,13 @@ function computeInsights(allQuestions, allPredictions, teams) {
       qPreds.forEach(p=>{const v=p.text_prediction.trim();counts[v]=(counts[v]||0)+1;});
       qAnswerPop[q.id]={total, counts};
     });
-    // per participant: avg popularity of their answers
     const participantRarity = {};
     preds.forEach(p=>{
       if(!p.text_prediction?.trim()) return;
       const pop=qAnswerPop[p.question_id];
       if(!pop) return;
       const cnt=pop.counts[p.text_prediction.trim()]||1;
-      const rarity=1-(cnt/pop.total); // 1=most rare, 0=most common
+      const rarity=1-(cnt/pop.total);
       if(!participantRarity[p.participant_name]) participantRarity[p.participant_name]={sum:0,count:0};
       participantRarity[p.participant_name].sum+=rarity;
       participantRarity[p.participant_name].count++;
@@ -259,7 +254,7 @@ function computeInsights(allQuestions, allPredictions, teams) {
     }
   }
 
-  // ── 6. דיוק העדר — האם הנפוץ ביותר נכון? ─────────────────────────────
+  // ── 5. דיוק העדר ──────────────────────────────────────────────────────
   {
     let herdRight=0, herdWrong=0;
     const herdDetails=[];
@@ -291,7 +286,7 @@ function computeInsights(allQuestions, allPredictions, teams) {
     }
   }
 
-  // ── 7. מנחשים מפתיעים — נכון כשכולם טעו ─────────────────────────────
+  // ── 6. המנחשים המפתיעים ──────────────────────────────────────────────
   {
     const surpriseScore = {};
     allQuestions.filter(q=>q.table_id!=='T1'&&q.actual_result?.trim()&&q.actual_result!=='__CLEAR__').forEach(q=>{
@@ -300,7 +295,7 @@ function computeInsights(allQuestions, allPredictions, teams) {
       const total=qPreds.length, actual=normPred(q.actual_result.trim());
       const correctPreds=qPreds.filter(p=>normPred(p.text_prediction.trim())===actual);
       if(correctPreds.length===0) return;
-      const rarity=1-(correctPreds.length/total); // how rare to be correct
+      const rarity=1-(correctPreds.length/total);
       correctPreds.forEach(p=>{
         if(!surpriseScore[p.participant_name]) surpriseScore[p.participant_name]={score:0,count:0};
         surpriseScore[p.participant_name].score+=rarity;
@@ -325,7 +320,7 @@ function computeInsights(allQuestions, allPredictions, teams) {
     }
   }
 
-  // ── 8. שיאני הסיכון — תוצאות קיצוניות ──────────────────────────────
+  // ── 7. שיאני הסיכון ───────────────────────────────────────────────────
   {
     const riskScore = {};
     const matchQIds = new Set(matchQs.map(q=>q.id));
@@ -335,7 +330,7 @@ function computeInsights(allQuestions, allPredictions, teams) {
       if(parts.length!==2||isNaN(parts[0])||isNaN(parts[1])) return;
       const totalGoals=parts[0]+parts[1];
       const diff=Math.abs(parts[0]-parts[1]);
-      const riskLevel=totalGoals+diff; // more goals + bigger diff = riskier
+      const riskLevel=totalGoals+diff;
       if(!riskScore[p.participant_name]) riskScore[p.participant_name]={sum:0,count:0,examples:[]};
       riskScore[p.participant_name].sum+=riskLevel;
       riskScore[p.participant_name].count++;
@@ -359,7 +354,7 @@ function computeInsights(allQuestions, allPredictions, teams) {
     }
   }
 
-  // ── 9. ממוצע שערים מנוחש לעומת בפועל ────────────────────────────────
+  // ── 8. ממוצע שערים ────────────────────────────────────────────────────
   if(matchQs.length>0){
     let predGoals=0, predCount=0, actualGoals=0, actualCount=0;
     const matchQIds=new Set(matchQs.map(q=>q.id));
@@ -391,7 +386,7 @@ function computeInsights(allQuestions, allPredictions, teams) {
     }
   }
 
-  // ── 10. מנחש "הנביא" — כמה ניחושים נכונים ────────────────────────────
+  // ── 9. הנביא ──────────────────────────────────────────────────────────
   {
     const correctCount = {};
     allQuestions.filter(q=>q.actual_result?.trim()&&q.actual_result!=='__CLEAR__'&&q.table_id!=='T1').forEach(q=>{
@@ -421,7 +416,7 @@ function computeInsights(allQuestions, allPredictions, teams) {
     }
   }
 
-  // ── 11. כמות ניחושים — מי הכי מחויב ────────────────────────────────
+  // ── 10. מחויבות ──────────────────────────────────────────────────────
   {
     const predCount = {};
     preds.forEach(p=>{predCount[p.participant_name]=(predCount[p.participant_name]||0)+1;});
@@ -440,6 +435,139 @@ function computeInsights(allQuestions, allPredictions, teams) {
     }
   }
 
+  // ── 🆕 11. שאלות הרצח 💀 ─────────────────────────────────────────────
+  {
+    const hard=[];
+    allQuestions.filter(q=>q.table_id!=='T1'&&q.actual_result?.trim()&&q.actual_result!=='__CLEAR__').forEach(q=>{
+      const qPreds=preds.filter(p=>p.question_id===q.id&&p.text_prediction?.trim());
+      if(qPreds.length<10) return;
+      const actual=normPred(q.actual_result.trim());
+      const heroes=qPreds.filter(p=>normPred(p.text_prediction.trim())===actual).map(p=>p.participant_name);
+      hard.push({q,total:qPreds.length,correct:heroes.length,rate:heroes.length/qPreds.length,heroes});
+    });
+    hard.sort((a,b)=>a.rate-b.rate);
+    const top=hard.slice(0,5).filter(h=>h.rate<0.2);
+    if(top.length>0){
+      insights.push({
+        id:'murder', icon:'💀', title:'שאלות הרצח',
+        category:'אחרי תוצאות',
+        color:'#ef4444',
+        summary:`השאלה הקשה ביותר: רק ${pct(top[0].correct,top[0].total)}% צדקו — ${top[0].correct} גאונים מתוך ${top[0].total}`,
+        chartType:'murder',
+        murderData:top.map(h=>({
+          question:(h.q.home_team&&h.q.away_team)?`${cleanTeam(h.q.home_team)} נגד ${cleanTeam(h.q.away_team)}`:(h.q.question_text||`שאלה ${h.q.question_id}`),
+          actual:h.q.actual_result, correct:h.correct, total:h.total, pctVal:pct(h.correct,h.total),
+          heroes:h.heroes.slice(0,15),
+        })),
+        detail:'השאלות עם אחוז הפגיעה הנמוך ביותר במערכת — והבודדים שצדקו בהן.',
+      });
+    }
+  }
+
+  // ── 🆕 12. מזל או חוכמה — בולים מול כיוונים 🍀 ──────────────────────
+  {
+    const split={};
+    const sign=x=>x[0]>x[1]?1:x[0]<x[1]?-1:0;
+    matchQs.filter(q=>q.actual_result?.trim()&&q.actual_result!=='__CLEAR__').forEach(q=>{
+      const ap=q.actual_result.split('-').map(x=>parseInt(x.trim()));
+      if(ap.length!==2||isNaN(ap[0])||isNaN(ap[1])) return;
+      preds.filter(p=>p.question_id===q.id&&p.text_prediction?.trim()).forEach(p=>{
+        const pp=p.text_prediction.split('-').map(x=>parseInt(x.trim()));
+        if(pp.length!==2||isNaN(pp[0])||isNaN(pp[1])) return;
+        const name=p.participant_name;
+        if(!split[name]) split[name]={bull:0,dir:0};
+        if(pp[0]===ap[0]&&pp[1]===ap[1]) split[name].bull++;
+        else if(sign(pp)===sign(ap)) split[name].dir++;
+      });
+    });
+    const arr=Object.entries(split)
+      .map(([name,v])=>({name,bull:v.bull,dir:v.dir,score:v.bull*10+v.dir*5}))
+      .filter(d=>d.score>0)
+      .sort((a,b)=>b.score-a.score)
+      .slice(0,12);
+    if(arr.length>0){
+      insights.push({
+        id:'luck', icon:'🍀', title:'מזל או חוכמה — בולים מול כיוונים',
+        category:'ניתוח משתתפים',
+        color:'#84cc16',
+        summary:`${arr[0].name} מוביל בניקוד משחקים: ${arr[0].bull} בולים 🎯 ו-${arr[0].dir} כיוונים ↗`,
+        chartType:'stacked',
+        stackedData:arr,
+        detail:'בול = תוצאה מדויקת (10 נק׳). כיוון = מנצחת/תיקו נכון בלבד (5 נק׳). מי בנוי על דיוק ומי על כיוונים?',
+      });
+    }
+  }
+
+  // ── 🆕 13. תאומי ניחושים 👥 ─────────────────────────────────────────
+  {
+    const byPart={};
+    preds.forEach(p=>{
+      if(!p.text_prediction?.trim()) return;
+      if(!byPart[p.participant_name]) byPart[p.participant_name]={};
+      byPart[p.participant_name][p.question_id]=normPred(p.text_prediction.trim());
+    });
+    const names=Object.keys(byPart).filter(n=>Object.keys(byPart[n]).length>=40);
+    const sims=[];
+    for(let i=0;i<names.length;i++){
+      const a=byPart[names[i]];
+      const aKeys=Object.keys(a);
+      for(let j=i+1;j<names.length;j++){
+        const b=byPart[names[j]];
+        let same=0,both=0;
+        for(let k=0;k<aKeys.length;k++){
+          const key=aKeys[k], bv=b[key];
+          if(bv!==undefined){both++;if(a[key]===bv)same++;}
+        }
+        if(both>=40) sims.push({a:names[i],b:names[j],sim:same/both,both});
+      }
+    }
+    if(sims.length>0){
+      sims.sort((x,y)=>y.sim-x.sim);
+      const avg={};
+      sims.forEach(s=>{
+        if(!avg[s.a])avg[s.a]={sum:0,c:0}; if(!avg[s.b])avg[s.b]={sum:0,c:0};
+        avg[s.a].sum+=s.sim;avg[s.a].c++; avg[s.b].sum+=s.sim;avg[s.b].c++;
+      });
+      const loners=Object.entries(avg).map(([name,v])=>({name,avgSim:v.sum/v.c})).sort((a,b)=>a.avgSim-b.avgSim);
+      insights.push({
+        id:'twins', icon:'👥', title:'תאומי ניחושים',
+        category:'ניתוח קהל',
+        color:'#f97316',
+        summary:`${sims[0].a} ו-${sims[0].b} הכי דומים: ${(sims[0].sim*100).toFixed(1)}% ניחושים זהים! הזאב הבודד: ${loners[0]?.name||'-'}`,
+        chartType:'twins',
+        twinsData:sims.slice(0,8).map(s=>({pair:`${s.a} + ${s.b}`,simPct:(s.sim*100).toFixed(1),both:s.both})),
+        lonersData:loners.slice(0,5).map(l=>({name:l.name,simPct:(l.avgSim*100).toFixed(1)})),
+        detail:'זוגות המשתתפים עם אחוז הניחושים הזהים הגבוה ביותר — האם העתיקו זה מזה? 😄 והזאבים הבודדים שלא דומים לאף אחד.',
+      });
+    }
+  }
+
+  // ── 🆕 14. דיוק בולים לפי בית 🎯 ────────────────────────────────────
+  {
+    const houseAcc={};
+    allQuestions.filter(q=>q.stage_name?.startsWith('בית')&&q.home_team&&q.actual_result?.trim()&&q.actual_result!=='__CLEAR__').forEach(q=>{
+      const actual=normPred(q.actual_result.trim());
+      const qPreds=preds.filter(p=>p.question_id===q.id&&p.text_prediction?.trim());
+      if(!qPreds.length) return;
+      const correct=qPreds.filter(p=>normPred(p.text_prediction.trim())===actual).length;
+      if(!houseAcc[q.stage_name]) houseAcc[q.stage_name]={correct:0,total:0};
+      houseAcc[q.stage_name].correct+=correct;
+      houseAcc[q.stage_name].total+=qPreds.length;
+    });
+    const arr=Object.entries(houseAcc).map(([name,v])=>({name,value:parseFloat(pct(v.correct,v.total)),correct:v.correct,total:v.total})).sort((a,b)=>b.value-a.value);
+    if(arr.length>=2){
+      insights.push({
+        id:'house_acc', icon:'🎯', title:'דיוק בולים לפי בית',
+        category:'ניתוח משחקים',
+        color:'#06b6d4',
+        summary:`הכי קל לנחש את ${arr[0].name} (${arr[0].value}% בולים) | הכי קשה: ${arr[arr.length-1].name} (${arr[arr.length-1].value}%)`,
+        chartData:arr,
+        chartType:'bar_h',
+        detail:'אחוז הבולים מכלל הניחושים בכל בית שהושלמו בו משחקים — איפה הקהל קולע ואיפה מפספס.',
+      });
+    }
+  }
+
   return insights;
 }
 
@@ -448,6 +576,74 @@ function InsightCard({ insight }) {
   const [expanded, setExpanded] = useState(false);
 
   const renderChart = () => {
+    // 💀 murder list
+    if (insight.chartType === 'murder') {
+      return (
+        <div style={{display:'flex',flexDirection:'column',gap:8,marginTop:8}}>
+          {insight.murderData?.map((d,i)=>(
+            <div key={i} style={{background:'rgba(239,68,68,0.07)',border:'1px solid rgba(239,68,68,0.28)',borderRadius:8,padding:'8px 10px'}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:6,flexWrap:'wrap'}}>
+                <span style={{color:'#f8fafc',fontSize:'0.84rem',fontWeight:600,flex:1}}>{d.question?.slice(0,60)}</span>
+                <Badge style={{background:'#dc2626',color:'#fff',fontSize:'0.72rem'}}>{d.pctVal}% בלבד</Badge>
+              </div>
+              <p style={{color:'#94a3b8',fontSize:'0.74rem',marginTop:3}}>תוצאה: <b style={{color:'#fde68a'}}>{d.actual}</b> • צדקו {d.correct}/{d.total}</p>
+              {d.heroes.length>0&&(
+                <div style={{display:'flex',flexWrap:'wrap',gap:4,marginTop:5}}>
+                  {d.heroes.map((h,k)=><span key={k} style={{background:'rgba(16,185,129,0.15)',color:'#6ee7b7',padding:'2px 7px',borderRadius:4,fontSize:'0.7rem'}}>🌟 {h}</span>)}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      );
+    }
+
+    // 🍀 stacked bulls/directions
+    if (insight.chartType === 'stacked') {
+      const max = Math.max(...insight.stackedData.map(d=>d.score),1);
+      return (
+        <div style={{display:'flex',flexDirection:'column',gap:5,marginTop:8}}>
+          <div style={{display:'flex',gap:12,fontSize:'0.68rem',color:'#94a3b8',justifyContent:'center',marginBottom:2}}>
+            <span><span style={{display:'inline-block',width:10,height:10,background:'#84cc16',borderRadius:2,marginLeft:4,verticalAlign:'middle'}}></span>בולים (10)</span>
+            <span><span style={{display:'inline-block',width:10,height:10,background:'#3b82f6',borderRadius:2,marginLeft:4,verticalAlign:'middle'}}></span>כיוונים (5)</span>
+          </div>
+          {insight.stackedData.map((d,i)=>(
+            <div key={i} style={{display:'grid',gridTemplateColumns:'110px 1fr 60px',gap:6,alignItems:'center'}}>
+              <span style={{fontSize:'0.76rem',color:'#f8fafc',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{d.name}</span>
+              <div style={{display:'flex',height:16,borderRadius:4,overflow:'hidden',background:'rgba(255,255,255,0.04)'}}>
+                <div style={{width:`${(d.bull*10/max)*100}%`,background:'#84cc16'}} title={`${d.bull} בולים`}></div>
+                <div style={{width:`${(d.dir*5/max)*100}%`,background:'#3b82f6'}} title={`${d.dir} כיוונים`}></div>
+              </div>
+              <span style={{fontSize:'0.7rem',color:'#94a3b8',textAlign:'left'}}>{d.bull}🎯 {d.dir}↗</span>
+            </div>
+          ))}
+        </div>
+      );
+    }
+
+    // 👥 twins
+    if (insight.chartType === 'twins') {
+      return (
+        <div style={{display:'flex',flexDirection:'column',gap:8,marginTop:8}}>
+          <div>
+            <p style={{color:'#fb923c',fontWeight:700,fontSize:'0.8rem',marginBottom:5}}>👥 הזוגות הכי דומים:</p>
+            {insight.twinsData?.map((d,i)=>(
+              <div key={i} style={{display:'flex',justifyContent:'space-between',alignItems:'center',background:'rgba(249,115,22,0.07)',border:'1px solid rgba(249,115,22,0.22)',borderRadius:6,padding:'5px 9px',marginBottom:3}}>
+                <span style={{color:'#f8fafc',fontSize:'0.78rem'}}>{d.pair}</span>
+                <Badge style={{background:'#ea580c',color:'#fff',fontSize:'0.7rem'}}>{d.simPct}% זהים</Badge>
+              </div>
+            ))}
+          </div>
+          <div>
+            <p style={{color:'#94a3b8',fontWeight:700,fontSize:'0.8rem',marginBottom:5}}>🐺 הזאבים הבודדים:</p>
+            <div style={{display:'flex',flexWrap:'wrap',gap:4}}>
+              {insight.lonersData?.map((d,i)=><span key={i} style={{background:'rgba(100,116,139,0.15)',color:'#cbd5e1',padding:'3px 8px',borderRadius:4,fontSize:'0.74rem'}}>{d.name} ({d.simPct}%)</span>)}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     if (!insight.chartData || insight.chartData.length === 0) return null;
 
     if (insight.chartType === 'pie') {
@@ -589,7 +785,7 @@ function InsightCard({ insight }) {
   );
 }
 
-// ─── SpecialTeamListChart — גרף מרוכז לרשימת קבוצות (שלב הבתים) ──────────────
+// ─── SpecialTeamListChart ─────────────────────────────────────────────────────
 function SpecialTeamListChart({ table, qualifierData, lockedPanel, lockPanel, closePanel }) {
   const { chartData, advCount, participantsMap } = qualifierData;
   const total = chartData.reduce((s, d) => s + d.count, 0);
@@ -670,24 +866,32 @@ export default function Statistics() {
   const [lockedPanel,      setLockedPanel     ] = useState({});
   const [aiInsights,       setAiInsights      ] = useState(null);
   const [insightsLoading,  setInsightsLoading ] = useState(false);
+  // 🆕 תפריט חדש
+  const [openGroups,       setOpenGroups      ] = useState({ houses:true, ko:true, ai:true, special:false, qual:false });
+  const [calMonthIdx,      setCalMonthIdx     ] = useState(0);
+  const [moversData,       setMoversData      ] = useState(null);
 
   const { currentGame } = useGame();
   const isKnockout = !!(currentGame?.name?.includes('נוק-אאוט')||currentGame?.name?.includes('knock')||currentGame?.id==='9c9c1331-5184-406b-98b3-6becd9577567');
+  // 🌍 דגל מונדיאל
+  const isWC = currentGame?.id === WC_GAME_ID;
 
   const formatResult = useCallback(r=>{ if(!r||r==='__CLEAR__') return ''; return r.includes('-')?r.split('-').map(x=>x.trim()).join(' - '):r; },[]);
 
   const lockPanel  = (key,data) => setLockedPanel(prev=>prev[key]?.title===data?.title?{...prev,[key]:null}:{...prev,[key]:data});
   const closePanel = key => setLockedPanel(prev=>({...prev,[key]:null}));
 
-  // ✅ נקה insights כשמשחק משתנה — תובנות חייבות להיות נפרדות לכל משחק
   useEffect(()=>{
     setAiInsights(null);
     setInsightsLoading(false);
+    setMoversData(null);
+    setSelectedSection(null);
     loadAllData();
   },[currentGame]);
 
   const loadAllData = async () => {
     if(!currentGame){setLoading(false);return;}
+    const wcGame = currentGame.id === WC_GAME_ID;
     setLoading(true);
     try {
       const questions = await db.Question.filter({game_id:currentGame.id},null,5000);
@@ -701,7 +905,8 @@ export default function Statistics() {
       const rT={},sT={};
       questions.forEach(q=>{
         if(!q.table_id) return;
-        if(q.table_id==='T20'&&q.question_text){
+        // 🌍 פיצול T20 — לא במונדיאל
+        if(!wcGame&&q.table_id==='T20'&&q.question_text){
           let ts=null;
           if(q.question_text.includes(' נגד ')) ts=q.question_text.split(' נגד ').map(t=>t.trim());
           else if(q.question_text.includes(' - ')) ts=q.question_text.split(' - ').map(t=>t.trim());
@@ -710,33 +915,42 @@ export default function Statistics() {
         if(q.home_team) q.home_team=normalizeTeam(q.home_team);
         if(q.away_team) q.away_team=normalizeTeam(q.away_team);
         const col=(q.home_team&&q.away_team)?rT:sT;
-        let desc=q.table_description;
-        if(q.table_id==='T12') desc='פינת הגאווה הישראלית';
-        else if(q.table_id==='T13') desc='מבול מטאורים של כוכבים';
-        else if(q.table_id==='T20') desc='המסלול הישראלי';
-        if(!col[q.table_id]) col[q.table_id]={id:q.table_id,description:desc||q.table_id,questions:[]};
-        col[q.table_id].questions.push(q);
+        // 🌍 בתים אמיתיים — לפי stage_name; שמות UCL קשיחים מגודרים
+        let key=q.table_id;
+        let desc=q.table_description||q.stage_name;
+        if(q.stage_name?.startsWith('בית')){ key=q.stage_name; desc=q.stage_name; }
+        else if(!wcGame){
+          if(q.table_id==='T12') desc='פינת הגאווה הישראלית';
+          else if(q.table_id==='T13') desc='מבול מטאורים של כוכבים';
+          else if(q.table_id==='T20') desc='המסלול הישראלי';
+        }
+        if(!col[key]) col[key]={id:key,description:desc||key,questions:[],stage_order:q.stage_order||0};
+        col[key].questions.push(q);
       });
 
-      const t20=rT['T20']; delete rT['T20'];
+      let t20=null;
+      if(!wcGame){ t20=rT['T20']; delete rT['T20']; }
       setIsraeliTable(t20||null);
-      const sortedRT=Object.values(rT).sort((a,b)=>(parseInt(a.id.replace('T',''))||0)-(parseInt(b.id.replace('T',''))||0));
+      const sortedRT=Object.values(rT).sort((a,b)=>{
+        const aG=String(a.id).startsWith('בית'), bG=String(b.id).startsWith('בית');
+        if(aG&&bG) return (a.stage_order||0)-(b.stage_order||0);
+        return (parseInt(String(a.id).replace('T',''))||0)-(parseInt(String(b.id).replace('T',''))||0);
+      });
       if(isKnockout) sortedRT.forEach(t=>{if(t.id==='T3')t.description='שלב שמינית הגמר - המשחקים!';});
       setRoundTables(sortedRT);
 
-      const locIds=['T14','T15','T16','T17'];
+      const locIds=wcGame?[]:['T14','T15','T16','T17'];
       const isLoc=t=>locIds.includes(t.id)||(t.questions[0]?.stage_type==='locations');
-      setLocationTables(Object.values(sT).filter(t=>isLoc(t)).sort((a,b)=>(parseInt(a.id.replace('T',''))||0)-(parseInt(b.id.replace('T',''))||0)));
-      setPlayoffTable(null); // T19 יטופל ע"י qualifier detection
+      setLocationTables(Object.values(sT).filter(t=>isLoc(t)).sort((a,b)=>(parseInt(String(a.id).replace('T',''))||0)-(parseInt(String(b.id).replace('T',''))||0)));
+      setPlayoffTable(null);
 
       const detectedLoc=new Set(Object.values(sT).filter(t=>isLoc(t)).map(t=>t.id));
       const allSpecial=Object.values(sT).filter(t=>{
         const desc=t.description?.trim();
-        return desc&&!/^\d+$/.test(desc)&&!detectedLoc.has(t.id); // ✅ הסרת &t.id!=='T19'
-      }).sort((a,b)=>(parseInt(a.id.replace('T',''))||0)-(parseInt(b.id.replace('T',''))||0));
+        return desc&&!/^\d+$/.test(desc)&&!detectedLoc.has(t.id)&&t.id!=='T1';
+      }).sort((a,b)=>((a.stage_order||0)-(b.stage_order||0))||((parseInt(String(a.id).replace('T',''))||0)-(parseInt(String(b.id).replace('T',''))||0)));
 
-      // ✅ Qualifier = stage_type='qualifiers' OR תיאור מפורש של רשימת עולות
-      const QUAL_DESC_PATTERNS = ['שתנצחנה','שיעלו','שתעפלנה','שתעפל'];
+      const QUAL_DESC_PATTERNS = ['שתנצחנה','שיעלו','שתעפלנה','שתעפל','ראש בית','המקום השלישי'];
       const isQualTable = t =>
         t.questions[0]?.stage_type === 'qualifiers' ||
         QUAL_DESC_PATTERNS.some(p => (t.description||'').includes(p));
@@ -746,10 +960,22 @@ export default function Statistics() {
     setLoading(false);
   };
 
+  // 📅 משחקים לפי יום — מתוך table_description / stage_name
+  const matchesByDay = useMemo(()=>{
+    const map={};
+    allQuestions.filter(q=>q.home_team&&q.away_team&&q.table_id!=='T1').forEach(q=>{
+      const d=parseMatchDate(q.table_description)||parseMatchDate(q.question_text)||parseMatchDate(q.stage_name);
+      if(!d) return;
+      if(!map[d.key]) map[d.key]=[];
+      map[d.key].push({q,time:d.time,day:d.day,mon:d.mon});
+    });
+    Object.values(map).forEach(arr=>arr.sort((a,b)=>(a.time||'').localeCompare(b.time||'')));
+    return map;
+  },[allQuestions]);
+
   const participantsByQA = useMemo(()=>{
     const idx=new Map();
     allPredictions.forEach(p=>{
-      // normalize home/away → text for match questions
       const rawText = (!p.text_prediction?.trim() && p.home_prediction != null && p.away_prediction != null)
         ? `${p.home_prediction}-${p.away_prediction}`
         : p.text_prediction;
@@ -773,7 +999,51 @@ export default function Statistics() {
 
   const uniquePartCount = useMemo(()=>new Set(allPredictions.map(p=>p.participant_name)).size,[allPredictions]);
 
-  // ── calculateGameStats ─────────────────────────────────────────────────────
+  // ── יומי: סטטיסטיקות למשחק בודד ──
+  const dayMatchStats = useCallback((q)=>{
+    const raw=allPredictions.filter(p=>p.question_id===q.id);
+    const latest={};
+    raw.forEach(p=>{const ex=latest[p.participant_name];if(!ex||new Date(p.created_at)>new Date(ex.created_at))latest[p.participant_name]=p;});
+    const preds=Object.values(latest).map(p=>{
+      const t=(!p.text_prediction?.trim()&&p.home_prediction!=null&&p.away_prediction!=null)?`${p.home_prediction}-${p.away_prediction}`:p.text_prediction;
+      return {...p,text_prediction:t};
+    }).filter(p=>p.text_prediction?.trim());
+    const counts={};
+    preds.forEach(p=>{const v=normPred(p.text_prediction.trim());counts[v]=(counts[v]||0)+1;});
+    const topEntry=Object.entries(counts).sort((a,b)=>b[1]-a[1])[0]||['-',0];
+    let bull=0,dir=0;
+    const hasActual=q.actual_result?.trim()&&q.actual_result!=='__CLEAR__';
+    if(hasActual){
+      const ap=q.actual_result.split('-').map(x=>parseInt(x.trim()));
+      if(ap.length===2&&!isNaN(ap[0])&&!isNaN(ap[1])){
+        const sign=x=>x[0]>x[1]?1:x[0]<x[1]?-1:0;
+        preds.forEach(p=>{
+          const pp=p.text_prediction.split('-').map(x=>parseInt(x.trim()));
+          if(pp.length!==2||isNaN(pp[0])||isNaN(pp[1])) return;
+          if(pp[0]===ap[0]&&pp[1]===ap[1]) bull++;
+          else if(sign(pp)===sign(ap)) dir++;
+        });
+      }
+    }
+    return { total:preds.length, top:topEntry[0], topCount:topEntry[1], bull, dir, hasActual };
+  },[allPredictions]);
+
+  // ── 🔥 מצעד התנודות ──
+  const loadMovers = useCallback(async()=>{
+    if(!currentGame) return;
+    setMoversData('loading');
+    try{
+      const rankings=await loadAllRankings(currentGame.id);
+      const withChange=rankings.filter(r=>r.previous_position>0);
+      const climbers=[...withChange].sort((a,b)=>(b.previous_position-b.current_position)-(a.previous_position-a.current_position)).slice(0,10)
+        .map(r=>({name:r.participant_name,change:r.previous_position-r.current_position,pos:r.current_position,score:r.current_score}));
+      const fallers=[...withChange].sort((a,b)=>(a.previous_position-a.current_position)-(b.previous_position-b.current_position)).slice(0,10)
+        .map(r=>({name:r.participant_name,change:r.previous_position-r.current_position,pos:r.current_position,score:r.current_score}));
+      setMoversData({climbers:climbers.filter(c=>c.change>0),fallers:fallers.filter(f=>f.change<0),total:rankings.length});
+    }catch(e){console.error(e);setMoversData({climbers:[],fallers:[],total:0});}
+  },[currentGame]);
+
+  // ── calculateGameStats ──
   const calculateGameStats = useCallback(async(type,specificId=null)=>{
     try {
       let tables=[];
@@ -786,12 +1056,10 @@ export default function Statistics() {
       for(const table of tables){
         for(const q of table.questions){
           const rawPreds=predByQ.get(q.id)||[];
-          // dedup: last prediction per participant
           const latestByPart={};
           rawPreds.forEach(p=>{const ex=latestByPart[p.participant_name];if(!ex||new Date(p.created_at)>new Date(ex.created_at))latestByPart[p.participant_name]=p;});
           const preds=Object.values(latestByPart);
           const counts=preds.reduce((acc,p)=>{
-            // normalize home/away
             const r=(!p.text_prediction?.trim()&&p.home_prediction!=null&&p.away_prediction!=null)
               ?`${p.home_prediction}-${p.away_prediction}`
               :(p.text_prediction||'לא ניחש');
@@ -827,7 +1095,7 @@ export default function Statistics() {
 
   const gameStatsArr = useMemo(()=>Object.values(gameStats||{}),[gameStats]);
 
-  // ── calculateSpecialStats ──────────────────────────────────────────────────
+  // ── calculateSpecialStats ──
   const calculateSpecialStats = useCallback(async(group,specificId=null)=>{
     try {
       let tables=[];
@@ -840,9 +1108,7 @@ export default function Statistics() {
       for(const table of tables){
         const ts={table,questions:[]};
 
-        // ── Qualifiers: גרף מרוכז יחיד ─────────────────────────────────
         if(group==='qualifier'){
-          // cfg: השתמש ב-ADVANCING_CONFIG אם קיים, אחרת חשב דינמית לפי מספר חריצים
           const cfg = ADVANCING_CONFIG[table.id] || null;
           const slots=table.questions.filter(q=>{const n=parseFloat(q.question_id);return Number.isInteger(n)&&n>=1;});
           const slotIds=new Set(slots.map(s=>s.id));
@@ -853,7 +1119,7 @@ export default function Statistics() {
               ?`${p.home_prediction}-${p.away_prediction}`:p.text_prediction;
             if(!rawText?.trim()) return;
             const team=cleanTeam(normalizeTeam(rawText.trim()));
-            if(!team||team.toLowerCase()==='null') return;
+            if(!team||team.toLowerCase()==='null'||team==='כן'||team==='לא') return;
             teamCounts[team]=(teamCounts[team]||0)+1;
             if(!participantsMap[team]) participantsMap[team]=new Set();
             participantsMap[team].add(p.participant_name);
@@ -865,8 +1131,7 @@ export default function Statistics() {
             cfg, advCount:slots.length||(cfg?cfg.count:0), participantsMap:pm
           };
 
-        // ── Locations ────────────────────────────────────────────────────
-        } else if(group==='locations'||['T14','T15','T16','T17'].includes(table.id)){
+        } else if(group==='locations'||(!isWC&&['T14','T15','T16','T17'].includes(table.id))){
           const forTable=allPredictions.filter(p=>table.questions.some(q=>q.id===p.question_id));
           const teamCounts=forTable.reduce((acc,pred)=>{
             if(pred.text_prediction?.trim()){const t=cleanTeam(normalizeTeam(pred.text_prediction.trim()));if(t&&t.toLowerCase()!=='null')acc[t]=(acc[t]||0)+1;}
@@ -875,13 +1140,8 @@ export default function Statistics() {
           const chartData=Object.entries(teamCounts).sort((a,b)=>b[1]-a[1]).slice(0,10).map(([team,count])=>({team,count,percentage:forTable.length>0?((count/forTable.length)*100).toFixed(1):0}));
           ts.locationsData={totalPredictions:forTable.length,uniqueTeams:Object.keys(teamCounts).length,topTeams:chartData,mostPopular:chartData[0]||{team:'-',count:0,percentage:0}};
 
-        // ── Special (text/misc) ──────────────────────────────────────────
         } else {
           if(table.id!=='T1'){
-
-            // ✅ זיהוי "רשימת קבוצות" בשלב הבתים:
-            // זיהוי "רשימת קבוצות עולות" — stage_type='qualifiers' בלבד
-            // stage_type='special' → שאלות מיוחדות (לא רשימת עולות)
             const slots = table.questions.filter(q => {
               const n = parseFloat(q.question_id);
               return Number.isInteger(n) && n >= 1;
@@ -893,7 +1153,6 @@ export default function Statistics() {
               );
 
             if (isTeamListTable) {
-              // גרף מרוכז — כמה משתתפים בחרו כל קבוצה (ללא תלות במיקום)
               const slotIds = new Set(slots.map(s => s.id));
               const teamCounts = {}, participantsMap = {};
               allPredictions.forEach(p => {
@@ -914,7 +1173,6 @@ export default function Statistics() {
             } else {
             for(const q of table.questions){
               const qPreds=allPredictions.filter(p=>p.question_id===q.id);
-              // dedup per participant (last prediction)
               const latestByPart={};
               qPreds.forEach(p=>{
                 const ex=latestByPart[p.participant_name];
@@ -922,13 +1180,12 @@ export default function Statistics() {
               });
               const dedupPreds=Object.values(latestByPart);
               const answerCounts=dedupPreds.reduce((acc,pred)=>{
-                // normalize home/away for match questions
                 let answer=(!pred.text_prediction?.trim()&&pred.home_prediction!=null&&pred.away_prediction!=null)
                   ?`${pred.home_prediction}-${pred.away_prediction}`
                   :String(pred.text_prediction||'').trim();
                 if(!answer||answer==='__CLEAR__'||answer.toLowerCase()==='null'||answer.toLowerCase()==='undefined') return acc;
                 const isYN=['כן','לא','yes','no'].includes(answer), isNum=!isNaN(Number(answer));
-                if(!isYN&&!isNum&&q.validation_list?.toLowerCase().includes('קבוצ')) answer=cleanTeam(answer);
+                if(!isYN&&!isNum&&(q.validation_list?.toLowerCase().includes('קבוצ')||q.validation_list?.toLowerCase().includes('נבחר'))) answer=cleanTeam(answer);
                 if(!answer.trim()) return acc;
                 acc[answer]=(acc[answer]||0)+1; return acc;
               },{});
@@ -936,59 +1193,51 @@ export default function Statistics() {
               const chart=Object.entries(answerCounts).sort((a,b)=>b[1]-a[1]).map(([ans,c])=>({answer:ans,count:c,percentage:total>0?((c/total)*100).toFixed(1):0}));
               ts.questions.push({question:q,totalAnswers:total,chartData:alternateSlice(chart),mostPopular:chart[0]||{answer:'-',count:0,percentage:0},diversity:chart.length});
             }
-            } // end else isTeamListTable
+            }
           }
         }
         ssd[table.id]=ts;
       }
       setSpecialStats(ssd);
     } catch(e){console.error(e);}
-  },[specialTables,qualifierTables,locationTables,playoffTable,allPredictions]);
+  },[specialTables,qualifierTables,locationTables,playoffTable,allPredictions,isWC]);
 
-  // ── Sidebar — מבנה תואם ViewSubmissions ──────────────────────────────────
-  const sidebarGroups = useMemo(()=>{
+  // ── 🆕 מבנה התפריט החדש — קבוצות מתקפלות ──────────────────────────────────
+  const menuGroups = useMemo(()=>{
     const groups=[];
-
-    // 1. תובנות (סגול)
-    groups.push({label:'🤖 תובנות',color:'#8b5cf6',activeBg:'#7c3aed',
-      buttons:[{key:'insights',description:'תובנות AI ומחנות'}]});
-
-    // 2. שלב הבתים / פלייאוף (כחול) — לפי round tables
-    if(roundTables.length>0){
-      // זיהוי שלב הבתים: שאלות stage_type=groups OR יש הרבה בתים
-      const isGroupStage = roundTables.length>1 || roundTables.some(t=>
-        t.questions[0]?.stage_type==='groups'||t.description?.includes('בית')
-      );
-      const groupLabel = isGroupStage ? '🏠 שלב הבתים' : '⚽ פלייאוף';
-      groups.push({
-        label: groupLabel, color:'#3b82f6', activeBg:'#2563eb',
-        buttons: roundTables.map(t=>({
-          key:`round_${t.id}`,
-          description:(t.id==='T3'&&isKnockout)?'שמינית הגמר - המשחקים':t.description||t.id
-        }))
-      });
+    // 🤖 תובנות
+    groups.push({key:'ai',label:'🤖 תובנות',color:'#a855f7',activeBg:'#9333ea',
+      buttons:[
+        {key:'insights',description:'תובנות AI ומחקרים'},
+        {key:'movers',description:'🔥 מצעד התנודות'},
+      ]});
+    // 🏠 שלב הבתים (גריד) / משחקים
+    const houseTables=roundTables.filter(t=>String(t.id).startsWith('בית'));
+    const otherRounds=roundTables.filter(t=>!String(t.id).startsWith('בית'));
+    if(houseTables.length>0){
+      groups.push({key:'houses',label:'🏠 שלב הבתים',color:'#06b6d4',activeBg:'#0891b2',grid:true,
+        buttons:houseTables.map(t=>({key:`round_${t.id}`,description:String(t.id).replace('בית','').trim()||t.id,full:t.description}))});
     }
-
-    // 3+4. שאלות מיוחדות (סגול) — כל special tables ביחד, כולל playoff/groups
-    // אין קטגוריית "שלבי פלייאוף" נפרדת — הכל תחת "שאלות מיוחדות"
+    if(otherRounds.length>0){
+      groups.push({key:'ko',label:houseTables.length>0?'⚔️ נוקאאוט':'⚽ משחקים',color:'#3b82f6',activeBg:'#2563eb',
+        buttons:otherRounds.map(t=>({key:`round_${t.id}`,description:(t.id==='T3'&&isKnockout)?'שמינית הגמר - המשחקים':t.description||t.id}))});
+    }
+    // ✨ שאלות מיוחדות
     const specialBtns=[];
-    specialTables.forEach(t=>{
-      if(t.id!=='T1') specialBtns.push({key:t.id,description:t.description});
-    });
+    specialTables.forEach(t=>{ if(t.id!=='T1') specialBtns.push({key:t.id,description:t.description}); });
     if(israeliTable) specialBtns.push({key:`round_${israeliTable.id}`,description:israeliTable.description});
-    // playoffTable הוסר — T19 מטופל ע"י qualifierTables
-    if(specialBtns.length>0) groups.push({label:'✨ שאלות מיוחדות',color:'#8b5cf6',activeBg:'#7c3aed',buttons:specialBtns});
-
-    // 5. רשימות עולות (כתום) — qualifiers ואחר כך מיקומים
+    if(specialBtns.length>0) groups.push({key:'special',label:'✨ שאלות מיוחדות',color:'#8b5cf6',activeBg:'#7c3aed',buttons:specialBtns});
+    // 📋 רשימות עולות
     const qualBtns=[
-      ...qualifierTables.map(t=>({key:`qual_${t.id}`,description:(t.description||'').replace(/\s*[-–]\s*שאלות מיוחדות\s*$/,'').trim()})),
+      ...qualifierTables.map(t=>({key:`qual_${t.id}`,description:(t.description||'').replace(/\s*[-–]\s*שאלות מיוחדות\s*$/,'').replace(/^רשימת הנבחרות\s*/,'').trim()})),
       ...(locationTables.length>0?[{key:'locations',description:'מיקומים'}]:[]),
     ];
-    if(qualBtns.length>0) groups.push({label:'📋 רשימות עולות',color:'#f97316',activeBg:'#ea580c',buttons:qualBtns});
-
+    if(qualBtns.length>0) groups.push({key:'qual',label:'📋 רשימות עולות',color:'#f97316',activeBg:'#ea580c',buttons:qualBtns});
     return groups;
-  },[roundTables,specialTables,qualifierTables,locationTables,israeliTable,playoffTable,isKnockout]);
+  },[roundTables,specialTables,qualifierTables,locationTables,israeliTable,isKnockout]);
 
+  const CAL_MONTHS = [ {name:'יוני 2026',y:2026,m:5}, {name:'יולי 2026',y:2026,m:6} ];
+  const hasDates = Object.keys(matchesByDay).length>0;
 
   useEffect(()=>{
     if(!selectedSection||loading||!allQuestions.length) return;
@@ -1003,6 +1252,8 @@ export default function Statistics() {
       }
       return;
     }
+    if(selectedSection==='movers'){ if(moversData===null) loadMovers(); return; }
+    if(selectedSection.startsWith('day_')) return;
     if(selectedSection.startsWith('round_')){
       const tId=selectedSection.replace('round_','');
       if(tId==='all') calculateGameStats('rounds');
@@ -1020,6 +1271,7 @@ export default function Statistics() {
     if(selectedSection===key){setSelectedSection(null);return;}
     setSelectedSection(key);setSpecialStats(null);setGameStats(null);setLockedPanel({});
   };
+  const toggleGroup=key=>setOpenGroups(prev=>({...prev,[key]:!prev[key]}));
 
   if(loading) return(
     <div className="flex items-center justify-center h-screen" style={{background:'linear-gradient(135deg,#0f172a 0%,#1e293b 50%,#0f172a 100%)'}}>
@@ -1030,7 +1282,197 @@ export default function Statistics() {
 
   const isRoundsSection  = selectedSection?.startsWith('round_');
   const isQualSection    = selectedSection?.startsWith('qual_');
-  const isSpecialSection = selectedSection&&!isRoundsSection&&!isQualSection&&selectedSection!=='insights';
+  const isDaySection     = selectedSection?.startsWith('day_');
+  const isSpecialSection = selectedSection&&!isRoundsSection&&!isQualSection&&!isDaySection&&selectedSection!=='insights'&&selectedSection!=='movers';
+
+  // ── 📅 calendar render ──
+  const renderCalendar = () => {
+    if(!hasDates) return null;
+    const M=CAL_MONTHS[calMonthIdx];
+    const firstDow=new Date(M.y,M.m,1).getDay();
+    const daysIn=new Date(M.y,M.m+1,0).getDate();
+    const todayD=new Date();
+    const cells=[];
+    for(let i=0;i<firstDow;i++) cells.push(null);
+    for(let d=1;d<=daysIn;d++) cells.push(d);
+    return (
+      <div style={{background:'rgba(0,0,0,0.35)',border:'1px solid rgba(6,182,212,0.22)',borderRadius:12,padding:10,marginBottom:12}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
+          <button onClick={()=>setCalMonthIdx(i=>Math.max(0,i-1))} disabled={calMonthIdx===0} style={{background:'rgba(6,182,212,0.12)',border:'1px solid rgba(6,182,212,0.3)',color:calMonthIdx===0?'#334155':'#22d3ee',borderRadius:6,width:24,height:24,cursor:calMonthIdx===0?'default':'pointer',fontSize:'0.8rem'}}>‹</button>
+          <span style={{fontWeight:700,fontSize:'0.82rem',color:'#22d3ee'}}>📅 {M.name}</span>
+          <button onClick={()=>setCalMonthIdx(i=>Math.min(CAL_MONTHS.length-1,i+1))} disabled={calMonthIdx===CAL_MONTHS.length-1} style={{background:'rgba(6,182,212,0.12)',border:'1px solid rgba(6,182,212,0.3)',color:calMonthIdx===CAL_MONTHS.length-1?'#334155':'#22d3ee',borderRadius:6,width:24,height:24,cursor:calMonthIdx===CAL_MONTHS.length-1?'default':'pointer',fontSize:'0.8rem'}}>›</button>
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:3}}>
+          {['א','ב','ג','ד','ה','ו','ש'].map(d=><span key={d} style={{fontSize:'0.55rem',color:'#475569',textAlign:'center',fontWeight:700,padding:'2px 0'}}>{d}</span>)}
+          {cells.map((d,i)=>{
+            if(d===null) return <span key={`e${i}`}/>;
+            const key=`${M.m+1}-${d}`;
+            const has=!!matchesByDay[key];
+            const isToday=todayD.getFullYear()===M.y&&todayD.getMonth()===M.m&&todayD.getDate()===d;
+            const sel=selectedSection===`day_${key}`;
+            return (
+              <span key={d}
+                onClick={has?()=>toggleSection(`day_${key}`):undefined}
+                style={{fontSize:'0.72rem',textAlign:'center',padding:'5px 0',borderRadius:6,
+                  color:sel?'#fff':has?'#cbd5e1':'#334155',
+                  background:sel?'#0891b2':has?'rgba(6,182,212,0.10)':'transparent',
+                  border:sel?'1px solid #22d3ee':isToday?'1px solid #f59e0b':has?'1px solid rgba(6,182,212,0.22)':'1px solid transparent',
+                  fontWeight:sel?700:isToday?700:400,
+                  cursor:has?'pointer':'default',
+                  boxShadow:sel?'0 0 8px rgba(6,182,212,0.5)':'none'}}>
+                {d}
+              </span>
+            );
+          })}
+        </div>
+        <div style={{display:'flex',gap:10,marginTop:6,fontSize:'0.58rem',color:'#64748b',justifyContent:'center'}}>
+          <span><span style={{display:'inline-block',width:7,height:7,borderRadius:'50%',background:'#0891b2',marginLeft:3,verticalAlign:'middle'}}></span>יום משחקים</span>
+          <span><span style={{display:'inline-block',width:7,height:7,borderRadius:'50%',border:'1px solid #f59e0b',marginLeft:3,verticalAlign:'middle'}}></span>היום</span>
+        </div>
+      </div>
+    );
+  };
+
+  // ── 🆕 sidebar group render ──
+  const renderMenuGroup = (group) => {
+    const open=!!openGroups[group.key];
+    return (
+      <div key={group.key} style={{marginBottom:8}}>
+        <div onClick={()=>toggleGroup(group.key)} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 10px',borderRadius:10,cursor:'pointer',userSelect:'none',fontWeight:700,fontSize:'0.85rem',color:group.color,background:`${group.color}1A`,border:`1px solid ${group.color}40`}}>
+          <span>{group.label}</span>
+          <span style={{fontSize:'0.6rem',transform:open?'rotate(90deg)':'none',transition:'transform 0.2s'}}>◀</span>
+        </div>
+        {open&&(
+          group.grid?(
+            <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:5,padding:'8px 2px 2px'}}>
+              {group.buttons.map(btn=>{
+                const active=selectedSection===btn.key;
+                return (
+                  <button key={btn.key} onClick={()=>toggleSection(btn.key)} title={btn.full} style={{textAlign:'center',padding:'7px 0',borderRadius:8,fontSize:'0.8rem',fontWeight:active?700:500,color:active?'#fff':'#67e8f9',background:active?group.activeBg:'rgba(6,182,212,0.08)',border:`1px solid ${active?group.color:'rgba(6,182,212,0.25)'}`,cursor:'pointer',transition:'all 0.12s',boxShadow:active?`0 0 8px ${group.color}80`:'none',fontFamily:'Rubik,Heebo,sans-serif'}}>
+                    {btn.description}
+                  </button>
+                );
+              })}
+            </div>
+          ):(
+            <div style={{padding:'8px 2px 2px'}}>
+              {group.buttons.map(btn=>{
+                const active=selectedSection===btn.key;
+                return (
+                  <button key={btn.key} onClick={()=>toggleSection(btn.key)} style={{display:'block',width:'100%',textAlign:'right',padding:'7px 10px',marginBottom:4,borderRadius:8,fontSize:'0.78rem',fontWeight:active?700:400,color:active?'white':group.color,background:active?group.activeBg:`${group.color}12`,border:`1px solid ${active?group.color:`${group.color}40`}`,cursor:'pointer',transition:'all 0.15s',boxShadow:active?`0 0 10px ${group.color}55`:'none',fontFamily:'Rubik,Heebo,sans-serif',lineHeight:1.35}}>
+                    {btn.description}
+                  </button>
+                );
+              })}
+            </div>
+          )
+        )}
+      </div>
+    );
+  };
+
+  // ── 📅 day view ──
+  const renderDayView = () => {
+    const key=selectedSection.replace('day_','');
+    const [mon,day]=key.split('-').map(Number);
+    const matches=matchesByDay[key]||[];
+    return (
+      <Card style={{background:'rgba(30,41,59,0.6)',border:'1px solid rgba(6,182,212,0.25)'}}>
+        <CardHeader>
+          <CardTitle style={{color:'#22d3ee'}}>📅 {day}/{mon}/2026 — משחקי היום</CardTitle>
+          <p style={{fontSize:'0.78rem',color:'#94a3b8',marginTop:4}}>{matches.length} משחקים ביום זה</p>
+        </CardHeader>
+        <CardContent>
+          <div style={{display:'flex',flexDirection:'column',gap:8}}>
+            {matches.map(({q,time})=>{
+              const st=dayMatchStats(q);
+              const homeT=teams[normalizeTeam(q.home_team)], awayT=teams[normalizeTeam(q.away_team)];
+              return (
+                <div key={q.id} style={{borderRadius:10,border:'1px solid rgba(6,182,212,0.15)',background:'rgba(0,0,0,0.25)',padding:'10px 12px'}}>
+                  <div style={{display:'grid',gridTemplateColumns:'48px 1fr 76px 1fr',gap:8,alignItems:'center'}}>
+                    <span style={{color:'#64748b',fontSize:'0.72rem'}}>{time||''}</span>
+                    <span style={{display:'flex',alignItems:'center',gap:6,fontSize:'0.88rem',color:'#f8fafc'}}>
+                      {homeT?.logo_url&&<img src={homeT.logo_url} alt="" style={{width:20,height:20,borderRadius:'50%'}}/>}
+                      {cleanTeam(q.home_team)}
+                    </span>
+                    <span style={{textAlign:'center',fontWeight:700,color:st.hasActual?'#fde68a':'#475569',fontSize:'0.95rem'}}>
+                      {st.hasActual?formatResult(q.actual_result):'? - ?'}
+                    </span>
+                    <span style={{display:'flex',alignItems:'center',gap:6,fontSize:'0.88rem',color:'#f8fafc'}}>
+                      {awayT?.logo_url&&<img src={awayT.logo_url} alt="" style={{width:20,height:20,borderRadius:'50%'}}/>}
+                      {cleanTeam(q.away_team)}
+                    </span>
+                  </div>
+                  <div style={{display:'flex',gap:14,marginTop:8,paddingTop:8,borderTop:'1px solid rgba(255,255,255,0.05)',fontSize:'0.74rem',color:'#94a3b8',flexWrap:'wrap'}}>
+                    <span>{q.stage_name} • {st.total} ניחושים</span>
+                    {st.hasActual?(
+                      <>
+                        <span>🎯 בולים: <b style={{color:'#34d399'}}>{st.bull}</b> ({pct(st.bull,st.total)}%)</span>
+                        <span>↗ כיוונים: <b style={{color:'#60a5fa'}}>{st.dir}</b> ({pct(st.dir,st.total)}%)</span>
+                        <span>💀 פספסו: <b style={{color:'#f87171'}}>{st.total-st.bull-st.dir}</b></span>
+                      </>
+                    ):(
+                      <span>הניחוש הנפוץ: <b style={{color:'#22d3ee'}}>{formatResult(st.top)}</b> ({st.topCount} בחרו)</span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+            {matches.length===0&&<p style={{color:'#64748b',textAlign:'center',padding:'30px 0'}}>אין משחקים ביום זה</p>}
+          </div>
+        </CardContent>
+      </Card>
+    );
+  };
+
+  // ── 🔥 movers view ──
+  const renderMovers = () => (
+    <div>
+      <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:20}}>
+        <TrendingUp style={{width:28,height:28,color:'#f59e0b'}}/>
+        <div>
+          <h2 style={{color:'#f8fafc',fontSize:'1.4rem',fontWeight:800,margin:0}}>🔥 מצעד התנודות</h2>
+          <p style={{color:'#94a3b8',fontSize:'0.82rem',margin:0}}>מי טיפס ומי צנח מאז העדכון הקודם של הדירוג</p>
+        </div>
+      </div>
+      {moversData==='loading'||moversData===null?(
+        <Card style={{background:'rgba(30,41,59,0.6)',border:'1px solid rgba(245,158,11,0.3)'}}>
+          <CardContent className="p-12 text-center"><Loader2 className="w-8 h-8 animate-spin mx-auto mb-4" style={{color:'#f59e0b'}}/><p style={{color:'#94a3b8'}}>טוען דירוג...</p></CardContent>
+        </Card>
+      ):(
+        <div className="grid md:grid-cols-2 gap-4">
+          <Card style={{background:'rgba(30,41,59,0.6)',border:'1px solid rgba(16,185,129,0.35)'}}>
+            <CardHeader><CardTitle style={{color:'#34d399'}}>🚀 המטפסים</CardTitle></CardHeader>
+            <CardContent>
+              {moversData.climbers.length>0?moversData.climbers.map((m,i)=>(
+                <div key={i} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'7px 10px',borderRadius:8,background:'rgba(16,185,129,0.06)',border:'1px solid rgba(16,185,129,0.18)',marginBottom:5}}>
+                  <span style={{color:'#f8fafc',fontSize:'0.85rem'}}>{m.name}</span>
+                  <span style={{display:'flex',gap:8,alignItems:'center'}}>
+                    <Badge style={{background:'#059669',color:'#fff',fontSize:'0.72rem'}}>▲ {m.change}</Badge>
+                    <span style={{color:'#94a3b8',fontSize:'0.72rem'}}>מקום {m.pos} • {m.score} נק'</span>
+                  </span>
+                </div>
+              )):<p style={{color:'#64748b',fontSize:'0.8rem'}}>אין שינויי מיקום עדיין</p>}
+            </CardContent>
+          </Card>
+          <Card style={{background:'rgba(30,41,59,0.6)',border:'1px solid rgba(239,68,68,0.35)'}}>
+            <CardHeader><CardTitle style={{color:'#f87171'}}>📉 הנופלים</CardTitle></CardHeader>
+            <CardContent>
+              {moversData.fallers.length>0?moversData.fallers.map((m,i)=>(
+                <div key={i} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'7px 10px',borderRadius:8,background:'rgba(239,68,68,0.06)',border:'1px solid rgba(239,68,68,0.18)',marginBottom:5}}>
+                  <span style={{color:'#f8fafc',fontSize:'0.85rem'}}>{m.name}</span>
+                  <span style={{display:'flex',gap:8,alignItems:'center'}}>
+                    <Badge style={{background:'#dc2626',color:'#fff',fontSize:'0.72rem'}}>▼ {Math.abs(m.change)}</Badge>
+                    <span style={{color:'#94a3b8',fontSize:'0.72rem'}}>מקום {m.pos} • {m.score} נק'</span>
+                  </span>
+                </div>
+              )):<p style={{color:'#64748b',fontSize:'0.8rem'}}>אין שינויי מיקום עדיין</p>}
+            </CardContent>
+          </Card>
+        </div>
+      )}
+    </div>
+  );
 
   return (
     <div className="min-h-screen p-4 md:p-6" dir="rtl" style={{background:'linear-gradient(135deg,#0f172a 0%,#1e293b 50%,#0f172a 100%)'}}>
@@ -1038,47 +1480,29 @@ export default function Statistics() {
         <h1 className="text-3xl md:text-4xl font-bold mb-2 flex items-center gap-3" style={{color:'#f8fafc',textShadow:'0 0 10px rgba(6,182,212,0.3)'}}>
           <PieChart className="w-8 h-8 md:w-10 md:h-10" style={{color:'#06b6d4'}}/>סטטיסטיקות ותובנות
         </h1>
-        <p className="mb-6" style={{color:'#94a3b8'}}>לחץ על קטע בגרף לנעילת רשימת משתתפים</p>
+        <p className="mb-6" style={{color:'#94a3b8'}}>בחר יום בלוח או שלב מהתפריט • לחץ על קטע בגרף לנעילת רשימת משתתפים</p>
 
         <div className="flex flex-col md:flex-row gap-4" style={{alignItems:'flex-start'}}>
 
-          {/* ── Sidebar — desktop only ── */}
-          <aside className="stats-sidebar-desktop" style={{width:'220px',flexShrink:0,position:'sticky',top:'70px',alignSelf:'flex-start',maxHeight:'calc(100vh - 90px)',overflowY:'auto',paddingBottom:'16px'}}>
+          {/* ── Sidebar — desktop ── */}
+          <aside className="stats-sidebar-desktop" style={{width:'250px',flexShrink:0,position:'sticky',top:'70px',alignSelf:'flex-start',maxHeight:'calc(100vh - 90px)',overflowY:'auto',paddingBottom:'16px'}}>
             <style>{`@media(max-width:768px){.stats-sidebar-desktop{display:none!important}}`}</style>
-            <div style={{fontSize:'0.58rem',fontWeight:'700',letterSpacing:'0.12em',textTransform:'uppercase',color:'#475569',marginBottom:'10px'}}>בחר שלב</div>
-            {sidebarGroups.map(group=>(
-              <div key={group.label} style={{marginBottom:'12px'}}>
-                <div style={{
-                  fontSize:'1rem',
-                  fontWeight:'900',
-                  color:group.color,
-                  letterSpacing:'0.01em',
-                  marginBottom:'8px',
-                  paddingRight:'10px',
-                  borderRight:`4px solid ${group.color}`,
-                  lineHeight:'1.3',
-                  fontFamily:'Rubik, Heebo, sans-serif',
-                }}>{group.label}</div>
-                {group.buttons.map(btn=>{
-                  const active=selectedSection===btn.key;
-                  return(
-                    <button key={btn.key} onClick={()=>toggleSection(btn.key)} style={{display:'block',width:'100%',textAlign:'right',padding:'7px 10px',marginBottom:'3px',borderRadius:'8px',fontSize:'0.78rem',fontWeight:active?'700':'400',color:active?'white':group.color,background:active?group.activeBg:`${group.color}18`,border:`1px solid ${active?group.color:`${group.color}50`}`,cursor:'pointer',transition:'all 0.15s',boxShadow:active?`0 0 10px ${group.color}55`:'none',fontFamily:'Rubik,Heebo,sans-serif'}}>
-                      {btn.description}
-                    </button>
-                  );
-                })}
-              </div>
-            ))}
+            <div style={{background:'rgba(13,18,30,0.92)',border:'1px solid rgba(6,182,212,0.15)',borderRadius:14,padding:'12px 10px'}}>
+              <div style={{fontSize:'0.55rem',fontWeight:'800',letterSpacing:'0.18em',textTransform:'uppercase',color:'#334155',marginBottom:'10px'}}>בחירת שלב</div>
+              {renderCalendar()}
+              {menuGroups.map(g=>renderMenuGroup(g))}
+            </div>
           </aside>
 
           {/* ── Content ── */}
           <div style={{flex:1,minWidth:0}}>
 
-            {/* ── Mobile chips — Statistics ── */}
+            {/* ── Mobile: calendar + chips ── */}
             <div className="stats-mobile-chips" style={{marginBottom:'12px'}}>
               <style>{`@media(min-width:769px){.stats-mobile-chips{display:none!important}}`}</style>
+              {renderCalendar()}
               <div style={{display:'flex',flexWrap:'wrap',gap:'6px',padding:'4px 0'}}>
-                {sidebarGroups.map(group=>group.buttons.map(btn=>{
+                {menuGroups.map(group=>group.buttons.map(btn=>{
                   const active=selectedSection===btn.key;
                   return(
                     <button key={btn.key} onClick={()=>toggleSection(btn.key)} style={{
@@ -1093,11 +1517,17 @@ export default function Statistics() {
                       fontFamily:'Rubik,Heebo,sans-serif',
                       WebkitTapHighlightColor:'transparent',
                       touchAction:'manipulation',
-                    }}>{btn.description}</button>
+                    }}>{group.grid?`בית ${btn.description}`:btn.description}</button>
                   );
                 }))}
               </div>
             </div>
+
+            {/* 📅 Day view */}
+            {isDaySection&&renderDayView()}
+
+            {/* 🔥 Movers */}
+            {selectedSection==='movers'&&renderMovers()}
 
             {/* 🤖 AI Insights */}
             {selectedSection==='insights'&&(
@@ -1182,7 +1612,6 @@ export default function Statistics() {
                               </div>
                             </CardHeader>
                             <CardContent>
-                              {/* outcome buttons */}
                               <div className="mb-4 rounded-lg p-3" style={{background:'rgba(6,182,212,0.1)',border:'1px solid rgba(6,182,212,0.2)'}}>
                                 <p style={{color:'#64748b',fontSize:'0.68rem',textAlign:'center',marginBottom:6}}>לחץ על תוצאה לרשימת משתתפים</p>
                                 <div style={{display:'flex',gap:6,justifyContent:'center'}}>
@@ -1200,7 +1629,6 @@ export default function Statistics() {
                                 lockedPanel[k]&&<ParticipantPanel key={k} title={l} count={cnt} percentage={pct2} participants={pts} color={c} onClose={()=>closePanel(k)}/>
                               )}
 
-                              {/* Pie */}
                               <ResponsiveContainer width="100%" height={460}>
                                 <RechartsPieChart>
                                   <Pie data={game.chartData} cx="50%" cy="45%" startAngle={-60} endAngle={300} outerRadius={140} dataKey="value" labelLine={false}
@@ -1285,7 +1713,6 @@ export default function Statistics() {
                   <div key={ts.table.id}>
                     <h2 className="text-2xl font-bold text-white mb-4">{ts.table.description}</h2>
 
-                    {/* ✅ רשימת קבוצות מרוכזת — גרף אחד */}
                     {ts.qualifierData?.isSpecialTeamList && <SpecialTeamListChart
                       table={ts.table}
                       qualifierData={ts.qualifierData}
@@ -1388,7 +1815,7 @@ export default function Statistics() {
               <Card className="bg-slate-800/40 border-slate-700">
                 <CardContent className="p-12 text-center">
                   <PieChart className="w-20 h-20 text-slate-600 mx-auto mb-4"/>
-                  <p className="text-slate-400 text-lg">בחר שלב מהתפריט לסטטיסטיקות מפורטות</p>
+                  <p className="text-slate-400 text-lg">בחר יום בלוח 📅 או שלב מהתפריט לסטטיסטיקות מפורטות</p>
                 </CardContent>
               </Card>
             )}
