@@ -35,6 +35,8 @@ export default function PredictionForm() {
   const [participantName, setParticipantName] = useState("");
   const [participantRecord, setParticipantRecord] = useState(null);
   const [openSections, setOpenSections] = useState({});
+  const [openMenuGroups, setOpenMenuGroups] = useState({ rounds:true, groups:true, playoff:true, league:true, special:false, qualifiers:false, other:true });
+  const toggleMenuGroup = k => setOpenMenuGroups(prev=>({...prev,[k]:!prev[k]}));
   const { toast } = useToast();
   const { currentGame } = useGame();
   const [selectedLocationTeams, setSelectedLocationTeams] = useState(new Set());
@@ -605,13 +607,13 @@ export default function PredictionForm() {
   // ========= SIDEBAR RENDERER =========
   const renderStageSidebar = (allButtonsList, openSectionsMap, toggleSectionFn) => {
     const groupMap = {
-      playoff:    { label: '⚽ פלייאוף',   color: '#3b82f6', bg: 'rgba(59,130,246,0.10)',   border: 'rgba(59,130,246,0.30)',   activeBg: '#2563eb',     activeShadow: '0 2px 10px rgba(59,130,246,0.44)'   },
-      league:     { label: '⚽ ליגה',       color: '#3b82f6', bg: 'rgba(59,130,246,0.10)',   border: 'rgba(59,130,246,0.30)',   activeBg: '#2563eb',     activeShadow: '0 2px 10px rgba(59,130,246,0.44)'   },
-      groups:     { label: '🏠 בתים',       color: 'var(--tp)', bg: 'var(--tp-10)', border: 'var(--tp-30)', activeBg: 'var(--tp-dark)', activeShadow: 'var(--tp-glow-sm)' },
-      special:    { label: '✨ מיוחדות',    color: '#8b5cf6', bg: 'rgba(139,92,246,0.10)',  border: 'rgba(139,92,246,0.30)',  activeBg: '#7c3aed',     activeShadow: '0 2px 10px rgba(139,92,246,0.44)'  },
-      qualifiers: { label: '📋 עולות',      color: '#f97316', bg: 'rgba(249,115,22,0.10)',   border: 'rgba(249,115,22,0.30)',   activeBg: '#ea580c',     activeShadow: '0 2px 10px rgba(249,115,22,0.44)'   },
-      rounds:     { label: '⚽ מחזורים',    color: 'var(--tp)', bg: 'var(--tp-10)', border: 'var(--tp-30)', activeBg: 'var(--tp-dark)', activeShadow: 'var(--tp-glow-sm)' },
-      other:      { label: '📌 נוסף',       color: '#64748b', bg: 'rgba(100,116,139,0.08)',  border: 'rgba(100,116,139,0.20)',  activeBg: '#475569',     activeShadow: '0 2px 8px rgba(100,116,139,0.30)'   },
+      playoff:    { label: '⚔️ נוקאאוט',     color: '#3b82f6', activeBg: '#2563eb' },
+      league:     { label: '⚽ ליגה',          color: '#3b82f6', activeBg: '#2563eb' },
+      groups:     { label: '🏠 שלב הבתים',   color: '#06b6d4', activeBg: '#0891b2' },
+      rounds:     { label: '⚽ מחזורים',      color: '#06b6d4', activeBg: '#0891b2' },
+      special:    { label: '✨ שאלות מיוחדות', color: '#8b5cf6', activeBg: '#7c3aed' },
+      qualifiers: { label: '📋 רשימות עולות', color: '#f97316', activeBg: '#ea580c' },
+      other:      { label: '📌 נוסף',          color: '#64748b', activeBg: '#475569' },
     };
     const grouped = {};
     allButtonsList.forEach(btn => {
@@ -623,23 +625,44 @@ export default function PredictionForm() {
     const order = ['rounds','league','groups','playoff','special','qualifiers','other'];
     const sortedGroups = order.filter(t => grouped[t]);
     return (
-      <div style={{ background: 'rgba(13,18,30,0.9)', borderRadius: '12px', border: '1px solid var(--tp-12)', padding: '14px 10px', backdropFilter: 'blur(10px)' }}>
-        <div style={{ fontSize: '0.5rem', fontWeight: '800', letterSpacing: '0.18em', textTransform: 'uppercase', color: '#334155', marginBottom: '14px', paddingRight: '2px' }}>בחירת שלב</div>
+      <div style={{ background: 'rgba(13,18,30,0.92)', borderRadius: '14px', border: '1px solid var(--tp-12)', padding: '12px 10px', backdropFilter: 'blur(10px)' }}>
+        <div style={{ fontSize: '0.55rem', fontWeight: '800', letterSpacing: '0.18em', textTransform: 'uppercase', color: '#334155', marginBottom: '10px', paddingRight: '2px' }}>בחירת שלב</div>
         {sortedGroups.map(type => {
           const info = groupMap[type] || groupMap.other;
+          const open = openMenuGroups[type] !== false;
+          const gridBtns = type==='groups' ? grouped[type].filter(b => String(b.description||'').startsWith('בית')) : [];
+          const listBtns = grouped[type].filter(b => !gridBtns.includes(b));
           return (
-            <div key={type} style={{ marginBottom: '14px' }}>
-              <div style={{ fontSize: '0.55rem', fontWeight: '700', letterSpacing: '0.08em', textTransform: 'uppercase', color: info.color, marginBottom: '5px', paddingRight: '2px', opacity: 0.85 }}>{info.label}</div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
-                {grouped[type].map(button => {
-                  const active = openSectionsMap[button.sectionKey];
-                  return (
-                    <button key={button.key} onClick={() => toggleSectionFn(button.sectionKey)} style={{ display: 'block', width: '100%', textAlign: 'right', padding: '7px 10px', borderRadius: '8px', fontSize: '0.8rem', fontWeight: active ? '700' : '400', color: active ? 'white' : info.color, background: active ? info.activeBg : info.bg, border: `1px solid ${active ? info.color : info.border}`, cursor: 'pointer', transition: 'all 0.15s', boxShadow: active ? (info.activeShadow || `0 2px 10px ${info.color}44`) : 'none', fontFamily: 'Rubik, Heebo, sans-serif', lineHeight: '1.35' }}>
-                      {button.description}
-                    </button>
-                  );
-                })}
+            <div key={type} style={{ marginBottom: '8px' }}>
+              <div onClick={() => toggleMenuGroup(type)} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'8px 10px', borderRadius:10, cursor:'pointer', userSelect:'none', fontWeight:700, fontSize:'0.85rem', color:info.color, background:`${info.color}1A`, border:`1px solid ${info.color}40` }}>
+                <span>{info.label}</span>
+                <span style={{ fontSize:'0.6rem', transform:open?'rotate(90deg)':'none', transition:'transform 0.2s' }}>◀</span>
               </div>
+              {open && (
+                <div style={{ padding: '8px 2px 2px' }}>
+                  {gridBtns.length > 0 && (
+                    <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:5, marginBottom: listBtns.length>0?6:0 }}>
+                      {gridBtns.map(button => {
+                        const active = openSectionsMap[button.sectionKey];
+                        const short = String(button.description).replace(/^בית\s*/, '').trim() || button.description;
+                        return (
+                          <button key={button.key} onClick={() => toggleSectionFn(button.sectionKey)} title={button.description} style={{ textAlign:'center', padding:'7px 0', borderRadius:8, fontSize:'0.8rem', fontWeight:active?700:500, color:active?'#fff':'#67e8f9', background:active?info.activeBg:'rgba(6,182,212,0.08)', border:`1px solid ${active?info.color:'rgba(6,182,212,0.25)'}`, cursor:'pointer', transition:'all 0.12s', boxShadow:active?`0 0 8px ${info.color}80`:'none', fontFamily:'Rubik,Heebo,sans-serif' }}>
+                            {short}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {listBtns.map(button => {
+                    const active = openSectionsMap[button.sectionKey];
+                    return (
+                      <button key={button.key} onClick={() => toggleSectionFn(button.sectionKey)} style={{ display: 'block', width: '100%', textAlign: 'right', padding: '7px 10px', marginBottom: 4, borderRadius: '8px', fontSize: '0.78rem', fontWeight: active ? '700' : '400', color: active ? 'white' : info.color, background: active ? info.activeBg : `${info.color}12`, border: `1px solid ${active ? info.color : `${info.color}40`}`, cursor: 'pointer', transition: 'all 0.15s', boxShadow: active ? `0 0 10px ${info.color}55` : 'none', fontFamily: 'Rubik, Heebo, sans-serif', lineHeight: '1.35' }}>
+                        {button.description}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           );
         })}
@@ -696,7 +719,7 @@ export default function PredictionForm() {
 
       {/* ===== STICKY HEADER ===== */}
       <div className="sticky top-0 z-30 backdrop-blur-sm shadow-lg" style={{ background: 'rgba(0,0,0,0.70)', borderBottom: '1px solid var(--tp-20)' }}>
-        <div className="p-3 md:p-4 max-w-7xl mx-auto flex items-center justify-between gap-3">
+        <div className="p-3 md:p-4 w-full flex items-center justify-between gap-3">
           <div>
             <h1 className="text-lg md:text-2xl font-bold flex items-center gap-2" style={{ color: '#f8fafc', textShadow: '0 0 10px var(--tp-30)' }}>
               <Trophy className="w-5 h-5 md:w-7 md:h-7" style={{ color: 'var(--tp)' }} />
@@ -720,7 +743,7 @@ export default function PredictionForm() {
 
       {/* ===== BODY: SIDEBAR + CONTENT ===== */}
       {hasStages ? (
-        <div className="flex max-w-7xl mx-auto" style={{ alignItems: 'flex-start' }}>
+        <div className="flex w-full" style={{ alignItems: 'flex-start' }}>
           {/* Desktop sidebar */}
           <aside className="hidden md:block flex-shrink-0 p-4" style={{ width: '215px', position: 'sticky', top: '70px', alignSelf: 'flex-start', maxHeight: 'calc(100vh - 80px)', overflowY: 'auto' }}>
             {renderStageSidebar(allButtons, openSections, toggleSection)}
@@ -736,7 +759,7 @@ export default function PredictionForm() {
           </main>
         </div>
       ) : (
-        <div className="p-6 max-w-7xl mx-auto">
+        <div className="p-6 w-full">
           <Alert style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', color: '#fca5a5' }}>
             <FileText className="w-4 h-4" />
             <AlertDescription>לא נמצאו שאלות במערכת עבור המשחק הנבחר. אנא העלה קבצים תחילה בעמוד "העלאת קבצים".</AlertDescription>
