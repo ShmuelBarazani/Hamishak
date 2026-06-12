@@ -21,6 +21,19 @@ const ADVANCING_TEAM_TABLES = {
   T8: { advancingCount: 2, bonusPoints: 6  }, // גמר
 };
 
+// ─── 🌍 מזהי משחקים — לוגיקת בונוסים פר-משחק ─────────────────────────────────
+const GAME_WORLD_CUP = '30032806-6216-496f-ac32-fb628e181742';
+
+// 🌍 מונדיאל: טבלאות עולות (ניקוד נוכחות + בונוס "כולן")
+const WC_ADVANCING_TABLES = {
+  T19: { count: 16, bonus: 16, label: '🏆 בונוס — כל 16 העולות לשמינית' },
+  T21: { count: 8,  bonus: 16, label: '🏆 בונוס — כל 8 העולות לרבע'    },
+  T23: { count: 4,  bonus: 8,  label: '🏆 בונוס — כל 4 העולות לחצי'    },
+  T25: { count: 2,  bonus: 8,  label: '🏆 בונוס — שתי העולות לגמר'     },
+};
+// 🌍 מונדיאל: טבלאות הבתים (בונוס 6 על פגיעה בכל 6 משחקי הבית)
+const WC_GROUP_TABLES = ['T2','T3','T4','T5','T6','T7','T8','T9','T10','T11','T12','T13'];
+
 // ── מזהי טבלאות מיקומים ──────────────────────────────────────────────────────
 const LOCATION_TABLE_IDS = ['T14', 'T15', 'T16', 'T17', 'T19'];
 
@@ -82,6 +95,7 @@ function getResultType(home, away) {
 }
 
 function isAdvancingTeamSlot(question) {
+  if (question.game_id === GAME_WORLD_CUP) return false; // 🌍 למונדיאל לוגיקה משלו
   const config = ADVANCING_TEAM_TABLES[question.table_id];
   if (!config) return false;
 
@@ -96,6 +110,7 @@ function isAdvancingTeamSlot(question) {
 }
 
 function isLocationTable(tableId, questions = []) {
+  if (questions.length > 0 && questions[0]?.game_id === GAME_WORLD_CUP) return false; // 🌍
   if (questions.length > 0 && questions[0]?.home_team) return false;
   if (LOCATION_TABLE_IDS.includes(tableId)) return true;
   if (questions.length > 0 && questions[0]?.stage_type === 'locations') return true;
@@ -146,9 +161,53 @@ export function calculateTextScore(actualResult, prediction, possiblePoints) {
 
 // ======= חישוב ניקוד לשאלה בודדת =======
 
-export function calculateQuestionScore(question, prediction, allQuestionsInTable = [], allPredictions = {}) {
+export function calculateQuestionScore(question, prediction, allQuestionsInTable = [], allPredictions = {}, allGameQuestions = null) {
   if (question.table_id === 'T1') return null;
   if (!prediction || String(prediction).trim() === '') return null;
+
+  // ─── 🌍 מונדיאל: טבלאות עולות — ניקוד לפי נוכחות ───
+  if (question.game_id === GAME_WORLD_CUP && WC_ADVANCING_TABLES[question.table_id]) {
+    const actualTeams = allQuestionsInTable
+      .filter(q => q.actual_result && q.actual_result.trim() !== '' && q.actual_result !== '__CLEAR__')
+      .map(q => cleanText(normalizeResult(q.actual_result)).toLowerCase());
+    if (actualTeams.length === 0) return null;
+    const cleanPred = cleanText(normalizeResult(prediction)).toLowerCase();
+    return actualTeams.includes(cleanPred) ? (question.possible_points || 0) : 0;
+  }
+
+  // ─── 🌍 מונדיאל: T16 ראש בית/סגנית — ניקוד חלקי 15/10/7 ───
+  if (question.game_id === GAME_WORLD_CUP && question.table_id === 'T16') {
+    const qid = parseInt(question.question_id, 10);
+    if (Number.isInteger(qid)) {
+      const groupIdx  = Math.ceil(qid / 2);              // 1-12
+      const isWinner  = qid % 2 === 1;                   // אי-זוגי = ראש בית
+      const partnerId = String(isWinner ? qid + 1 : qid - 1);
+      const partnerQ  = allQuestionsInTable.find(q => q.question_id === partnerId);
+
+      const myActual      = question.actual_result;
+      const partnerActual = partnerQ?.actual_result;
+      if (!myActual || myActual.trim() === '' || myActual === '__CLEAR__') return null;
+
+      const cleanPred    = cleanText(normalizeResult(prediction)).toLowerCase();
+      const cleanMine    = cleanText(normalizeResult(myActual)).toLowerCase();
+      const cleanPartner = partnerActual ? cleanText(normalizeResult(partnerActual)).toLowerCase() : null;
+
+      if (cleanPred === cleanMine) return 15;            // בול במיקום
+      if (cleanPartner && cleanPred === cleanPartner) return 10; // התהפכו התפקידים
+
+      // העפילה ממקום 3 (דורש את שאלות T17 מכלל שאלות המשחק)
+      if (allGameQuestions) {
+        const t17Team = allGameQuestions.find(q => q.table_id === 'T17' && q.question_id === String(groupIdx));
+        const t17Adv  = allGameQuestions.find(q => q.table_id === 'T17' && q.question_id === `${groupIdx}.1`);
+        if (t17Team?.actual_result && t17Adv?.actual_result) {
+          const clean3rd = cleanText(normalizeResult(t17Team.actual_result)).toLowerCase();
+          const advanced = cleanText(t17Adv.actual_result) === cleanText('כן');
+          if (cleanPred === clean3rd && advanced) return 7;
+        }
+      }
+      return 0;
+    }
+  }
 
   if (isAdvancingTeamSlot(question)) {
     const advancingActuals = allQuestionsInTable
@@ -382,7 +441,7 @@ export function calculateTotalScore(questions, predictions) {
 
     const pred = predictions[q.id];
     const questionsInTable = tableQuestions[q.table_id] || [];
-    const score = calculateQuestionScore(q, pred, questionsInTable, predictions);
+    const score = calculateQuestionScore(q, pred, questionsInTable, predictions, questions);
 
     if (score !== null) {
       total += score;
@@ -431,6 +490,80 @@ export function calculateTotalScore(questions, predictions) {
         });
       }
     }
+  }
+
+  const gameId = questions[0]?.game_id;
+
+  // ─── 🌍 בונוסי מונדיאל 2026 ──────────────────────────────────────────────
+  if (gameId === GAME_WORLD_CUP) {
+    // (א) בונוס בית שלם: פגיעה בכל 6 משחקי הבית → +6
+    const GROUP_NAMES = ["א'","ב'","ג'","ד'","ה'","ו'","ז'","ח'","ט'","י'","יא'","יב'"];
+    WC_GROUP_TABLES.forEach((tid, gi) => {
+      const tQs = (tableQuestions[tid] || []).filter(q => q.home_team);
+      if (tQs.length === 0) return;
+      const allHaveResults = tQs.every(q => q.actual_result && isScoreFormat(q.actual_result));
+      if (!allHaveResults) return;
+      const allScored = tQs.every(q => {
+        const s = calculateQuestionScore(q, predictions[q.id], tQs, predictions, questions);
+        return s !== null && s > 0;
+      });
+      if (allScored) {
+        total += 6;
+        breakdown.push({
+          question_id: `${tid}_GROUP_BONUS`,
+          question_id_text: `🏆 בונוס בית ${GROUP_NAMES[gi]} — פגיעה בכל 6 המשחקים`,
+          table_id: tid, score: 6, max_score: 6, isBonus: true,
+          bonusDescription: 'פגיעה (בול/כיוון) בכל ששת משחקי הבית',
+        });
+      }
+    });
+
+    // (ב) T16: בונוס מיקום (+12) ובונוס עולות (+12)
+    const t16 = (tableQuestions['T16'] || []).filter(q => Number.isInteger(parseInt(q.question_id,10)));
+    if (t16.length === 24 && t16.every(q => q.actual_result && q.actual_result.trim() !== '' && q.actual_result !== '__CLEAR__')) {
+      const scores = t16.map(q => calculateQuestionScore(q, predictions[q.id], t16, predictions, questions));
+      if (scores.every(s => s === 15)) {
+        total += 12;
+        breakdown.push({ question_id:'T16_ORDER_BONUS', question_id_text:'🏆 בונוס מיקום — כל 24 ראשי הבית והסגניות בול', table_id:'T16', score:12, max_score:12, isBonus:true });
+      }
+      if (scores.every(s => s !== null && s > 0)) {
+        total += 12;
+        breakdown.push({ question_id:'T16_ADV_BONUS', question_id_text:'🏆 בונוס עולות — כל 24 הנבחרות העפילו', table_id:'T16', score:12, max_score:12, isBonus:true });
+      }
+    }
+
+    // (ג) T17: בונוס מקום שלישי — כל 12 הנבחרות בול → +6
+    const t17main = (tableQuestions['T17'] || []).filter(q => !String(q.question_id).includes('.'));
+    if (t17main.length === 12 && t17main.every(q => q.actual_result && q.actual_result.trim() !== '' && q.actual_result !== '__CLEAR__')) {
+      const allExact = t17main.every(q => {
+        const p = cleanText(normalizeResult(predictions[q.id] || '')).toLowerCase();
+        const a = cleanText(normalizeResult(q.actual_result)).toLowerCase();
+        return p && p === a;
+      });
+      if (allExact) {
+        total += 6;
+        breakdown.push({ question_id:'T17_BONUS', question_id_text:'🏆 בונוס — כל 12 נבחרות המקום השלישי', table_id:'T17', score:6, max_score:6, isBonus:true });
+      }
+    }
+
+    // (ד) בונוסי עולות בשלבי הנוקאאוט
+    for (const [tid, cfg] of Object.entries(WC_ADVANCING_TABLES)) {
+      const tQs = tableQuestions[tid] || [];
+      if (tQs.length !== cfg.count) continue;
+      const allHaveResults = tQs.every(q => q.actual_result && q.actual_result.trim() !== '' && q.actual_result !== '__CLEAR__');
+      if (!allHaveResults) continue;
+      const actualSet = new Set(tQs.map(q => cleanText(normalizeResult(q.actual_result)).toLowerCase()));
+      const guessedSet = new Set(tQs.map(q => {
+        const p = predictions[q.id];
+        return p ? cleanText(normalizeResult(p)).toLowerCase() : null;
+      }).filter(Boolean));
+      if ([...actualSet].every(t => guessedSet.has(t))) {
+        total += cfg.bonus;
+        breakdown.push({ question_id:`${tid}_STAGE_BONUS`, question_id_text:cfg.label, table_id:tid, score:cfg.bonus, max_score:cfg.bonus, isBonus:true });
+      }
+    }
+
+    return { total, breakdown }; // 🌍 בונוסי UCL לא חלים על המונדיאל
   }
 
   // ─── 🏆 בונוס T3 ──────────────────────────────────────────────────────────
