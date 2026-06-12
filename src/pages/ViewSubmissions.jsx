@@ -15,6 +15,9 @@ import { calculateQuestionScore, calculateLocationBonus } from "@/components/sco
 import StandingsTable from "../components/predictions/StandingsTable";
 import { useGame } from "@/components/contexts/GameContext";
 
+// 🌍 מונדיאל 2026 — לוגיקת תצוגה ייעודית
+const WC_GAME_ID = '30032806-6216-496f-ac32-fb628e181742';
+
 function ParticipantTotalScore({ participantName, gameId }) {
   const [totalScore, setTotalScore] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -84,6 +87,10 @@ export default function ViewSubmissions() {
   const { currentGame } = useGame();
 
   const isAdmin = currentUser?.role === 'admin' || currentUser?.user_metadata?.role === 'admin';
+  // 🌍 דגל מונדיאל
+  const isWC = currentGame?.id === WC_GAME_ID;
+  // טבלאות מיקומים — לא רלוונטיות למונדיאל
+  const LOC_IDS = isWC ? [] : ['T14', 'T15', 'T16', 'T17', 'T19'];
 
   useEffect(() => {
     const loadUser = async () => {
@@ -104,6 +111,7 @@ export default function ViewSubmissions() {
   useEffect(() => {
     const loadData = async () => {
       if (!currentGame) { setLoading(false); return; }
+      const wcGame = currentGame.id === WC_GAME_ID;
       setLoading(true);
       try {
         const questions = await Question.filter({ game_id: currentGame.id }, "-created_at", 10000);
@@ -153,7 +161,8 @@ export default function ViewSubmissions() {
         const rTables = {}, sTables = {};
         questions.forEach(q => {
           if (!q.table_id) return;
-          if ((q.table_id === 'T20' || q.table_id === 'T3') && q.question_text && !q.home_team) {
+          // 🌍 פיצול שמות קבוצות מטקסט — לא במונדיאל
+          if (!wcGame && (q.table_id === 'T20' || q.table_id === 'T3') && q.question_text && !q.home_team) {
             let teams = null;
             if (q.question_text.includes(' נגד ')) teams = q.question_text.split(' נגד ').map(t => t.trim());
             else if (q.question_text.includes(' - ')) teams = q.question_text.split(' - ').map(t => t.trim());
@@ -162,14 +171,18 @@ export default function ViewSubmissions() {
 
           const tableCollection = (q.home_team && q.away_team) ? rTables : sTables;
           let tableId = q.table_id;
-          let tableDescription = q.table_description;
+          let tableDescription = q.table_description || q.stage_name;
 
-          if (q.stage_name && q.stage_name.includes('בית')) { tableId = q.stage_name; tableDescription = q.stage_name; }
+          // 🌍 startsWith — רק בתים אמיתיים ("בית א'"), לא "ראש בית וסגנית"
+          if (q.stage_name && q.stage_name.startsWith('בית')) { tableId = q.stage_name; tableDescription = q.stage_name; }
           else if (q.table_description?.includes('שאלות מיוחדות') && q.stage_order && q.table_id !== 'T10') {
             tableId = `custom_order_${q.stage_order}`; tableDescription = q.stage_name || q.table_description;
           }
-          if (q.table_id === 'T12') tableDescription = 'שלב הליגה - פינת הגאווה הישראלית - 7 בוםםםםםםםםםם !!!';
-          else if (q.table_id === 'T13') tableDescription = 'שלב ראש בראש - "מבול מטאורים של כוכבים (*)"';
+          // 🌍 כותרות קשיחות של שלב הליגה — לא במונדיאל
+          if (!wcGame) {
+            if (q.table_id === 'T12') tableDescription = 'שלב הליגה - פינת הגאווה הישראלית - 7 בוםםםםםםםםםם !!!';
+            else if (q.table_id === 'T13') tableDescription = 'שלב ראש בראש - "מבול מטאורים של כוכבים (*)"';
+          }
 
           if (!tableCollection[tableId]) {
             tableCollection[tableId] = {
@@ -181,8 +194,8 @@ export default function ViewSubmissions() {
           tableCollection[tableId].questions.push(q);
         });
 
-        const t20Table = rTables['T20'];
-        delete rTables['T20'];
+        let t20Table = null;
+        if (!wcGame) { t20Table = rTables['T20']; delete rTables['T20']; }
         setIsraeliTable(t20Table || null);
 
         const participantQns = sTables['T1'] ? sTables['T1'].questions : [];
@@ -194,28 +207,31 @@ export default function ViewSubmissions() {
         delete sTables['T1'];
 
         const sortedRoundTables = Object.values(rTables).sort((a,b) => {
-          const aIsGroup = a.id.includes('בית'), bIsGroup = b.id.includes('בית');
+          const aIsGroup = a.id.startsWith('בית'), bIsGroup = b.id.startsWith('בית');
           if (aIsGroup && !bIsGroup) return -1;
           if (!aIsGroup && bIsGroup) return 1;
-          if (aIsGroup && bIsGroup) return a.id.charAt(a.id.length-1).localeCompare(b.id.charAt(b.id.length-1), 'he');
+          // 🌍 מיון בתים לפי stage_order (א'=1 ... יב'=12)
+          if (aIsGroup && bIsGroup) return (a.questions[0]?.stage_order || 0) - (b.questions[0]?.stage_order || 0);
           return (parseInt(a.id.replace('T',''))||0) - (parseInt(b.id.replace('T',''))||0);
         });
         setRoundTables(sortedRoundTables);
 
-        const locationTableIds = ['T9', 'T14', 'T15', 'T16', 'T17'];
+        // 🌍 במונדיאל אין טבלאות מיקומים
+        const locationTableIds = wcGame ? [] : ['T9', 'T14', 'T15', 'T16', 'T17'];
         const locationGroup = Object.values(sTables)
           .filter(table => locationTableIds.includes(table.id))
           .sort((a,b) => (parseInt(a.id.replace('T',''))||0) - (parseInt(b.id.replace('T',''))||0));
         setLocationTables(locationGroup);
 
-        const t19Table = sTables['T19'];
+        // 🌍 במונדיאל T19 הוא טבלת עולות רגילה — לא "מנצחות פלייאוף"
+        const t19Table = wcGame ? null : sTables['T19'];
         setPlayoffWinnersTable(t19Table || null);
 
         const allSpecialTables = Object.values(sTables).filter(table => {
           const desc = table.description?.trim();
-          const isGroup = table.id.includes('בית') || desc?.includes('בית');
+          const isGroup = table.id.startsWith('בית') || desc?.startsWith('בית');
           const stageType = table.questions[0]?.stage_type;
-          return desc && !/^\d+$/.test(desc) && !locationTableIds.includes(table.id) && table.id !== 'T19' && !isGroup && stageType !== 'qualifiers';
+          return desc && !/^\d+$/.test(desc) && !locationTableIds.includes(table.id) && (wcGame || table.id !== 'T19') && !isGroup && stageType !== 'qualifiers';
         }).sort((a,b) => {
           const orderA = a.questions[0]?.stage_order || 999, orderB = b.questions[0]?.stage_order || 999;
           if (orderA !== orderB) return orderA - orderB;
@@ -224,7 +240,7 @@ export default function ViewSubmissions() {
         setSpecialTables(allSpecialTables);
 
         const t10Special = sTables['T10'];
-        if (t10Special) {
+        if (t10Special && !wcGame) {
           const t10Round = Object.values(rTables).find(t => t.id === 'T10');
           if (t10Round) t10Round.specialQuestions = t10Special.questions;
         }
@@ -259,36 +275,41 @@ export default function ViewSubmissions() {
       try {
         const predictions = await Prediction.filter({ participant_name: selectedParticipant }, "-created_at", 5000);
 
-        const locationTableIds = ['T14', 'T15', 'T16', 'T17', 'T19'];
+        // 🌍 לוגיקת המיקומים חוצת-משחקים — לא במונדיאל
+        const locationTableIds = isWC ? [] : ['T14', 'T15', 'T16', 'T17', 'T19'];
         const locationPredsByTableQ = {};
-        try {
-          const { data: locQuestions } = await supabase
-            .from('questions')
-            .select('id, table_id, question_id, actual_result')
-            .in('table_id', locationTableIds);
+        if (locationTableIds.length > 0) {
+          try {
+            const { data: locQuestions } = await supabase
+              .from('questions')
+              .select('id, table_id, question_id, actual_result')
+              .in('table_id', locationTableIds);
 
-          if (locQuestions && locQuestions.length > 0) {
-            const uuidToKey = {};
-            locQuestions.forEach(q => { uuidToKey[q.id] = `${q.table_id}_${q.question_id}`; });
+            if (locQuestions && locQuestions.length > 0) {
+              const uuidToKey = {};
+              locQuestions.forEach(q => { uuidToKey[q.id] = `${q.table_id}_${q.question_id}`; });
 
-            predictions.forEach(p => {
-              const key = uuidToKey[p.question_id];
-              if (key) {
-                if (!locationPredsByTableQ[key] || new Date(p.created_at) > new Date(locationPredsByTableQ[key].created_at))
-                  locationPredsByTableQ[key] = { text_prediction: p.text_prediction, created_at: p.created_at };
-              }
-            });
+              predictions.forEach(p => {
+                const key = uuidToKey[p.question_id];
+                if (key) {
+                  if (!locationPredsByTableQ[key] || new Date(p.created_at) > new Date(locationPredsByTableQ[key].created_at))
+                    locationPredsByTableQ[key] = { text_prediction: p.text_prediction, created_at: p.created_at };
+                }
+              });
 
-            const locationActualsByTableQ = {};
-            locQuestions.forEach(q => {
-              if (q.actual_result && q.actual_result.trim() !== '' && q.actual_result !== '__CLEAR__')
-                locationActualsByTableQ[`${q.table_id}_${q.question_id}`] = q.actual_result;
-            });
-            setData(prev => ({ ...prev, predictions, locationPredsByTableQ, locationActualsByTableQ }));
-          } else {
-            setData(prev => ({ ...prev, predictions, locationPredsByTableQ, locationActualsByTableQ: {} }));
-          }
-        } catch (e) { console.error('Error building locationPredsByTableQ:', e); }
+              const locationActualsByTableQ = {};
+              locQuestions.forEach(q => {
+                if (q.actual_result && q.actual_result.trim() !== '' && q.actual_result !== '__CLEAR__')
+                  locationActualsByTableQ[`${q.table_id}_${q.question_id}`] = q.actual_result;
+              });
+              setData(prev => ({ ...prev, predictions, locationPredsByTableQ, locationActualsByTableQ }));
+            } else {
+              setData(prev => ({ ...prev, predictions, locationPredsByTableQ, locationActualsByTableQ: {} }));
+            }
+          } catch (e) { console.error('Error building locationPredsByTableQ:', e); }
+        } else {
+          setData(prev => ({ ...prev, predictions, locationPredsByTableQ: {}, locationActualsByTableQ: {} }));
+        }
 
         setEditedPredictions({});
         setIsEditMode(false);
@@ -296,7 +317,7 @@ export default function ViewSubmissions() {
       setLoadingPredictions(false);
     };
     loadParticipantPredictions();
-  }, [selectedParticipant, currentUser]);
+  }, [selectedParticipant, currentUser, isWC]);
 
   const participantPredictions = useMemo(() => {
     if (!selectedParticipant) return {};
@@ -321,14 +342,13 @@ export default function ViewSubmissions() {
   }, [editedPredictions, participantPredictions]);
 
   const getLocationPred = useCallback((question) => {
-    const locationTableIds = ['T14', 'T15', 'T16', 'T17', 'T19'];
-    if (!locationTableIds.includes(question.table_id)) return null;
+    if (!LOC_IDS.includes(question.table_id)) return null;
     const direct = participantPredictions[question.id];
     if (direct !== undefined && direct !== '') return direct;
     const key = `${question.table_id}_${question.question_id}`;
     const fallback = data.locationPredsByTableQ?.[key];
     return fallback ? (fallback.text_prediction || '') : '';
-  }, [participantPredictions, data.locationPredsByTableQ]);
+  }, [participantPredictions, data.locationPredsByTableQ, LOC_IDS]);
 
   const getCombinedPredictionsMap = useCallback(() => ({
     ...participantPredictions,
@@ -408,7 +428,7 @@ export default function ViewSubmissions() {
       for (const [questionId, newValue] of changedPredictions) {
         const prediction = data.predictions.find(p => p.question_id === questionId);
         if (prediction) { await Prediction.update(prediction.id, { text_prediction: newValue }); updatedCount++; }
-        else { await Prediction.create({ question_id: questionId, participant_name: selectedParticipant, text_prediction: newValue }); updatedCount++; }
+        else { await Prediction.create({ question_id: questionId, participant_name: selectedParticipant, game_id: currentGame?.id, text_prediction: newValue }); updatedCount++; }
       }
       toast({ title: "שינויים נשמרו!", description: `עודכנו ${updatedCount} ניחושים עבור ${selectedParticipant}`, className: "bg-green-900/30 border-green-500 text-green-200" });
       const reloadPreds = await Prediction.filter({ participant_name: selectedParticipant }, "-created_at", 5000);
@@ -565,8 +585,8 @@ export default function ViewSubmissions() {
 
   const renderReadOnlySelect = (question, originalValue) => {
     const isTeamsList = question.validation_list?.toLowerCase().includes('קבוצ');
-    const locationTableIds = ['T14', 'T15', 'T16', 'T17', 'T19'];
-    const isLocationQuestion = locationTableIds.includes(question.table_id);
+    // 🌍 LOC_IDS ריק במונדיאל
+    const isLocationQuestion = LOC_IDS.includes(question.table_id);
 
     let displayTeamNameForReadonly = originalValue;
     if (isTeamsList && originalValue && isLocationQuestion) displayTeamNameForReadonly = findMatchedTeamName(originalValue);
@@ -644,7 +664,7 @@ export default function ViewSubmissions() {
     }
 
     const stripParens = (s) => s ? s.replace(/\s*\([^)]*\)/g, '').replace(/\s+/g, ' ').trim() : '';
-    const isLocQ = ['T14', 'T15', 'T16', 'T17', 'T19'].includes(question.table_id);
+    const isLocQ = LOC_IDS.includes(question.table_id);
 
     let score;
     if (isLocQ) {
@@ -661,9 +681,9 @@ export default function ViewSubmissions() {
         score = allActualsInTable.includes(predClean) ? (question.possible_points || 0) : 0;
       }
     } else {
-      // ✅ מעביר את כל שאלות הטבלה — נדרש עבור T4/T5/T6 (isAdvancingTeamSlot)
+      // ✅ מעביר את כל שאלות הטבלה + כל שאלות המשחק (נדרש לניקוד T16 במונדיאל)
       const questionsInTable = data.questions.filter(q => q.table_id === question.table_id);
-      score = calculateQuestionScore(question, originalValue, questionsInTable);
+      score = calculateQuestionScore(question, originalValue, questionsInTable, {}, data.questions);
     }
 
     let badgeColor = 'bg-slate-600 text-slate-300';
@@ -800,7 +820,10 @@ export default function ViewSubmissions() {
     );
   };
 
-  const ADVANCING_CONFIG_VS = { T4: { count: 8, bonus: 16 }, T5: { count: 4, bonus: 12 }, T6: { count: 2, bonus: 6 } };
+  // 🌍 קונפיגורציית בונוסי עולות — פר-משחק
+  const ADVANCING_CONFIG_VS = isWC
+    ? { T19: { count: 16, bonus: 16 }, T21: { count: 8, bonus: 16 }, T23: { count: 4, bonus: 8 }, T25: { count: 2, bonus: 8 } }
+    : { T4: { count: 8, bonus: 16 }, T5: { count: 4, bonus: 12 }, T6: { count: 2, bonus: 6 } };
 
   // ✅ נרמול שמות — הסרת "(מדינה)"
   const normTeam = (name) =>
@@ -814,16 +837,18 @@ export default function ViewSubmissions() {
         .filter(q => q.actual_result && q.actual_result !== '__CLEAR__')
         .map(q => normTeam(q.actual_result))
     );
-    // מודחות — הצד שלא עלה מכל זוג ב-T3
-    const t3Qs = data.questions.filter(q => q.table_id === 'T3' && q.home_team && q.away_team);
+    // מודחות — הצד שלא עלה מכל זוג ב-T3 (נוקאאוט בלבד; במונדיאל T3 הוא בית ב')
     const eliminatedSet = new Set();
-    advancingSet.forEach(adv => {
-      t3Qs.forEach(q => {
-        const h = normTeam(q.home_team), a = normTeam(q.away_team);
-        if (h === adv && !advancingSet.has(a)) eliminatedSet.add(a);
-        if (a === adv && !advancingSet.has(h)) eliminatedSet.add(h);
+    if (!isWC) {
+      const t3Qs = data.questions.filter(q => q.table_id === 'T3' && q.home_team && q.away_team);
+      advancingSet.forEach(adv => {
+        t3Qs.forEach(q => {
+          const h = normTeam(q.home_team), a = normTeam(q.away_team);
+          if (h === adv && !advancingSet.has(a)) eliminatedSet.add(a);
+          if (a === adv && !advancingSet.has(h)) eliminatedSet.add(h);
+        });
       });
-    });
+    }
     return { advancingSet, eliminatedSet };
   };
 
@@ -924,11 +949,6 @@ export default function ViewSubmissions() {
     );
   };
 
-  // ─────────────────────────────────────────────────────────────────────────────
-  // renderSpecialQuestions — THE FIX IS HERE
-  // כל <div className="flex items-center gap-2"> שעוטף renderReadOnlySelect
-  // הוחלף ב-<div className="contents"> כדי שהילדים יתפסו עמודות grid נפרדות
-  // ─────────────────────────────────────────────────────────────────────────────
   const renderSpecialQuestions = (table) => {
     const isT10 = table.description.includes('T10') || table.id === 'T10' || table.id.includes('custom_order');
     if (isT10) return renderT10Questions(table);
@@ -943,7 +963,8 @@ export default function ViewSubmissions() {
     const sortedMainIds = Object.keys(grouped).sort((a, b) => Number(a) - Number(b));
 
     let bonusInfo = null;
-    const isLocationTable = ['T14', 'T15', 'T16', 'T17', 'T19'].includes(table.id);
+    // 🌍 LOC_IDS ריק במונדיאל — אין בונוסי מיקומים בתצוגה זו
+    const isLocationTable = LOC_IDS.includes(table.id);
     if (selectedParticipant) {
       const predForBonus = {};
       table.questions.forEach(q => {
@@ -977,7 +998,7 @@ export default function ViewSubmissions() {
               const { main, subs } = grouped[mainId];
               if (!main) return null;
               const sortedSubs = [...subs].sort((a, b) => parseFloat(a.question_id) - parseFloat(b.question_id));
-              const isLocTable = ['T14', 'T15', 'T16', 'T17', 'T19'].includes(table.id);
+              const isLocTable = LOC_IDS.includes(table.id);
               const mainOriginalValue = editedPredictions[main.id] !== undefined
                 ? editedPredictions[main.id]
                 : (isLocTable ? (getLocationPred(main) || '') : (participantPredictions[main.id] || ''));
@@ -988,7 +1009,6 @@ export default function ViewSubmissions() {
                   <div key={main.id} style={{ display:'grid', gridTemplateColumns:'50px 1fr 160px 50px', gap:'8px', alignItems:'center', padding:'8px 12px', borderRadius:'6px', background:'rgba(15,23,42,0.4)', border:'1px solid rgba(6,182,212,0.1)' }}>
                     <Badge variant="outline" className="justify-center text-xs h-6 w-full" style={{ borderColor:'#06b6d4', color:'#06b6d4' }}>{main.question_id}</Badge>
                     <span className="text-right font-medium text-sm truncate" style={{ color:'#f8fafc' }}>{main.question_text}</span>
-                    {/* ✅ FIX: contents — שני הילדים תופסים עמודות 3+4 */}
                     <div className="contents">{renderReadOnlySelect(main, mainOriginalValue)}</div>
                   </div>
                 );
@@ -1003,12 +1023,10 @@ export default function ViewSubmissions() {
                   <div key={main.id} style={{ display:'grid', gridTemplateColumns:'50px minmax(250px, 2fr) 160px 50px 1fr 50px minmax(180px, 1.5fr) 160px 50px', gap:'8px', alignItems:'center', padding:'8px 12px', borderRadius:'6px', background:'rgba(15,23,42,0.4)', border:'1px solid rgba(6,182,212,0.1)' }}>
                     <Badge variant="outline" className="justify-center text-xs h-6 w-full" style={{ borderColor:'#06b6d4', color:'#06b6d4' }}>{main.question_id}</Badge>
                     <span className="text-right font-medium text-sm text-blue-100">{main.question_text}</span>
-                    {/* ✅ FIX: עמודות 3+4 */}
                     <div className="contents">{renderReadOnlySelect(main, mainOriginalValue)}</div>
                     <div></div>
                     <Badge variant="outline" className="justify-center text-xs h-6 w-full" style={{ borderColor:'#06b6d4', color:'#06b6d4' }}>{sortedSubs[0].question_id}</Badge>
                     <span className="text-right font-medium text-sm text-blue-100">{sortedSubs[0].question_text}</span>
-                    {/* ✅ FIX: עמודות 8+9 */}
                     <div className="contents">{renderReadOnlySelect(sortedSubs[0], subOriginalValue)}</div>
                   </div>
                 );
@@ -1019,7 +1037,6 @@ export default function ViewSubmissions() {
                 <div key={main.id} style={{ display:'grid', gridTemplateColumns:'45px 1fr 140px 45px 45px 1fr 140px 45px 45px 1fr 140px 45px', gap:'6px', alignItems:'center', padding:'8px 12px', borderRadius:'6px', background:'rgba(15,23,42,0.4)', border:'1px solid rgba(6,182,212,0.1)' }}>
                   <Badge variant="outline" className="justify-center text-xs h-6 w-full" style={{ borderColor:'#06b6d4', color:'#06b6d4' }}>{main.question_id}</Badge>
                   <span className="text-right font-medium text-sm truncate" style={{ color:'#f8fafc' }}>{main.question_text}</span>
-                  {/* ✅ FIX: עמודות 3+4 */}
                   <div className="contents">{renderReadOnlySelect(main, mainOriginalValue)}</div>
                   {sortedSubs.map(sub => {
                     const subOriginalValue = editedPredictions[sub.id] !== undefined
@@ -1029,7 +1046,6 @@ export default function ViewSubmissions() {
                       <React.Fragment key={sub.id}>
                         <Badge variant="outline" className="justify-center text-xs h-6 w-full" style={{ borderColor:'#06b6d4', color:'#06b6d4' }}>{sub.question_id}</Badge>
                         <span className="text-right font-medium text-sm truncate" style={{ color:'#f8fafc' }}>{sub.question_text}</span>
-                        {/* ✅ FIX: עמודות נפרדות לכל תת-שאלה */}
                         <div className="contents">{renderReadOnlySelect(sub, subOriginalValue)}</div>
                       </React.Fragment>
                     );
@@ -1092,7 +1108,6 @@ export default function ViewSubmissions() {
   const TEXT_LENGTH_THRESHOLD = 18;
 
   const renderStageChips = (allButtonsList, openSectionsMap, toggleSectionFn) => {
-    // ✅ גלילה אופקית — לא wrap — לא תופס חצי מסך
     const allChips = allButtonsList.map(button => {
       const active = openSectionsMap[button.sectionKey];
       const type = button.stageType || 'special';
@@ -1192,11 +1207,11 @@ export default function ViewSubmissions() {
   const allButtons = [];
 
   if (roundTables.length > 0) {
-    const allAreGroups = roundTables.every(table => table.id.includes('בית') || table.description?.includes('בית'));
+    const allAreGroups = roundTables.every(table => table.id.startsWith('בית') || table.description?.startsWith('בית'));
     if (allAreGroups) {
       const firstRoundTableId = roundTables[0]?.id || 'T2';
       const description = 'שלב הבתים';
-      allButtons.push({ numericId: parseInt(firstRoundTableId.replace('T','').replace(/\D/g,''),10), key:'rounds', description, sectionKey:'rounds', stageType:'rounds', isLongText: description.length > TEXT_LENGTH_THRESHOLD });
+      allButtons.push({ numericId: 0, key:'rounds', description, sectionKey:'rounds', stageType:'rounds', isLongText: description.length > TEXT_LENGTH_THRESHOLD });
     } else {
       roundTables.forEach(table => {
         const description = table.description || table.id;
@@ -1243,14 +1258,12 @@ export default function ViewSubmissions() {
         /* ── ViewSubmissions mobile fixes ── */
         @media (max-width: 768px) {
 
-          /* שורות grid — גלילה אופקית מקומית */
           .vs-grid-row {
             overflow-x: auto !important;
             -webkit-overflow-scrolling: touch !important;
             padding-bottom: 4px !important;
           }
 
-          /* כרטיס שאלה פשוטה (4 עמודות) — הפוך לכרטיס */
           .vs-simple-row {
             display: flex !important;
             flex-wrap: wrap !important;
@@ -1263,21 +1276,17 @@ export default function ViewSubmissions() {
           .vs-simple-row .vs-q-val  { flex: 1 1 auto; }
           .vs-simple-row .vs-score  { flex: 0 0 auto; }
 
-          /* פונטים */
           .vs-q-text  { font-size: 0.88rem !important; }
           .vs-score   { font-size: 0.8rem !important; }
 
-          /* Sidebar: הסתר במובייל */
           .vs-sidebar-desktop { display: none !important; }
 
-          /* Header buttons — smaller */
           .sticky .btn, .sticky button {
             font-size: 0.78rem !important;
             padding: 6px 10px !important;
           }
         }
 
-        /* Extra small */
         @media (max-width: 480px) {
           .vs-simple-row .vs-q-text { font-size: 0.82rem !important; }
         }
@@ -1354,7 +1363,6 @@ export default function ViewSubmissions() {
                       {participantQuestions.map(q => {
                         const isNameField = q.question_text?.includes("שם");
                         const displayValue = isNameField ? selectedParticipant : (participantDetails[q.id] || '-');
-                        // ✅ עריכת T1 למנהל
                         if (isEditMode && isAdmin && !isNameField) {
                           const editedVal = editedPredictions[q.id];
                           const currentVal = editedVal !== undefined ? editedVal : (participantDetails[q.id] || '');
@@ -1441,7 +1449,8 @@ export default function ViewSubmissions() {
                 } else if (button.sectionKey.startsWith('qual_')) {
                   const tableId = button.sectionKey.replace('qual_', '');
                   const table = qualifiersTables.find(t => t.id === tableId);
-                  if (table) return <div key={button.sectionKey} className="mb-6">{renderQualifiersTable(table)}</div>;
+                  // 🌍 במונדיאל T16/T17 — תצוגת שאלות מלאה (כולל כן/לא), שאר העולות — רשימת קבוצות
+                  if (table) return <div key={button.sectionKey} className="mb-6">{isWC && (table.id === 'T16' || table.id === 'T17') ? renderSpecialQuestions(table) : renderQualifiersTable(table)}</div>;
                 } else if (button.sectionKey === 'israeli' && israeliTable) {
                   return <div key="israeli-section" className="mb-6"><RoundTableReadOnly table={israeliTable} teams={data.teams} predictions={getCombinedPredictionsMap()} isEditMode={isEditMode && isAdmin} handlePredictionEdit={handlePredictionEdit} /></div>;
                 } else if (button.sectionKey === 'locations') {
