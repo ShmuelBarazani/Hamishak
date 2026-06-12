@@ -38,8 +38,8 @@ export default function ManageGameParticipants() {
     try {
       const [user, users, gameParticipants] = await Promise.all([
         supabase.auth.getUser().then(r => r.data.user),
-        db.GameParticipant.filter({}),
-        currentGame ? db.GameParticipant.filter({ game_id: currentGame.id }, null, 100) : Promise.resolve([])
+        db.GameParticipant.filter({}, null, 5000),
+        currentGame ? db.GameParticipant.filter({ game_id: currentGame.id }, null, 2000) : Promise.resolve([])
       ]);
       setCurrentUser(user);
       setAllUsers(users);
