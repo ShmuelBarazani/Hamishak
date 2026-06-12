@@ -209,7 +209,9 @@ export default function LeaderboardNew() {
         if (rankRow?.current_score != null) totalScore = rankRow.current_score;
       } catch { /* fallback to calcTotal */ }
 
-      const LOCATION_TABLE_IDS = ['T14', 'T15', 'T16', 'T17', 'T19'];
+      // 🌍 במונדיאל אין טבלאות מיקומים — T14/T15/T19 הן שאלות רגילות/עולות
+      const isWC = currentGame?.id === '30032806-6216-496f-ac32-fb628e181742';
+      const LOCATION_TABLE_IDS = isWC ? [] : ['T14', 'T15', 'T16', 'T17', 'T19'];
       const LOCATION_DEFAULTS  = {
         T14: 'מקומות 1-8 — שלב הבתים',
         T15: 'מקומות 9-16 — שלב הבתים',
@@ -347,7 +349,11 @@ export default function LeaderboardNew() {
       const qualifyingSections = sortedTableIds.map((tableId, idx) => {
         const { tSlots, advSet, allResultsIn } = tableMetaMap[tableId];
         const count = tSlots.length;
-        const bonusPoints = count >= 8 ? 16 : count >= 4 ? 12 : count >= 2 ? 6 : 0;
+        // 🌍 בונוסים במונדיאל לפי טבלה; אחרת לפי גודל (UCL)
+        const WC_BONUS = { T16: 24, T17: 6, T19: 16, T21: 16, T23: 8, T25: 8 };
+        const bonusPoints = isWC
+          ? (WC_BONUS[tableId] || 0)
+          : (count >= 8 ? 16 : count >= 4 ? 12 : count >= 2 ? 6 : 0);
         const cfg = { count, bonus: bonusPoints };
 
         const prevCompleteTables = sortedTableIds
@@ -591,6 +597,7 @@ export default function LeaderboardNew() {
       >
         <DialogContent
           dir="rtl"
+          className="[&>button]:left-4 [&>button]:right-auto [&>button]:top-4"
           style={{
             maxWidth: '52vw', width: '52vw',
             maxHeight: '82vh', height: '82vh',
@@ -631,9 +638,9 @@ export default function LeaderboardNew() {
               </div>
             ) : (
               <>
-              {participantDetails?.qualifyingSections?.length > 0 && (
+              {participantDetails?.qualifyingSections?.filter(s => s.hasAnyResult).length > 0 && (
                 <div style={{ padding:'8px 16px 4px' }}>
-                  {participantDetails.qualifyingSections.map(sec => {
+                  {participantDetails.qualifyingSections.filter(s => s.hasAnyResult).map(sec => {
                     const { bonusEarned, bonusImpossible } = sec;
 
                     // ✅ צבע וטקסט בונוס:
