@@ -474,6 +474,39 @@ export default function PredictionForm() {
     );
   };
 
+  // 🌍 מונדיאל: ראש בית וסגנית — שורה אחת לכל בית
+  const renderWCGroupLeaders = (table) => {
+    const groupName = (q) => (q?.question_text || '').split('—')[0].trim();
+    const rows = [];
+    for (let g = 1; g <= 12; g++) {
+      const winner = table.questions.find(q => q.question_id === String(g * 2 - 1));
+      const runner = table.questions.find(q => q.question_id === String(g * 2));
+      if (winner || runner) rows.push({ g, winner, runner });
+    }
+    const pts = table.questions[0]?.possible_points || 15;
+    return (
+      <Card style={{ background: 'var(--bg3-60)', border: '1px solid rgba(249,115,22,0.25)', backdropFilter: 'blur(10px)' }}>
+        <CardHeader className="py-3"><CardTitle style={{ color: '#f97316' }}>📋 {table.description}</CardTitle></CardHeader>
+        <CardContent className="p-3">
+          <div style={{ display: 'grid', gridTemplateColumns: '64px 1fr 1fr', gap: '6px', alignItems: 'center', padding: '4px 8px', marginBottom: '4px' }}>
+            <span style={{ fontSize: '0.7rem', color: '#94a3b8', fontWeight: 700 }}>בית</span>
+            <span style={{ fontSize: '0.7rem', color: '#94a3b8', fontWeight: 700, textAlign: 'center' }}>ראש בית ({pts} נק')</span>
+            <span style={{ fontSize: '0.7rem', color: '#94a3b8', fontWeight: 700, textAlign: 'center' }}>סגנית ({pts} נק')</span>
+          </div>
+          <div className="space-y-2">
+            {rows.map(({ g, winner, runner }) => (
+              <div key={g} style={{ display: 'grid', gridTemplateColumns: '64px 1fr 1fr', gap: '6px', alignItems: 'center', padding: '7px 8px', borderRadius: '8px', border: '1px solid rgba(249,115,22,0.12)', background: 'rgba(0,0,0,0.22)' }}>
+                <Badge variant="outline" className="justify-center text-xs h-6" style={{ borderColor: 'rgba(249,115,22,0.5)', color: '#fb923c' }}>{groupName(winner || runner)}</Badge>
+                <div style={{ minWidth: 0 }}>{winner ? renderSelectWithLogos(winner, predictions[winner.id] || "", (val) => handlePredictionChange(winner.id, val), "w-full") : <span />}</div>
+                <div style={{ minWidth: 0 }}>{runner ? renderSelectWithLogos(runner, predictions[runner.id] || "", (val) => handlePredictionChange(runner.id, val), "w-full") : <span />}</div>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+    );
+  };
+
   const renderSpecialQuestions = (table) => {
     if (table.id === 'T_TOP_FINISHERS' || table.id === 'T_THIRD_PLACE') return renderTopFinishersOrThirdPlace(table);
     if (table.description.includes('T10') || table.id === 'T10') return renderT10Questions(table);
@@ -652,7 +685,7 @@ export default function PredictionForm() {
     if (button.sectionKey === 'israeli' && israeliTable) return (<div key="israeli-section" className="mb-6"><RoundTable table={israeliTable} teams={teams} predictions={predictions} onPredictionChange={handlePredictionChange} cardStyle={{ background: 'var(--bg3-60)', border: '1px solid var(--tp-20)', backdropFilter: 'blur(10px)' }} titleStyle={{ color: 'var(--tp)' }} questionRowStyle={{ background: 'rgba(0,0,0,0.25)', border: '1px solid var(--tp-10)' }} questionRowHoverClass="hover:bg-cyan-900/20 hover:border-cyan-700/50" badgeStyle={{ borderColor: 'var(--tp-50)', color: 'var(--tp)' }} questionTextStyle={{ color: '#94a3b8' }} inputStyle={{ background: 'rgba(0,0,0,0.35)', border: '1px solid var(--tp-20)', color: '#f8fafc' }} /></div>);
     if (button.sectionKey === 'locations') return (<div key="locations-section" className="mb-6 grid grid-cols-1 md:grid-cols-2 gap-6">{locationTables.map(table => renderSpecialQuestions(table))}</div>);
     if (button.sectionKey === 'playoffWinners' && playoffWinnersTable) return (<div key="playoff-winners-section" className="mb-6">{renderSpecialQuestions(playoffWinnersTable)}</div>);
-    if (button.sectionKey.startsWith('qual_')) { const tableId = button.sectionKey.replace('qual_', ''); const table = qualifiersTables.find(t => t.id === tableId); if (!table) return null; return (<div key={button.sectionKey} className="mb-6">{renderSpecialQuestions(table)}</div>); }
+    if (button.sectionKey.startsWith('qual_')) { const tableId = button.sectionKey.replace('qual_', ''); const table = qualifiersTables.find(t => t.id === tableId); if (!table) return null; const isWCT16 = currentGame?.id === '30032806-6216-496f-ac32-fb628e181742' && table.id === 'T16'; return (<div key={button.sectionKey} className="mb-6">{isWCT16 ? renderWCGroupLeaders(table) : renderSpecialQuestions(table)}</div>); }
     const specificSpecialTable = specialTables.find(t => t.id === button.key);
     if (specificSpecialTable) return (<div key={specificSpecialTable.id} className="mb-6">{renderSpecialQuestions(specificSpecialTable)}</div>);
     return null;
