@@ -1655,7 +1655,7 @@ function ParticipantSearchSelect({ participants, selected, onSelect }) {
   };
 
   return (
-    <div ref={ref} style={{ position: 'relative', width: '230px' }}>
+    <div ref={ref} style={{ position: 'relative', width: '230px', zIndex: open ? 500 : 'auto', isolation: 'isolate' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '4px', height: '34px', padding: '0 10px', borderRadius: '6px', background: 'rgba(15,23,42,0.6)', border: '1px solid rgba(6,182,212,0.3)' }}>
         <input
           value={open ? query : (selected || '')}
@@ -1671,7 +1671,7 @@ function ParticipantSearchSelect({ participants, selected, onSelect }) {
         <span onClick={() => { setOpen(o => !o); setQuery(''); }} style={{ cursor: 'pointer', color: '#64748b', fontSize: '0.65rem' }}>▼</span>
       </div>
       {open && (
-        <div ref={listRef} style={{ position: 'absolute', top: '100%', right: 0, zIndex: 120, width: '100%', maxHeight: '300px', overflowY: 'auto', background: '#1e293b', border: '1px solid rgba(6,182,212,0.4)', borderRadius: '8px', marginTop: '4px', boxShadow: '0 8px 24px rgba(0,0,0,0.6)' }}>
+        <div ref={listRef} style={{ position: 'absolute', top: '100%', right: 0, zIndex: 9999, width: '100%', maxHeight: '300px', overflowY: 'auto', backgroundColor: '#0b1220', backgroundImage: 'linear-gradient(180deg, #0f1a2e 0%, #0b1220 100%)', border: '1px solid rgba(6,182,212,0.5)', borderRadius: '8px', marginTop: '4px', boxShadow: '0 12px 32px rgba(0,0,0,0.85)' }}>
           {filtered.length === 0 ? (
             <div style={{ padding: '10px 12px', color: '#64748b', fontSize: '0.82rem', textAlign: 'right' }}>לא נמצאו שמות מתאימים</div>
           ) : filtered.map((p, i) => (
