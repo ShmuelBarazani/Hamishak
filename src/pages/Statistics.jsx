@@ -1168,6 +1168,10 @@ export default function Statistics() {
       let tables=[];
       if(type==='rounds') tables=specificId?roundTables.filter(t=>t.id===specificId):roundTables;
       else if(type==='israeli') tables=israeliTable?[israeliTable]:[];
+      else if(type==='day'){
+        const dayMatches=matchesByDay[specificId]||[];
+        if(dayMatches.length>0) tables=[{id:`day_${specificId}`,description:'משחקי היום',questions:dayMatches.map(m=>m.q)}];
+      }
       if(!tables.length){setGameStats({});return;}
       const predByQ=new Map();
       allPredictions.forEach(p=>{if(!predByQ.has(p.question_id))predByQ.set(p.question_id,[]);predByQ.get(p.question_id).push(p);});
@@ -1191,7 +1195,7 @@ export default function Statistics() {
       }
       setGameStats(gsd);
     } catch(e){console.error(e);}
-  },[roundTables,israeliTable,allPredictions]);
+  },[roundTables,israeliTable,allPredictions,matchesByDay]);
 
   const analyzeOutcomes = useCallback(chartData=>chartData.reduce((acc,e)=>{
     if(e.name?.includes('-')){const p=e.name.split('-').map(x=>parseInt(x.trim()));if(!isNaN(p[0])&&!isNaN(p[1])){if(p[0]>p[1])acc.homeWins+=e.value;else if(p[0]===p[1])acc.draws+=e.value;else acc.awayWins+=e.value;}}
@@ -1372,7 +1376,7 @@ export default function Statistics() {
       return;
     }
     if(selectedSection==='movers'){ if(moversData===null) loadMovers(); return; }
-    if(selectedSection.startsWith('day_')) return;
+    if(selectedSection.startsWith('day_')){ calculateGameStats('day',selectedSection.replace('day_','')); return; }
     if(selectedSection.startsWith('round_')){
       const tId=selectedSection.replace('round_','');
       if(tId==='all') calculateGameStats('rounds');
@@ -1653,7 +1657,7 @@ export default function Statistics() {
               </div>
             </div>
 
-            {/* 📅 Day view */}
+            {/* 📅 Day view — סיכום + סטטיסטיקות מלאות לכל משחקי היום */}
             {isDaySection&&renderDayView()}
 
             {/* 🔥 Movers */}
@@ -1691,9 +1695,9 @@ export default function Statistics() {
               </div>
             )}
 
-            {/* ⚽ משחקים */}
-            {isRoundsSection&&(
-              <div className="space-y-6">
+            {/* ⚽ משחקים — שלבים וגם ימים מהלוח */}
+            {(isRoundsSection||(isDaySection&&(matchesByDay[selectedSection.replace('day_','')]||[]).length>0))&&(
+              <div className="space-y-6" style={isDaySection?{marginTop:'16px'}:undefined}>
                 {gameStats!==null?(
                   <>
                     <div className="grid md:grid-cols-3 gap-4">
