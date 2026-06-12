@@ -584,7 +584,7 @@ export default function ViewSubmissions() {
   };
 
   const renderReadOnlySelect = (question, originalValue) => {
-    const isTeamsList = question.validation_list?.toLowerCase().includes('קבוצ');
+    const isTeamsList = question.validation_list?.toLowerCase().includes('קבוצ') || question.validation_list?.toLowerCase().includes('נבחר');
     // 🌍 LOC_IDS ריק במונדיאל
     const isLocationQuestion = LOC_IDS.includes(question.table_id);
 
@@ -851,6 +851,44 @@ export default function ViewSubmissions() {
     return { advancingSet, eliminatedSet };
   };
 
+  // 🌍 מונדיאל: ראש בית וסגנית — שורה אחת לכל בית
+  const renderWCGroupLeaders = (table) => {
+    const groupName = (q) => (q?.question_text || '').split('—')[0].trim();
+    const rows = [];
+    for (let g = 1; g <= 12; g++) {
+      const winner = table.questions.find(q => q.question_id === String(g * 2 - 1));
+      const runner = table.questions.find(q => q.question_id === String(g * 2));
+      if (winner || runner) rows.push({ g, winner, runner });
+    }
+    return (
+      <Card style={{ background: 'rgba(30,41,59,0.6)', border: '1px solid rgba(249,115,22,0.25)', backdropFilter: 'blur(10px)' }}>
+        <CardHeader className="py-3"><CardTitle style={{ color: '#f97316' }}>📋 {table.description}</CardTitle></CardHeader>
+        <CardContent className="p-3">
+          <div style={{ display:'grid', gridTemplateColumns:'64px 1fr 48px 1fr 48px', gap:'5px', alignItems:'center', padding:'4px 8px', marginBottom:'4px' }}>
+            <span style={{ fontSize:'0.7rem', color:'#94a3b8', fontWeight:700 }}>בית</span>
+            <span style={{ fontSize:'0.7rem', color:'#94a3b8', fontWeight:700, textAlign:'center' }}>ראש בית</span>
+            <span />
+            <span style={{ fontSize:'0.7rem', color:'#94a3b8', fontWeight:700, textAlign:'center' }}>סגנית</span>
+            <span />
+          </div>
+          <div className="space-y-2">
+            {rows.map(({ g, winner, runner }) => {
+              const wVal = winner ? (editedPredictions[winner.id] !== undefined ? editedPredictions[winner.id] : (participantPredictions[winner.id] || '')) : '';
+              const rVal = runner ? (editedPredictions[runner.id] !== undefined ? editedPredictions[runner.id] : (participantPredictions[runner.id] || '')) : '';
+              return (
+                <div key={g} style={{ display:'grid', gridTemplateColumns:'64px 1fr 48px 1fr 48px', gap:'5px', alignItems:'center', padding:'7px 8px', borderRadius:'8px', background:'rgba(15,23,42,0.4)', border:'1px solid rgba(249,115,22,0.12)' }}>
+                  <Badge variant="outline" className="justify-center text-xs h-6" style={{ borderColor:'rgba(249,115,22,0.5)', color:'#fb923c' }}>{groupName(winner || runner)}</Badge>
+                  {winner ? <div className="contents">{renderReadOnlySelect(winner, wVal)}</div> : <><span /><span /></>}
+                  {runner ? <div className="contents">{renderReadOnlySelect(runner, rVal)}</div> : <><span /><span /></>}
+                </div>
+              );
+            })}
+          </div>
+        </CardContent>
+      </Card>
+    );
+  };
+
   const renderQualifiersTable = (table) => {
     const cfg = ADVANCING_CONFIG_VS[table.id];
     const advCount = cfg ? cfg.count : 999;
@@ -933,6 +971,7 @@ export default function ViewSubmissions() {
               <div key={i} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'8px 10px', borderRadius:'8px', background: bg, border:`1px solid ${border}`, gap:'8px' }}>
                 <div style={{ display:'flex', alignItems:'center', gap:'6px', minWidth:0 }}>
                   <span style={{ fontSize:'0.9rem', flexShrink:0 }}>{pred ? icon : '—'}</span>
+                  {(() => { const t = data.teams[pred] || data.teams[(pred || '').replace(/\s*\([^)]+\)\s*$/, '').trim()]; return t?.logo_url ? <img src={t.logo_url} alt={pred} style={{ width:18, height:18, borderRadius:'50%', flexShrink:0 }} onError={e => e.target.style.display='none'} /> : null; })()}
                   <span style={{ fontSize:'0.84rem', fontWeight: isAdv ? 700 : 500, color, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
                     {pred || <span style={{ color:'#475569' }}>לא מולא</span>}
                   </span>
@@ -1448,7 +1487,7 @@ export default function ViewSubmissions() {
                   const tableId = button.sectionKey.replace('qual_', '');
                   const table = qualifiersTables.find(t => t.id === tableId);
                   // 🌍 במונדיאל T16/T17 — תצוגת שאלות מלאה (כולל כן/לא), שאר העולות — רשימת קבוצות
-                  if (table) return <div key={button.sectionKey} className="mb-6">{isWC && (table.id === 'T16' || table.id === 'T17') ? renderSpecialQuestions(table) : renderQualifiersTable(table)}</div>;
+                  if (table) return <div key={button.sectionKey} className="mb-6">{isWC && table.id === 'T16' ? renderWCGroupLeaders(table) : isWC && table.id === 'T17' ? renderSpecialQuestions(table) : renderQualifiersTable(table)}</div>;
                 } else if (button.sectionKey === 'israeli' && israeliTable) {
                   return <div key="israeli-section" className="mb-6"><RoundTableReadOnly table={israeliTable} teams={data.teams} predictions={getCombinedPredictionsMap()} isEditMode={isEditMode && isAdmin} handlePredictionEdit={handlePredictionEdit} /></div>;
                 } else if (button.sectionKey === 'locations') {
