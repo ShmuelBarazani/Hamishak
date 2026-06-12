@@ -59,6 +59,8 @@ export default function ViewSubmissions() {
   const [data, setData] = useState({ predictions: [], questions: [], teams: [], validationLists: [], locationPredsByTableQ: {}, locationActualsByTableQ: {} });
   const [selectedParticipant, setSelectedParticipant] = useState(null);
   const [openSections, setOpenSections] = useState({});
+  const [openMenuGroups, setOpenMenuGroups] = useState({ rounds:true, groups:true, playoff:true, league:true, special:false, qualifiers:false, other:true });
+  const toggleMenuGroup = k => setOpenMenuGroups(prev=>({...prev,[k]:!prev[k]}));
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [deletingParticipant, setDeletingParticipant] = useState(null);
   const [participantStats, setParticipantStats] = useState([]);
@@ -1198,13 +1200,13 @@ export default function ViewSubmissions() {
 
   const renderSidebar = () => {
     const groupMap = {
-      playoff:    { label: '⚽ משחקי פלייאוף', color: '#3b82f6', bg: 'rgba(59,130,246,0.10)',  border: 'rgba(59,130,246,0.30)',  activeBg: '#2563eb',  activeShadow: '0 2px 10px rgba(59,130,246,0.44)' },
-      league:     { label: '⚽ משחקי ליגה',    color: '#3b82f6', bg: 'rgba(59,130,246,0.10)',  border: 'rgba(59,130,246,0.30)',  activeBg: '#2563eb',  activeShadow: '0 2px 10px rgba(59,130,246,0.44)' },
-      groups:     { label: '🏠 שלב הבתים',     color: '#06b6d4', bg: 'rgba(6,182,212,0.10)',   border: 'rgba(6,182,212,0.30)',   activeBg: '#0891b2',  activeShadow: '0 2px 10px rgba(6,182,212,0.44)'  },
-      rounds:     { label: '⚽ מחזורים',        color: '#06b6d4', bg: 'rgba(6,182,212,0.10)',   border: 'rgba(6,182,212,0.30)',   activeBg: '#0891b2',  activeShadow: '0 2px 10px rgba(6,182,212,0.44)'  },
-      special:    { label: '✨ שאלות מיוחדות', color: '#8b5cf6', bg: 'rgba(139,92,246,0.10)', border: 'rgba(139,92,246,0.30)', activeBg: '#7c3aed',  activeShadow: '0 2px 10px rgba(139,92,246,0.44)' },
-      qualifiers: { label: '📋 רשימות עולות',  color: '#f97316', bg: 'rgba(249,115,22,0.10)',  border: 'rgba(249,115,22,0.30)',  activeBg: '#ea580c',  activeShadow: '0 2px 10px rgba(249,115,22,0.44)' },
-      other:      { label: '📌 נוסף',           color: '#64748b', bg: 'rgba(100,116,139,0.08)', border: 'rgba(100,116,139,0.20)', activeBg: '#475569',  activeShadow: '0 2px 8px rgba(100,116,139,0.30)'  },
+      playoff:    { label: '⚔️ נוקאאוט',        color: '#3b82f6', activeBg: '#2563eb' },
+      league:     { label: '⚽ משחקי ליגה',     color: '#3b82f6', activeBg: '#2563eb' },
+      groups:     { label: '🏠 שלב הבתים',     color: '#06b6d4', activeBg: '#0891b2' },
+      rounds:     { label: '⚽ מחזורים',        color: '#06b6d4', activeBg: '#0891b2' },
+      special:    { label: '✨ שאלות מיוחדות', color: '#8b5cf6', activeBg: '#7c3aed' },
+      qualifiers: { label: '📋 רשימות עולות',  color: '#f97316', activeBg: '#ea580c' },
+      other:      { label: '📌 נוסף',           color: '#64748b', activeBg: '#475569' },
     };
     const grouped = {};
     allButtons.forEach(btn => {
@@ -1215,24 +1217,44 @@ export default function ViewSubmissions() {
     const order = ['rounds','league','groups','playoff','special','qualifiers','other'];
     const sortedGroups = order.filter(t => grouped[t]);
     return (
-      <aside style={{ width:'215px', flexShrink:0, position:'sticky', top:'70px', alignSelf:'flex-start', maxHeight:'calc(100vh - 90px)', overflowY:'auto', paddingBottom:'16px' }}>
-        <div style={{ background:'rgba(13,18,30,0.9)', borderRadius:'12px', border:'1px solid rgba(6,182,212,0.12)', padding:'14px 10px', backdropFilter:'blur(10px)' }}>
-          <div style={{ fontSize:'0.5rem', fontWeight:'800', letterSpacing:'0.18em', textTransform:'uppercase', color:'#334155', marginBottom:'14px', paddingRight:'2px' }}>בחירת שלב</div>
+      <aside style={{ width:'250px', flexShrink:0, position:'sticky', top:'70px', alignSelf:'flex-start', maxHeight:'calc(100vh - 90px)', overflowY:'auto', paddingBottom:'16px' }}>
+        <div style={{ background:'rgba(13,18,30,0.92)', borderRadius:'14px', border:'1px solid rgba(6,182,212,0.15)', padding:'12px 10px', backdropFilter:'blur(10px)' }}>
+          <div style={{ fontSize:'0.55rem', fontWeight:'800', letterSpacing:'0.18em', textTransform:'uppercase', color:'#334155', marginBottom:'10px', paddingRight:'2px' }}>בחירת שלב</div>
           {sortedGroups.map(type => {
             const info = groupMap[type] || groupMap.other;
+            const open = openMenuGroups[type] !== false;
+            const gridBtns = grouped[type].filter(b => b.houseGrid);
+            const listBtns = grouped[type].filter(b => !b.houseGrid);
             return (
-              <div key={type} style={{ marginBottom:'14px' }}>
-                <div style={{ fontSize:'0.55rem', fontWeight:'700', letterSpacing:'0.08em', textTransform:'uppercase', color:info.color, marginBottom:'5px', paddingRight:'2px', opacity:0.85 }}>{info.label}</div>
-                <div style={{ display:'flex', flexDirection:'column', gap:'3px' }}>
-                  {grouped[type].map(btn => {
-                    const active = openSections[btn.sectionKey];
-                    return (
-                      <button key={btn.key} onClick={() => toggleSection(btn.sectionKey)} style={{ display:'block', width:'100%', textAlign:'right', padding:'7px 10px', borderRadius:'8px', fontSize:'0.8rem', fontWeight: active ? '700' : '400', color: active ? 'white' : info.color, background: active ? info.activeBg : info.bg, border:`1px solid ${active ? info.color : info.border}`, cursor:'pointer', transition:'all 0.15s', boxShadow: active ? (info.activeShadow || `0 2px 10px ${info.color}44`) : 'none', fontFamily:'Rubik, Heebo, sans-serif', lineHeight:'1.35' }}>
-                        {btn.description}
-                      </button>
-                    );
-                  })}
+              <div key={type} style={{ marginBottom:'8px' }}>
+                <div onClick={() => toggleMenuGroup(type)} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'8px 10px', borderRadius:10, cursor:'pointer', userSelect:'none', fontWeight:700, fontSize:'0.85rem', color:info.color, background:`${info.color}1A`, border:`1px solid ${info.color}40` }}>
+                  <span>{info.label}</span>
+                  <span style={{ fontSize:'0.6rem', transform:open?'rotate(90deg)':'none', transition:'transform 0.2s' }}>◀</span>
                 </div>
+                {open && (
+                  <div style={{ padding:'8px 2px 2px' }}>
+                    {gridBtns.length > 0 && (
+                      <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:5, marginBottom: listBtns.length>0?6:0 }}>
+                        {gridBtns.map(btn => {
+                          const active = openSections[btn.sectionKey];
+                          return (
+                            <button key={btn.key} onClick={() => toggleSection(btn.sectionKey)} title={btn.fullDescription} style={{ textAlign:'center', padding:'7px 0', borderRadius:8, fontSize:'0.8rem', fontWeight:active?700:500, color:active?'#fff':'#67e8f9', background:active?info.activeBg:'rgba(6,182,212,0.08)', border:`1px solid ${active?info.color:'rgba(6,182,212,0.25)'}`, cursor:'pointer', transition:'all 0.12s', boxShadow:active?`0 0 8px ${info.color}80`:'none', fontFamily:'Rubik,Heebo,sans-serif' }}>
+                              {btn.description}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                    {listBtns.map(btn => {
+                      const active = openSections[btn.sectionKey];
+                      return (
+                        <button key={btn.key} onClick={() => toggleSection(btn.sectionKey)} style={{ display:'block', width:'100%', textAlign:'right', padding:'7px 10px', marginBottom:4, borderRadius:'8px', fontSize:'0.78rem', fontWeight: active ? '700' : '400', color: active ? 'white' : info.color, background: active ? info.activeBg : `${info.color}12`, border:`1px solid ${active ? info.color : `${info.color}40`}`, cursor:'pointer', transition:'all 0.15s', boxShadow: active ? `0 0 10px ${info.color}55` : 'none', fontFamily:'Rubik, Heebo, sans-serif', lineHeight:'1.35' }}>
+                          {btn.description}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             );
           })}
@@ -1246,9 +1268,12 @@ export default function ViewSubmissions() {
   if (roundTables.length > 0) {
     const allAreGroups = roundTables.every(table => table.id.startsWith('בית') || table.description?.startsWith('בית'));
     if (allAreGroups) {
-      const firstRoundTableId = roundTables[0]?.id || 'T2';
-      const description = 'שלב הבתים';
-      allButtons.push({ numericId: 0, key:'rounds', description, sectionKey:'rounds', stageType:'rounds', isLongText: description.length > TEXT_LENGTH_THRESHOLD });
+      // 🏠 גריד בתים — כפתור לכל בית + כפתור מסכם
+      roundTables.forEach((table, idx) => {
+        const short = String(table.description || table.id).replace(/^בית\s*/, '').trim() || table.id;
+        allButtons.push({ numericId: idx, key:`round_${table.id}`, description: short, fullDescription: table.description || table.id, sectionKey:`round_${table.id}`, stageType:'groups', houseGrid:true, isLongText:false });
+      });
+      allButtons.push({ numericId: 990, key:'rounds', description:'📊 כל הבתים + טבלת ניקוד', sectionKey:'rounds', stageType:'groups', isLongText:false });
     } else {
       roundTables.forEach(table => {
         const description = table.description || table.id;
@@ -1329,7 +1354,7 @@ export default function ViewSubmissions() {
         }
       `}</style>
       <div className="sticky top-0 z-30 backdrop-blur-sm shadow-lg" style={{ background: 'rgba(15,23,42,0.95)', borderBottom: '1px solid rgba(6,182,212,0.2)' }}>
-        <div className="p-3 md:p-6 max-w-7xl mx-auto">
+        <div className="p-3 md:p-6 w-full">
           <div className="flex flex-col md:flex-row justify-between items-start gap-2 md:gap-0 mb-3 md:mb-4">
             <div>
               <h1 className="text-xl md:text-3xl font-bold mb-1 md:mb-2 flex items-center gap-2 md:gap-3" style={{ color:'#f8fafc', textShadow:'0 0 10px rgba(6,182,212,0.3)' }}>
@@ -1433,7 +1458,7 @@ export default function ViewSubmissions() {
           <div className="vs-mobile-chips" style={{ display:"block" }}>
             <style>{`@media (min-width: 768px) { .vs-mobile-chips { display: none !important; } }`}</style>
             {selectedParticipant && !loadingPredictions && (specialTables.length > 0 || roundTables.length > 0 || locationTables.length > 0 || israeliTable || playoffWinnersTable || qualifiersTables.length > 0) && (
-              <div style={{ marginBottom:'20px' }}>{renderStageChips(allButtons, openSections, toggleSection)}</div>
+              <div style={{ marginBottom:'20px' }}>{renderStageChips(allButtons.map(b=>b.houseGrid?{...b,description:b.fullDescription||b.description}:b), openSections, toggleSection)}</div>
             )}
           </div>
 
@@ -1446,7 +1471,7 @@ export default function ViewSubmissions() {
         </div>
       </div>
 
-      <div className="p-3 md:p-6 max-w-7xl mx-auto">
+      <div className="p-3 md:p-6 w-full">
         {selectedParticipant && !loadingPredictions ? (
           <div style={{ display:'flex', gap:'20px', alignItems:'flex-start' }}>
             <div style={{ display:'none' }} className="vs-sidebar-desktop">{renderSidebar()}</div>
