@@ -35,6 +35,7 @@ export default function PredictionForm() {
   const [participantName, setParticipantName] = useState("");
   const [participantRecord, setParticipantRecord] = useState(null);
   const [openSections, setOpenSections] = useState({});
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false); // 🆕 תפריט נייד מתקפל
   const [openMenuGroups, setOpenMenuGroups] = useState({ rounds:true, groups:true, playoff:true, league:true, special:false, qualifiers:false, other:true });
   const toggleMenuGroup = k => setOpenMenuGroups(prev=>({...prev,[k]:!prev[k]}));
   const { toast } = useToast();
@@ -681,16 +682,29 @@ export default function PredictionForm() {
       rounds:     { color: 'var(--tp)', bg: 'var(--tp-12)',  border: 'var(--tp-35)'  },
       other:      { color: '#64748b', bg: 'rgba(100,116,139,0.10)', border: 'rgba(100,116,139,0.25)' },
     };
+    const openCount = allButtonsList.filter(b => openSectionsMap[b.sectionKey]).length;
     return (
-      <div style={{ padding: '12px', background: 'rgba(0,0,0,0.40)', borderRadius: '12px', border: '1px solid var(--tp-12)', marginBottom: '16px' }}>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-          {allButtonsList.map(button => {
-            const type = button.stageType || 'other';
-            const info = groupMap[type] || groupMap.other;
-            const active = openSectionsMap[button.sectionKey];
-            return (<button key={button.key} onClick={() => toggleSectionFn(button.sectionKey)} style={{ display: 'inline-flex', alignItems: 'center', padding: '5px 11px', borderRadius: '999px', fontSize: '0.78rem', fontWeight: active ? '700' : '400', color: active ? 'white' : info.color, background: active ? info.color : info.bg, border: `1px solid ${active ? info.color : info.border}`, cursor: 'pointer', transition: 'all 0.15s', boxShadow: active ? `0 0 10px ${info.color}66` : 'none', fontFamily: 'Rubik, Heebo, sans-serif', whiteSpace: 'nowrap' }}>{button.description}</button>);
-          })}
-        </div>
+      <div style={{ marginBottom: '16px' }}>
+        {/* בר בחירה מתקפל — חוסך מקום במסך */}
+        <button onClick={() => setMobileMenuOpen(o => !o)} style={{ width:'100%', display:'flex', alignItems:'center', justifyContent:'space-between', padding:'12px 14px', borderRadius:'12px', background:'linear-gradient(135deg, var(--tp-15), var(--tp-05))', border:'1.5px solid var(--tp-45)', cursor:'pointer', WebkitTapHighlightColor:'transparent', touchAction:'manipulation', fontFamily:'Rubik, Heebo, sans-serif' }}>
+          <span style={{ display:'flex', alignItems:'center', gap:8 }}>
+            <span style={{ fontSize:'1.1rem' }}>📋</span>
+            <span style={{ color:'#f8fafc', fontWeight:700, fontSize:'0.95rem' }}>בחירת שלב{openCount>0?` (${openCount} פתוחים)`:''}</span>
+          </span>
+          <span style={{ color:'var(--tp)', fontSize:'0.8rem', transform:mobileMenuOpen?'rotate(180deg)':'none', transition:'transform 0.2s' }}>▼</span>
+        </button>
+        {mobileMenuOpen && (
+          <div style={{ marginTop:8, padding: '12px', background: 'rgba(0,0,0,0.55)', borderRadius: '12px', border: '1px solid var(--tp-12)', maxHeight:'70vh', overflowY:'auto', boxShadow:'0 12px 32px rgba(0,0,0,0.6)' }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+              {allButtonsList.map(button => {
+                const type = button.stageType || 'other';
+                const info = groupMap[type] || groupMap.other;
+                const active = openSectionsMap[button.sectionKey];
+                return (<button key={button.key} onClick={() => toggleSectionFn(button.sectionKey)} style={{ display: 'inline-flex', alignItems: 'center', padding: '9px 13px', borderRadius: '999px', fontSize: '0.82rem', fontWeight: active ? '800' : '500', color: active ? 'white' : info.color, background: active ? info.color : info.bg, border: `1.5px solid ${active ? info.color : info.border}`, cursor: 'pointer', transition: 'all 0.15s', fontFamily: 'Rubik, Heebo, sans-serif', whiteSpace: 'nowrap', WebkitTapHighlightColor:'transparent', touchAction:'manipulation' }}>{button.description}</button>);
+              })}
+            </div>
+          </div>
+        )}
       </div>
     );
   };
