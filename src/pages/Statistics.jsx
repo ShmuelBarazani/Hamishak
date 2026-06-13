@@ -982,10 +982,106 @@ function InsightCard({ insight }) {
 }
 
 // ─── SpecialTeamListChart ─────────────────────────────────────────────────────
-function SpecialTeamListChart({ table, qualifierData, lockedPanel, lockPanel, closePanel }) {
-  const { chartData, advCount, participantsMap } = qualifierData;
+function TeamListBarChart({ chartData, participantsMap, panelKey, accent, lockedPanel, lockPanel, closePanel, compact }) {
   const total = chartData.reduce((s, d) => s + d.count, 0);
-  const panelKey = `special_qual_${table.id}`;
+  return (
+    <>
+      {lockedPanel[panelKey] && (
+        <ParticipantPanel
+          title={lockedPanel[panelKey].title}
+          count={lockedPanel[panelKey].count}
+          percentage={lockedPanel[panelKey].percentage}
+          participants={lockedPanel[panelKey].participants}
+          color={accent}
+          onClose={() => closePanel(panelKey)}
+        />
+      )}
+      {chartData.length > 0 ? (
+        <div dir="ltr">
+          <ResponsiveContainer width="100%" height={Math.max(compact ? 280 : 400, chartData.length * (compact ? 26 : 34))}>
+            <BarChart data={chartData} layout="vertical" margin={{ top: 10, right: 56, left: 0, bottom: 10 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#334155" horizontal={false} />
+              <XAxis type="number" stroke="#94a3b8" tick={{ fontSize: 10, fill: '#94a3b8' }} />
+              <YAxis type="category" dataKey="team" width={compact ? 130 : 190} stroke="#334155" tick={{ fontSize: compact ? 11 : 12, fill: '#f8fafc', fontFamily: 'Rubik,Heebo,sans-serif' }} />
+              <Tooltip
+                cursor={{ fill: `${accent}14` }}
+                content={({ payload }) => payload?.[0] ? (
+                  <div style={{ background: '#0a0f1a', border: `1px solid ${accent}`, borderRadius: 6, padding: '8px 12px', pointerEvents: 'none' }}>
+                    <p style={{ color: accent, fontWeight: 700, fontSize: '0.85rem' }}>{payload[0].payload.team}</p>
+                    <p style={{ color: '#f8fafc', fontSize: '0.8rem' }}>{payload[0].value} בחירות ({total > 0 ? ((payload[0].value / total) * 100).toFixed(1) : 0}%)</p>
+                    <p style={{ color: '#64748b', fontSize: '0.7rem', marginTop: 2 }}>לחץ לנעילה</p>
+                  </div>
+                ) : null}
+              />
+              <Bar
+                dataKey="count"
+                radius={[0, 6, 6, 0]}
+                label={{ position: 'right', fill: '#94a3b8', fontSize: 11, formatter: v => v }}
+                onClick={data => {
+                  const p2 = total > 0 ? ((data.count / total) * 100).toFixed(1) : 0;
+                  lockPanel(panelKey, { title: data.team, count: data.count, percentage: p2, participants: participantsMap[data.team] || [], color: accent });
+                }}
+              >
+                {chartData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} style={{ cursor: 'pointer' }} />)}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      ) : (
+        <div className="text-center py-12" style={{ color: '#94a3b8' }}>אין נתונים עדיין</div>
+      )}
+    </>
+  );
+}
+
+function SpecialTeamListChart({ table, qualifierData, lockedPanel, lockPanel, closePanel }) {
+  const { chartData, advCount, participantsMap, isGroupLeaders, winnersData, runnersData } = qualifierData;
+
+  // 🆕 T16 — שלושה גרפים נפרדים: ראש בית, סגנית, ומשולב
+  if (isGroupLeaders && winnersData && runnersData) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        {/* גרף 1 — ראש בית */}
+        <Card style={{ background: 'rgba(30,41,59,0.6)', border: '1px solid rgba(16,185,129,0.4)' }}>
+          <CardHeader>
+            <CardTitle style={{ color: '#10b981' }}>🥇 ראש בית — מי תסיים ראשונה בבית</CardTitle>
+            <p style={{ fontSize: '0.78rem', color: '#94a3b8', marginTop: 4 }}>12 חריצים • לחץ על קבוצה לנעילת רשימה</p>
+          </CardHeader>
+          <CardContent className="px-2 pb-6">
+            <TeamListBarChart chartData={winnersData.chartData} participantsMap={winnersData.participantsMap}
+              panelKey={`special_qual_${table.id}_win`} accent="#10b981" compact
+              lockedPanel={lockedPanel} lockPanel={lockPanel} closePanel={closePanel} />
+          </CardContent>
+        </Card>
+        {/* גרף 2 — סגנית */}
+        <Card style={{ background: 'rgba(30,41,59,0.6)', border: '1px solid rgba(245,158,11,0.4)' }}>
+          <CardHeader>
+            <CardTitle style={{ color: '#f59e0b' }}>🥈 סגנית — מי תסיים שנייה בבית</CardTitle>
+            <p style={{ fontSize: '0.78rem', color: '#94a3b8', marginTop: 4 }}>12 חריצים • לחץ על קבוצה לנעילת רשימה</p>
+          </CardHeader>
+          <CardContent className="px-2 pb-6">
+            <TeamListBarChart chartData={runnersData.chartData} participantsMap={runnersData.participantsMap}
+              panelKey={`special_qual_${table.id}_run`} accent="#f59e0b" compact
+              lockedPanel={lockedPanel} lockPanel={lockPanel} closePanel={closePanel} />
+          </CardContent>
+        </Card>
+        {/* גרף 3 — משולב (הקיים) */}
+        <Card style={{ background: 'rgba(30,41,59,0.6)', border: '1px solid rgba(139,92,246,0.35)' }}>
+          <CardHeader>
+            <CardTitle style={{ color: '#8b5cf6' }}>📋 משולב — ראש בית + סגנית יחד</CardTitle>
+            <p style={{ fontSize: '0.78rem', color: '#94a3b8', marginTop: 4 }}>{advCount} חריצים • ניתוח כולל ללא תלות במיקום • לחץ על קבוצה לנעילת רשימה</p>
+          </CardHeader>
+          <CardContent className="px-2 pb-6">
+            <TeamListBarChart chartData={chartData} participantsMap={participantsMap}
+              panelKey={`special_qual_${table.id}`} accent="#8b5cf6" compact
+              lockedPanel={lockedPanel} lockPanel={lockPanel} closePanel={closePanel} />
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // ברירת מחדל — גרף יחיד (כל שאר רשימות העולות)
   return (
     <Card style={{ background: 'rgba(30,41,59,0.6)', border: '1px solid rgba(139,92,246,0.35)' }}>
       <CardHeader>
@@ -995,50 +1091,9 @@ function SpecialTeamListChart({ table, qualifierData, lockedPanel, lockPanel, cl
         </p>
       </CardHeader>
       <CardContent className="px-2 pb-6">
-        {lockedPanel[panelKey] && (
-          <ParticipantPanel
-            title={lockedPanel[panelKey].title}
-            count={lockedPanel[panelKey].count}
-            percentage={lockedPanel[panelKey].percentage}
-            participants={lockedPanel[panelKey].participants}
-            color="#8b5cf6"
-            onClose={() => closePanel(panelKey)}
-          />
-        )}
-        {chartData.length > 0 ? (
-          <div dir="ltr">
-            <ResponsiveContainer width="100%" height={Math.max(400, chartData.length * 34)}>
-              <BarChart data={chartData} layout="vertical" margin={{ top: 10, right: 60, left: 0, bottom: 10 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#334155" horizontal={false} />
-                <XAxis type="number" stroke="#94a3b8" tick={{ fontSize: 11, fill: '#94a3b8' }} />
-                <YAxis type="category" dataKey="team" width={190} stroke="#334155" tick={{ fontSize: 12, fill: '#f8fafc', fontFamily: 'Rubik,Heebo,sans-serif' }} />
-                <Tooltip
-                  cursor={{ fill: 'rgba(139,92,246,0.08)' }}
-                  content={({ payload }) => payload?.[0] ? (
-                    <div style={{ background: '#0a0f1a', border: '1px solid #8b5cf6', borderRadius: 6, padding: '8px 12px', pointerEvents: 'none' }}>
-                      <p style={{ color: '#8b5cf6', fontWeight: 700, fontSize: '0.85rem' }}>{payload[0].payload.team}</p>
-                      <p style={{ color: '#f8fafc', fontSize: '0.8rem' }}>{payload[0].value} בחירות ({total > 0 ? ((payload[0].value / total) * 100).toFixed(1) : 0}%)</p>
-                      <p style={{ color: '#64748b', fontSize: '0.7rem', marginTop: 2 }}>לחץ לנעילה</p>
-                    </div>
-                  ) : null}
-                />
-                <Bar
-                  dataKey="count"
-                  radius={[0, 6, 6, 0]}
-                  label={{ position: 'right', fill: '#94a3b8', fontSize: 11, formatter: v => v }}
-                  onClick={data => {
-                    const p2 = total > 0 ? ((data.count / total) * 100).toFixed(1) : 0;
-                    lockPanel(panelKey, { title: data.team, count: data.count, percentage: p2, participants: participantsMap[data.team] || [], color: '#8b5cf6' });
-                  }}
-                >
-                  {chartData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} style={{ cursor: 'pointer' }} />)}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        ) : (
-          <div className="text-center py-12" style={{ color: '#94a3b8' }}>אין נתונים עדיין</div>
-        )}
+        <TeamListBarChart chartData={chartData} participantsMap={participantsMap}
+          panelKey={`special_qual_${table.id}`} accent="#8b5cf6"
+          lockedPanel={lockedPanel} lockPanel={lockPanel} closePanel={closePanel} />
       </CardContent>
     </Card>
   );
@@ -1407,8 +1462,13 @@ export default function Statistics() {
         if(group==='qualifier'){
           const cfg = ADVANCING_CONFIG[table.id] || null;
           const slots=table.questions.filter(q=>{const n=parseFloat(q.question_id);return Number.isInteger(n)&&n>=1;});
+          // מיפוי question.id → question_id המספרי (לזיהוי ראש בית/סגנית)
+          const slotQNum={}; slots.forEach(s=>{slotQNum[s.id]=parseInt(parseFloat(s.question_id),10);});
           const slotIds=new Set(slots.map(s=>s.id));
+          // 🆕 T16 מונדיאל: אי-זוגי=ראש בית, זוגי=סגנית
+          const isGroupLeaders = isWC && table.id==='T16';
           const teamCounts={}, participantsMap={};
+          const winCounts={}, winPM={}, runCounts={}, runPM={};
           allPredictions.forEach(p=>{
             if(!slotIds.has(p.question_id)) return;
             const rawText=(!p.text_prediction?.trim()&&p.home_prediction!=null&&p.away_prediction!=null)
@@ -1419,12 +1479,20 @@ export default function Statistics() {
             teamCounts[team]=(teamCounts[team]||0)+1;
             if(!participantsMap[team]) participantsMap[team]=new Set();
             participantsMap[team].add(p.participant_name);
+            if(isGroupLeaders){
+              const qn=slotQNum[p.question_id];
+              if(qn%2===1){ winCounts[team]=(winCounts[team]||0)+1; (winPM[team]=winPM[team]||new Set()).add(p.participant_name); }
+              else        { runCounts[team]=(runCounts[team]||0)+1; (runPM[team]=runPM[team]||new Set()).add(p.participant_name); }
+            }
           });
-          const pm={};
-          Object.entries(participantsMap).forEach(([t,s])=>{pm[t]=[...s].sort((a,b)=>a.localeCompare(b,'he'));});
+          const toSortedPM=(src)=>{const o={};Object.entries(src).forEach(([t,s])=>{o[t]=[...s].sort((a,b)=>a.localeCompare(b,'he'));});return o;};
+          const toChart=(src)=>Object.entries(src).sort((a,b)=>b[1]-a[1]).map(([team,count])=>({team,count}));
           ts.qualifierData={
-            chartData:Object.entries(teamCounts).sort((a,b)=>b[1]-a[1]).map(([team,count])=>({team,count})),
-            cfg, advCount:slots.length||(cfg?cfg.count:0), participantsMap:pm
+            chartData:toChart(teamCounts),
+            cfg, advCount:slots.length||(cfg?cfg.count:0), participantsMap:toSortedPM(participantsMap),
+            isGroupLeaders,
+            winnersData: isGroupLeaders?{chartData:toChart(winCounts),participantsMap:toSortedPM(winPM)}:null,
+            runnersData: isGroupLeaders?{chartData:toChart(runCounts),participantsMap:toSortedPM(runPM)}:null,
           };
 
         } else if(group==='locations'||(!isWC&&['T14','T15','T16','T17'].includes(table.id))){
