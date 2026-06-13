@@ -1316,7 +1316,7 @@ export default function ViewSubmissions() {
   });
 
   return (
-    <div className="min-h-screen" dir="rtl" style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%)', overflowX: 'hidden', maxWidth: '100vw' }}>
+    <div className="min-h-screen" dir="rtl" style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%)', maxWidth: '100vw' }}>
       <style>{`
         /* ── ViewSubmissions mobile fixes ── */
         @media (max-width: 768px) {
@@ -1494,9 +1494,17 @@ export default function ViewSubmissions() {
                 } else if (button.sectionKey.startsWith('round_')) {
                   const tableId = button.sectionKey.replace('round_', '');
                   const table = roundTables.find(t => t.id === tableId);
+                  const isHouse = String(tableId).startsWith('בית');
                   if (table) return (
                     <div key={button.sectionKey} className="mb-6">
-                      <RoundTableReadOnly key={table.id} table={table} teams={data.teams} predictions={getCombinedPredictionsMap()} isEditMode={isEditMode && isAdmin} handlePredictionEdit={handlePredictionEdit} />
+                      {isHouse ? (
+                        <div className="grid grid-cols-1 lg:grid-cols-[1fr_minmax(300px,380px)] gap-4 items-start">
+                          <RoundTableReadOnly key={table.id} table={table} teams={data.teams} predictions={getCombinedPredictionsMap()} isEditMode={isEditMode && isAdmin} handlePredictionEdit={handlePredictionEdit} />
+                          <StandingsTable roundTables={[table]} teams={data.teams} data={getCombinedPredictionsMap()} type="predictions" />
+                        </div>
+                      ) : (
+                        <RoundTableReadOnly key={table.id} table={table} teams={data.teams} predictions={getCombinedPredictionsMap()} isEditMode={isEditMode && isAdmin} handlePredictionEdit={handlePredictionEdit} />
+                      )}
                       {table.specialQuestions && table.specialQuestions.length > 0 && <div className="mt-4">{renderSpecialQuestions({ ...table, questions: table.specialQuestions })}</div>}
                     </div>
                   );
@@ -1715,4 +1723,3 @@ function ParticipantSearchSelect({ participants, selected, onSelect }) {
     </div>
   );
 }
-
