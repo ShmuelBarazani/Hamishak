@@ -1528,6 +1528,17 @@ export default function Statistics() {
 
   const CAL_MONTHS = [ {name:'יוני 2026',y:2026,m:5}, {name:'יולי 2026',y:2026,m:6} ];
   const hasDates = Object.keys(matchesByDay).length>0;
+  // 🆕 תווית קריאה של הסעיף הנבחר (לבר הנייד) — חייב לפני כל early-return!
+  const currentSectionLabel = useMemo(()=>{
+    if(!selectedSection) return null;
+    if(selectedSection.startsWith('day_')) return `📅 ${selectedSection.replace('day_','')}`;
+    for(const g of menuGroups){
+      for(const b of g.buttons){
+        if(b.key===selectedSection) return `${g.label.split(' ')[0]} ${g.grid?`בית ${b.description}`:b.description}`;
+      }
+    }
+    return null;
+  },[selectedSection,menuGroups]);
 
   useEffect(()=>{
     if(!selectedSection||loading||!allQuestions.length) return;
@@ -1570,17 +1581,6 @@ export default function Statistics() {
     </div>
   );
 
-  // 🆕 תווית קריאה של הסעיף הנבחר (לבר הנייד)
-  const currentSectionLabel = useMemo(()=>{
-    if(!selectedSection) return null;
-    if(selectedSection.startsWith('day_')) return `📅 ${selectedSection.replace('day_','')}`;
-    for(const g of menuGroups){
-      for(const b of g.buttons){
-        if(b.key===selectedSection) return `${g.label.split(' ')[0]} ${g.grid?`בית ${b.description}`:b.description}`;
-      }
-    }
-    return null;
-  },[selectedSection,menuGroups]);
   const isRoundsSection  = selectedSection?.startsWith('round_');
   const isQualSection    = selectedSection?.startsWith('qual_');
   const isDaySection     = selectedSection?.startsWith('day_');
