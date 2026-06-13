@@ -481,24 +481,6 @@ function computeInsights(allQuestions, allPredictions, teams) {
   }
 
   // ── 10. מחויבות ──────────────────────────────────────────────────────
-  {
-    const predCount = {};
-    preds.forEach(p=>{predCount[p.participant_name]=(predCount[p.participant_name]||0)+1;});
-    const sorted=Object.entries(predCount).sort((a,b)=>b[1]-a[1]);
-    const maxQ=allQuestions.filter(q=>q.table_id!=='T1').length;
-    if(sorted.length>0){
-      insights.push({
-        id:'participation', icon:'📊', title:'מחויבות — כמה שאלות מולאו',
-        category:'ניתוח משתתפים',
-        color:'#84cc16',
-        summary:`${sorted[0][0]} מילא הכי הרבה שאלות: ${sorted[0][1]}${maxQ>0?`/${maxQ}`:''} `,
-        chartData:sorted.slice(0,15).map(([name,count])=>({name,value:count})),
-        chartType:'bar_h',
-        detail:`מתוך ${maxQ} שאלות במשחק. מי שמילא יותר — יש לו יותר סיכוי לצבור נקודות.`,
-      });
-    }
-  }
-
   // ── 🆕 11. שאלות הרצח 💀 ─────────────────────────────────────────────
   {
     const hard=[];
@@ -700,6 +682,14 @@ function computeInsights(allQuestions, allPredictions, teams) {
     }
   }
 
+  // 🔝 פילוחי המשתתפים (גיל + מקצוע) לראש הרשימה
+  const TOP_ORDER = ['ages','professions'];
+  insights.sort((a,b)=>{
+    const ai=TOP_ORDER.indexOf(a.id), bi=TOP_ORDER.indexOf(b.id);
+    if(ai!==-1||bi!==-1) return (ai===-1?99:ai)-(bi===-1?99:bi);
+    return 0;
+  });
+
   return insights;
 }
 
@@ -830,6 +820,37 @@ function InsightCard({ insight }) {
       );
     }
 
+    if (insight.chartType === 'consensus') {
+      return (
+        <div style={{display:'flex',flexDirection:'column',gap:8,marginTop:8}}>
+          <div>
+            <p style={{color:'#10b981',fontWeight:700,fontSize:'0.8rem',marginBottom:6}}>🤝 הכי מוסכמות:</p>
+            {insight.consensusData?.map((d,i)=>(
+              <div key={i} style={{background:'rgba(16,185,129,0.08)',border:'1px solid rgba(16,185,129,0.25)',borderRadius:6,padding:'6px 10px',marginBottom:4}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                  <span style={{color:'#f8fafc',fontSize:'0.82rem',flex:1,marginLeft:8}}>{d.question?.slice(0,50)}</span>
+                  <Badge style={{background:'#059669',color:'#fff',fontSize:'0.72rem'}}>{d.agreement}% הסכמה</Badge>
+                </div>
+                <p style={{color:'#94a3b8',fontSize:'0.72rem',marginTop:2}}>"{d.topAnswer}" — {d.topCount}/{d.total}</p>
+              </div>
+            ))}
+          </div>
+          <div>
+            <p style={{color:'#ef4444',fontWeight:700,fontSize:'0.8rem',marginBottom:6}}>⚡ הכי שנויות במחלוקת:</p>
+            {insight.disputeData?.map((d,i)=>(
+              <div key={i} style={{background:'rgba(239,68,68,0.08)',border:'1px solid rgba(239,68,68,0.25)',borderRadius:6,padding:'6px 10px',marginBottom:4}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                  <span style={{color:'#f8fafc',fontSize:'0.82rem',flex:1,marginLeft:8}}>{d.question?.slice(0,50)}</span>
+                  <Badge style={{background:'#dc2626',color:'#fff',fontSize:'0.72rem'}}>{d.agreement}% הסכמה</Badge>
+                </div>
+                <p style={{color:'#94a3b8',fontSize:'0.72rem',marginTop:2}}>"{d.topAnswer}" מוביל עם {d.topCount}/{d.total}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
     if (!insight.chartData || insight.chartData.length === 0) return null;
 
     if (insight.chartType === 'pie') {
@@ -883,37 +904,6 @@ function InsightCard({ insight }) {
             </Bar>
           </BarChart>
         </ResponsiveContainer>
-      );
-    }
-
-    if (insight.chartType === 'consensus') {
-      return (
-        <div style={{display:'flex',flexDirection:'column',gap:8,marginTop:8}}>
-          <div>
-            <p style={{color:'#10b981',fontWeight:700,fontSize:'0.8rem',marginBottom:6}}>🤝 הכי מוסכמות:</p>
-            {insight.consensusData?.map((d,i)=>(
-              <div key={i} style={{background:'rgba(16,185,129,0.08)',border:'1px solid rgba(16,185,129,0.25)',borderRadius:6,padding:'6px 10px',marginBottom:4}}>
-                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-                  <span style={{color:'#f8fafc',fontSize:'0.82rem',flex:1,marginLeft:8}}>{d.question?.slice(0,50)}</span>
-                  <Badge style={{background:'#059669',color:'#fff',fontSize:'0.72rem'}}>{d.agreement}% הסכמה</Badge>
-                </div>
-                <p style={{color:'#94a3b8',fontSize:'0.72rem',marginTop:2}}>"{d.topAnswer}" — {d.topCount}/{d.total}</p>
-              </div>
-            ))}
-          </div>
-          <div>
-            <p style={{color:'#ef4444',fontWeight:700,fontSize:'0.8rem',marginBottom:6}}>⚡ הכי שנויות במחלוקת:</p>
-            {insight.disputeData?.map((d,i)=>(
-              <div key={i} style={{background:'rgba(239,68,68,0.08)',border:'1px solid rgba(239,68,68,0.25)',borderRadius:6,padding:'6px 10px',marginBottom:4}}>
-                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-                  <span style={{color:'#f8fafc',fontSize:'0.82rem',flex:1,marginLeft:8}}>{d.question?.slice(0,50)}</span>
-                  <Badge style={{background:'#dc2626',color:'#fff',fontSize:'0.72rem'}}>{d.agreement}% הסכמה</Badge>
-                </div>
-                <p style={{color:'#94a3b8',fontSize:'0.72rem',marginTop:2}}>"{d.topAnswer}" מוביל עם {d.topCount}/{d.total}</p>
-              </div>
-            ))}
-          </div>
-        </div>
       );
     }
 
