@@ -1243,7 +1243,8 @@ export default function Statistics() {
       if(!map[d.key]) map[d.key]=[];
       map[d.key].push({q,time:d.time,day:d.day,mon:d.mon});
     });
-    Object.values(map).forEach(arr=>arr.sort((a,b)=>(a.time||'').localeCompare(b.time||'')));
+    const toMin=t=>{const m=String(t||'').match(/(\d{1,2}):(\d{2})/);return m?(+m[1])*60+(+m[2]):99999;};
+    Object.values(map).forEach(arr=>arr.sort((a,b)=>toMin(a.time)-toMin(b.time)));
     return map;
   },[allQuestions]);
 
