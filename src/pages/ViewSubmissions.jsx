@@ -53,6 +53,79 @@ function ParticipantTotalScore({ participantName, gameId }) {
   );
 }
 
+// ═══ 🆕 טבלת בית צפויה (גדולה וברורה — כמו במסך תוצאות אמת) ═══
+function GroupStandingsVS({ table, teams, predictions }) {
+  const matches = (table.questions || []).filter(q => q.home_team && q.away_team);
+  if (matches.length === 0) return null;
+  const stats = {};
+  const ensure = name => { if (!stats[name]) stats[name] = { name, P:0, W:0, D:0, L:0, GF:0, GA:0, Pts:0 }; return stats[name]; };
+  let playedAny = false;
+  matches.forEach(q => {
+    ensure(q.home_team); ensure(q.away_team);
+    const r = predictions?.[q.id];
+    if (!r || r === '__CLEAR__' || !String(r).includes('-')) return;
+    const [hs, as] = String(r).split('-').map(x => parseInt(x.trim()));
+    if (isNaN(hs) || isNaN(as)) return;
+    playedAny = true;
+    const H = stats[q.home_team], A = stats[q.away_team];
+    H.P++; A.P++; H.GF+=hs; H.GA+=as; A.GF+=as; A.GA+=hs;
+    if (hs>as) { H.W++; H.Pts+=3; A.L++; }
+    else if (hs<as) { A.W++; A.Pts+=3; H.L++; }
+    else { H.D++; A.D++; H.Pts++; A.Pts++; }
+  });
+  const rows = Object.values(stats).sort((a,b) =>
+    b.Pts-a.Pts || (b.GF-b.GA)-(a.GF-a.GA) || b.GF-a.GF || a.name.localeCompare(b.name,'he')
+  );
+  const cleanName = n => String(n).replace(/\s*\([^)]+\)\s*$/, '').trim();
+  return (
+    <div style={{ background:'rgba(13,18,30,0.6)', border:'1px solid rgba(6,182,212,0.2)', borderRadius:12, padding:'12px 14px' }}>
+      <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:10 }}>
+        <span style={{ fontSize:'1.05rem', fontWeight:700, color:'#22d3ee' }}>📊 טבלת {table.description} (צפי)</span>
+        {!playedAny && <span style={{ fontSize:'0.7rem', color:'#64748b' }}>(לפי ניחושי המשתתף)</span>}
+      </div>
+      <table style={{ width:'100%', borderCollapse:'collapse', fontSize:'0.9rem' }} dir="rtl">
+        <thead>
+          <tr style={{ color:'#94a3b8', fontSize:'0.72rem', textAlign:'center' }}>
+            <th style={{ textAlign:'right', padding:'6px 5px', fontWeight:600 }}>#</th>
+            <th style={{ textAlign:'right', padding:'6px 5px', fontWeight:600 }}>נבחרת</th>
+            <th style={{ padding:'6px 4px', fontWeight:600 }} title="משחקים">מש'</th>
+            <th style={{ padding:'6px 4px', fontWeight:600 }} title="ניצחונות">נ</th>
+            <th style={{ padding:'6px 4px', fontWeight:600 }} title="תיקו">ת</th>
+            <th style={{ padding:'6px 4px', fontWeight:600 }} title="הפסדים">ה</th>
+            <th style={{ padding:'6px 4px', fontWeight:600 }} title="הפרש שערים">+/-</th>
+            <th style={{ padding:'6px 4px', fontWeight:700, color:'#22d3ee' }} title="נקודות">נק'</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, i) => {
+            const team = teams?.[row.name];
+            const gd = row.GF - row.GA;
+            const qualifies = i < 2;
+            return (
+              <tr key={row.name} style={{ borderTop:'1px solid rgba(255,255,255,0.05)', textAlign:'center', background: qualifies && playedAny ? 'rgba(16,185,129,0.07)' : 'transparent' }}>
+                <td style={{ textAlign:'right', padding:'7px 5px', color: qualifies?'#34d399':'#64748b', fontWeight:700 }}>{i+1}</td>
+                <td style={{ textAlign:'right', padding:'7px 5px' }}>
+                  <span style={{ display:'inline-flex', alignItems:'center', gap:7 }}>
+                    {team?.logo_url && <img src={team.logo_url} alt="" style={{ width:20, height:20, borderRadius:'50%' }} onError={e=>e.target.style.display='none'} />}
+                    <span style={{ color:'#f8fafc' }}>{cleanName(row.name)}</span>
+                  </span>
+                </td>
+                <td style={{ padding:'7px 4px', color:'#94a3b8' }}>{row.P}</td>
+                <td style={{ padding:'7px 4px', color:'#94a3b8' }}>{row.W}</td>
+                <td style={{ padding:'7px 4px', color:'#94a3b8' }}>{row.D}</td>
+                <td style={{ padding:'7px 4px', color:'#94a3b8' }}>{row.L}</td>
+                <td style={{ padding:'7px 4px', color: gd>0?'#34d399':gd<0?'#f87171':'#94a3b8' }}>{gd>0?`+${gd}`:gd}</td>
+                <td style={{ padding:'7px 4px', color:'#22d3ee', fontWeight:700, fontSize:'0.95rem' }}>{row.Pts}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      {playedAny && <p style={{ fontSize:'0.68rem', color:'#475569', marginTop:8 }}>🟢 2 הראשונות מעפילות אוטומטית (ראש בית + סגנית)</p>}
+    </div>
+  );
+}
+
 export default function ViewSubmissions() {
 
   const [loading, setLoading] = useState(true);
@@ -1218,7 +1291,7 @@ export default function ViewSubmissions() {
     const order = ['rounds','league','groups','playoff','special','qualifiers','other'];
     const sortedGroups = order.filter(t => grouped[t]);
     return (
-      <aside style={{ width:'250px', flexShrink:0, position:'sticky', top:'70px', alignSelf:'flex-start', maxHeight:'calc(100vh - 90px)', overflowY:'auto', paddingBottom:'16px' }}>
+      <aside style={{ width:'250px', maxHeight:'calc(100vh - 90px)', overflowY:'auto', paddingBottom:'16px' }}>
         <div style={{ background:'rgba(13,18,30,0.92)', borderRadius:'14px', border:'1px solid rgba(6,182,212,0.15)', padding:'12px 10px', backdropFilter:'blur(10px)' }}>
           <div style={{ fontSize:'0.55rem', fontWeight:'800', letterSpacing:'0.18em', textTransform:'uppercase', color:'#334155', marginBottom:'10px', paddingRight:'2px' }}>בחירת שלב</div>
           {sortedGroups.map(type => {
@@ -1475,7 +1548,7 @@ export default function ViewSubmissions() {
       <div className="p-3 md:p-6 w-full">
         {selectedParticipant && !loadingPredictions ? (
           <div style={{ display:'flex', gap:'20px', alignItems:'flex-start' }}>
-            <div style={{ display:'none' }} className="vs-sidebar-desktop">{renderSidebar()}</div>
+            <div style={{ display:'none', position:'sticky', top:'70px', alignSelf:'flex-start', flexShrink:0, zIndex:5 }} className="vs-sidebar-desktop">{renderSidebar()}</div>
             <style>{`@media (min-width: 768px) { .vs-sidebar-desktop { display: block !important; } }`}</style>
             <div style={{ flex:1, minWidth:0 }}>
               {allButtons.map(button => {
@@ -1498,9 +1571,9 @@ export default function ViewSubmissions() {
                   if (table) return (
                     <div key={button.sectionKey} className="mb-6">
                       {isHouse ? (
-                        <div className="grid grid-cols-1 lg:grid-cols-[1fr_minmax(300px,380px)] gap-4 items-start">
+                        <div className="grid grid-cols-1 lg:grid-cols-[1fr_minmax(320px,400px)] gap-4 items-start">
                           <RoundTableReadOnly key={table.id} table={table} teams={data.teams} predictions={getCombinedPredictionsMap()} isEditMode={isEditMode && isAdmin} handlePredictionEdit={handlePredictionEdit} />
-                          <StandingsTable roundTables={[table]} teams={data.teams} data={getCombinedPredictionsMap()} type="predictions" />
+                          <GroupStandingsVS table={table} teams={data.teams} predictions={getCombinedPredictionsMap()} />
                         </div>
                       ) : (
                         <RoundTableReadOnly key={table.id} table={table} teams={data.teams} predictions={getCombinedPredictionsMap()} isEditMode={isEditMode && isAdmin} handlePredictionEdit={handlePredictionEdit} />
