@@ -1136,6 +1136,7 @@ export default function Statistics() {
   const [calMonthIdx,      setCalMonthIdx     ] = useState(0);
   const [moversData,       setMoversData      ] = useState(null);
   const [statsParticipant, setStatsParticipant ] = useState(null);  // 🆕 "ההימור שלי"
+  const [mobileMenuOpen,   setMobileMenuOpen  ] = useState(false); // 🆕 תפריט נייד מתקפל
 
   const { currentGame } = useGame();
   const isKnockout = !!(currentGame?.name?.includes('נוק-אאוט')||currentGame?.name?.includes('knock')||currentGame?.id==='9c9c1331-5184-406b-98b3-6becd9577567');
@@ -1569,6 +1570,17 @@ export default function Statistics() {
     </div>
   );
 
+  // 🆕 תווית קריאה של הסעיף הנבחר (לבר הנייד)
+  const currentSectionLabel = useMemo(()=>{
+    if(!selectedSection) return null;
+    if(selectedSection.startsWith('day_')) return `📅 ${selectedSection.replace('day_','')}`;
+    for(const g of menuGroups){
+      for(const b of g.buttons){
+        if(b.key===selectedSection) return `${g.label.split(' ')[0]} ${g.grid?`בית ${b.description}`:b.description}`;
+      }
+    }
+    return null;
+  },[selectedSection,menuGroups]);
   const isRoundsSection  = selectedSection?.startsWith('round_');
   const isQualSection    = selectedSection?.startsWith('qual_');
   const isDaySection     = selectedSection?.startsWith('day_');
@@ -1806,30 +1818,66 @@ export default function Statistics() {
           {/* ── Content ── */}
           <div style={{flex:1,minWidth:0}}>
 
-            {/* ── Mobile: calendar + chips ── */}
-            <div className="stats-mobile-chips" style={{marginBottom:'12px'}}>
-              <style>{`@media(min-width:769px){.stats-mobile-chips{display:none!important}}`}</style>
-              {renderCalendar()}
-              <div style={{display:'flex',flexWrap:'wrap',gap:'6px',padding:'4px 0'}}>
-                {menuGroups.map(group=>group.buttons.map(btn=>{
-                  const active=selectedSection===btn.key;
-                  return(
-                    <button key={btn.key} onClick={()=>toggleSection(btn.key)} style={{
-                      display:'inline-flex',alignItems:'center',
-                      padding:'7px 12px',borderRadius:'999px',
-                      fontSize:'0.82rem',fontWeight:active?800:500,
-                      color:active?'white':group.color,
-                      background:active?group.activeBg:`${group.color}18`,
-                      border:`1.5px solid ${active?group.color:`${group.color}50`}`,
-                      cursor:'pointer',transition:'all 0.15s',
-                      boxShadow:active?`0 0 8px ${group.color}55`:'none',
-                      fontFamily:'Rubik,Heebo,sans-serif',
-                      WebkitTapHighlightColor:'transparent',
-                      touchAction:'manipulation',
-                    }}>{group.grid?`בית ${btn.description}`:btn.description}</button>
-                  );
-                }))}
-              </div>
+            {/* ── Mobile: תפריט מתקפל קומפקטי (חוסך מקום במסך) ── */}
+            <div className="stats-mobile-menu" style={{marginBottom:'12px'}}>
+              <style>{`@media(min-width:769px){.stats-mobile-menu{display:none!important}}`}</style>
+
+              {/* בר בחירה — מציג את הסעיף הנוכחי, פותח/סוגר את התפריט */}
+              <button onClick={()=>setMobileMenuOpen(o=>!o)} style={{
+                width:'100%',display:'flex',alignItems:'center',justifyContent:'space-between',
+                padding:'12px 14px',borderRadius:'12px',
+                background:'linear-gradient(135deg,rgba(6,182,212,0.16),rgba(6,182,212,0.06))',
+                border:'1.5px solid rgba(6,182,212,0.45)',
+                cursor:'pointer',WebkitTapHighlightColor:'transparent',touchAction:'manipulation',
+                fontFamily:'Rubik,Heebo,sans-serif',
+              }}>
+                <span style={{display:'flex',alignItems:'center',gap:8}}>
+                  <span style={{fontSize:'1.1rem'}}>📋</span>
+                  <span style={{color:'#f8fafc',fontWeight:700,fontSize:'0.95rem'}}>
+                    {currentSectionLabel||'בחר שלב לתצוגה'}
+                  </span>
+                </span>
+                <span style={{color:'#22d3ee',fontSize:'0.8rem',transform:mobileMenuOpen?'rotate(180deg)':'none',transition:'transform 0.2s'}}>▼</span>
+              </button>
+
+              {/* פאנל מתקפל — לוח שנה + קבוצות סעיפים */}
+              {mobileMenuOpen && (
+                <div style={{marginTop:8,background:'rgba(10,15,26,0.98)',border:'1px solid rgba(6,182,212,0.25)',borderRadius:14,padding:'12px 10px',maxHeight:'70vh',overflowY:'auto',boxShadow:'0 12px 32px rgba(0,0,0,0.6)'}}>
+                  {hasDates && (
+                    <div style={{marginBottom:10}}>
+                      <div style={{fontSize:'0.6rem',fontWeight:800,letterSpacing:'0.14em',color:'#475569',marginBottom:6}}>לוח משחקים</div>
+                      {renderCalendar()}
+                    </div>
+                  )}
+                  {menuGroups.map(group=>(
+                    <div key={group.key} style={{marginBottom:10}}>
+                      <div style={{fontSize:'0.72rem',fontWeight:800,color:group.color,marginBottom:6,paddingRight:2}}>{group.label}</div>
+                      <div style={group.grid
+                        ? {display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:5}
+                        : {display:'flex',flexWrap:'wrap',gap:5}}>
+                        {group.buttons.map(btn=>{
+                          const active=selectedSection===btn.key;
+                          const label=group.grid?`בית ${btn.description}`:btn.description;
+                          return(
+                            <button key={btn.key} onClick={()=>{toggleSection(btn.key);setMobileMenuOpen(false);}} style={{
+                              display:'inline-flex',alignItems:'center',justifyContent:group.grid?'center':'flex-start',
+                              padding:group.grid?'9px 4px':'9px 12px',borderRadius:group.grid?8:999,
+                              fontSize:'0.82rem',fontWeight:active?800:500,
+                              color:active?'white':group.color,
+                              background:active?group.activeBg:`${group.color}15`,
+                              border:`1.5px solid ${active?group.color:`${group.color}45`}`,
+                              cursor:'pointer',transition:'all 0.15s',
+                              fontFamily:'Rubik,Heebo,sans-serif',
+                              WebkitTapHighlightColor:'transparent',touchAction:'manipulation',
+                              lineHeight:1.3,
+                            }}>{label}</button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* 📅 Day view — סיכום + סטטיסטיקות מלאות לכל משחקי היום */}
