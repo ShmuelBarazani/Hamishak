@@ -837,7 +837,7 @@ function InsightCard({ insight }) {
                 <p style={{color:'#94a3b8',fontSize:'0.72rem',marginTop:2}}>"{d.topAnswer}" — {d.topCount}/{d.total}</p>
                 {d.myPick!=null && (
                   <div style={{marginTop:4,display:'inline-flex',alignItems:'center',gap:5,background:'rgba(6,182,212,0.14)',border:'1px solid rgba(6,182,212,0.4)',borderRadius:5,padding:'2px 8px'}}>
-                    <span style={{fontSize:'0.68rem',color:'#67e8f9',fontWeight:700}}>ההימור שלך:</span>
+                    <span style={{fontSize:'0.68rem',color:'#67e8f9',fontWeight:700}}>ההימור שלי:</span>
                     <span style={{fontSize:'0.74rem',color:'#f8fafc',fontWeight:600}}>{d.myPick}</span>
                   </div>
                 )}
@@ -855,7 +855,7 @@ function InsightCard({ insight }) {
                 <p style={{color:'#94a3b8',fontSize:'0.72rem',marginTop:2}}>"{d.topAnswer}" מוביל עם {d.topCount}/{d.total}</p>
                 {d.myPick!=null && (
                   <div style={{marginTop:4,display:'inline-flex',alignItems:'center',gap:5,background:'rgba(6,182,212,0.14)',border:'1px solid rgba(6,182,212,0.4)',borderRadius:5,padding:'2px 8px'}}>
-                    <span style={{fontSize:'0.68rem',color:'#67e8f9',fontWeight:700}}>ההימור שלך:</span>
+                    <span style={{fontSize:'0.68rem',color:'#67e8f9',fontWeight:700}}>ההימור שלי:</span>
                     <span style={{fontSize:'0.74rem',color:'#f8fafc',fontWeight:600}}>{d.myPick}</span>
                   </div>
                 )}
@@ -1135,7 +1135,7 @@ export default function Statistics() {
   const [openGroups,       setOpenGroups      ] = useState({ houses:true, ko:true, ai:true, special:false, qual:false });
   const [calMonthIdx,      setCalMonthIdx     ] = useState(0);
   const [moversData,       setMoversData      ] = useState(null);
-  const [statsParticipant, setStatsParticipant ] = useState(null);  // 🆕 "ההימור שלך"
+  const [statsParticipant, setStatsParticipant ] = useState(null);  // 🆕 "ההימור שלי"
 
   const { currentGame } = useGame();
   const isKnockout = !!(currentGame?.name?.includes('נוק-אאוט')||currentGame?.name?.includes('knock')||currentGame?.id==='9c9c1331-5184-406b-98b3-6becd9577567');
@@ -1145,7 +1145,7 @@ export default function Statistics() {
   const formatResult = useCallback(r=>{ if(!r||r==='__CLEAR__') return ''; return r.includes('-')?r.split('-').map(x=>x.trim()).join(' - '):r; },[]);
 
   const lockPanel  = (key,data) => setLockedPanel(prev=>prev[key]?.title===data?.title?{...prev,[key]:null}:{...prev,[key]:data});
-  // 🆕 כשמשנים את המשתתף הנבחר — חשב מחדש את התובנות (לעדכון "ההימור שלך")
+  // 🆕 כשמשנים את המשתתף הנבחר — חשב מחדש את התובנות (לעדכון "ההימור שלי")
   useEffect(()=>{ setAiInsights(null); },[statsParticipant]);
   const closePanel = key => setLockedPanel(prev=>({...prev,[key]:null}));
 
@@ -1780,7 +1780,16 @@ export default function Statistics() {
         <h1 className="text-3xl md:text-4xl font-bold mb-2 flex items-center gap-3" style={{color:'#f8fafc',textShadow:'0 0 10px rgba(6,182,212,0.3)'}}>
           <PieChart className="w-8 h-8 md:w-10 md:h-10" style={{color:'#06b6d4'}}/>סטטיסטיקות ותובנות
         </h1>
-        <p className="mb-6" style={{color:'#94a3b8'}}>בחר יום בלוח או שלב מהתפריט • לחץ על קטע בגרף לנעילת רשימת משתתפים</p>
+        <p className="mb-3" style={{color:'#94a3b8'}}>בחר יום בלוח או שלב מהתפריט • לחץ על קטע בגרף לנעילת רשימת משתתפים</p>
+
+        {/* 🎯 בורר "ההימור שלי" — גלובלי, חל על כל המסכים */}
+        <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap',background:'rgba(6,182,212,0.07)',border:'1px solid rgba(6,182,212,0.25)',borderRadius:10,padding:'8px 12px',marginBottom:16}}>
+          <span style={{fontSize:'0.82rem',color:'#67e8f9',fontWeight:700,whiteSpace:'nowrap'}}>🎯 ההימור שלי:</span>
+          <StatsParticipantSelect participants={allParticipantNames} selected={statsParticipant} onSelect={setStatsParticipant}/>
+          {statsParticipant
+            ? <span style={{fontSize:'0.74rem',color:'#94a3b8'}}>הניחושים של <b style={{color:'#22d3ee'}}>{statsParticipant}</b> מוצגים בתוך הגרפים.</span>
+            : <span style={{fontSize:'0.74rem',color:'#64748b'}}>בחר את עצמך כדי לראות את ההימורים שלך בתוך הגרפים.</span>}
+        </div>
 
         <div className="flex flex-col md:flex-row gap-4" style={{alignItems:'flex-start'}}>
 
@@ -1832,22 +1841,13 @@ export default function Statistics() {
             {/* 🤖 AI Insights */}
             {selectedSection==='insights'&&(
               <div>
-                <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:12,marginBottom:20,flexWrap:'wrap'}}>
-                  <div style={{display:'flex',alignItems:'center',gap:12}}>
-                    <Brain style={{width:28,height:28,color:'#8b5cf6'}}/>
-                    <div>
-                      <h2 style={{color:'#f8fafc',fontSize:'1.4rem',fontWeight:800,margin:0}}>תובנות AI</h2>
-                      <p style={{color:'#94a3b8',fontSize:'0.82rem',margin:0}}>ניתוח עמוק של הניחושים — {allPredictions.length.toLocaleString()} ניחושים, {uniquePartCount} משתתפים</p>
-                    </div>
-                  </div>
-                  <div style={{display:'flex',alignItems:'center',gap:8}}>
-                    <span style={{fontSize:'0.78rem',color:'#67e8f9',fontWeight:600,whiteSpace:'nowrap'}}>🎯 ההימור שלך:</span>
-                    <StatsParticipantSelect participants={allParticipantNames} selected={statsParticipant} onSelect={setStatsParticipant}/>
+                <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:20}}>
+                  <Brain style={{width:28,height:28,color:'#8b5cf6'}}/>
+                  <div>
+                    <h2 style={{color:'#f8fafc',fontSize:'1.4rem',fontWeight:800,margin:0}}>תובנות AI</h2>
+                    <p style={{color:'#94a3b8',fontSize:'0.82rem',margin:0}}>ניתוח עמוק של הניחושים — {allPredictions.length.toLocaleString()} ניחושים, {uniquePartCount} משתתפים</p>
                   </div>
                 </div>
-                {statsParticipant && (
-                  <p style={{color:'#475569',fontSize:'0.72rem',marginTop:-12,marginBottom:16}}>הניחושים של <b style={{color:'#22d3ee'}}>{statsParticipant}</b> יוצגו בתוך גרף הקונצנזוס והמחלוקת.</p>
-                )}
                 {insightsLoading?(
                   <Card style={{background:'rgba(30,41,59,0.6)',border:'1px solid rgba(139,92,246,0.3)'}}>
                     <CardContent className="p-12 text-center">
@@ -1938,6 +1938,13 @@ export default function Statistics() {
                                 lockedPanel[k]&&<ParticipantPanel key={k} title={l} count={cnt} percentage={pct2} participants={pts} color={c} onClose={()=>closePanel(k)}/>
                               )}
 
+                              <div style={{position:'relative'}}>
+                              {statsParticipant && myPredByQid[q.id] && (
+                                <div style={{position:'absolute',top:8,right:8,zIndex:5,background:'#0f1f1a',border:'1px solid #1D9E75',borderRadius:8,padding:'6px 11px',display:'flex',alignItems:'center',gap:6}}>
+                                  <span style={{fontSize:'0.72rem',color:'#5DCAA5',fontWeight:600}}>ההימור שלי:</span>
+                                  <span style={{fontSize:'0.9rem',color:'#f8fafc',fontWeight:600}}>{formatResult(myPredByQid[q.id])}</span>
+                                </div>
+                              )}
                               <ResponsiveContainer width="100%" height={460}>
                                 <RechartsPieChart>
                                   <Pie data={game.chartData} cx="50%" cy="45%" startAngle={-60} endAngle={300} outerRadius={140} dataKey="value" labelLine={false}
@@ -1957,6 +1964,7 @@ export default function Statistics() {
                                   <Tooltip cursor={false} content={({payload})=>payload?.[0]?<div style={{background:'#0a0f1a',border:'1px solid #06b6d4',borderRadius:6,padding:'8px 12px',pointerEvents:'none'}}><p style={{color:'#06b6d4',fontWeight:700,fontSize:'0.82rem'}}>{formatResult(payload[0].payload.name)}</p><p style={{color:'#f8fafc',fontSize:'0.78rem'}}>{payload[0].value} ניחושים ({payload[0].payload.percentage}%)</p><p style={{color:'#64748b',fontSize:'0.7rem',marginTop:2}}>לחץ לנעילה</p></div>:null}/>
                                 </RechartsPieChart>
                               </ResponsiveContainer>
+                              </div>
 
                               {game.chartData.map(entry=>{const pk=`pie_${q.id}_${entry.name}`;return lockedPanel[pk]&&<ParticipantPanel key={pk} title={formatResult(entry.name)} count={entry.value} percentage={entry.percentage} participants={getParticipants(q.id,entry.name)} color={COLORS[game.chartData.indexOf(entry)%COLORS.length]} onClose={()=>closePanel(pk)}/>;
                               })}
@@ -2076,6 +2084,12 @@ export default function Statistics() {
                               <CardContent className="px-2 pb-3 flex-1 flex flex-col">
                                 {qStat.chartData.length>0?(
                                   <>
+                                    {statsParticipant && myPredByQid[q.id] && (
+                                      <div style={{display:'inline-flex',alignSelf:'flex-start',alignItems:'center',gap:6,background:'#0f1f1a',border:'1px solid #1D9E75',borderRadius:8,padding:'4px 10px',marginBottom:6}}>
+                                        <span style={{fontSize:'0.68rem',color:'#5DCAA5',fontWeight:600}}>ההימור שלי:</span>
+                                        <span style={{fontSize:'0.82rem',color:'#f8fafc',fontWeight:600}}>{formatResult(myPredByQid[q.id])}</span>
+                                      </div>
+                                    )}
                                     <div style={{minHeight:'240px',maxHeight:'240px',display:'flex',alignItems:'flex-end'}}>
                                       <ResponsiveContainer width="100%" height="100%">
                                         {usePie?(
