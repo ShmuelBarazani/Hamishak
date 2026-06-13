@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
+import { createPortal } from "react-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -164,7 +165,7 @@ function ParticipantPanel({ title, subtitle, count, percentage, participants, co
 }
 
 // ─── AI Insights engine ───────────────────────────────────────────────────────
-function computeInsights(allQuestions, allPredictions, teams) {
+function computeInsights(allQuestions, allPredictions, teams, myPredByQid = {}) {
   const insights = [];
   if (!allPredictions.length || !allQuestions.length) return insights;
 
@@ -264,12 +265,14 @@ function computeInsights(allQuestions, allPredictions, teams) {
         consensusData: highConsensus.map(d=>({
           question: (d.q.home_team&&d.q.away_team) ? `${cleanTeam(d.q.home_team)} נגד ${cleanTeam(d.q.away_team)}` : (d.q.question_text||d.q.stage_name||`שאלה ${d.q.question_id}`),
           agreement: (d.agreement*100).toFixed(0),
-          topAnswer: formatAns(d.topAnswer), total: d.total, topCount: d.topCount
+          topAnswer: formatAns(d.topAnswer), total: d.total, topCount: d.topCount,
+          myPick: myPredByQid[d.q.id] ? formatAns(myPredByQid[d.q.id]) : null
         })),
         disputeData: highDispute.map(d=>({
           question: (d.q.home_team&&d.q.away_team) ? `${cleanTeam(d.q.home_team)} נגד ${cleanTeam(d.q.away_team)}` : (d.q.question_text||d.q.stage_name||`שאלה ${d.q.question_id}`),
           agreement: (d.agreement*100).toFixed(0),
-          topAnswer: formatAns(d.topAnswer), total: d.total, topCount: d.topCount, uniqueAnswers: d.uniqueAnswers
+          topAnswer: formatAns(d.topAnswer), total: d.total, topCount: d.topCount, uniqueAnswers: d.uniqueAnswers,
+          myPick: myPredByQid[d.q.id] ? formatAns(myPredByQid[d.q.id]) : null
         })),
         chartType:'consensus',
         detail:`נותחו ${qAgreement.length} שאלות. שאלות בעלות הסכמה גבוהה מלמדות על קונצנזוס. שאלות עם ריבוי תשובות מלמדות על אי-ודאות.`,
@@ -832,6 +835,12 @@ function InsightCard({ insight }) {
                   <Badge style={{background:'#059669',color:'#fff',fontSize:'0.72rem'}}>{d.agreement}% הסכמה</Badge>
                 </div>
                 <p style={{color:'#94a3b8',fontSize:'0.72rem',marginTop:2}}>"{d.topAnswer}" — {d.topCount}/{d.total}</p>
+                {d.myPick!=null && (
+                  <div style={{marginTop:4,display:'inline-flex',alignItems:'center',gap:5,background:'rgba(6,182,212,0.14)',border:'1px solid rgba(6,182,212,0.4)',borderRadius:5,padding:'2px 8px'}}>
+                    <span style={{fontSize:'0.68rem',color:'#67e8f9',fontWeight:700}}>ההימור שלך:</span>
+                    <span style={{fontSize:'0.74rem',color:'#f8fafc',fontWeight:600}}>{d.myPick}</span>
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -844,6 +853,12 @@ function InsightCard({ insight }) {
                   <Badge style={{background:'#dc2626',color:'#fff',fontSize:'0.72rem'}}>{d.agreement}% הסכמה</Badge>
                 </div>
                 <p style={{color:'#94a3b8',fontSize:'0.72rem',marginTop:2}}>"{d.topAnswer}" מוביל עם {d.topCount}/{d.total}</p>
+                {d.myPick!=null && (
+                  <div style={{marginTop:4,display:'inline-flex',alignItems:'center',gap:5,background:'rgba(6,182,212,0.14)',border:'1px solid rgba(6,182,212,0.4)',borderRadius:5,padding:'2px 8px'}}>
+                    <span style={{fontSize:'0.68rem',color:'#67e8f9',fontWeight:700}}>ההימור שלך:</span>
+                    <span style={{fontSize:'0.74rem',color:'#f8fafc',fontWeight:600}}>{d.myPick}</span>
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -1025,6 +1040,80 @@ function SpecialTeamListChart({ table, qualifierData, lockedPanel, lockPanel, cl
 }
 
 // ─── Main component ───────────────────────────────────────────────────────────
+function StatsParticipantSelect({ participants, selected, onSelect }) {
+  const [query, setQuery] = useState('');
+  const [open, setOpen] = useState(false);
+  const [highlight, setHighlight] = useState(0);
+  const [pos, setPos] = useState(null);
+  const ref = React.useRef(null);
+  const listRef = React.useRef(null);
+  const updatePos = React.useCallback(() => {
+    if (!ref.current) return;
+    const r = ref.current.getBoundingClientRect();
+    setPos({ top: r.bottom + 4, left: r.left, width: r.width });
+  }, []);
+  const openList = () => { updatePos(); setOpen(true); };
+  useEffect(() => {
+    const handler = (e) => {
+      if (ref.current && !ref.current.contains(e.target) &&
+          listRef.current && !listRef.current.contains(e.target)) { setOpen(false); setQuery(''); }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+  useEffect(() => {
+    if (!open) return;
+    const onMove = () => updatePos();
+    window.addEventListener('scroll', onMove, true);
+    window.addEventListener('resize', onMove);
+    return () => { window.removeEventListener('scroll', onMove, true); window.removeEventListener('resize', onMove); };
+  }, [open, updatePos]);
+  const filtered = React.useMemo(() => {
+    const q = query.trim();
+    if (!q) return participants;
+    return participants.filter(p => p.includes(q));
+  }, [participants, query]);
+  useEffect(() => { setHighlight(0); }, [query]);
+  useEffect(() => {
+    if (listRef.current) { const el = listRef.current.children[highlight]; if (el) el.scrollIntoView({ block: 'nearest' }); }
+  }, [highlight, open]);
+  const choose = (name) => { onSelect(name); setQuery(''); setOpen(false); };
+  const onKeyDown = (e) => {
+    if (!open && (e.key === 'ArrowDown' || e.key === 'Enter')) { openList(); return; }
+    if (e.key === 'ArrowDown') { e.preventDefault(); setHighlight(h => Math.min(h + 1, filtered.length - 1)); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setHighlight(h => Math.max(h - 1, 0)); }
+    else if (e.key === 'Enter') { e.preventDefault(); if (filtered[highlight]) choose(filtered[highlight]); }
+    else if (e.key === 'Escape') { setOpen(false); setQuery(''); }
+  };
+  const dropdown = open && pos ? createPortal(
+    <div ref={listRef} dir="rtl" style={{ position: 'fixed', top: pos.top, left: pos.left, width: pos.width, zIndex: 100000, maxHeight: '300px', overflowY: 'auto', backgroundColor: '#0b1220', backgroundImage: 'linear-gradient(180deg, #101b30 0%, #0b1220 100%)', border: '1px solid rgba(6,182,212,0.5)', borderRadius: '8px', boxShadow: '0 12px 32px rgba(0,0,0,0.85)' }}>
+      {filtered.length === 0 ? (
+        <div style={{ padding: '10px 12px', color: '#64748b', fontSize: '0.82rem', textAlign: 'right' }}>לא נמצאו שמות מתאימים</div>
+      ) : filtered.map((p, i) => (
+        <div key={p} onClick={() => choose(p)} onMouseEnter={() => setHighlight(i)}
+          style={{ padding: '7px 12px', cursor: 'pointer', fontSize: '0.85rem', textAlign: 'right', color: p === selected ? '#22d3ee' : '#f8fafc', fontWeight: p === selected ? 700 : 400, background: i === highlight ? 'rgba(6,182,212,0.22)' : '#0b1220', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+          {p}
+        </div>
+      ))}
+    </div>, document.body) : null;
+  return (
+    <div ref={ref} style={{ position: 'relative', width: '230px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '4px', height: '34px', padding: '0 10px', borderRadius: '6px', background: 'rgba(15,23,42,0.6)', border: '1px solid rgba(6,182,212,0.3)' }}>
+        <input value={open ? query : (selected || '')}
+          onChange={(e) => { setQuery(e.target.value); if (!open) openList(); }}
+          onFocus={() => { openList(); setQuery(''); }} onKeyDown={onKeyDown}
+          placeholder={selected || 'בחר את עצמך לראות את הניחושים...'}
+          style={{ flex: 1, minWidth: 0, background: 'transparent', border: 'none', outline: 'none', color: '#f8fafc', fontSize: '0.85rem', textAlign: 'right', fontFamily: 'inherit' }} />
+        {selected && !open && (
+          <button onClick={() => { onSelect(null); setQuery(''); }} title="נקה בחירה" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b', fontSize: '0.8rem', padding: '0 2px', lineHeight: 1 }}>✕</button>
+        )}
+        <span onClick={() => { if (open) { setOpen(false); } else { openList(); } setQuery(''); }} style={{ cursor: 'pointer', color: '#64748b', fontSize: '0.65rem' }}>▼</span>
+      </div>
+      {dropdown}
+    </div>
+  );
+}
+
 export default function Statistics() {
   const [loading,          setLoading         ] = useState(true);
   const [selectedSection,  setSelectedSection ] = useState(null);
@@ -1046,6 +1135,7 @@ export default function Statistics() {
   const [openGroups,       setOpenGroups      ] = useState({ houses:true, ko:true, ai:true, special:false, qual:false });
   const [calMonthIdx,      setCalMonthIdx     ] = useState(0);
   const [moversData,       setMoversData      ] = useState(null);
+  const [statsParticipant, setStatsParticipant ] = useState(null);  // 🆕 "ההימור שלך"
 
   const { currentGame } = useGame();
   const isKnockout = !!(currentGame?.name?.includes('נוק-אאוט')||currentGame?.name?.includes('knock')||currentGame?.id==='9c9c1331-5184-406b-98b3-6becd9577567');
@@ -1055,6 +1145,8 @@ export default function Statistics() {
   const formatResult = useCallback(r=>{ if(!r||r==='__CLEAR__') return ''; return r.includes('-')?r.split('-').map(x=>x.trim()).join(' - '):r; },[]);
 
   const lockPanel  = (key,data) => setLockedPanel(prev=>prev[key]?.title===data?.title?{...prev,[key]:null}:{...prev,[key]:data});
+  // 🆕 כשמשנים את המשתתף הנבחר — חשב מחדש את התובנות (לעדכון "ההימור שלך")
+  useEffect(()=>{ setAiInsights(null); },[statsParticipant]);
   const closePanel = key => setLockedPanel(prev=>({...prev,[key]:null}));
 
   useEffect(()=>{
@@ -1174,6 +1266,23 @@ export default function Statistics() {
   };
 
   const uniquePartCount = useMemo(()=>new Set(allPredictions.map(p=>p.participant_name)).size,[allPredictions]);
+  const allParticipantNames = useMemo(()=>[...new Set(allPredictions.map(p=>p.participant_name))].sort((a,b)=>a.localeCompare(b,'he')),[allPredictions]);
+  // מפת הניחושים של המשתתף הנבחר: question_id → text_prediction (האחרון לפי זמן)
+  const myPredByQid = useMemo(()=>{
+    if(!statsParticipant) return {};
+    const latest={};
+    allPredictions.filter(p=>p.participant_name===statsParticipant).forEach(p=>{
+      const ex=latest[p.question_id];
+      if(!ex || new Date(p.created_at)>new Date(ex.created_at)) latest[p.question_id]=p;
+    });
+    const map={};
+    Object.values(latest).forEach(p=>{
+      let v=p.text_prediction;
+      if((!v||v==='')&&p.home_prediction!=null&&p.away_prediction!=null) v=`${p.home_prediction}-${p.away_prediction}`;
+      if(v&&v!=='') map[p.question_id]=v;
+    });
+    return map;
+  },[statsParticipant,allPredictions]);
 
   // ── יומי: סטטיסטיקות למשחק בודד ──
   const dayMatchStats = useCallback((q)=>{
@@ -1425,7 +1534,7 @@ export default function Statistics() {
       if(!aiInsights){
         setInsightsLoading(true);
         setTimeout(()=>{
-          const insights=computeInsights(allQuestions,allPredictions,teams);
+          const insights=computeInsights(allQuestions,allPredictions,teams,myPredByQid);
           setAiInsights(insights);
           setInsightsLoading(false);
         },100);
@@ -1723,13 +1832,22 @@ export default function Statistics() {
             {/* 🤖 AI Insights */}
             {selectedSection==='insights'&&(
               <div>
-                <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:20}}>
-                  <Brain style={{width:28,height:28,color:'#8b5cf6'}}/>
-                  <div>
-                    <h2 style={{color:'#f8fafc',fontSize:'1.4rem',fontWeight:800,margin:0}}>תובנות AI</h2>
-                    <p style={{color:'#94a3b8',fontSize:'0.82rem',margin:0}}>ניתוח עמוק של הניחושים — {allPredictions.length.toLocaleString()} ניחושים, {uniquePartCount} משתתפים</p>
+                <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:12,marginBottom:20,flexWrap:'wrap'}}>
+                  <div style={{display:'flex',alignItems:'center',gap:12}}>
+                    <Brain style={{width:28,height:28,color:'#8b5cf6'}}/>
+                    <div>
+                      <h2 style={{color:'#f8fafc',fontSize:'1.4rem',fontWeight:800,margin:0}}>תובנות AI</h2>
+                      <p style={{color:'#94a3b8',fontSize:'0.82rem',margin:0}}>ניתוח עמוק של הניחושים — {allPredictions.length.toLocaleString()} ניחושים, {uniquePartCount} משתתפים</p>
+                    </div>
+                  </div>
+                  <div style={{display:'flex',alignItems:'center',gap:8}}>
+                    <span style={{fontSize:'0.78rem',color:'#67e8f9',fontWeight:600,whiteSpace:'nowrap'}}>🎯 ההימור שלך:</span>
+                    <StatsParticipantSelect participants={allParticipantNames} selected={statsParticipant} onSelect={setStatsParticipant}/>
                   </div>
                 </div>
+                {statsParticipant && (
+                  <p style={{color:'#475569',fontSize:'0.72rem',marginTop:-12,marginBottom:16}}>הניחושים של <b style={{color:'#22d3ee'}}>{statsParticipant}</b> יוצגו בתוך גרף הקונצנזוס והמחלוקת.</p>
+                )}
                 {insightsLoading?(
                   <Card style={{background:'rgba(30,41,59,0.6)',border:'1px solid rgba(139,92,246,0.3)'}}>
                     <CardContent className="p-12 text-center">
