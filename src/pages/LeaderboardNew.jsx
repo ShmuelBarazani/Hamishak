@@ -13,6 +13,35 @@ import { useToast } from "@/components/ui/use-toast";
 import { useGame } from "@/components/contexts/GameContext";
 import { calculateTotalScore } from "@/components/scoring/ScoreService";
 
+// 🏆 טבלת הפרסים לפי מיקום (₪)
+const PRIZE_TABLE = { 1:8000, 2:4500, 3:3000, 4:2500, 5:2000, 6:1500, 7:1000, 8:800, 9:500, 10:300 };
+const LUCKY_LOSER = 100;
+
+// מחשב לכל מיקום כמה שותפים יש בו (לחלוקת פרס בשוויון)
+function buildPositionCounts(rankings) {
+  const counts = {};
+  rankings.forEach(r => { const p = r.current_position; if (p) counts[p] = (counts[p] || 0) + 1; });
+  return counts;
+}
+
+// פרס למשתתף: בשוויון מיקום — סוכמים את פרסי כל המקומות שהקבוצה "תופסת"
+// ומחלקים שווה בשווה. לדוגמה: 5 שותפים למקום 1 → (8000+4500+3000+2500+2000)/5 = 4,000 ₪ לכל אחד.
+// מקום אחרון = לאקי לוזר (100 ₪).
+function computePrize(rank, positionCounts, lastPosition) {
+  const pos = rank.current_position;
+  if (pos === lastPosition && lastPosition > 10) {
+    return { amount: LUCKY_LOSER, lucky: true, share: 1 };
+  }
+  const share = positionCounts[pos] || 1;
+  // סכום הפרסים של המקומות pos .. pos+share-1
+  let sum = 0;
+  for (let i = 0; i < share; i++) sum += (PRIZE_TABLE[pos + i] || 0);
+  if (sum <= 0) return { amount: 0, lucky: false, share };
+  return { amount: Math.round(sum / share), lucky: false, share };
+}
+
+const fmtPrize = n => n.toLocaleString('he-IL') + ' ₪';
+
 export default function LeaderboardNew() {
   const [rankings,            setRankings           ] = useState([]);
   const [loading,             setLoading            ] = useState(true);
@@ -449,6 +478,9 @@ export default function LeaderboardNew() {
 
   const isAdmin        = currentUser?.role === 'admin' || currentUser?.user_metadata?.role === 'admin';
   const sortedRankings = getSortedRankings();
+  // 🏆 חישוב פרסים: כמה שותפים בכל מיקום + המיקום האחרון (לאקי לוזר)
+  const positionCounts = buildPositionCounts(rankings);
+  const lastPosition   = rankings.reduce((mx, r) => Math.max(mx, r.current_position || 0), 0);
 
   return (
     <div className="min-h-screen p-3 md:p-6" dir="rtl"
@@ -507,13 +539,16 @@ export default function LeaderboardNew() {
         </div>
 
         <Card style={{ background: 'var(--bg3-60)', border: '1px solid var(--tp-20)', backdropFilter: 'blur(10px)' }}>
-          <CardHeader className="py-2 md:py-4">
-            <CardTitle className="text-sm md:text-lg" style={{ color: 'var(--tp)' }}>הדירוג הנוכחי</CardTitle>
+          <CardHeader className="py-2 md:py-3">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <CardTitle className="text-sm md:text-lg" style={{ color: 'var(--tp)' }}>הדירוג הנוכחי</CardTitle>
+              <span className="text-[10px] md:text-xs" style={{ color: '#64748b' }}>🏆 פרס מחושב לפי המיקום • בשוויון מתחלק בין השותפים</span>
+            </div>
           </CardHeader>
           <CardContent className="p-0">
-            <div style={{ maxHeight: '600px', overflowY: 'auto', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-              <table className="w-full" style={{ borderCollapse: 'collapse' }}>
-                <thead style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--bg3)' }}>
+            <div style={{ maxHeight: '640px', overflowY: 'auto', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+              <table className="w-full" style={{ borderCollapse: 'collapse', fontSize: '0.82rem' }}>
+                <thead style={{ position: 'sticky', top: 0, zIndex: 10 }}>
                   <tr style={{ borderBottom: '2px solid var(--tp-30)' }}>
                     {[
                       { key: 'current_position', label: '#',            mobile: '#',   align: 'center' },
@@ -523,67 +558,75 @@ export default function LeaderboardNew() {
                       { key: 'previous_score',    label: 'ניקוד קודם',  mobile: null,  align: 'center' },
                       { key: 'score_change',      label: 'שינוי בניקוד', mobile: '+/-', align: 'center' },
                       { key: 'position_change',   label: 'שינוי במיקום', mobile: '↕',  align: 'center' },
+                      { key: 'prize',             label: '🏆 פרס',       mobile: '🏆',  align: 'center', noSort: true },
                     ].map(col => (
                       <th
                         key={col.key}
-                        className={`p-1 md:p-3 cursor-pointer hover:bg-cyan-900/20 transition-colors text-[8px] md:text-sm text-${col.align} ${col.mobile === null ? 'hidden md:table-cell' : ''}`}
-                        style={{ backgroundColor: 'var(--bg3)', color: '#94a3b8' }}
-                        onClick={() => handleSort(col.key)}
+                        className={`px-1.5 py-1.5 md:px-3 md:py-2 ${col.noSort ? '' : 'cursor-pointer hover:bg-cyan-900/20'} transition-colors text-[8px] md:text-xs font-bold uppercase tracking-wide text-${col.align} ${col.mobile === null ? 'hidden md:table-cell' : ''}`}
+                        style={{ background: 'linear-gradient(180deg, var(--tp-12), var(--bg3))', color: '#67e8f9', whiteSpace: 'nowrap' }}
+                        onClick={col.noSort ? undefined : () => handleSort(col.key)}
                       >
-                        <div className={`flex items-center ${col.align === 'right' ? 'justify-start' : 'justify-center'} gap-0.5 md:gap-2`}>
+                        <div className={`flex items-center ${col.align === 'right' ? 'justify-start' : 'justify-center'} gap-0.5 md:gap-1.5`}>
                           {col.mobile !== null && col.mobile !== col.label
                             ? <><span className="hidden md:inline">{col.label}</span><span className="md:hidden">{col.mobile}</span></>
                             : <span>{col.label}</span>}
-                          <SortIcon column={col.key} />
+                          {!col.noSort && <SortIcon column={col.key} />}
                         </div>
                       </th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {sortedRankings.map((rank) => (
-                    <tr key={rank.id} className="hover:bg-white/5"
-                      style={{ borderBottom: '1px solid var(--tp-10)' }}>
-                      <td className="text-center p-1 md:p-2">
-                        <div className="flex items-center justify-center gap-0.5 md:gap-1.5">
+                  {sortedRankings.map((rank, idx) => {
+                    const prize = computePrize(rank, positionCounts, lastPosition);
+                    const isTop3 = rank.current_position <= 3;
+                    return (
+                    <tr key={rank.id} className="hover:bg-cyan-500/5 transition-colors"
+                      style={{ borderBottom: '1px solid var(--tp-10)', background: isTop3 ? 'rgba(251,191,36,0.05)' : (idx % 2 ? 'rgba(255,255,255,0.015)' : 'transparent') }}>
+                      <td className="text-center px-1.5 py-1 md:px-3 md:py-1.5">
+                        <div className="flex items-center justify-center gap-0.5 md:gap-1">
                           <span className="hidden md:inline">{getPositionIcon(rank.current_position)}</span>
-                          <span className="font-bold text-xs md:text-base" style={{ color: '#f8fafc' }}>
+                          <span className="font-extrabold text-xs md:text-sm" style={{ color: rank.current_position === 1 ? '#fbbf24' : rank.current_position === 2 ? '#cbd5e1' : rank.current_position === 3 ? '#f59e0b' : '#94a3b8' }}>
                             {rank.current_position}
                           </span>
                         </div>
                       </td>
                       <td
-                        className="font-medium text-[10px] md:text-base cursor-pointer hover:underline text-right p-1 md:p-2"
-                        style={{ color: 'var(--tp)' }}
+                        className="font-semibold text-[10px] md:text-sm cursor-pointer hover:underline text-right px-1.5 py-1 md:px-3 md:py-1.5"
+                        style={{ color: '#f1f5f9' }}
                         onClick={() => loadParticipantDetails(rank.participant_name)}
                       >
                         {rank.participant_name}
                       </td>
-                      <td className="text-center p-1 md:p-2">
-                        <Badge className="text-white text-[10px] md:text-base px-1.5 md:px-3 py-0.5 md:py-1"
-                          style={{ background: 'var(--tp)', boxShadow: '0 0 10px var(--tp-40)' }}>
-                          {rank.current_score}
-                        </Badge>
+                      <td className="text-center px-1.5 py-1 md:px-3 md:py-1.5">
+                        <span className="font-extrabold text-[11px] md:text-sm" style={{ color: 'var(--tp)' }}>{rank.current_score}</span>
                       </td>
-                      <td className="hidden md:table-cell text-center p-1 md:p-2 text-sm" style={{ color: '#94a3b8' }}>{rank.previous_position || '-'}</td>
-                      <td className="hidden md:table-cell text-center p-1 md:p-2 text-sm" style={{ color: '#94a3b8' }}>{rank.previous_score || '0'}</td>
-                      <td className="text-center p-1 md:p-2">
-                        <div className="flex items-center justify-center">
-                          {rank.score_change > 0  && <Badge className="text-white text-[8px] md:text-xs px-1 md:px-2" style={{ background: '#10b981' }}>+{rank.score_change}</Badge>}
-                          {rank.score_change < 0  && <Badge className="text-white text-[8px] md:text-xs px-1 md:px-2" style={{ background: '#ef4444' }}>{rank.score_change}</Badge>}
-                          {(!rank.score_change || rank.score_change === 0) && <Badge className="text-white text-[8px] md:text-xs px-1 md:px-2" style={{ background: '#475569' }}>0</Badge>}
-                        </div>
+                      <td className="hidden md:table-cell text-center px-3 py-1.5 text-xs" style={{ color: '#64748b' }}>{rank.previous_position || '-'}</td>
+                      <td className="hidden md:table-cell text-center px-3 py-1.5 text-xs" style={{ color: '#64748b' }}>{rank.previous_score || '0'}</td>
+                      <td className="text-center px-1.5 py-1 md:px-3 md:py-1.5">
+                        {rank.score_change > 0  && <span className="text-[9px] md:text-xs font-bold" style={{ color: '#34d399' }}>+{rank.score_change}</span>}
+                        {rank.score_change < 0  && <span className="text-[9px] md:text-xs font-bold" style={{ color: '#f87171' }}>{rank.score_change}</span>}
+                        {(!rank.score_change || rank.score_change === 0) && <span className="text-[9px] md:text-xs" style={{ color: '#475569' }}>—</span>}
                       </td>
-                      <td className="text-center p-1 md:p-2">
-                        <div className="flex items-center justify-center gap-0.5 md:gap-1">
+                      <td className="text-center px-1.5 py-1 md:px-3 md:py-1.5">
+                        <div className="flex items-center justify-center gap-0.5">
                           {getPositionChangeIcon(rank.position_change)}
-                          <span className={`font-medium text-[10px] md:text-sm ${rank.position_change > 0 ? 'text-green-400' : rank.position_change < 0 ? 'text-red-400' : 'text-gray-400'}`}>
-                            {rank.position_change !== 0 ? Math.abs(rank.position_change) : '-'}
+                          <span className={`font-semibold text-[9px] md:text-xs ${rank.position_change > 0 ? 'text-green-400' : rank.position_change < 0 ? 'text-red-400' : 'text-gray-500'}`}>
+                            {rank.position_change !== 0 ? Math.abs(rank.position_change) : '—'}
                           </span>
                         </div>
                       </td>
+                      <td className="text-center px-1.5 py-1 md:px-3 md:py-1.5" style={{ whiteSpace: 'nowrap' }}>
+                        {prize.lucky
+                          ? <span title="לאקי לוזר — מחזיר את דמי ההשתתפות 🃏" className="text-[9px] md:text-xs font-bold" style={{ color: '#a78bfa' }}>{fmtPrize(prize.amount)} 🃏</span>
+                          : prize.amount > 0
+                            ? <span className="text-[10px] md:text-sm font-extrabold" style={{ color: '#fbbf24' }} title={prize.share > 1 ? `מתחלק בין ${prize.share} שותפים` : ''}>
+                                {fmtPrize(prize.amount)}{prize.share > 1 ? <span className="text-[8px] md:text-[10px]" style={{ color: '#94a3b8' }}> (÷{prize.share})</span> : null}
+                              </span>
+                            : <span className="text-[9px] md:text-xs" style={{ color: '#475569' }}>—</span>}
+                      </td>
                     </tr>
-                  ))}
+                  );})}
                 </tbody>
               </table>
             </div>
