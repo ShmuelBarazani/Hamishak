@@ -133,6 +133,7 @@ export default function ViewSubmissions() {
   const [data, setData] = useState({ predictions: [], questions: [], teams: [], validationLists: [], locationPredsByTableQ: {}, locationActualsByTableQ: {} });
   const [selectedParticipant, setSelectedParticipant] = useState(null);
   const [openSections, setOpenSections] = useState({});
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false); // 🆕 תפריט נייד מתקפל
   const [openMenuGroups, setOpenMenuGroups] = useState({ rounds:true, groups:true, playoff:true, league:true, special:false, qualifiers:false, other:true });
   const toggleMenuGroup = k => setOpenMenuGroups(prev=>({...prev,[k]:!prev[k]}));
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
@@ -1237,37 +1238,50 @@ export default function ViewSubmissions() {
       return { button, active, c };
     });
 
+    const openCount = allButtonsList.filter(b => openSectionsMap[b.sectionKey]).length;
     return (
-      <div style={{
-        padding:'8px 12px',
-      }}>
-        <div className="stage-chips-row" style={{
-          display:'flex', gap:'6px', flexWrap:'wrap',
+      <div>
+        {/* בר בחירה מתקפל — חוסך מקום במסך */}
+        <button onClick={() => setMobileMenuOpen(o => !o)} style={{
+          width:'100%', display:'flex', alignItems:'center', justifyContent:'space-between',
+          padding:'12px 14px', borderRadius:'12px',
+          background:'linear-gradient(135deg, rgba(6,182,212,0.16), rgba(6,182,212,0.06))',
+          border:'1.5px solid rgba(6,182,212,0.45)', cursor:'pointer',
+          WebkitTapHighlightColor:'transparent', touchAction:'manipulation', fontFamily:'Rubik, Heebo, sans-serif',
         }}>
-          {allChips.map(({button, active, c}) => (
-            <button
-              key={button.key}
-              onClick={() => toggleSectionFn(button.sectionKey)}
-              style={{
-                display:'inline-flex', alignItems:'center', flexShrink:0,
-                padding:'8px 14px', borderRadius:'999px',
-                fontSize:'0.9rem', fontWeight: active ? 800 : 500,
-                color: active ? 'white' : c.color,
-                background: active ? c.color : c.bg,
-                border:`2px solid ${active ? c.color : c.border}`,
-                cursor:'pointer', transition:'all 0.15s',
-                boxShadow: active ? `0 0 12px ${c.color}66` : 'none',
-                fontFamily:'Rubik, Heebo, sans-serif',
-                whiteSpace:'nowrap', letterSpacing:'0.01em',
-                WebkitTapHighlightColor:'transparent',
-                touchAction:'manipulation',
-                minHeight:'44px',
-              }}
-            >
-              {button.description}
-            </button>
-          ))}
-        </div>
+          <span style={{ display:'flex', alignItems:'center', gap:8 }}>
+            <span style={{ fontSize:'1.1rem' }}>📋</span>
+            <span style={{ color:'#f8fafc', fontWeight:700, fontSize:'0.95rem' }}>בחירת שלב{openCount>0?` (${openCount} פתוחים)`:''}</span>
+          </span>
+          <span style={{ color:'#22d3ee', fontSize:'0.8rem', transform:mobileMenuOpen?'rotate(180deg)':'none', transition:'transform 0.2s' }}>▼</span>
+        </button>
+        {mobileMenuOpen && (
+          <div style={{ marginTop:8, padding:'10px', background:'rgba(10,15,26,0.98)', borderRadius:'12px', border:'1px solid rgba(6,182,212,0.2)', maxHeight:'70vh', overflowY:'auto', boxShadow:'0 12px 32px rgba(0,0,0,0.6)' }}>
+            <div style={{ display:'flex', gap:'6px', flexWrap:'wrap' }}>
+              {allChips.map(({button, active, c}) => (
+                <button
+                  key={button.key}
+                  onClick={() => toggleSectionFn(button.sectionKey)}
+                  style={{
+                    display:'inline-flex', alignItems:'center', flexShrink:0,
+                    padding:'9px 14px', borderRadius:'999px',
+                    fontSize:'0.85rem', fontWeight: active ? 800 : 500,
+                    color: active ? 'white' : c.color,
+                    background: active ? c.color : c.bg,
+                    border:`1.5px solid ${active ? c.color : c.border}`,
+                    cursor:'pointer', transition:'all 0.15s',
+                    fontFamily:'Rubik, Heebo, sans-serif',
+                    whiteSpace:'nowrap',
+                    WebkitTapHighlightColor:'transparent', touchAction:'manipulation',
+                    minHeight:'42px',
+                  }}
+                >
+                  {button.description}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     );
   };
@@ -1769,4 +1783,3 @@ function ParticipantSearchSelect({ participants, selected, onSelect }) {
     </div>
   );
 }
-
