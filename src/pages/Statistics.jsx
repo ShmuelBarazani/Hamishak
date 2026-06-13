@@ -74,11 +74,16 @@ const extractCountry = name => { const m=name?.match(/\(([^)]+)\)$/); return m?m
 // 📅 חילוץ תאריך מטקסט בפורמט "18/6 - 19:00" (יוני-יולי בלבד)
 const parseMatchDate = txt => {
   if(!txt) return null;
-  const m = String(txt).match(/(\d{1,2})\/(\d{1,2})(?:\s*[-–]\s*(\d{1,2}:\d{2}))?/);
+  const s = String(txt);
+  const m = s.match(/(\d{1,2})\/(\d{1,2})/);
   if(!m) return null;
   const day=+m[1], mon=+m[2];
   if(mon<6||mon>7||day<1||day>31) return null;
-  return { day, mon, time:m[3]||'', key:`${mon}-${day}` };
+  // חילוץ שעה — תומך ב-HH:MM או HH.MM, עם מפריד אופציונלי (-, –, רווח)
+  let time='';
+  const tm = s.match(/(\d{1,2})[:\.](\d{2})/);
+  if(tm){ const h=+tm[1], mm=tm[2]; if(h>=0&&h<=23) time=`${h}:${mm}`; }
+  return { day, mon, time, key:`${mon}-${day}` };
 };
 
 const alternateSlice = data => {
@@ -1694,18 +1699,26 @@ export default function Statistics() {
               const st=dayMatchStats(q);
               const homeT=teams[normalizeTeam(q.home_team)], awayT=teams[normalizeTeam(q.away_team)];
               return (
-                <div key={q.id} style={{borderRadius:10,border:'1px solid rgba(6,182,212,0.15)',background:'rgba(0,0,0,0.25)',padding:'10px 12px'}}>
-                  <div style={{display:'grid',gridTemplateColumns:'48px 1fr 76px 1fr',gap:8,alignItems:'center'}}>
-                    <span style={{color:'#64748b',fontSize:'0.72rem'}}>{time||''}</span>
-                    <span style={{display:'flex',alignItems:'center',gap:6,fontSize:'0.88rem',color:'#f8fafc'}}>
-                      {homeT?.logo_url&&<img src={homeT.logo_url} alt="" style={{width:20,height:20,borderRadius:'50%'}}/>}
+                <div key={q.id} style={{position:'relative',borderRadius:10,border:'1px solid rgba(6,182,212,0.15)',background:'rgba(0,0,0,0.25)',padding:'10px 12px'}}>
+                  <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:10}}>
+                    {/* שעת המשחק (שעון ישראל) — בקצה */}
+                    {time&&(
+                      <span style={{position:'absolute',insetInlineStart:22,display:'inline-flex',alignItems:'center',gap:4,color:'#67e8f9',fontSize:'0.72rem',fontWeight:600,background:'rgba(6,182,212,0.1)',border:'1px solid rgba(6,182,212,0.25)',borderRadius:6,padding:'2px 7px'}}>
+                        🕐 {time}
+                      </span>
+                    )}
+                    {/* קבוצת בית (מימין ב-RTL) — צמודה למרכז */}
+                    <span style={{display:'flex',alignItems:'center',gap:6,fontSize:'0.9rem',color:'#f8fafc',justifyContent:'flex-end',minWidth:0,flex:'0 1 auto'}}>
                       {cleanTeam(q.home_team)}
+                      {homeT?.logo_url&&<img src={homeT.logo_url} alt="" style={{width:22,height:22,borderRadius:'50%',flexShrink:0}}/>}
                     </span>
-                    <span style={{textAlign:'center',fontWeight:700,color:st.hasActual?'#fde68a':'#475569',fontSize:'0.95rem'}}>
+                    {/* תוצאה — במרכז */}
+                    <span style={{textAlign:'center',fontWeight:700,color:st.hasActual?'#fde68a':'#64748b',fontSize:'0.95rem',minWidth:56,flexShrink:0}}>
                       {st.hasActual?formatResult(q.actual_result):'? - ?'}
                     </span>
-                    <span style={{display:'flex',alignItems:'center',gap:6,fontSize:'0.88rem',color:'#f8fafc'}}>
-                      {awayT?.logo_url&&<img src={awayT.logo_url} alt="" style={{width:20,height:20,borderRadius:'50%'}}/>}
+                    {/* קבוצת חוץ (משמאל ב-RTL) — צמודה למרכז */}
+                    <span style={{display:'flex',alignItems:'center',gap:6,fontSize:'0.9rem',color:'#f8fafc',justifyContent:'flex-start',minWidth:0,flex:'0 1 auto'}}>
+                      {awayT?.logo_url&&<img src={awayT.logo_url} alt="" style={{width:22,height:22,borderRadius:'50%',flexShrink:0}}/>}
                       {cleanTeam(q.away_team)}
                     </span>
                   </div>
