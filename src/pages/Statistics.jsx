@@ -1518,7 +1518,11 @@ export default function Statistics() {
 
             if (isTeamListTable) {
               const slotIds = new Set(slots.map(s => s.id));
+              // 🆕 T16 מונדיאל: מיפוי question.id→מספר; אי-זוגי=ראש בית, זוגי=סגנית
+              const slotQNum={}; slots.forEach(s=>{slotQNum[s.id]=parseInt(parseFloat(s.question_id),10);});
+              const isGroupLeaders = isWC && table.id==='T16';
               const teamCounts = {}, participantsMap = {};
+              const winCounts={}, winPM={}, runCounts={}, runPM={};
               allPredictions.forEach(p => {
                 if (!slotIds.has(p.question_id) || !p.text_prediction?.trim()) return;
                 const team = cleanTeam(normalizeTeam(p.text_prediction.trim()));
@@ -1526,13 +1530,21 @@ export default function Statistics() {
                 teamCounts[team] = (teamCounts[team]||0) + 1;
                 if (!participantsMap[team]) participantsMap[team] = new Set();
                 participantsMap[team].add(p.participant_name);
+                if(isGroupLeaders){
+                  const qn=slotQNum[p.question_id];
+                  if(qn%2===1){ winCounts[team]=(winCounts[team]||0)+1; (winPM[team]=winPM[team]||new Set()).add(p.participant_name); }
+                  else        { runCounts[team]=(runCounts[team]||0)+1; (runPM[team]=runPM[team]||new Set()).add(p.participant_name); }
+                }
               });
-              const pm = {};
-              Object.entries(participantsMap).forEach(([t,s]) => { pm[t] = [...s].sort((a,b) => a.localeCompare(b,'he')); });
+              const toSortedPM=(s2)=>{const o={};Object.entries(s2).forEach(([t,s])=>{o[t]=[...s].sort((a,b)=>a.localeCompare(b,'he'));});return o;};
+              const toChart=(s2)=>Object.entries(s2).sort((a,b)=>b[1]-a[1]).map(([team,count])=>({team,count}));
               ts.qualifierData = {
-                chartData: Object.entries(teamCounts).sort((a,b) => b[1]-a[1]).map(([team,count]) => ({team,count})),
-                cfg: null, advCount: slots.length, participantsMap: pm,
+                chartData: toChart(teamCounts),
+                cfg: null, advCount: slots.length, participantsMap: toSortedPM(participantsMap),
                 isSpecialTeamList: true,
+                isGroupLeaders,
+                winnersData: isGroupLeaders?{chartData:toChart(winCounts),participantsMap:toSortedPM(winPM)}:null,
+                runnersData: isGroupLeaders?{chartData:toChart(runCounts),participantsMap:toSortedPM(runPM)}:null,
               };
             } else {
             for(const q of table.questions){
