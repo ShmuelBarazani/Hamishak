@@ -789,7 +789,14 @@ export default function AdminResults() {
             return (
               <div key={button.key} className="mb-4 space-y-3">
                 {renderBonusBanner(table.id)}
-                <RoundTableResults table={table} teams={teams} results={results} onResultChange={handleResultChange} isAdmin={isAdmin} />
+                {String(table.id).startsWith('בית') ? (
+                  <div className="grid grid-cols-1 lg:grid-cols-[1fr_minmax(280px,360px)] gap-3 items-start">
+                    <RoundTableResults table={table} teams={teams} results={results} onResultChange={handleResultChange} isAdmin={isAdmin} />
+                    <GroupStandings table={table} teams={teams} results={results} />
+                  </div>
+                ) : (
+                  <RoundTableResults table={table} teams={teams} results={results} onResultChange={handleResultChange} isAdmin={isAdmin} />
+                )}
                 {table.specialQuestions?.length > 0 && <div className="mt-4">{renderSpecialQuestions({ ...table, questions: table.specialQuestions })}</div>}
               </div>
             );
@@ -877,6 +884,82 @@ function MultiCheckboxDropdown({ options, selected, onToggle, onClear, findTeam,
           })}
         </div>
       )}
+    </div>
+  );
+}
+
+// ═══ 🆕 טבלת בית מחושבת לפי תוצאות עד כה ═══
+function GroupStandings({ table, teams, results }) {
+  const matches = (table.questions || []).filter(q => q.home_team && q.away_team);
+  if (matches.length === 0) return null;
+
+  // צבירת סטטיסטיקה לכל נבחרת
+  const stats = {};
+  const ensure = name => { if (!stats[name]) stats[name] = { name, P:0, W:0, D:0, L:0, GF:0, GA:0, Pts:0 }; return stats[name]; };
+  let playedAny = false;
+  matches.forEach(q => {
+    ensure(q.home_team); ensure(q.away_team);
+    const r = results[q.id];
+    if (!r || r === '__CLEAR__' || !r.includes('-')) return;
+    const [hs, as] = r.split('-').map(x => parseInt(x.trim()));
+    if (isNaN(hs) || isNaN(as)) return;
+    playedAny = true;
+    const H = stats[q.home_team], A = stats[q.away_team];
+    H.P++; A.P++; H.GF+=hs; H.GA+=as; A.GF+=as; A.GA+=hs;
+    if (hs>as) { H.W++; H.Pts+=3; A.L++; }
+    else if (hs<as) { A.W++; A.Pts+=3; H.L++; }
+    else { H.D++; A.D++; H.Pts++; A.Pts++; }
+  });
+
+  const rows = Object.values(stats).sort((a,b) =>
+    b.Pts-a.Pts || (b.GF-b.GA)-(a.GF-a.GA) || b.GF-a.GF || a.name.localeCompare(b.name,'he')
+  );
+
+  return (
+    <div style={{ background: 'rgba(13,18,30,0.6)', border: '1px solid rgba(6,182,212,0.2)', borderRadius: 12, padding: '10px 12px' }}>
+      <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:8 }}>
+        <span style={{ fontSize:'0.92rem', fontWeight:700, color:'#22d3ee' }}>📊 טבלת {table.description}</span>
+        {!playedAny && <span style={{ fontSize:'0.68rem', color:'#64748b' }}>(טרם הוזנו תוצאות)</span>}
+      </div>
+      <table style={{ width:'100%', borderCollapse:'collapse', fontSize:'0.78rem' }} dir="rtl">
+        <thead>
+          <tr style={{ color:'#94a3b8', fontSize:'0.66rem', textAlign:'center' }}>
+            <th style={{ textAlign:'right', padding:'3px 4px', fontWeight:600 }}>#</th>
+            <th style={{ textAlign:'right', padding:'3px 4px', fontWeight:600 }}>נבחרת</th>
+            <th style={{ padding:'3px 3px', fontWeight:600 }} title="משחקים">מש'</th>
+            <th style={{ padding:'3px 3px', fontWeight:600 }} title="ניצחונות">נ</th>
+            <th style={{ padding:'3px 3px', fontWeight:600 }} title="תיקו">ת</th>
+            <th style={{ padding:'3px 3px', fontWeight:600 }} title="הפסדים">ה</th>
+            <th style={{ padding:'3px 3px', fontWeight:600 }} title="הפרש שערים">+/-</th>
+            <th style={{ padding:'3px 3px', fontWeight:700, color:'#22d3ee' }} title="נקודות">נק'</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, i) => {
+            const team = teams[row.name];
+            const gd = row.GF - row.GA;
+            const qualifies = i < 2; // ראש בית + סגנית
+            return (
+              <tr key={row.name} style={{ borderTop:'1px solid rgba(255,255,255,0.05)', textAlign:'center', background: qualifies && playedAny ? 'rgba(16,185,129,0.07)' : 'transparent' }}>
+                <td style={{ textAlign:'right', padding:'4px', color: qualifies?'#34d399':'#64748b', fontWeight:700 }}>{i+1}</td>
+                <td style={{ textAlign:'right', padding:'4px' }}>
+                  <span style={{ display:'inline-flex', alignItems:'center', gap:5 }}>
+                    {team?.logo_url && <img src={team.logo_url} alt="" style={{ width:16, height:16, borderRadius:'50%' }} onError={e=>e.target.style.display='none'} />}
+                    <span style={{ color:'#f8fafc' }}>{row.name}</span>
+                  </span>
+                </td>
+                <td style={{ padding:'4px', color:'#94a3b8' }}>{row.P}</td>
+                <td style={{ padding:'4px', color:'#94a3b8' }}>{row.W}</td>
+                <td style={{ padding:'4px', color:'#94a3b8' }}>{row.D}</td>
+                <td style={{ padding:'4px', color:'#94a3b8' }}>{row.L}</td>
+                <td style={{ padding:'4px', color: gd>0?'#34d399':gd<0?'#f87171':'#94a3b8' }}>{gd>0?`+${gd}`:gd}</td>
+                <td style={{ padding:'4px', color:'#22d3ee', fontWeight:700 }}>{row.Pts}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      {playedAny && <p style={{ fontSize:'0.62rem', color:'#475569', marginTop:6 }}>🟢 2 הראשונות מעפילות אוטומטית (ראש בית + סגנית)</p>}
     </div>
   );
 }
