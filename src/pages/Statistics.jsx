@@ -169,6 +169,7 @@ function computeInsights(allQuestions, allPredictions, teams) {
   if (!allPredictions.length || !allQuestions.length) return insights;
 
   const qById = Object.fromEntries(allQuestions.map(q=>[q.id,q]));
+  const formatAns = a => a==null?'-':String(a).includes('-')&&/^\d+-\d+$/.test(String(a).trim())?String(a).split('-').map(x=>x.trim()).join(' - '):String(a);
 
   const latestPred = {};
   allPredictions.forEach(p => {
@@ -261,14 +262,14 @@ function computeInsights(allQuestions, allPredictions, teams) {
         color:'#8b5cf6',
         summary:`הכי מוסכמת: ${(highConsensus[0]?.agreement*100||0).toFixed(0)}% הסכמה | הכי מגוונת: ${highDispute[0]?.uniqueAnswers||0} תשובות שונות`,
         consensusData: highConsensus.map(d=>({
-          question: (d.q.home_team&&d.q.away_team) ? `${cleanTeam(d.q.home_team)} נגד ${cleanTeam(d.q.away_team)}` : (d.q.question_text||`שאלה ${d.q.question_id}`),
-          agreement: (d.agreement*100).toFixed(1),
-          topAnswer: d.topAnswer, total: d.total, topCount: d.topCount
+          question: (d.q.home_team&&d.q.away_team) ? `${cleanTeam(d.q.home_team)} נגד ${cleanTeam(d.q.away_team)}` : (d.q.question_text||d.q.stage_name||`שאלה ${d.q.question_id}`),
+          agreement: (d.agreement*100).toFixed(0),
+          topAnswer: formatAns(d.topAnswer), total: d.total, topCount: d.topCount
         })),
         disputeData: highDispute.map(d=>({
-          question: (d.q.home_team&&d.q.away_team) ? `${cleanTeam(d.q.home_team)} נגד ${cleanTeam(d.q.away_team)}` : (d.q.question_text||`שאלה ${d.q.question_id}`),
-          agreement: (d.agreement*100).toFixed(1),
-          topAnswer: d.topAnswer, total: d.total, topCount: d.topCount, uniqueAnswers: d.uniqueAnswers
+          question: (d.q.home_team&&d.q.away_team) ? `${cleanTeam(d.q.home_team)} נגד ${cleanTeam(d.q.away_team)}` : (d.q.question_text||d.q.stage_name||`שאלה ${d.q.question_id}`),
+          agreement: (d.agreement*100).toFixed(0),
+          topAnswer: formatAns(d.topAnswer), total: d.total, topCount: d.topCount, uniqueAnswers: d.uniqueAnswers
         })),
         chartType:'consensus',
         detail:`נותחו ${qAgreement.length} שאלות. שאלות בעלות הסכמה גבוהה מלמדות על קונצנזוס. שאלות עם ריבוי תשובות מלמדות על אי-ודאות.`,
@@ -305,13 +306,13 @@ function computeInsights(allQuestions, allPredictions, teams) {
       const topOutsider=sorted[0];
       const topFollower=sorted[sorted.length-1];
       insights.push({
-        id:'outsiders', icon:'🦄', title:'אינדיווידואליסטים לעומת עדר',
+        id:'outsiders', icon:'🦄', title:'מי הולך נגד הזרם?',
         category:'ניתוח משתתפים',
         color:'#ec4899',
-        summary:`${topOutsider.name} הכי אינדיווידואליסטי (${topOutsider.avgRarity.toFixed(1)}% נדירות). ${topFollower.name} הכי הולך עם הקהל.`,
-        chartData:sorted.slice(0,10).map(d=>({name:d.name,value:parseFloat(d.avgRarity.toFixed(1))})),
+        summary:`${topOutsider.name} הכי "חתול שׁועל" — ${topOutsider.avgRarity.toFixed(0)}% מהניחושים שלו נדירים. ${topFollower.name} הכי "כבשה" — הולך עם הרוב.`,
+        chartData:sorted.slice(0,10).map(d=>({name:d.name,value:parseFloat(d.avgRarity.toFixed(0))})),
         chartType:'bar_h',
-        detail:'ציון גבוה = בחר תשובות שמעט אנשים אחרים בחרו. ציון נמוך = הלך עם הרוב.',
+        detail:'לכל ניחוש בודקים כמה אנשים אחרים בחרו אותו ערך. "נדירות" גבוהה = המשתתף בוחר תשובות מקוריות שמעטים בוחרים (אאוטסיידר/הימורים נועזים). נדירות נמוכה = בוחר תמיד את התשובה הפופולרית (הולך בטוח עם הקהל). הציון בגרף = אחוז הנדירות הממוצע על פני כל הניחושים שלו.',
         bottomData:sorted.slice(-5).reverse().map(d=>({name:d.name,value:parseFloat(d.avgRarity.toFixed(1))})),
       });
     }
@@ -659,6 +660,46 @@ function computeInsights(allQuestions, allPredictions, teams) {
     }
   }
 
+  // ── 🆕 16. פילוח לפי גיל 🎂 (אינטרוולים של 5 שנים, 7 עמודות) ──────────
+  {
+    const ageQ = allQuestions.find(q=>q.table_id==='T1'&&(q.question_text||'').includes('גיל'));
+    if(ageQ){
+      // 7 דליים: <25, 25-29, 30-34, 35-39, 40-44, 45-49, 50+
+      const buckets=[
+        {label:'עד 24',min:0,max:24},
+        {label:'25–29',min:25,max:29},
+        {label:'30–34',min:30,max:34},
+        {label:'35–39',min:35,max:39},
+        {label:'40–44',min:40,max:44},
+        {label:'45–49',min:45,max:49},
+        {label:'50+',min:50,max:200},
+      ];
+      const members=buckets.map(()=>[]);
+      let valid=0, sum=0;
+      preds.filter(p=>p.question_id===ageQ.id&&p.text_prediction?.trim()).forEach(p=>{
+        const age=parseInt(String(p.text_prediction).replace(/[^\d]/g,''));
+        if(isNaN(age)||age<5||age>120) return;
+        valid++; sum+=age;
+        const bi=buckets.findIndex(b=>age>=b.min&&age<=b.max);
+        if(bi>=0) members[bi].push({name:p.participant_name,age});
+      });
+      if(valid>=3){
+        const avg=(sum/valid).toFixed(1);
+        const chartData=buckets.map((b,i)=>({name:b.label,value:members[i].length,members:members[i].sort((a,b)=>a.age-b.age)}));
+        const biggest=chartData.reduce((a,b)=>b.value>a.value?b:a);
+        insights.push({
+          id:'ages', icon:'🎂', title:'פילוח המשתתפים לפי גיל',
+          category:'ניתוח משתתפים',
+          color:'#ec4899',
+          summary:`גיל ממוצע: ${avg} • הקבוצה הגדולה: ${biggest.name} (${biggest.value} משתתפים)`,
+          chartType:'agebars',
+          ageData:chartData,
+          detail:`${valid} משתתפים מילאו גיל. החלוקה לקבוצות גיל בקפיצות של 5 שנים. לחץ על עמודה לרשימת המשתתפים והגילאים.`,
+        });
+      }
+    }
+  }
+
   return insights;
 }
 
@@ -691,6 +732,32 @@ function InsightCard({ insight }) {
             </div>
           ))}
           <p style={{color:'#475569',fontSize:'0.68rem',marginTop:2}}>לחץ על קבוצה לרשימת המשתתפים</p>
+        </div>
+      );
+    }
+
+    // 🎂 age bars — 7 עמודות גיל, לחיצות
+    if (insight.chartType === 'agebars') {
+      const max = Math.max(...insight.ageData.map(d=>d.value),1);
+      return (
+        <div style={{marginTop:8}}>
+          <div dir="ltr" style={{display:'flex',alignItems:'flex-end',gap:6,height:170,padding:'0 4px'}}>
+            {insight.ageData.map((d,i)=>(
+              <div key={i} onClick={()=>setProfOpen(profOpen===d.name?null:d.name)} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',cursor:'pointer'}}>
+                <span style={{fontSize:'0.72rem',color:'#f8fafc',fontWeight:700,marginBottom:3}}>{d.value}</span>
+                <div style={{width:'100%',height:`${(d.value/max)*120}px`,minHeight:d.value>0?4:0,background:profOpen===d.name?'#f472b6':COLORS[i%COLORS.length],borderRadius:'5px 5px 0 0',transition:'all 0.15s'}}></div>
+                <span style={{fontSize:'0.62rem',color:'#94a3b8',marginTop:4,direction:'rtl'}}>{d.name}</span>
+              </div>
+            ))}
+          </div>
+          {profOpen&&insight.ageData.find(d=>d.name===profOpen)&&(
+            <div style={{display:'flex',flexWrap:'wrap',gap:4,padding:'8px 8px 2px',marginTop:8,borderTop:'1px solid #1e293b'}}>
+              {insight.ageData.find(d=>d.name===profOpen).members.map((m,k)=>(
+                <span key={k} style={{background:'#1e293b',color:'#f8fafc',padding:'3px 8px',borderRadius:4,fontSize:'0.72rem'}}>{m.name} <span style={{color:'#64748b'}}>({m.age})</span></span>
+              ))}
+            </div>
+          )}
+          <p style={{color:'#475569',fontSize:'0.68rem',marginTop:6}}>לחץ על עמודה לרשימת המשתתפים</p>
         </div>
       );
     }
