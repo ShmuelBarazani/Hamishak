@@ -2128,8 +2128,28 @@ export default function Statistics() {
                   Object.values(specialStats).map(ts=>{
                     const {table,qualifierData}=ts;
                     if(!qualifierData) return null;
-                    const {chartData,cfg,advCount,participantsMap}=qualifierData;
-                    const total=chartData.reduce((s,d)=>s+d.count,0);
+                    const {chartData,cfg,advCount,participantsMap,isGroupLeaders,winnersData,runnersData}=qualifierData;
+
+                    // 🆕 T16 — שלושה גרפים נפרדים: ראש בית, סגנית, משולב
+                    if(isGroupLeaders&&winnersData&&runnersData){
+                      return(
+                        <div key={table.id} style={{display:'flex',flexDirection:'column',gap:16}}>
+                          <Card style={{background:'rgba(30,41,59,0.6)',border:'1px solid rgba(16,185,129,0.4)'}}>
+                            <CardHeader><CardTitle style={{color:'#10b981'}}>🥇 ראש בית — מי תסיים ראשונה בבית</CardTitle><p style={{fontSize:'0.78rem',color:'#94a3b8',marginTop:4}}>12 חריצים • לחץ על קבוצה לנעילת רשימה</p></CardHeader>
+                            <CardContent className="px-2 pb-6"><TeamListBarChart chartData={winnersData.chartData} participantsMap={winnersData.participantsMap} panelKey={`qual_${table.id}_win`} accent="#10b981" compact lockedPanel={lockedPanel} lockPanel={lockPanel} closePanel={closePanel}/></CardContent>
+                          </Card>
+                          <Card style={{background:'rgba(30,41,59,0.6)',border:'1px solid rgba(245,158,11,0.4)'}}>
+                            <CardHeader><CardTitle style={{color:'#f59e0b'}}>🥈 סגנית — מי תסיים שנייה בבית</CardTitle><p style={{fontSize:'0.78rem',color:'#94a3b8',marginTop:4}}>12 חריצים • לחץ על קבוצה לנעילת רשימה</p></CardHeader>
+                            <CardContent className="px-2 pb-6"><TeamListBarChart chartData={runnersData.chartData} participantsMap={runnersData.participantsMap} panelKey={`qual_${table.id}_run`} accent="#f59e0b" compact lockedPanel={lockedPanel} lockPanel={lockPanel} closePanel={closePanel}/></CardContent>
+                          </Card>
+                          <Card style={{background:'rgba(30,41,59,0.6)',border:'1px solid rgba(249,115,22,0.35)'}}>
+                            <CardHeader><CardTitle style={{color:'#f97316'}}>📋 משולב — ראש בית + סגנית יחד</CardTitle><p style={{fontSize:'0.78rem',color:'#94a3b8',marginTop:4}}>{advCount} חריצים • ניתוח כולל ללא תלות במיקום • לחץ על קבוצה לנעילת רשימה</p></CardHeader>
+                            <CardContent className="px-2 pb-6"><TeamListBarChart chartData={chartData} participantsMap={participantsMap} panelKey={`qual_${table.id}`} accent="#f97316" compact lockedPanel={lockedPanel} lockPanel={lockPanel} closePanel={closePanel}/></CardContent>
+                          </Card>
+                        </div>
+                      );
+                    }
+
                     return(
                       <Card key={table.id} style={{background:'rgba(30,41,59,0.6)',border:'1px solid rgba(249,115,22,0.35)'}}>
                         <CardHeader>
@@ -2137,24 +2157,7 @@ export default function Statistics() {
                           <p style={{fontSize:'0.78rem',color:'#94a3b8',marginTop:4}}>לחץ על קבוצה לנעילת רשימת משתתפים{cfg?` • ${advCount} קבוצות • בונוס: +${cfg.bonus} נק'`:''}</p>
                         </CardHeader>
                         <CardContent className="px-2 pb-6">
-                          {lockedPanel[`qual_${table.id}`]&&(
-                            <ParticipantPanel title={lockedPanel[`qual_${table.id}`].title} count={lockedPanel[`qual_${table.id}`].count} percentage={lockedPanel[`qual_${table.id}`].percentage} participants={lockedPanel[`qual_${table.id}`].participants} color="#f97316" onClose={()=>closePanel(`qual_${table.id}`)}/>
-                          )}
-                          {chartData.length>0?(
-                            <div dir="ltr">
-                            <ResponsiveContainer width="100%" height={Math.max(400,chartData.length*34)}>
-                              <BarChart data={chartData} layout="vertical" margin={{top:10,right:60,left:0,bottom:10}}>
-                                <CartesianGrid strokeDasharray="3 3" stroke="#334155" horizontal={false}/>
-                                <XAxis type="number" stroke="#94a3b8" tick={{fontSize:11,fill:'#94a3b8'}}/>
-                                <YAxis type="category" dataKey="team" width={190} stroke="#334155" tick={{fontSize:12,fill:'#f8fafc',fontFamily:'Rubik,Heebo,sans-serif'}}/>
-                                <Tooltip cursor={{fill:'rgba(249,115,22,0.08)'}} content={({payload})=>payload?.[0]?<div style={{background:'#0a0f1a',border:'1px solid #f97316',borderRadius:6,padding:'8px 12px',pointerEvents:'none'}}><p style={{color:'#f97316',fontWeight:700,fontSize:'0.85rem'}}>{payload[0].payload.team}</p><p style={{color:'#f8fafc',fontSize:'0.8rem'}}>{payload[0].value} בחירות ({total>0?((payload[0].value/total)*100).toFixed(1):0}%)</p><p style={{color:'#64748b',fontSize:'0.7rem',marginTop:2}}>לחץ לנעילה</p></div>:null}/>
-                                <Bar dataKey="count" radius={[0,6,6,0]} label={{position:'right',fill:'#94a3b8',fontSize:11,formatter:v=>v}} onClick={data=>{const p2=total>0?((data.count/total)*100).toFixed(1):0;lockPanel(`qual_${table.id}`,{title:data.team,count:data.count,percentage:p2,participants:participantsMap[data.team]||[],color:'#f97316'});}}>
-                                  {chartData.map((_,i)=><Cell key={i} fill={COLORS[i%COLORS.length]} style={{cursor:'pointer'}}/>)}
-                                </Bar>
-                              </BarChart>
-                            </ResponsiveContainer>
-                            </div>
-                          ):<div className="text-center py-12" style={{color:'#94a3b8'}}>אין נתונים עדיין</div>}
+                          <TeamListBarChart chartData={chartData} participantsMap={participantsMap} panelKey={`qual_${table.id}`} accent="#f97316" lockedPanel={lockedPanel} lockPanel={lockPanel} closePanel={closePanel}/>
                         </CardContent>
                       </Card>
                     );
