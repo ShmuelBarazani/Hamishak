@@ -23,7 +23,11 @@ const NON_CASH_PRIZES = [
   { min: 13, max: 16, short: '🍔 בורגר סאלון זוגית',  title: 'ארוחה זוגית — בורגר סאלון',     full: 'ארוחה זוגית במסעדת בורגר סאלון, באצטדיון סמי עופר בחיפה.', color: '#f59e0b' },
   { min: 17, max: 22, short: '🎵 הביט הופעה זוגית',   title: 'הופעה זוגית — מועדון הביט',     full: "כרטיס זוגי למופע שייערך במועדון הביט האגדי — בית הספר למוזיקה ומועדון. ממוקם בשד' הנשיא 124, חיפה.", color: '#8b5cf6' },
 ];
-const nonCashPrizeForPos = (pos) => NON_CASH_PRIZES.find(p => pos >= p.min && pos <= p.max) || null;
+// פרס לא-כספי לפי מיקום ייחודי (אחרי שבירת שוויון א-ב). מיקום 11→ג'פניקה, 13→בורגר וכו'.
+const nonCashPrizeForPos = (pos) => {
+  if (!pos) return null;
+  return NON_CASH_PRIZES.find(p => pos >= p.min && pos <= p.max) || null;
+};
 
 // מחשב לכל מיקום כמה שותפים יש בו (לחלוקת פרס בשוויון)
 function buildPositionCounts(rankings) {
@@ -491,6 +495,23 @@ export default function LeaderboardNew() {
   const positionCounts = buildPositionCounts(rankings);
   const lastPosition   = rankings.reduce((mx, r) => Math.max(mx, r.current_position || 0), 0);
 
+  // 🎁 מיקום ייחודי לפרס הלא-כספי: שוברים שוויון לפי שם (א-ב עולה) רק עבור
+  //    מי שמעבר לפרסים הכספיים (current_position ≥ 11). מי שבמקום כספי (1-10)
+  //    מקבל כספי ולא נכלל כאן. כך מי ש"במקום 11" בשוויון מתפצל ל-11,12,13...
+  //    ומקבל את הפרס של המקום הספציפי. (הפרס הכספי לא מושפע — נשאר מסכם+מחלק.)
+  const effectivePrizePos = React.useMemo(() => {
+    const beyondCash = rankings.filter(r => (r.current_position || 0) > 10);
+    const arr = [...beyondCash].sort((a, b) =>
+      (Number(b.current_score) || 0) - (Number(a.current_score) || 0) ||
+      String(a.participant_name || '').localeCompare(String(b.participant_name || ''), 'he')
+    );
+    const map = {};
+    // המיקום הייחודי הנמוך ביותר = המקום ה"רשמי" הראשון מעבר לכספי
+    const startPos = arr.length ? Math.min(...arr.map(r => r.current_position || 11)) : 11;
+    arr.forEach((r, i) => { map[r.participant_name] = startPos + i; });
+    return map;
+  }, [rankings]);
+
   return (
     <div className="min-h-screen p-3 md:p-6" dir="rtl"
       style={{ background: 'linear-gradient(135deg, var(--bg1) 0%, var(--bg2) 50%, var(--bg1) 100%)' }}>
@@ -633,7 +654,7 @@ export default function LeaderboardNew() {
                                 {fmtPrize(prize.amount)}{prize.share > 1 ? <span className="text-[8px] md:text-[10px]" style={{ color: '#94a3b8' }}> (÷{prize.share})</span> : null}
                               </span>
                             : (() => {
-                                const ncp = nonCashPrizeForPos(rank.current_position);
+                                const ncp = nonCashPrizeForPos(effectivePrizePos[rank.participant_name]);
                                 return ncp
                                   ? <span onClick={() => setPrizeView(ncp)} title="לחץ לפרטי הפרס" className="text-[9px] md:text-xs font-bold" style={{ color: ncp.color, cursor: 'pointer', whiteSpace: 'nowrap' }}>{ncp.short}</span>
                                   : <span className="text-[9px] md:text-xs" style={{ color: '#475569' }}>—</span>;
