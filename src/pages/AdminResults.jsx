@@ -42,6 +42,18 @@ const WC_MULTI_ANSWER_QUESTIONS = new Set([
   'T26_5',  // הנבחרת שתכבוש הכי הרבה שערים
   'T26_13', // תוצאת התיקו השכיחה
   'T26_14', // התוצאה השכיחה ביותר
+  // T15 — ראש בראש "התותחים הכבדים" (שחקנים + יבשות)
+  'T15_1',  // מי יבקיע יותר שערים (שחקן)
+  'T15_2',  // מאיזו יבשת יבקיעו יותר (יבשת)
+  'T15_4',  // מי יבקיע יותר בנגיחה (שחקן)
+  'T15_5',  // מאיזו יבשת בנגיחה (יבשת)
+  'T15_7',  // מי יבשל יותר (שחקן)
+  'T15_8',  // מאיזו יבשת יבשלו יותר (יבשת)
+  'T15_11', // מי יכבוש צמד+ ביותר משחקים (שחקן)
+  'T15_12', // שחקנים מאיזו יבשת צמד+ (יבשת)
+  'T15_14', // מי יחליף/יוחלף הכי הרבה (שחקן)
+  'T15_15', // שחקנים מאיזו יבשת יוחלפו יותר (יבשת)
+  'T15_16', // לאיזו יבשת יותר ניצחונות (יבשת)
 ]);
 
 const isMultiAnswerQuestion = (q) => {
@@ -408,7 +420,7 @@ export default function AdminResults() {
 
     if (!hasOptions) {
       return (
-        <div style={{ minWidth: '220px' }}>
+        <div style={{ width: '100%', minWidth: '140px' }}>
           {currentAnswers.length > 0 && (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginBottom: '6px' }}>
               {currentAnswers.map((ans, i) => (
@@ -630,7 +642,8 @@ export default function AdminResults() {
               const sortedSubs = [...subs].sort((a, b) => parseFloat(a.question_id || a.stage_order) - parseFloat(b.question_id || b.stage_order));
               if (sortedSubs.length === 0) return renderQuestionRow(main);
               // ✅ שאלה + תת-שאלה בשורה אחת (פריסת גריד צפופה)
-              if (sortedSubs.length === 1) {
+              // 🌍 אם השאלה הראשית מרובת-תשובות — דלג לפריסה מוערמת (יותר מקום)
+              if (sortedSubs.length === 1 && !isMultiAnswerQuestion(main)) {
                 const sub = sortedSubs[0];
                 return (
                   <div key={main.id} style={{ display: 'grid', gridTemplateColumns: '38px minmax(110px, 1.3fr) 130px 44px 38px minmax(90px, 1fr) 110px 44px', gap: '5px', alignItems: 'center', padding: '7px 8px', borderRadius: '8px', border: '1px solid var(--tp-12)', background: 'rgba(0,0,0,0.22)', position: 'relative', overflow: 'visible' }}>
@@ -911,7 +924,7 @@ function MultiCheckboxDropdown({ options, selected, onToggle, onClear, findTeam,
   }, []);
   const hasSelected = selected.length > 0;
   return (
-    <div ref={ref} style={{ position: 'relative', minWidth: '200px' }}>
+    <div ref={ref} style={{ position: 'relative', width: '100%', minWidth: '140px' }}>
       <button onClick={() => isAdmin && setOpen(o => !o)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', padding: '6px 10px', borderRadius: '6px', cursor: isAdmin ? 'pointer' : 'default', background: hasSelected ? 'var(--tp-20)' : 'rgba(51,65,85,0.5)', border: `1px solid ${hasSelected ? 'var(--tp)' : 'rgba(100,116,139,1)'}`, color: hasSelected ? 'var(--tp)' : '#94a3b8', fontSize: '0.82rem', fontWeight: hasSelected ? '700' : '400', textAlign: 'right', fontFamily: 'Rubik, Heebo, sans-serif' }}>
         <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{triggerLabel}</span>
         <span style={{ marginRight: '6px', fontSize: '0.7rem', opacity: 0.6 }}>▼</span>
@@ -1020,9 +1033,9 @@ function GroupStandings({ table, teams, results }) {
 function MultiAnswerTextInput({ currentAnswers, onAdd }) {
   const [val, setVal] = useState('');
   return (
-    <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-      <Input value={val} onChange={e => setVal(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && val.trim()) { onAdd(val.trim()); setVal(''); } }} placeholder="הקלד תשובה..." style={{ width: '140px', fontSize: '0.8rem', background: 'rgba(51,65,85,0.5)', borderColor: 'rgba(100,116,139,1)', color: '#f8fafc' }} />
-      <button onClick={() => { if (val.trim()) { onAdd(val.trim()); setVal(''); } }} style={{ background: 'var(--tp)', border: 'none', borderRadius: '6px', padding: '4px 8px', cursor: 'pointer', color: 'white', fontSize: '0.8rem' }}>+</button>
+    <div style={{ display: 'flex', gap: '4px', alignItems: 'center', width: '100%', minWidth: 0 }}>
+      <Input value={val} onChange={e => setVal(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && val.trim()) { onAdd(val.trim()); setVal(''); } }} placeholder="תשובה..." style={{ flex: 1, minWidth: 0, fontSize: '0.8rem', background: 'rgba(51,65,85,0.5)', borderColor: 'rgba(100,116,139,1)', color: '#f8fafc' }} />
+      <button onClick={() => { if (val.trim()) { onAdd(val.trim()); setVal(''); } }} style={{ flexShrink: 0, background: 'var(--tp)', border: 'none', borderRadius: '6px', padding: '4px 8px', cursor: 'pointer', color: 'white', fontSize: '0.8rem' }}>+</button>
     </div>
   );
 }
