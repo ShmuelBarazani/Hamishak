@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -499,7 +499,7 @@ export default function LeaderboardNew() {
   //    מי שמעבר לפרסים הכספיים (current_position ≥ 11). מי שבמקום כספי (1-10)
   //    מקבל כספי ולא נכלל כאן. כך מי ש"במקום 11" בשוויון מתפצל ל-11,12,13...
   //    ומקבל את הפרס של המקום הספציפי. (הפרס הכספי לא מושפע — נשאר מסכם+מחלק.)
-  const effectivePrizePos = React.useMemo(() => {
+  const effectivePrizePos = useMemo(() => {
     const beyondCash = rankings.filter(r => (r.current_position || 0) > 10);
     const arr = [...beyondCash].sort((a, b) =>
       (Number(b.current_score) || 0) - (Number(a.current_score) || 0) ||
