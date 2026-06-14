@@ -642,11 +642,16 @@ export default function AdminResults() {
               const sortedSubs = [...subs].sort((a, b) => parseFloat(a.question_id || a.stage_order) - parseFloat(b.question_id || b.stage_order));
               if (sortedSubs.length === 0) return renderQuestionRow(main);
               // ✅ שאלה + תת-שאלה בשורה אחת (פריסת גריד צפופה)
-              // 🌍 אם השאלה הראשית מרובת-תשובות — דלג לפריסה מוערמת (יותר מקום)
-              if (sortedSubs.length === 1 && !isMultiAnswerQuestion(main)) {
+              if (sortedSubs.length === 1) {
                 const sub = sortedSubs[0];
+                // 🌍 שאלה ראשית מרובת-תשובות צריכה יותר רוחב לתיבת הבחירה —
+                //    מקצים לה עמודת תשובה רחבה יותר, אך נשארים בשורה אחת
+                const mainIsMulti = isMultiAnswerQuestion(main);
+                const rowCols = mainIsMulti
+                  ? '32px minmax(150px, 2fr) minmax(150px, 1.4fr) 40px 30px minmax(120px, 1.3fr) 80px 40px'
+                  : '38px minmax(110px, 1.3fr) 130px 44px 38px minmax(90px, 1fr) 110px 44px';
                 return (
-                  <div key={main.id} style={{ display: 'grid', gridTemplateColumns: '38px minmax(110px, 1.3fr) 130px 44px 38px minmax(90px, 1fr) 110px 44px', gap: '5px', alignItems: 'center', padding: '7px 8px', borderRadius: '8px', border: '1px solid var(--tp-12)', background: 'rgba(0,0,0,0.22)', position: 'relative', overflow: 'visible' }}>
+                  <div key={main.id} style={{ display: 'grid', gridTemplateColumns: rowCols, gap: '5px', alignItems: 'center', padding: '7px 8px', borderRadius: '8px', border: '1px solid var(--tp-12)', background: 'rgba(0,0,0,0.22)', position: 'relative', overflow: 'visible' }}>
                     <Badge variant="outline" style={{ borderColor: 'var(--tp-50)', color: 'var(--tp)', fontSize: '0.7rem' }} className="justify-center h-6">{main.question_id}</Badge>
                     <span style={{ fontSize: '0.82rem', color: '#f1f5f9', fontWeight: '500', textAlign: 'right', minWidth: 0, lineHeight: '1.35' }}>{main.question_text}</span>
                     <div style={{ minWidth: 0 }}>{renderSelectWithLogos(main, results[main.id] || '', val => handleResultChange(main.id, val === '__CLEAR__' ? '' : val), 'w-full')}</div>
