@@ -479,6 +479,23 @@ export default function LeaderboardNew() {
     return          <Minus         className="w-3 h-3 md:w-4 md:h-4 text-gray-400"  />;
   };
 
+  // 🎁 מיקום ייחודי לפרס הלא-כספי: שוברים שוויון לפי שם (א-ב עולה) רק עבור
+  //    מי שמעבר לפרסים הכספיים (current_position ≥ 11). מי שבמקום כספי (1-10)
+  //    מקבל כספי ולא נכלל כאן. כך מי ש"במקום 11" בשוויון מתפצל ל-11,12,13...
+  //    ומקבל את הפרס של המקום הספציפי. (הפרס הכספי לא מושפע — נשאר מסכם+מחלק.)
+  //    ⚠️ ה-hook חייב להיות לפני כל return מותנה (חוקי ה-Hooks).
+  const effectivePrizePos = useMemo(() => {
+    const beyondCash = rankings.filter(r => (r.current_position || 0) > 10);
+    const arr = [...beyondCash].sort((a, b) =>
+      (Number(b.current_score) || 0) - (Number(a.current_score) || 0) ||
+      String(a.participant_name || '').localeCompare(String(b.participant_name || ''), 'he')
+    );
+    const map = {};
+    const startPos = arr.length ? Math.min(...arr.map(r => r.current_position || 11)) : 11;
+    arr.forEach((r, i) => { map[r.participant_name] = startPos + i; });
+    return map;
+  }, [rankings]);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-screen"
@@ -494,23 +511,6 @@ export default function LeaderboardNew() {
   // 🏆 חישוב פרסים: כמה שותפים בכל מיקום + המיקום האחרון (לאקי לוזר)
   const positionCounts = buildPositionCounts(rankings);
   const lastPosition   = rankings.reduce((mx, r) => Math.max(mx, r.current_position || 0), 0);
-
-  // 🎁 מיקום ייחודי לפרס הלא-כספי: שוברים שוויון לפי שם (א-ב עולה) רק עבור
-  //    מי שמעבר לפרסים הכספיים (current_position ≥ 11). מי שבמקום כספי (1-10)
-  //    מקבל כספי ולא נכלל כאן. כך מי ש"במקום 11" בשוויון מתפצל ל-11,12,13...
-  //    ומקבל את הפרס של המקום הספציפי. (הפרס הכספי לא מושפע — נשאר מסכם+מחלק.)
-  const effectivePrizePos = useMemo(() => {
-    const beyondCash = rankings.filter(r => (r.current_position || 0) > 10);
-    const arr = [...beyondCash].sort((a, b) =>
-      (Number(b.current_score) || 0) - (Number(a.current_score) || 0) ||
-      String(a.participant_name || '').localeCompare(String(b.participant_name || ''), 'he')
-    );
-    const map = {};
-    // המיקום הייחודי הנמוך ביותר = המקום ה"רשמי" הראשון מעבר לכספי
-    const startPos = arr.length ? Math.min(...arr.map(r => r.current_position || 11)) : 11;
-    arr.forEach((r, i) => { map[r.participant_name] = startPos + i; });
-    return map;
-  }, [rankings]);
 
   return (
     <div className="min-h-screen p-3 md:p-6" dir="rtl"
