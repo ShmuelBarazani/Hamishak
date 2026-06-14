@@ -17,6 +17,14 @@ import { calculateTotalScore } from "@/components/scoring/ScoreService";
 const PRIZE_TABLE = { 1:8000, 2:4500, 3:3000, 4:2500, 5:2000, 6:1500, 7:1000, 8:800, 9:500, 10:300 };
 const LUCKY_LOSER = 100;
 
+// 🎁 פרסים לא-כספיים למקומות 11–22 (מוצגים באותה עמודת הפרס)
+const NON_CASH_PRIZES = [
+  { min: 11, max: 12, short: "🍱 ג'פניקה זוגית",      title: "ארוחה זוגית — מסעדת ג'פניקה",  full: "ארוחה זוגית במסעדת ג'פניקה, בחיפה או בקיסריה (לבחירתכם).", color: '#ec4899' },
+  { min: 13, max: 16, short: '🍔 בורגר סאלון זוגית',  title: 'ארוחה זוגית — בורגר סאלון',     full: 'ארוחה זוגית במסעדת בורגר סאלון, באצטדיון סמי עופר בחיפה.', color: '#f59e0b' },
+  { min: 17, max: 22, short: '🎵 הביט הופעה זוגית',   title: 'הופעה זוגית — מועדון הביט',     full: "כרטיס זוגי למופע שייערך במועדון הביט האגדי — בית הספר למוזיקה ומועדון. ממוקם בשד' הנשיא 124, חיפה.", color: '#8b5cf6' },
+];
+const nonCashPrizeForPos = (pos) => NON_CASH_PRIZES.find(p => pos >= p.min && pos <= p.max) || null;
+
 // מחשב לכל מיקום כמה שותפים יש בו (לחלוקת פרס בשוויון)
 function buildPositionCounts(rankings) {
   const counts = {};
@@ -52,6 +60,7 @@ export default function LeaderboardNew() {
   const [currentUser,         setCurrentUser        ] = useState(null);
   const [avgScore,            setAvgScore           ] = useState(0);
   const [maxScore,            setMaxScore           ] = useState(0);
+  const [prizeView,           setPrizeView          ] = useState(null); // 🎁 חלון פרס צף
   const [minScore,            setMinScore           ] = useState(0);
   const [sortColumn,          setSortColumn         ] = useState('current_position');
   const [sortDirection,       setSortDirection      ] = useState('asc');
@@ -623,7 +632,12 @@ export default function LeaderboardNew() {
                             ? <span className="text-[10px] md:text-sm font-extrabold" style={{ color: '#fbbf24' }} title={prize.share > 1 ? `מתחלק בין ${prize.share} שותפים` : ''}>
                                 {fmtPrize(prize.amount)}{prize.share > 1 ? <span className="text-[8px] md:text-[10px]" style={{ color: '#94a3b8' }}> (÷{prize.share})</span> : null}
                               </span>
-                            : <span className="text-[9px] md:text-xs" style={{ color: '#475569' }}>—</span>}
+                            : (() => {
+                                const ncp = nonCashPrizeForPos(rank.current_position);
+                                return ncp
+                                  ? <span onClick={() => setPrizeView(ncp)} title="לחץ לפרטי הפרס" className="text-[9px] md:text-xs font-bold" style={{ color: ncp.color, cursor: 'pointer', whiteSpace: 'nowrap' }}>{ncp.short}</span>
+                                  : <span className="text-[9px] md:text-xs" style={{ color: '#475569' }}>—</span>;
+                              })()}
                       </td>
                     </tr>
                   );})}
@@ -835,6 +849,23 @@ export default function LeaderboardNew() {
               </table>
               </>
             )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* 🎁 חלון צף — תיאור מלא של פרס לא-כספי */}
+      <Dialog open={!!prizeView} onOpenChange={(o) => { if (!o) setPrizeView(null); }}>
+        <DialogContent style={{ background: '#0b1220', border: `1px solid ${prizeView?.color || '#334155'}66`, maxWidth: 400 }} dir="rtl">
+          <DialogHeader>
+            <DialogTitle style={{ color: '#f8fafc', textAlign: 'right' }}>
+              <span style={{ display: 'block', fontSize: '0.72rem', color: prizeView?.color, fontWeight: 700, marginBottom: 4 }}>
+                🎁 פרס · מקומות {prizeView?.min}–{prizeView?.max}
+              </span>
+              {prizeView?.title}
+            </DialogTitle>
+          </DialogHeader>
+          <div style={{ padding: 14, borderRadius: 10, background: `${prizeView?.color || '#334155'}12`, border: `1px solid ${prizeView?.color || '#334155'}33` }}>
+            <p style={{ fontSize: '0.92rem', color: '#e2e8f0', lineHeight: 1.6, margin: 0, textAlign: 'right' }}>{prizeView?.full}</p>
           </div>
         </DialogContent>
       </Dialog>
