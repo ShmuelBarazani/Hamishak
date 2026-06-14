@@ -455,7 +455,10 @@ export default function LeaderboardNew() {
     }
     const aV = Number(a[sortColumn]) || 0;
     const bV = Number(b[sortColumn]) || 0;
-    return sortDirection === 'asc' ? aV - bV : bV - aV;
+    const diff = sortDirection === 'asc' ? aV - bV : bV - aV;
+    // 🎁 בשוויון — שובר לפי שם (א-ב עולה), כדי שסדר התצוגה יתאים לחלוקת פרסי המשנה
+    if (diff !== 0) return diff;
+    return String(a.participant_name || '').localeCompare(String(b.participant_name || ''), 'he');
   });
 
   const SortIcon = ({ column }) => {
