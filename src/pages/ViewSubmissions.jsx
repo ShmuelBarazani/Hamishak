@@ -1221,6 +1221,118 @@ export default function ViewSubmissions() {
   const hasChanges = Object.keys(editedPredictions).length > 0;
   const TEXT_LENGTH_THRESHOLD = 18;
 
+  // 📱 קיצור שמות שלבים לתצוגת רצועת הניווט הניידת
+  const shortLabel = (desc) => {
+    if (!desc) return '';
+    let s = String(desc).replace(/\(\*+\)/g, '').replace(/["'״]/g, '').trim();
+    // קיצורים ידועים
+    if (s.includes('ראש בראש') || s.includes('התותחים') || s.includes('מבול')) return 'ראש בראש';
+    if (s.includes('הניחושים המיוחדים')) return 'מיוחדות';
+    if (s.includes('המסלול המהיר')) return 'מסלול מהיר';
+    if (s.includes('מסלול ה') && s.includes('גמר')) return 'מסלול גמר';
+    if (s.includes('שלב הבתים') && s.includes('שאלות')) return 'שאלות בתים';
+    s = s.replace(/^בית\s*/, 'בית ');
+    // חיתוך לאורך סביר
+    return s.length > 16 ? s.slice(0, 15).trim() + '…' : s;
+  };
+
+  // 📱 ניווט נייד חדש — רצועה אופקית + כפתור קפיצה לרשת מלאה
+  //    משתמש באותה לוגיקה קיימת (allButtons / openSections / toggleSection)
+  const renderMobileNav = (allButtonsList, openSectionsMap, toggleSectionFn) => {
+    const typeColors = {
+      playoff:'#3b82f6', league:'#3b82f6', groups:'#06b6d4', rounds:'#06b6d4',
+      special:'#8b5cf6', qualifiers:'#f97316', other:'#64748b',
+    };
+    const groupLabels = {
+      groups:'🏠 בתים', rounds:'⚽ מחזורים', playoff:'⚔️ נוקאאוט', league:'⚽ ליגה',
+      special:'✨ מיוחדות', qualifiers:'📋 עולות', other:'📌 נוסף',
+    };
+    const colorOf = b => typeColors[b.stageType || 'special'] || typeColors.other;
+
+    // קבץ לרשת הקפיצה
+    const grouped = {};
+    allButtonsList.forEach(b => {
+      const t = b.stageType || 'special';
+      (grouped[t] = grouped[t] || []).push(b);
+    });
+    const orderedTypes = ['groups','rounds','playoff','league','qualifiers','special','other']
+      .filter(t => grouped[t]?.length);
+
+    return (
+      <div>
+        {/* רצועה אופקית נגללת */}
+        <div style={{ display:'flex', gap:'7px', overflowX:'auto', padding:'2px 0 8px', WebkitOverflowScrolling:'touch', scrollbarWidth:'none' }}>
+          <style>{`.vs-rail::-webkit-scrollbar{display:none}`}</style>
+          {/* כפתור קפיצה — פותח רשת מלאה */}
+          <button onClick={() => setMobileMenuOpen(o => !o)} style={{
+            flexShrink:0, display:'inline-flex', alignItems:'center', gap:5,
+            padding:'8px 13px', borderRadius:'999px', minHeight:'40px',
+            background:'rgba(6,182,212,0.16)', border:'1.5px solid rgba(6,182,212,0.5)',
+            color:'#22d3ee', fontWeight:600, fontSize:'0.84rem', cursor:'pointer',
+            whiteSpace:'nowrap', fontFamily:'Rubik,Heebo,sans-serif', WebkitTapHighlightColor:'transparent',
+          }}>
+            <span style={{ fontSize:'1rem' }}>🧭</span> קפיצה
+          </button>
+          {allButtonsList.map(b => {
+            const active = openSectionsMap[b.sectionKey];
+            const c = colorOf(b);
+            return (
+              <button key={b.key} onClick={() => toggleSectionFn(b.sectionKey)} title={b.fullDescription || b.description} style={{
+                flexShrink:0, padding:'8px 15px', borderRadius:'999px', minHeight:'40px',
+                fontSize:'0.84rem', fontWeight: active ? 700 : 500,
+                color: active ? '#0f172a' : c, background: active ? c : `${c}1f`,
+                border:`1.5px solid ${active ? c : `${c}55`}`, cursor:'pointer',
+                whiteSpace:'nowrap', fontFamily:'Rubik,Heebo,sans-serif',
+                WebkitTapHighlightColor:'transparent', touchAction:'manipulation', transition:'all 0.12s',
+              }}>
+                {shortLabel(b.houseGrid ? (b.fullDescription || b.description) : b.description)}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* גיליון קפיצה — רשת מלאה לכל השלבים */}
+        {mobileMenuOpen && (
+          <div onClick={() => setMobileMenuOpen(false)} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.6)', zIndex:50, display:'flex', alignItems:'flex-end' }}>
+            <div onClick={e => e.stopPropagation()} style={{ width:'100%', maxHeight:'78vh', overflowY:'auto', background:'#0b1220', borderTopLeftRadius:18, borderTopRightRadius:18, border:'1px solid rgba(6,182,212,0.3)', padding:'14px 14px 24px', boxShadow:'0 -8px 32px rgba(0,0,0,0.7)' }}>
+              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:14 }}>
+                <span style={{ fontSize:'1rem', fontWeight:700, color:'#f8fafc' }}>קפיצה מהירה לשלב</span>
+                <button onClick={() => setMobileMenuOpen(false)} style={{ background:'none', border:'none', color:'#64748b', cursor:'pointer', fontSize:'1.3rem', lineHeight:1 }}>✕</button>
+              </div>
+              {orderedTypes.map(type => {
+                const c = typeColors[type];
+                const isGroups = type === 'groups';
+                return (
+                  <div key={type} style={{ marginBottom:16 }}>
+                    <div style={{ fontSize:'0.72rem', color:'#64748b', marginBottom:8, fontWeight:600 }}>{groupLabels[type] || type}</div>
+                    <div style={{ display:'grid', gridTemplateColumns: isGroups ? 'repeat(4,1fr)' : 'repeat(2,1fr)', gap:7 }}>
+                      {grouped[type].map(b => {
+                        const active = openSectionsMap[b.sectionKey];
+                        return (
+                          <button key={b.key} onClick={() => { toggleSectionFn(b.sectionKey); setMobileMenuOpen(false); }} title={b.fullDescription || b.description} style={{
+                            padding: isGroups ? '12px 4px' : '11px 10px', borderRadius:10,
+                            fontSize: isGroups ? '0.9rem' : '0.8rem', fontWeight: active ? 700 : 500,
+                            color: active ? '#0f172a' : c, background: active ? c : `${c}18`,
+                            border:`1px solid ${active ? c : `${c}44`}`, cursor:'pointer',
+                            fontFamily:'Rubik,Heebo,sans-serif', textAlign:'center',
+                            whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis',
+                            WebkitTapHighlightColor:'transparent', minHeight:'44px',
+                          }}>
+                            {shortLabel(b.houseGrid ? (b.fullDescription || b.description) : b.description)}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const renderStageChips = (allButtonsList, openSectionsMap, toggleSectionFn) => {
     const allChips = allButtonsList.map(button => {
       const active = openSectionsMap[button.sectionKey];
@@ -1495,7 +1607,7 @@ export default function ViewSubmissions() {
           <div className="vs-mobile-chips" style={{ display:"block" }}>
             <style>{`@media (min-width: 768px) { .vs-mobile-chips { display: none !important; } }`}</style>
             {selectedParticipant && !loadingPredictions && (specialTables.length > 0 || roundTables.length > 0 || locationTables.length > 0 || israeliTable || playoffWinnersTable || qualifiersTables.length > 0) && (
-              <div style={{ marginBottom:'20px' }}>{renderStageChips(allButtons.map(b=>b.houseGrid?{...b,description:b.fullDescription||b.description}:b), openSections, toggleSection)}</div>
+              <div style={{ marginBottom:'14px' }}>{renderMobileNav(allButtons.map(b=>b.houseGrid?{...b,description:b.fullDescription||b.description}:b), openSections, toggleSection)}</div>
             )}
           </div>
 
