@@ -1614,13 +1614,35 @@ export default function Statistics() {
 
   const CAL_MONTHS = [ {name:'יוני 2026',y:2026,m:5}, {name:'יולי 2026',y:2026,m:6} ];
   const hasDates = Object.keys(matchesByDay).length>0;
+  // 🆕 פורמט שמות שלבים אחיד (כמו בצפייה בניחושים)
+  const shortLabel = (desc) => {
+    if (!desc) return '';
+    const raw = String(desc);
+    if (raw.includes('ראש בראש') || raw.includes('התותחים') || raw.includes('מבול')) return 'ראש בראש';
+    if (raw.includes('הניחושים המיוחדים')) return 'הניחושים המיוחדים';
+    if (raw.includes('המסלול המהיר')) return 'המסלול המהיר';
+    const isQualifierList = raw.includes('רשימת הנבחרות') || raw.includes('הנבחרות שתסיימנה') ||
+                            raw.includes('הנבחרות שיעלו') || raw.includes('העולות') ||
+                            (raw.includes('ראש בית') && raw.includes('סגנית')) || raw.includes('נבחרות המקום');
+    if (isQualifierList) {
+      if (raw.includes('ראש בית') && raw.includes('סגנית')) return 'עולות · ראש בית וסגנית';
+      if (raw.includes('מקום השלישי') || raw.includes('המקום השלישי') || raw.includes('שלישי')) return 'עולות · מקום שלישי';
+      if (raw.includes('שמינית')) return 'עולות · שמינית גמר';
+      if (raw.includes('רבע')) return 'עולות · רבע גמר';
+      if (raw.includes('חצי')) return 'עולות · חצי גמר';
+      if (raw.includes('גמר')) return 'עולות · גמר מונדיאל';
+    }
+    if (raw.includes('שלב הבתים')) return 'שלב הבתים';
+    let s = raw.replace(/\(\*+\)/g, '').replace(/["'״]/g, '').replace(/^בית\s*/, 'בית ').trim();
+    return s.length > 18 ? s.slice(0, 17).trim() + '…' : s;
+  };
   // 🆕 תווית קריאה של הסעיף הנבחר (לבר הנייד) — חייב לפני כל early-return!
   const currentSectionLabel = useMemo(()=>{
     if(!selectedSection) return null;
     if(selectedSection.startsWith('day_')) return `📅 ${selectedSection.replace('day_','')}`;
     for(const g of menuGroups){
       for(const b of g.buttons){
-        if(b.key===selectedSection) return `${g.label.split(' ')[0]} ${g.grid?`בית ${b.description}`:b.description}`;
+        if(b.key===selectedSection) return `${g.label.split(' ')[0]} ${g.grid?`בית ${b.description}`:shortLabel(b.full||b.description)}`;
       }
     }
     return null;
@@ -1750,8 +1772,8 @@ export default function Statistics() {
               {group.buttons.map(btn=>{
                 const active=selectedSection===btn.key;
                 return (
-                  <button key={btn.key} onClick={()=>toggleSection(btn.key)} style={{display:'block',width:'100%',textAlign:'right',padding:'7px 10px',marginBottom:4,borderRadius:8,fontSize:'0.78rem',fontWeight:active?700:400,color:active?'white':group.color,background:active?group.activeBg:`${group.color}12`,border:`1px solid ${active?group.color:`${group.color}40`}`,cursor:'pointer',transition:'all 0.15s',boxShadow:active?`0 0 10px ${group.color}55`:'none',fontFamily:'Rubik,Heebo,sans-serif',lineHeight:1.35}}>
-                    {btn.description}
+                  <button key={btn.key} onClick={()=>toggleSection(btn.key)} title={btn.full||btn.description} style={{display:'block',width:'100%',textAlign:'right',padding:'7px 10px',marginBottom:4,borderRadius:8,fontSize:'0.78rem',fontWeight:active?700:400,color:active?'white':group.color,background:active?group.activeBg:`${group.color}12`,border:`1px solid ${active?group.color:`${group.color}40`}`,cursor:'pointer',transition:'all 0.15s',boxShadow:active?`0 0 10px ${group.color}55`:'none',fontFamily:'Rubik,Heebo,sans-serif',lineHeight:1.35}}>
+                    {shortLabel(btn.full||btn.description)}
                   </button>
                 );
               })}
@@ -1971,7 +1993,7 @@ export default function Statistics() {
                         <div style={{display:'grid',gridTemplateColumns:group.grid?'repeat(3,1fr)':'repeat(2,1fr)',gap:8}}>
                           {group.buttons.map(btn=>{
                             const active=selectedSection===btn.key;
-                            const label=group.grid?`בית ${btn.description}`:btn.description;
+                            const label=group.grid?`בית ${btn.description}`:shortLabel(btn.full||btn.description);
                             return(
                               <button key={btn.key}
                                 onClick={()=>{
