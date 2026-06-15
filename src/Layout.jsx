@@ -128,13 +128,13 @@ function LayoutContent({ children }) {
   const g = currentGame ? `?gameId=${currentGame.id}` : '';
 
   const publicItems = [
-    { title:"טבלת דירוג",     url:createPageUrl("LeaderboardNew")  + g, icon:Award,    group:"main" },
-    { title:"צפייה בניחושים", url:createPageUrl("ViewSubmissions") + g, icon:Users,    group:"main" },
-    { title:"תוצאות אמת",     url:createPageUrl("AdminResults")    + g, icon:BarChart3,group:"main" },
-    { title:"סטטיסטיקות",     url:createPageUrl("Statistics")      + g, icon:PieChart, group:"main" },
+    { title:"טבלת דירוג",     short:"דירוג",   url:createPageUrl("LeaderboardNew")  + g, icon:Award,    group:"main" },
+    { title:"צפייה בניחושים", short:"ניחושים", url:createPageUrl("ViewSubmissions") + g, icon:Users,    group:"main" },
+    { title:"תוצאות אמת",     short:"תוצאות",  url:createPageUrl("AdminResults")    + g, icon:BarChart3,group:"main" },
+    { title:"סטטיסטיקות",     short:"סטטיסטיקה",url:createPageUrl("Statistics")      + g, icon:PieChart, group:"main" },
   ];
   const userItems = [
-    { title:"מילוי ניחושים",  url:createPageUrl("PredictionForm")  + g, icon:FileText, group:"main" },
+    { title:"מילוי ניחושים",  short:"מילוי",   url:createPageUrl("PredictionForm")  + g, icon:FileText, group:"main" },
   ];
   const adminItems = [
     { title:"ניהול משתתפים", url:createPageUrl("ManageGameParticipants"), icon:Users,    group:"admin" },
@@ -524,8 +524,8 @@ function LayoutContent({ children }) {
                   transition:'all 0.15s', WebkitTapHighlightColor:'transparent', touchAction:'manipulation',
                   cursor: item.disabled ? 'not-allowed' : 'pointer', minWidth:0,
                 }}>
-                <item.icon size={28}/>
-                <span style={{fontSize:'0.75rem',fontWeight:active?800:500,whiteSpace:'nowrap',fontFamily:'Rubik,Heebo,sans-serif',lineHeight:1}}>{item.title}</span>
+                <item.icon size={22}/>
+                <span style={{fontSize:'0.7rem',fontWeight:active?700:500,whiteSpace:'nowrap',fontFamily:'Rubik,Heebo,sans-serif',lineHeight:1.1,overflow:'hidden',textOverflow:'ellipsis',maxWidth:'100%'}}>{item.short || item.title}</span>
               </Link>
             );
           })}
@@ -537,10 +537,10 @@ function LayoutContent({ children }) {
             cursor:'pointer',WebkitTapHighlightColor:'transparent',touchAction:'manipulation',
             fontFamily:'Rubik,Heebo,sans-serif',
           }}>
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
               <circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/>
             </svg>
-            <span style={{fontSize:'0.72rem',fontWeight:500,whiteSpace:'nowrap',lineHeight:1}}>עוד</span>
+            <span style={{fontSize:'0.7rem',fontWeight:500,whiteSpace:'nowrap',lineHeight:1.1}}>עוד</span>
           </button>
         </nav>
       </div>
