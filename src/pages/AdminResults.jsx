@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, startTransition } from "react";
+import { createPortal } from "react-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -470,9 +471,9 @@ export default function AdminResults() {
         </button>
 
         {/* בורר נפתח מלמטה */}
-        {mobileMenuOpen && (
+        {mobileMenuOpen && createPortal((
           <div onClick={() => setMobileMenuOpen(false)} style={{
-            position:'fixed', inset:0, zIndex:1000, background:'rgba(0,0,0,0.65)',
+            position:'fixed', inset:0, zIndex:99999, background:'rgba(0,0,0,0.65)',
             display:'flex', alignItems:'flex-end', backdropFilter:'blur(2px)',
           }}>
             <div onClick={e => e.stopPropagation()} className="vs-sheet-scroll" style={{
@@ -537,7 +538,7 @@ export default function AdminResults() {
               })}
             </div>
           </div>
-        )}
+        ), document.body)}
       </div>
     );
   };
@@ -654,11 +655,11 @@ export default function AdminResults() {
   };
 
   const renderQuestionRow = (q, cols = 4, widths = { select: '160px' }) => (
-    <div key={q.id} style={{ display: 'grid', gridTemplateColumns: isMultiAnswerQuestion(q) ? `40px 1fr auto 44px` : `40px 1fr ${widths.select} 44px`, gap: '5px', alignItems: 'center', padding: '7px 8px', borderRadius: '6px', position: 'relative', overflow: 'visible' }} className="border border-cyan-600/30 bg-slate-700/20">
-      <Badge variant="outline" className="border-cyan-400 text-cyan-200 justify-center text-xs h-6 w-full">{q.question_id}</Badge>
-      <span className="text-right font-medium text-sm text-blue-100" style={{ minWidth: 0, lineHeight: '1.35' }}>{q.question_text}</span>
+    <div key={q.id} className="ar-qrow border border-cyan-600/30 bg-slate-700/20" style={{ display: 'grid', gridTemplateColumns: isMultiAnswerQuestion(q) ? `40px 1fr auto 44px` : `40px 1fr ${widths.select} 44px`, gap: '5px', alignItems: 'center', padding: '7px 8px', borderRadius: '6px', position: 'relative', overflow: 'visible' }}>
+      <Badge variant="outline" className="ar-qnum border-cyan-400 text-cyan-200 justify-center text-xs h-6 w-full">{q.question_id}</Badge>
+      <span className="ar-qtext text-right font-medium text-sm text-blue-100" style={{ minWidth: 0, lineHeight: '1.35' }}>{q.question_text}</span>
       {renderSelectWithLogos(q, results[q.id] || '', val => handleResultChange(q.id, val === '__CLEAR__' ? '' : val), `w-full`)}
-      <Badge className="text-xs px-2 py-1 justify-center h-6 w-full" style={{ borderColor: 'var(--tp-50)', color: 'var(--tp)', background: 'var(--tp-10)' }}>{q.possible_points || 0}</Badge>
+      <Badge className="ar-qpts text-xs px-2 py-1 justify-center h-6 w-full" style={{ borderColor: 'var(--tp-50)', color: 'var(--tp)', background: 'var(--tp-10)' }}>{q.possible_points || 0}</Badge>
     </div>
   );
 
@@ -1034,6 +1035,20 @@ export default function AdminResults() {
     <div dir="rtl" style={{ background: 'linear-gradient(135deg, var(--bg1) 0%, var(--bg2) 50%, var(--bg1) 100%)', minHeight: '100vh' }}>
       <div className="ar-header" style={{ position: 'sticky', top: 0, zIndex: 20, background: 'rgba(0,0,0,0.70)', backdropFilter: 'blur(12px)', borderBottom: '1px solid var(--tp-15)', padding: '10px 20px' }}>
         <style>{`@media (max-width: 767px) { .ar-header { position: relative !important; top: auto !important; } }`}</style>
+        <style>{`
+          @media (max-width: 767px) {
+            .ar-qrow {
+              grid-template-columns: 34px 1fr !important;
+              grid-template-areas: "num text" "sel sel" !important;
+              gap: 6px 8px !important;
+              padding: 10px !important;
+            }
+            .ar-qrow > .ar-qnum  { grid-area: num; align-self: start; }
+            .ar-qrow > .ar-qtext { grid-area: text; font-size: 0.95rem !important; }
+            .ar-qrow > .ar-qpts  { position: absolute; top: 10px; left: 10px; width: auto !important; min-width: 42px; }
+            .ar-qrow > *:nth-child(3) { grid-area: sel; width: 100% !important; }
+          }
+        `}</style>
         <div className="flex flex-row justify-between items-center gap-3 w-full">
           <div>
             <h1 className="text-lg md:text-2xl font-bold flex items-center gap-2" style={{ color: '#f8fafc' }}>
