@@ -17,13 +17,64 @@ import { calculateTotalScore } from "@/components/scoring/ScoreService";
 const PRIZE_TABLE = { 1:8000, 2:4500, 3:3000, 4:2500, 5:2000, 6:1500, 7:1000, 8:800, 9:500, 10:300 };
 const LUCKY_LOSER = 100;
 
-// 🎁 פרסים לא-כספיים למקומות 11–22 (מוצגים באותה עמודת הפרס)
+// 🎁 פרסים לא-כספיים לפי מיקום (מתוך קובץ הניקוד — 14/6/26).
+// מקומות 11–27 = טווחים רציפים ; מ-28 ואילך = מיקום מדויק בלבד (מיקומי ביניים ללא פרס).
+// מקום אחרון (242) = לאקי לוזר, מטופל ב-computePrize.
 const NON_CASH_PRIZES = [
-  { min: 11, max: 12, short: "🍱 ג'פניקה זוגית",      title: "ארוחה זוגית — מסעדת ג'פניקה",  full: "ארוחה זוגית במסעדת ג'פניקה, בחיפה או בקיסריה (לבחירתכם).", color: '#ec4899' },
-  { min: 13, max: 16, short: '🍔 בורגר סאלון זוגית',  title: 'ארוחה זוגית — בורגר סאלון',     full: 'ארוחה זוגית במסעדת בורגר סאלון, באצטדיון סמי עופר בחיפה.', color: '#f59e0b' },
-  { min: 17, max: 22, short: '🎵 הביט הופעה זוגית',   title: 'הופעה זוגית — מועדון הביט',     full: "כרטיס זוגי למופע שייערך במועדון הביט האגדי — בית הספר למוזיקה ומועדון. ממוקם בשד' הנשיא 124, חיפה.", color: '#8b5cf6' },
+  { min: 11, max: 12,  short: "🍱 ג'פניקה זוגית",     title: "ארוחה זוגית — מסעדת ג'פניקה",  full: "ארוחה זוגית במסעדת ג'פניקה, בחיפה או בקיסריה (לבחירתכם).", color: '#ec4899' },
+  { min: 13, max: 16,  short: '🍔 בורגר סאלון זוגית', title: 'ארוחה זוגית — בורגר סאלון',     full: 'ארוחה זוגית במסעדת בורגר סאלון, באצטדיון סמי עופר בחיפה.', color: '#f59e0b' },
+  { min: 17, max: 22,  short: '🎵 הופעה בביט',        title: 'הופעה זוגית — מועדון הביט',     full: "כרטיס זוגי למופע במועדון הביט — בית הספר למוזיקה ומועדון, שד' הנשיא 124, חיפה.", color: '#8b5cf6' },
+  { min: 23, max: 25,  short: '🥩 אבו שקארה (מגש)',   title: 'מגש — אבו שקארה',               full: 'מגש מאבו שקארה.', color: '#22c55e' },
+  { min: 26, max: 27,  short: "🥃 סקאץ' - א.בוקר",     title: "סקאץ' — א.בוקר",                full: "פרס סקאץ' - א.בוקר.", color: '#06b6d4' },
+  { min: 28, max: 28,  short: '☕ לוקאל קפה',          title: 'לוקאל קפה',                     full: 'פרס לוקאל קפה.', color: '#a3a3a3' },
+  { min: 29, max: 29,  short: '🥖 באגט נשר',           title: 'באגט נשר',                      full: 'פרס באגט נשר.', color: '#a3a3a3' },
+  { min: 30, max: 30,  short: '🍮 כנאפה תלפיות',       title: 'כנאפה תלפיות',                  full: 'פרס כנאפה תלפיות.', color: '#a3a3a3' },
+  { min: 35, max: 35,  short: '🎳 באולינג',            title: 'באולינג',                       full: 'פרס באולינג.', color: '#a3a3a3' },
+  { min: 40, max: 40,  short: '🥖 באגט נשר',           title: 'באגט נשר',                      full: 'פרס באגט נשר.', color: '#a3a3a3' },
+  { min: 45, max: 45,  short: '☕ קפה עוספיה',         title: 'קפה עוספיה',                    full: 'פרס קפה עוספיה.', color: '#a3a3a3' },
+  { min: 50, max: 50,  short: '☕ לוקאל קפה',          title: 'לוקאל קפה',                     full: 'פרס לוקאל קפה.', color: '#a3a3a3' },
+  { min: 55, max: 55,  short: '🍮 כנאפה תלפיות',       title: 'כנאפה תלפיות',                  full: 'פרס כנאפה תלפיות.', color: '#a3a3a3' },
+  { min: 60, max: 60,  short: '🥖 באגט נשר',           title: 'באגט נשר',                      full: 'פרס באגט נשר.', color: '#a3a3a3' },
+  { min: 67, max: 67,  short: '☕ קפה עוספיה',         title: 'קפה עוספיה',                    full: 'פרס קפה עוספיה.', color: '#a3a3a3' },
+  { min: 70, max: 70,  short: '🍮 כנאפה תלפיות',       title: 'כנאפה תלפיות',                  full: 'פרס כנאפה תלפיות.', color: '#a3a3a3' },
+  { min: 75, max: 75,  short: "🥃 סקאץ'",              title: "סקאץ'",                         full: "פרס סקאץ'.", color: '#a3a3a3' },
+  { min: 80, max: 80,  short: '🥖 באגט נשר',           title: 'באגט נשר',                      full: 'פרס באגט נשר.', color: '#a3a3a3' },
+  { min: 85, max: 85,  short: '☕ קפה עוספיה',         title: 'קפה עוספיה',                    full: 'פרס קפה עוספיה.', color: '#a3a3a3' },
+  { min: 90, max: 90,  short: '☕ לוקאל קפה',          title: 'לוקאל קפה',                     full: 'פרס לוקאל קפה.', color: '#a3a3a3' },
+  { min: 95, max: 95,  short: '🍮 כנאפה תלפיות',       title: 'כנאפה תלפיות',                  full: 'פרס כנאפה תלפיות.', color: '#a3a3a3' },
+  { min: 100, max: 100, short: '🥖 באגט נשר',          title: 'באגט נשר',                      full: 'פרס באגט נשר.', color: '#a3a3a3' },
+  { min: 104, max: 104, short: '☕ קפה עוספיה',        title: 'קפה עוספיה',                    full: 'פרס קפה עוספיה.', color: '#a3a3a3' },
+  { min: 105, max: 105, short: "🥃 סקאץ'",             title: "סקאץ'",                         full: "פרס סקאץ'.", color: '#a3a3a3' },
+  { min: 110, max: 110, short: '🥩 אבו שקארה',         title: 'אבו שקארה',                     full: 'פרס אבו שקארה.', color: '#a3a3a3' },
+  { min: 115, max: 115, short: '🍮 כנאפה תלפיות',      title: 'כנאפה תלפיות',                  full: 'פרס כנאפה תלפיות.', color: '#a3a3a3' },
+  { min: 120, max: 120, short: '🥖 באגט נשר',          title: 'באגט נשר',                      full: 'פרס באגט נשר.', color: '#a3a3a3' },
+  { min: 125, max: 125, short: '🥩 אבו שקארה',         title: 'אבו שקארה',                     full: 'פרס אבו שקארה.', color: '#a3a3a3' },
+  { min: 130, max: 130, short: '🍮 כנאפה תלפיות',      title: 'כנאפה תלפיות',                  full: 'פרס כנאפה תלפיות.', color: '#a3a3a3' },
+  { min: 135, max: 135, short: '🥩 אבו שקארה',         title: 'אבו שקארה',                     full: 'פרס אבו שקארה.', color: '#a3a3a3' },
+  { min: 140, max: 140, short: '🥖 באגט נשר',          title: 'באגט נשר',                      full: 'פרס באגט נשר.', color: '#a3a3a3' },
+  { min: 145, max: 145, short: '🎳 באולינג',           title: 'באולינג',                       full: 'פרס באולינג.', color: '#a3a3a3' },
+  { min: 150, max: 150, short: "🥃 סקאץ'",             title: "סקאץ'",                         full: "פרס סקאץ'.", color: '#a3a3a3' },
+  { min: 155, max: 155, short: '🥩 אבו שקארה',         title: 'אבו שקארה',                     full: 'פרס אבו שקארה.', color: '#a3a3a3' },
+  { min: 160, max: 160, short: '🍔 BBB',               title: 'BBB',                           full: 'פרס BBB.', color: '#a3a3a3' },
+  { min: 165, max: 165, short: '☕ לוקאל קפה',         title: 'לוקאל קפה',                     full: 'פרס לוקאל קפה.', color: '#a3a3a3' },
+  { min: 170, max: 170, short: '🎳 באולינג',           title: 'באולינג',                       full: 'פרס באולינג.', color: '#a3a3a3' },
+  { min: 175, max: 175, short: '🍮 כנאפה תלפיות',      title: 'כנאפה תלפיות',                  full: 'פרס כנאפה תלפיות.', color: '#a3a3a3' },
+  { min: 180, max: 180, short: '🥖 באגט נשר',          title: 'באגט נשר',                      full: 'פרס באגט נשר.', color: '#a3a3a3' },
+  { min: 185, max: 185, short: '☕ לוקאל קפה',         title: 'לוקאל קפה',                     full: 'פרס לוקאל קפה.', color: '#a3a3a3' },
+  { min: 190, max: 190, short: '🥩 אבו שקארה',         title: 'אבו שקארה',                     full: 'פרס אבו שקארה.', color: '#a3a3a3' },
+  { min: 195, max: 195, short: '☕ קפה עוספיה',        title: 'קפה עוספיה',                    full: 'פרס קפה עוספיה.', color: '#a3a3a3' },
+  { min: 200, max: 200, short: '🎳 באולינג',           title: 'באולינג',                       full: 'פרס באולינג.', color: '#a3a3a3' },
+  { min: 205, max: 205, short: "🥃 סקאץ'",             title: "סקאץ'",                         full: "פרס סקאץ'.", color: '#a3a3a3' },
+  { min: 210, max: 210, short: '🥖 באגט נשר',          title: 'באגט נשר',                      full: 'פרס באגט נשר.', color: '#a3a3a3' },
+  { min: 215, max: 215, short: '☕ קפה עוספיה',        title: 'קפה עוספיה',                    full: 'פרס קפה עוספיה.', color: '#a3a3a3' },
+  { min: 220, max: 220, short: '🍔 BBB',               title: 'BBB',                           full: 'פרס BBB.', color: '#a3a3a3' },
+  { min: 225, max: 225, short: "🥃 סקאץ'",             title: "סקאץ'",                         full: "פרס סקאץ'.", color: '#a3a3a3' },
+  { min: 230, max: 230, short: '🥖 באגט נשר',          title: 'באגט נשר',                      full: 'פרס באגט נשר.', color: '#a3a3a3' },
+  { min: 235, max: 235, short: '🎳 באולינג',           title: 'באולינג',                       full: 'פרס באולינג.', color: '#a3a3a3' },
+  { min: 240, max: 240, short: '☕ קפה עוספיה',        title: 'קפה עוספיה',                    full: 'פרס קפה עוספיה.', color: '#a3a3a3' },
+  { min: 241, max: 241, short: '🍔 BBB',               title: 'BBB',                           full: 'פרס BBB.', color: '#a3a3a3' },
 ];
-// פרס לא-כספי לפי מיקום ייחודי (אחרי שבירת שוויון א-ב). מיקום 11→ג'פניקה, 13→בורגר וכו'.
+// פרס לא-כספי לפי מיקום ייחודי (אחרי שבירת שוויון א-ב). מיקום מדויק בלבד מ-28 ואילך.
 const nonCashPrizeForPos = (pos) => {
   if (!pos) return null;
   return NON_CASH_PRIZES.find(p => pos >= p.min && pos <= p.max) || null;
@@ -883,7 +934,7 @@ export default function LeaderboardNew() {
           <DialogHeader>
             <DialogTitle style={{ color: '#f8fafc', textAlign: 'right' }}>
               <span style={{ display: 'block', fontSize: '0.72rem', color: prizeView?.color, fontWeight: 700, marginBottom: 4 }}>
-                🎁 פרס · מקומות {prizeView?.min}–{prizeView?.max}
+                🎁 פרס · {prizeView?.min === prizeView?.max ? `מקום ${prizeView?.min}` : `מקומות ${prizeView?.min}–${prizeView?.max}`}
               </span>
               {prizeView?.title}
             </DialogTitle>
