@@ -395,6 +395,153 @@ export default function AdminResults() {
 
   const toggleSection = (sectionId) => { startTransition(() => { setOpenSections(prev => ({ ...prev, [sectionId]: !prev[sectionId] })); }); };
 
+  const shortLabel = (desc) => {
+    if (!desc) return '';
+    const raw = String(desc);
+
+    // ראש בראש / מיוחדות / מסלול
+    if (raw.includes('ראש בראש') || raw.includes('התותחים') || raw.includes('מבול')) return 'ראש בראש';
+    if (raw.includes('הניחושים המיוחדים')) return 'הניחושים המיוחדים';
+    if (raw.includes('המסלול המהיר')) return 'המסלול המהיר';
+
+    // ── רשימות העולות — מזוהות לפי "רשימת הנבחרות" / "העולות" / "ראש בית וסגנית" / "נבחרות המקום" ──
+    const isQualifierList = raw.includes('רשימת הנבחרות') || raw.includes('הנבחרות שתסיימנה') ||
+                            raw.includes('הנבחרות שיעלו') || raw.includes('העולות') ||
+                            (raw.includes('ראש בית') && raw.includes('סגנית')) || raw.includes('נבחרות המקום');
+    if (isQualifierList) {
+      if (raw.includes('ראש בית') && raw.includes('סגנית')) return 'עולות · ראש בית וסגנית';
+      if (raw.includes('מקום השלישי') || raw.includes('המקום השלישי') || raw.includes('שלישי')) return 'עולות · מקום שלישי';
+      if (raw.includes('שמינית')) return 'עולות · שמינית גמר';
+      if (raw.includes('רבע')) return 'עולות · רבע גמר';
+      if (raw.includes('חצי')) return 'עולות · חצי גמר';
+      if (raw.includes('גמר')) return 'עולות · גמר מונדיאל';
+    }
+
+    // שלב הבתים
+    if (raw.includes('שלב הבתים')) return 'שלב הבתים';
+
+    // ברירת מחדל — ניקוי וקיצור
+    let s = raw.replace(/\(\*+\)/g, '').replace(/["'״]/g, '').replace(/^בית\s*/, 'בית ').trim();
+    return s.length > 16 ? s.slice(0, 15).trim() + '…' : s;
+  };
+
+  // 📱 ניווט נייד — בורר נפתח (Bottom Sheet). שורה אחת קבועה, בחירה פותחת חלון מלא.
+  const renderMobileNav = (allButtonsList, openSectionsMap, toggleSectionFn) => {
+    const typeColors = {
+      playoff:'#3b82f6', league:'#3b82f6', groups:'#06b6d4', rounds:'#06b6d4',
+      special:'#8b5cf6', qualifiers:'#f97316', other:'#64748b',
+    };
+    const groupLabels = {
+      groups:'🏠 בתים', rounds:'⚽ מחזורים', playoff:'⚔️ נוקאאוט', league:'⚽ ליגה',
+      special:'✨ הניחושים המיוחדים', qualifiers:'📋 רשימות העולות', other:'📌 נוסף',
+    };
+
+    const grouped = {};
+    allButtonsList.forEach(b => {
+      const t = b.stageType || 'special';
+      (grouped[t] = grouped[t] || []).push(b);
+    });
+    const orderedTypes = ['groups','rounds','playoff','league','special','qualifiers','other']
+      .filter(t => grouped[t]?.length);
+
+    // השלבים הפתוחים כרגע (לתווית בכפתור)
+    const openButtons = allButtonsList.filter(b => openSectionsMap[b.sectionKey]);
+    const triggerLabel = openButtons.length === 0 ? 'בחר שלב לצפייה'
+      : openButtons.length === 1 ? shortLabel(openButtons[0].houseGrid ? (openButtons[0].fullDescription || openButtons[0].description) : openButtons[0].description)
+      : `${openButtons.length} שלבים נבחרו`;
+
+    return (
+      <div>
+        <style>{`.vs-sheet-scroll::-webkit-scrollbar{width:0}`}</style>
+
+        {/* שורת ניווט אחת — כפתור הבורר */}
+        <button onClick={() => setMobileMenuOpen(true)} style={{
+          width:'100%', display:'flex', alignItems:'center', justifyContent:'space-between',
+          padding:'12px 16px', borderRadius:'12px', cursor:'pointer',
+          background:'linear-gradient(135deg, rgba(6,182,212,0.18), rgba(6,182,212,0.07))',
+          border:'1.5px solid rgba(6,182,212,0.5)', fontFamily:'Rubik,Heebo,sans-serif',
+          WebkitTapHighlightColor:'transparent', touchAction:'manipulation', minHeight:'48px',
+        }}>
+          <span style={{ display:'flex', alignItems:'center', gap:9 }}>
+            <span style={{ fontSize:'1.15rem' }}>🗂️</span>
+            <span style={{ color:'#f8fafc', fontWeight:700, fontSize:'0.98rem' }}>{triggerLabel}</span>
+          </span>
+          <span style={{ color:'#22d3ee', fontSize:'0.9rem', fontWeight:600 }}>החלף ▾</span>
+        </button>
+
+        {/* בורר נפתח מלמטה */}
+        {mobileMenuOpen && (
+          <div onClick={() => setMobileMenuOpen(false)} style={{
+            position:'fixed', inset:0, zIndex:1000, background:'rgba(0,0,0,0.65)',
+            display:'flex', alignItems:'flex-end', backdropFilter:'blur(2px)',
+          }}>
+            <div onClick={e => e.stopPropagation()} className="vs-sheet-scroll" style={{
+              width:'100%', maxHeight:'82vh', overflowY:'auto',
+              background:'#0b1220', borderTopLeftRadius:'22px', borderTopRightRadius:'22px',
+              border:'1px solid rgba(6,182,212,0.3)', borderBottom:'none',
+              padding:'10px 16px calc(28px + env(safe-area-inset-bottom,0px))',
+              boxShadow:'0 -10px 40px rgba(0,0,0,0.8)',
+            }}>
+              {/* ידית + כותרת */}
+              <div style={{ display:'flex', justifyContent:'center', padding:'4px 0 12px' }}>
+                <div style={{ width:'42px', height:'5px', borderRadius:'3px', background:'rgba(255,255,255,0.2)' }} />
+              </div>
+              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16 }}>
+                <span style={{ fontSize:'1.05rem', fontWeight:700, color:'#f8fafc' }}>בחר שלב לצפייה</span>
+                <button onClick={() => setMobileMenuOpen(false)} aria-label="סגור" style={{
+                  background:'rgba(255,255,255,0.06)', border:'none', borderRadius:'50%',
+                  width:'32px', height:'32px', color:'#94a3b8', cursor:'pointer', fontSize:'1.1rem', lineHeight:1,
+                }}>✕</button>
+              </div>
+
+              {orderedTypes.map(type => {
+                const c = typeColors[type];
+                const isGroups = type === 'groups';
+                return (
+                  <div key={type} style={{ marginBottom:18 }}>
+                    <div style={{ fontSize:'0.78rem', color:c, marginBottom:9, fontWeight:700 }}>{groupLabels[type] || type}</div>
+                    <div style={{ display:'grid', gridTemplateColumns: isGroups ? 'repeat(3,1fr)' : 'repeat(2,1fr)', gap:8 }}>
+                      {grouped[type].map(b => {
+                        const active = openSectionsMap[b.sectionKey];
+                        return (
+                          <button key={b.key}
+                            onClick={() => {
+                              Object.keys(openSectionsMap).forEach(k => { if (openSectionsMap[k] && k !== b.sectionKey) toggleSectionFn(k); });
+                              if (!openSectionsMap[b.sectionKey]) toggleSectionFn(b.sectionKey);
+                              setMobileMenuOpen(false);
+                              setTimeout(() => {
+                                const main = document.querySelector('.lm-page');
+                                if (main) main.scrollTo({ top: 0, behavior: 'smooth' });
+                                else window.scrollTo({ top: 0, behavior: 'smooth' });
+                              }, 60);
+                            }}
+                            title={b.fullDescription || b.description}
+                            style={{
+                              display:'flex', alignItems:'center', justifyContent:'center',
+                              padding:'13px 8px', borderRadius:'12px',
+                              fontSize:'0.86rem', fontWeight: active ? 700 : 500,
+                              color: active ? '#0f172a' : '#e2e8f0',
+                              background: active ? c : 'rgba(255,255,255,0.04)',
+                              border:`1.5px solid ${active ? c : `${c}40`}`, cursor:'pointer',
+                              fontFamily:'Rubik,Heebo,sans-serif', textAlign:'center',
+                              WebkitTapHighlightColor:'transparent', touchAction:'manipulation', minHeight:'52px',
+                              whiteSpace:'normal', lineHeight:1.25,
+                            }}>
+                            {shortLabel(b.houseGrid ? (b.fullDescription || b.description) : b.description)}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const findTeam = (name) => {
     if (!name) return null;
     if (teams[name]) return teams[name];
@@ -830,7 +977,7 @@ export default function AdminResults() {
                     {listBtns.map(btn => {
                       const active = openSections[btn.sectionKey];
                       return (
-                        <button key={btn.key} onClick={() => toggleSection(btn.sectionKey)} style={{ display: 'block', width: '100%', textAlign: 'right', padding: '7px 10px', marginBottom: 4, borderRadius: '8px', fontSize: '0.78rem', fontWeight: active ? '700' : '400', color: active ? 'white' : info.color, background: active ? info.activeBg : `${info.color}12`, border: `1px solid ${active ? info.color : `${info.color}40`}`, cursor: 'pointer', transition: 'all 0.15s', boxShadow: active ? `0 0 10px ${info.color}55` : 'none', fontFamily: 'Rubik, Heebo, sans-serif', lineHeight: '1.35' }}>{btn.description}</button>
+                        <button key={btn.key} onClick={() => toggleSection(btn.sectionKey)} style={{ display: 'block', width: '100%', textAlign: 'right', padding: '7px 10px', marginBottom: 4, borderRadius: '8px', fontSize: '0.78rem', fontWeight: active ? '700' : '400', color: active ? 'white' : info.color, background: active ? info.activeBg : `${info.color}12`, border: `1px solid ${active ? info.color : `${info.color}40`}`, cursor: 'pointer', transition: 'all 0.15s', boxShadow: active ? `0 0 10px ${info.color}55` : 'none', fontFamily: 'Rubik, Heebo, sans-serif', lineHeight: '1.35' }}>{shortLabel(btn.description)}</button>
                       );
                     })}
                   </div>
@@ -885,7 +1032,8 @@ export default function AdminResults() {
 
   return (
     <div dir="rtl" style={{ background: 'linear-gradient(135deg, var(--bg1) 0%, var(--bg2) 50%, var(--bg1) 100%)', minHeight: '100vh' }}>
-      <div style={{ position: 'sticky', top: 0, zIndex: 20, background: 'rgba(0,0,0,0.70)', backdropFilter: 'blur(12px)', borderBottom: '1px solid var(--tp-15)', padding: '10px 20px' }}>
+      <div className="ar-header" style={{ position: 'sticky', top: 0, zIndex: 20, background: 'rgba(0,0,0,0.70)', backdropFilter: 'blur(12px)', borderBottom: '1px solid var(--tp-15)', padding: '10px 20px' }}>
+        <style>{`@media (max-width: 767px) { .ar-header { position: relative !important; top: auto !important; } }`}</style>
         <div className="flex flex-row justify-between items-center gap-3 w-full">
           <div>
             <h1 className="text-lg md:text-2xl font-bold flex items-center gap-2" style={{ color: '#f8fafc' }}>
@@ -909,7 +1057,7 @@ export default function AdminResults() {
       {recalculating && recalcProgress && (
         <div className="mx-4 mt-2 p-3 rounded-lg text-sm" style={{ background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.3)', color: '#10b981' }}>⏳ {recalcProgress}</div>
       )}
-      <div className="md:hidden p-3">{renderStageChips(allButtons)}</div>
+      <div className="md:hidden p-3">{renderMobileNav(allButtons.map(b=>b.houseGrid?{...b,description:b.fullDescription||b.description}:b), openSections, toggleSection)}</div>
       <div className="hidden md:flex flex-row gap-4 p-4 w-full" style={{ alignItems: 'flex-start' }}>
         {renderSidebar()}
         {renderContent()}
