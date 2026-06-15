@@ -655,6 +655,11 @@ export default function ViewSubmissions() {
 
   const getMaxPossibleScore = (question) => {
     if (question.table_id === 'T20' && question.home_team && question.away_team) return 6;
+    // 🌍 T17 מקום שלישי: שאלה ראשית = 10 או 7 (לא מצטבר) ; תת-שאלה ".1" = 4
+    if (question.game_id === WC_GAME_ID && question.table_id === 'T17') {
+      const isSub = String(question.question_id).includes('.');
+      return isSub ? 4 : '10/7';
+    }
     if (question.possible_points != null && question.possible_points > 0) return question.possible_points;
     if (question.actual_result != null && question.actual_result !== '') return 10;
     if (question.table_id === 'T10') return question.possible_points || 10;
@@ -674,9 +679,9 @@ export default function ViewSubmissions() {
     const hasValue = originalValue && originalValue.trim() !== '';
     const hasActualResult = question.actual_result && question.actual_result.trim() !== '' && question.actual_result !== '__CLEAR__';
     const textColor = hasActualResult ? '#06b6d4' : '#f8fafc';
-    const isQuestion11_1 = question.question_id === '11.1';
-    const isQuestion11_2 = question.question_id === '11.2';
-    const boxWidth = isQuestion11_1 ? 'min-w-[60px] max-w-[65px]' : isQuestion11_2 ? 'min-w-[115px] max-w-[125px]' : 'min-w-[105px] max-w-[125px]';
+    const isQuestion11_1 = false; // ❌ בוטל hack ישן (ליגת אלופות) שצימצם את תיבת 11.1
+    const isQuestion11_2 = false;
+    const boxWidth = 'min-w-[105px] max-w-[125px]';
 
     if (isEditMode && isAdmin && question.validation_list && data.validationLists[question.validation_list]) {
       const options = data.validationLists[question.validation_list] || [];
@@ -765,10 +770,14 @@ export default function ViewSubmissions() {
     }
 
     let badgeColor = 'bg-slate-600 text-slate-300';
+    // maxScore יכול להיות מחרוזת כמו "10/7" (T17) — נחשב מקס נומרי להשוואת צבע
+    const maxNum = typeof maxScore === 'string'
+      ? Math.max(...maxScore.split('/').map(n => parseInt(n, 10)).filter(n => !isNaN(n)))
+      : maxScore;
     if (score !== null) {
-      if (score === maxScore && maxScore > 0) badgeColor = 'bg-green-700 text-green-100';
+      if (score === maxNum && maxNum > 0) badgeColor = 'bg-green-700 text-green-100';
       else if (score === 0) badgeColor = 'bg-red-700 text-red-100';
-      else if (maxScore > 0 && score >= maxScore * 0.7) badgeColor = 'bg-blue-700 text-blue-100';
+      else if (maxNum > 0 && score >= maxNum * 0.7) badgeColor = 'bg-blue-700 text-blue-100';
       else if (score > 0) badgeColor = 'bg-yellow-500 text-white';
     }
 
