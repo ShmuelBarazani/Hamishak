@@ -1695,7 +1695,7 @@ export default function Statistics() {
   const isSpecialSection = selectedSection&&!isRoundsSection&&!isQualSection&&!isDaySection&&selectedSection!=='insights'&&selectedSection!=='movers';
 
   // ── 📅 calendar render ──
-  const renderCalendar = () => {
+  const renderCalendar = (afterSelect) => {
     if(!hasDates&&!isWC) return null;
     const M=CAL_MONTHS[calMonthIdx];
     const firstDow=new Date(M.y,M.m,1).getDay();
@@ -1723,7 +1723,7 @@ export default function Statistics() {
             const sel=selectedSection===`day_${key}`;
             return (
               <span key={d}
-                onClick={clickable?()=>toggleSection(`day_${key}`):undefined}
+                onClick={clickable?()=>{toggleSection(`day_${key}`);if(afterSelect)afterSelect();}:undefined}
                 title={stage||''}
                 style={{fontSize:'0.72rem',textAlign:'center',padding:'5px 0',borderRadius:6,
                   color:sel?'#fff':has?'#cbd5e1':stage?'#7dd3fc':'#334155',
@@ -1984,7 +1984,14 @@ export default function Statistics() {
                     {hasDates && (
                       <div style={{marginBottom:18}}>
                         <div style={{fontSize:'0.78rem',fontWeight:700,color:'#06b6d4',marginBottom:9}}>📅 לוח משחקים</div>
-                        {renderCalendar()}
+                        {renderCalendar(()=>{
+                          setMobileMenuOpen(false);
+                          setTimeout(()=>{
+                            const main=document.querySelector('.lm-page');
+                            if(main) main.scrollTo({top:0,behavior:'smooth'});
+                            else window.scrollTo({top:0,behavior:'smooth'});
+                          },60);
+                        })}
                       </div>
                     )}
                     {menuGroups.map(group=>(
