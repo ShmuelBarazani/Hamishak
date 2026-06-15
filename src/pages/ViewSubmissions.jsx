@@ -1297,10 +1297,10 @@ export default function ViewSubmissions() {
           <span style={{ color:'#22d3ee', fontSize:'0.9rem', fontWeight:600 }}>החלף ▾</span>
         </button>
 
-        {/* בורר נפתח מלמטה */}
-        {mobileMenuOpen && (
+        {/* בורר נפתח מלמטה — portal ל-body כדי לעלות מעל הכותרת */}
+        {mobileMenuOpen && createPortal((
           <div onClick={() => setMobileMenuOpen(false)} style={{
-            position:'fixed', inset:0, zIndex:1000, background:'rgba(0,0,0,0.65)',
+            position:'fixed', inset:0, zIndex:99999, background:'rgba(0,0,0,0.65)',
             display:'flex', alignItems:'flex-end', backdropFilter:'blur(2px)',
           }}>
             <div onClick={e => e.stopPropagation()} className="vs-sheet-scroll" style={{
@@ -1365,7 +1365,7 @@ export default function ViewSubmissions() {
               })}
             </div>
           </div>
-        )}
+        ), document.body)}
       </div>
     );
   };
