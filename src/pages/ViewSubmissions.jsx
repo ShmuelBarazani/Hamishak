@@ -134,6 +134,7 @@ export default function ViewSubmissions() {
   const [selectedParticipant, setSelectedParticipant] = useState(null);
   const [openSections, setOpenSections] = useState({});
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false); // 🆕 תפריט נייד מתקפל
+  const [mobileActionsOpen, setMobileActionsOpen] = useState(false); // 🆕 פעולות מנהל בנייד
   const [openMenuGroups, setOpenMenuGroups] = useState({ rounds:true, groups:true, playoff:true, league:true, special:false, qualifiers:false, other:true });
   const toggleMenuGroup = k => setOpenMenuGroups(prev=>({...prev,[k]:!prev[k]}));
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
@@ -1588,14 +1589,27 @@ export default function ViewSubmissions() {
           .vs-simple-row .vs-q-text { font-size: 0.82rem !important; }
         }
       `}</style>
-      <div className="sticky top-0 z-30 backdrop-blur-sm shadow-lg" style={{ background: 'rgba(15,23,42,0.95)', borderBottom: '1px solid rgba(6,182,212,0.2)' }}>
+      <div className="vs-header md:sticky md:top-0 z-30 backdrop-blur-sm shadow-lg" style={{ background: 'rgba(15,23,42,0.95)', borderBottom: '1px solid rgba(6,182,212,0.2)' }}>
+        <style>{`
+          @media (max-width: 767px) {
+            .vs-header { position: relative !important; }
+            .vs-admin-actions { display: none !important; }
+            .vs-admin-actions.vs-actions-open { display: flex !important; }
+          }
+        `}</style>
         <div className="px-3 md:px-6 py-2 md:py-2.5 w-full">
           <div className="flex flex-row justify-between items-center gap-2 mb-2">
             <h1 className="text-base md:text-xl font-bold flex items-center gap-2" style={{ color:'#f8fafc', textShadow:'0 0 10px rgba(6,182,212,0.3)' }}>
               <Users className="w-5 h-5 md:w-6 md:h-6" style={{ color:'#06b6d4' }} />
               צפייה בניחושים
             </h1>
-            <div className="flex gap-1.5 md:gap-3 flex-wrap w-full md:w-auto">
+            {/* כפתור פעולות מנהל — נייד בלבד */}
+            {isAdmin && (
+              <button onClick={() => setMobileActionsOpen(o => !o)} className="md:hidden" style={{ display:'inline-flex', alignItems:'center', gap:5, padding:'7px 12px', borderRadius:9, background:'rgba(6,182,212,0.12)', border:'1px solid rgba(6,182,212,0.35)', color:'#22d3ee', fontSize:'0.8rem', fontFamily:'Rubik,Heebo,sans-serif', cursor:'pointer', flexShrink:0 }}>
+                ⚙️ פעולות
+              </button>
+            )}
+            <div className={`vs-admin-actions flex gap-1.5 md:gap-3 flex-wrap w-full md:w-auto${mobileActionsOpen ? ' vs-actions-open' : ''}`}>
               {isAdmin && selectedParticipant && !loadingPredictions && (
                 <>
                   {!isEditMode ? (
