@@ -1225,26 +1225,31 @@ export default function ViewSubmissions() {
   const shortLabel = (desc) => {
     if (!desc) return '';
     const raw = String(desc);
-    // מיפויים מדויקים לפי בקשת המשתמש (רק בתפריטים)
+
+    // ראש בראש / מיוחדות / מסלול
     if (raw.includes('ראש בראש') || raw.includes('התותחים') || raw.includes('מבול')) return 'ראש בראש';
     if (raw.includes('הניחושים המיוחדים')) return 'הניחושים המיוחדים';
     if (raw.includes('המסלול המהיר')) return 'המסלול המהיר';
 
-    // ── רשימות העולות (מתחילות ב"העולות" או "ראש בית"/"נבחרות המקום") → קידומת "עולות" ──
-    const isQualifierList = raw.includes('העולות') || (raw.includes('ראש בית') && raw.includes('סגנית')) || raw.includes('נבחרות המקום');
+    // ── רשימות העולות — מזוהות לפי "רשימת הנבחרות" / "העולות" / "ראש בית וסגנית" / "נבחרות המקום" ──
+    const isQualifierList = raw.includes('רשימת הנבחרות') || raw.includes('הנבחרות שתסיימנה') ||
+                            raw.includes('הנבחרות שיעלו') || raw.includes('העולות') ||
+                            (raw.includes('ראש בית') && raw.includes('סגנית')) || raw.includes('נבחרות המקום');
     if (isQualifierList) {
       if (raw.includes('ראש בית') && raw.includes('סגנית')) return 'עולות · ראש בית וסגנית';
-      if (raw.includes('המקום השלישי') || raw.includes('מקום השלישי')) return 'עולות · מקום שלישי';
+      if (raw.includes('מקום השלישי') || raw.includes('המקום השלישי') || raw.includes('שלישי')) return 'עולות · מקום שלישי';
       if (raw.includes('שמינית')) return 'עולות · שמינית גמר';
       if (raw.includes('רבע')) return 'עולות · רבע גמר';
       if (raw.includes('חצי')) return 'עולות · חצי גמר';
       if (raw.includes('גמר')) return 'עולות · גמר מונדיאל';
     }
 
-    // ── שאר השלבים (שאלות מיוחדות, מסלול גמר וכו') — נשארים כפי שהם, ניקוי קל ──
+    // שלב הבתים
     if (raw.includes('שלב הבתים')) return 'שלב הבתים';
+
+    // ברירת מחדל — ניקוי וקיצור
     let s = raw.replace(/\(\*+\)/g, '').replace(/["'״]/g, '').replace(/^בית\s*/, 'בית ').trim();
-    return s.length > 18 ? s.slice(0, 17).trim() + '…' : s;
+    return s.length > 16 ? s.slice(0, 15).trim() + '…' : s;
   };
 
   // 📱 ניווט נייד חדש — רצועה אופקית + כפתור קפיצה לרשת מלאה
@@ -1269,6 +1274,9 @@ export default function ViewSubmissions() {
     const orderedTypes = ['groups','rounds','playoff','league','qualifiers','special','other']
       .filter(t => grouped[t]?.length);
 
+    // רצועה אופקית בסדר הקטגוריות של המערכת (לא flat) — שומר על הסדר הקיים
+    const railButtons = orderedTypes.flatMap(t => grouped[t]);
+
     return (
       <div>
         {/* רצועה אופקית נגללת */}
@@ -1284,7 +1292,7 @@ export default function ViewSubmissions() {
           }}>
             <span style={{ fontSize:'1rem' }}>🧭</span> קפיצה
           </button>
-          {allButtonsList.map(b => {
+          {railButtons.map(b => {
             const active = openSectionsMap[b.sectionKey];
             const c = colorOf(b);
             return (
@@ -1450,7 +1458,7 @@ export default function ViewSubmissions() {
                           const active = openSections[btn.sectionKey];
                           return (
                             <button key={btn.key} onClick={() => toggleSection(btn.sectionKey)} title={btn.fullDescription} style={{ textAlign:'center', padding:'7px 0', borderRadius:8, fontSize:'0.8rem', fontWeight:active?700:500, color:active?'#fff':'#67e8f9', background:active?info.activeBg:'rgba(6,182,212,0.08)', border:`1px solid ${active?info.color:'rgba(6,182,212,0.25)'}`, cursor:'pointer', transition:'all 0.12s', boxShadow:active?`0 0 8px ${info.color}80`:'none', fontFamily:'Rubik,Heebo,sans-serif' }}>
-                              {btn.description}
+                              {shortLabel(btn.houseGrid ? (btn.fullDescription || btn.description) : btn.description)}
                             </button>
                           );
                         })}
@@ -1459,8 +1467,8 @@ export default function ViewSubmissions() {
                     {listBtns.map(btn => {
                       const active = openSections[btn.sectionKey];
                       return (
-                        <button key={btn.key} onClick={() => toggleSection(btn.sectionKey)} style={{ display:'block', width:'100%', textAlign:'right', padding:'7px 10px', marginBottom:4, borderRadius:'8px', fontSize:'0.78rem', fontWeight: active ? '700' : '400', color: active ? 'white' : info.color, background: active ? info.activeBg : `${info.color}12`, border:`1px solid ${active ? info.color : `${info.color}40`}`, cursor:'pointer', transition:'all 0.15s', boxShadow: active ? `0 0 10px ${info.color}55` : 'none', fontFamily:'Rubik, Heebo, sans-serif', lineHeight:'1.35' }}>
-                          {btn.description}
+                        <button key={btn.key} onClick={() => toggleSection(btn.sectionKey)} title={btn.fullDescription} style={{ display:'block', width:'100%', textAlign:'right', padding:'7px 10px', marginBottom:4, borderRadius:'8px', fontSize:'0.78rem', fontWeight: active ? '700' : '400', color: active ? 'white' : info.color, background: active ? info.activeBg : `${info.color}12`, border:`1px solid ${active ? info.color : `${info.color}40`}`, cursor:'pointer', transition:'all 0.15s', boxShadow: active ? `0 0 10px ${info.color}55` : 'none', fontFamily:'Rubik, Heebo, sans-serif', lineHeight:'1.35' }}>
+                          {shortLabel(btn.description)}
                         </button>
                       );
                     })}
