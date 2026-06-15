@@ -134,7 +134,6 @@ export default function ViewSubmissions() {
   const [selectedParticipant, setSelectedParticipant] = useState(null);
   const [openSections, setOpenSections] = useState({});
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false); // 🆕 תפריט נייד מתקפל
-  const [mobileActionsOpen, setMobileActionsOpen] = useState(false); // 🆕 פעולות מנהל בנייד
   const [openMenuGroups, setOpenMenuGroups] = useState({ rounds:true, groups:true, playoff:true, league:true, special:false, qualifiers:false, other:true });
   const toggleMenuGroup = k => setOpenMenuGroups(prev=>({...prev,[k]:!prev[k]}));
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
@@ -1328,34 +1327,33 @@ export default function ViewSubmissions() {
                 return (
                   <div key={type} style={{ marginBottom:18 }}>
                     <div style={{ fontSize:'0.78rem', color:c, marginBottom:9, fontWeight:700 }}>{groupLabels[type] || type}</div>
-                    <div style={{ display:'grid', gridTemplateColumns: isGroups ? 'repeat(3,1fr)' : 'repeat(2,1fr)', gap:8 }}>
+                    <div style={{ display:'grid', gridTemplateColumns: isGroups ? 'repeat(3,1fr)' : '1fr', gap:8 }}>
                       {grouped[type].map(b => {
                         const active = openSectionsMap[b.sectionKey];
                         return (
                           <button key={b.key}
                             onClick={() => {
+                              // בחירה בלעדית: סגור הכל, פתח את הנבחר, סגור את הבורר
                               Object.keys(openSectionsMap).forEach(k => { if (openSectionsMap[k] && k !== b.sectionKey) toggleSectionFn(k); });
                               if (!openSectionsMap[b.sectionKey]) toggleSectionFn(b.sectionKey);
                               setMobileMenuOpen(false);
-                              setTimeout(() => {
-                                const main = document.querySelector('.lm-page');
-                                if (main) main.scrollTo({ top: 0, behavior: 'smooth' });
-                                else window.scrollTo({ top: 0, behavior: 'smooth' });
-                              }, 60);
                             }}
                             title={b.fullDescription || b.description}
                             style={{
-                              display:'flex', alignItems:'center', justifyContent:'center',
-                              padding:'13px 8px', borderRadius:'12px',
-                              fontSize:'0.86rem', fontWeight: active ? 700 : 500,
+                              display:'flex', alignItems:'center', justifyContent: isGroups ? 'center' : 'space-between',
+                              padding: isGroups ? '14px 6px' : '13px 16px', borderRadius:'12px',
+                              fontSize: isGroups ? '0.95rem' : '0.92rem', fontWeight: active ? 700 : 500,
                               color: active ? '#0f172a' : '#e2e8f0',
                               background: active ? c : 'rgba(255,255,255,0.04)',
                               border:`1.5px solid ${active ? c : `${c}40`}`, cursor:'pointer',
                               fontFamily:'Rubik,Heebo,sans-serif', textAlign:'center',
-                              WebkitTapHighlightColor:'transparent', touchAction:'manipulation', minHeight:'52px',
-                              whiteSpace:'normal', lineHeight:1.25,
+                              WebkitTapHighlightColor:'transparent', touchAction:'manipulation', minHeight:'50px',
+                              whiteSpace: isGroups ? 'nowrap' : 'normal', lineHeight:1.3,
                             }}>
-                            {shortLabel(b.houseGrid ? (b.fullDescription || b.description) : b.description)}
+                            <span style={{ overflow:'hidden', textOverflow:'ellipsis' }}>
+                              {shortLabel(b.houseGrid ? (b.fullDescription || b.description) : b.description)}
+                            </span>
+                            {!isGroups && active && <span style={{ fontSize:'0.85rem' }}>✓</span>}
                           </button>
                         );
                       })}
@@ -1590,27 +1588,14 @@ export default function ViewSubmissions() {
           .vs-simple-row .vs-q-text { font-size: 0.82rem !important; }
         }
       `}</style>
-      <div className="vs-header sticky top-0 z-30 backdrop-blur-sm shadow-lg" style={{ background: 'rgba(15,23,42,0.95)', borderBottom: '1px solid rgba(6,182,212,0.2)' }}>
-        <style>{`
-          @media (max-width: 767px) {
-            .vs-header { position: relative !important; top: auto !important; }
-            .vs-admin-actions { display: none !important; }
-            .vs-admin-actions.vs-actions-open { display: flex !important; }
-          }
-        `}</style>
+      <div className="sticky top-0 z-30 backdrop-blur-sm shadow-lg" style={{ background: 'rgba(15,23,42,0.95)', borderBottom: '1px solid rgba(6,182,212,0.2)' }}>
         <div className="px-3 md:px-6 py-2 md:py-2.5 w-full">
           <div className="flex flex-row justify-between items-center gap-2 mb-2">
             <h1 className="text-base md:text-xl font-bold flex items-center gap-2" style={{ color:'#f8fafc', textShadow:'0 0 10px rgba(6,182,212,0.3)' }}>
               <Users className="w-5 h-5 md:w-6 md:h-6" style={{ color:'#06b6d4' }} />
               צפייה בניחושים
             </h1>
-            {/* כפתור פעולות מנהל — נייד בלבד */}
-            {isAdmin && (
-              <button onClick={() => setMobileActionsOpen(o => !o)} className="md:hidden" style={{ display:'inline-flex', alignItems:'center', gap:5, padding:'7px 12px', borderRadius:9, background:'rgba(6,182,212,0.12)', border:'1px solid rgba(6,182,212,0.35)', color:'#22d3ee', fontSize:'0.8rem', fontFamily:'Rubik,Heebo,sans-serif', cursor:'pointer', flexShrink:0 }}>
-                ⚙️ פעולות
-              </button>
-            )}
-            <div className={`vs-admin-actions flex gap-1.5 md:gap-3 flex-wrap w-full md:w-auto${mobileActionsOpen ? ' vs-actions-open' : ''}`}>
+            <div className="flex gap-1.5 md:gap-3 flex-wrap w-full md:w-auto">
               {isAdmin && selectedParticipant && !loadingPredictions && (
                 <>
                   {!isEditMode ? (
