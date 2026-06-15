@@ -1252,8 +1252,7 @@ export default function ViewSubmissions() {
     return s.length > 16 ? s.slice(0, 15).trim() + '…' : s;
   };
 
-  // 📱 ניווט נייד חדש — רצועה אופקית + כפתור קפיצה לרשת מלאה
-  //    משתמש באותה לוגיקה קיימת (allButtons / openSections / toggleSection)
+  // 📱 ניווט נייד — בורר נפתח (Bottom Sheet). שורה אחת קבועה, בחירה פותחת חלון מלא.
   const renderMobileNav = (allButtonsList, openSectionsMap, toggleSectionFn) => {
     const typeColors = {
       playoff:'#3b82f6', league:'#3b82f6', groups:'#06b6d4', rounds:'#06b6d4',
@@ -1261,56 +1260,110 @@ export default function ViewSubmissions() {
     };
     const groupLabels = {
       groups:'🏠 בתים', rounds:'⚽ מחזורים', playoff:'⚔️ נוקאאוט', league:'⚽ ליגה',
-      special:'✨ מיוחדות', qualifiers:'📋 עולות', other:'📌 נוסף',
+      special:'✨ הניחושים המיוחדים', qualifiers:'📋 רשימות העולות', other:'📌 נוסף',
     };
 
-    // קבץ לקטגוריות
     const grouped = {};
     allButtonsList.forEach(b => {
       const t = b.stageType || 'special';
       (grouped[t] = grouped[t] || []).push(b);
     });
-    // ⚠️ סדר נכון: בתים → מחזורים → נוקאאוט → ליגה → מיוחדות → עולות (אחרון) → נוסף
     const orderedTypes = ['groups','rounds','playoff','league','special','qualifiers','other']
       .filter(t => grouped[t]?.length);
 
-    const Chip = (b, c) => {
-      const active = openSectionsMap[b.sectionKey];
-      return (
-        <button key={b.key} onClick={() => toggleSectionFn(b.sectionKey)} title={b.fullDescription || b.description} style={{
-          flexShrink:0, padding:'7px 14px', borderRadius:'999px', minHeight:'38px',
-          fontSize:'0.82rem', fontWeight: active ? 700 : 500,
-          color: active ? '#0f172a' : c, background: active ? c : `${c}1f`,
-          border:`1.5px solid ${active ? c : `${c}55`}`, cursor:'pointer',
-          whiteSpace:'nowrap', fontFamily:'Rubik,Heebo,sans-serif',
-          WebkitTapHighlightColor:'transparent', touchAction:'manipulation', transition:'all 0.12s',
-        }}>
-          {shortLabel(b.houseGrid ? (b.fullDescription || b.description) : b.description)}
-        </button>
-      );
-    };
+    // השלבים הפתוחים כרגע (לתווית בכפתור)
+    const openButtons = allButtonsList.filter(b => openSectionsMap[b.sectionKey]);
+    const triggerLabel = openButtons.length === 0 ? 'בחר שלב לצפייה'
+      : openButtons.length === 1 ? shortLabel(openButtons[0].houseGrid ? (openButtons[0].fullDescription || openButtons[0].description) : openButtons[0].description)
+      : `${openButtons.length} שלבים נבחרו`;
 
     return (
-      <div style={{ display:'flex', flexDirection:'column', gap:'10px' }}>
-        <style>{`.vs-cat-scroll::-webkit-scrollbar{display:none}`}</style>
-        {orderedTypes.map(type => {
-          const c = typeColors[type];
-          // בתים = הרבה → גלילה אופקית. השאר → שבירה לשורות (wrap)
-          const scroll = type === 'groups' || grouped[type].length > 6;
-          return (
-            <div key={type}>
-              <div style={{ fontSize:'0.68rem', color:'#64748b', marginBottom:5, fontWeight:600 }}>
-                {groupLabels[type] || type}
+      <div>
+        <style>{`.vs-sheet-scroll::-webkit-scrollbar{width:0}`}</style>
+
+        {/* שורת ניווט אחת — כפתור הבורר */}
+        <button onClick={() => setMobileMenuOpen(true)} style={{
+          width:'100%', display:'flex', alignItems:'center', justifyContent:'space-between',
+          padding:'12px 16px', borderRadius:'12px', cursor:'pointer',
+          background:'linear-gradient(135deg, rgba(6,182,212,0.18), rgba(6,182,212,0.07))',
+          border:'1.5px solid rgba(6,182,212,0.5)', fontFamily:'Rubik,Heebo,sans-serif',
+          WebkitTapHighlightColor:'transparent', touchAction:'manipulation', minHeight:'48px',
+        }}>
+          <span style={{ display:'flex', alignItems:'center', gap:9 }}>
+            <span style={{ fontSize:'1.15rem' }}>🗂️</span>
+            <span style={{ color:'#f8fafc', fontWeight:700, fontSize:'0.98rem' }}>{triggerLabel}</span>
+          </span>
+          <span style={{ color:'#22d3ee', fontSize:'0.9rem', fontWeight:600 }}>החלף ▾</span>
+        </button>
+
+        {/* בורר נפתח מלמטה */}
+        {mobileMenuOpen && (
+          <div onClick={() => setMobileMenuOpen(false)} style={{
+            position:'fixed', inset:0, zIndex:1000, background:'rgba(0,0,0,0.65)',
+            display:'flex', alignItems:'flex-end', backdropFilter:'blur(2px)',
+          }}>
+            <div onClick={e => e.stopPropagation()} className="vs-sheet-scroll" style={{
+              width:'100%', maxHeight:'82vh', overflowY:'auto',
+              background:'#0b1220', borderTopLeftRadius:'22px', borderTopRightRadius:'22px',
+              border:'1px solid rgba(6,182,212,0.3)', borderBottom:'none',
+              padding:'10px 16px calc(28px + env(safe-area-inset-bottom,0px))',
+              boxShadow:'0 -10px 40px rgba(0,0,0,0.8)',
+            }}>
+              {/* ידית + כותרת */}
+              <div style={{ display:'flex', justifyContent:'center', padding:'4px 0 12px' }}>
+                <div style={{ width:'42px', height:'5px', borderRadius:'3px', background:'rgba(255,255,255,0.2)' }} />
               </div>
-              <div className={scroll ? 'vs-cat-scroll' : ''} style={ scroll
-                ? { display:'flex', gap:'6px', overflowX:'auto', paddingBottom:'3px', WebkitOverflowScrolling:'touch', scrollbarWidth:'none' }
-                : { display:'flex', gap:'6px', flexWrap:'wrap' }
-              }>
-                {grouped[type].map(b => Chip(b, c))}
+              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16 }}>
+                <span style={{ fontSize:'1.05rem', fontWeight:700, color:'#f8fafc' }}>בחר שלב לצפייה</span>
+                <button onClick={() => setMobileMenuOpen(false)} aria-label="סגור" style={{
+                  background:'rgba(255,255,255,0.06)', border:'none', borderRadius:'50%',
+                  width:'32px', height:'32px', color:'#94a3b8', cursor:'pointer', fontSize:'1.1rem', lineHeight:1,
+                }}>✕</button>
               </div>
+
+              {orderedTypes.map(type => {
+                const c = typeColors[type];
+                const isGroups = type === 'groups';
+                return (
+                  <div key={type} style={{ marginBottom:18 }}>
+                    <div style={{ fontSize:'0.78rem', color:c, marginBottom:9, fontWeight:700 }}>{groupLabels[type] || type}</div>
+                    <div style={{ display:'grid', gridTemplateColumns: isGroups ? 'repeat(3,1fr)' : '1fr', gap:8 }}>
+                      {grouped[type].map(b => {
+                        const active = openSectionsMap[b.sectionKey];
+                        return (
+                          <button key={b.key}
+                            onClick={() => {
+                              // בחירה בלעדית: סגור הכל, פתח את הנבחר, סגור את הבורר
+                              Object.keys(openSectionsMap).forEach(k => { if (openSectionsMap[k] && k !== b.sectionKey) toggleSectionFn(k); });
+                              if (!openSectionsMap[b.sectionKey]) toggleSectionFn(b.sectionKey);
+                              setMobileMenuOpen(false);
+                            }}
+                            title={b.fullDescription || b.description}
+                            style={{
+                              display:'flex', alignItems:'center', justifyContent: isGroups ? 'center' : 'space-between',
+                              padding: isGroups ? '14px 6px' : '13px 16px', borderRadius:'12px',
+                              fontSize: isGroups ? '0.95rem' : '0.92rem', fontWeight: active ? 700 : 500,
+                              color: active ? '#0f172a' : '#e2e8f0',
+                              background: active ? c : 'rgba(255,255,255,0.04)',
+                              border:`1.5px solid ${active ? c : `${c}40`}`, cursor:'pointer',
+                              fontFamily:'Rubik,Heebo,sans-serif', textAlign:'center',
+                              WebkitTapHighlightColor:'transparent', touchAction:'manipulation', minHeight:'50px',
+                              whiteSpace: isGroups ? 'nowrap' : 'normal', lineHeight:1.3,
+                            }}>
+                            <span style={{ overflow:'hidden', textOverflow:'ellipsis' }}>
+                              {shortLabel(b.houseGrid ? (b.fullDescription || b.description) : b.description)}
+                            </span>
+                            {!isGroups && active && <span style={{ fontSize:'0.85rem' }}>✓</span>}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
-          );
-        })}
+          </div>
+        )}
       </div>
     );
   };
