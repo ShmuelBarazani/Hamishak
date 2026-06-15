@@ -1221,19 +1221,30 @@ export default function ViewSubmissions() {
   const hasChanges = Object.keys(editedPredictions).length > 0;
   const TEXT_LENGTH_THRESHOLD = 18;
 
-  // 📱 קיצור שמות שלבים לתצוגת רצועת הניווט הניידת
+  // 📱 קיצור שמות שלבים — רק לתצוגת רצועת הניווט/תפריטים (לא משנה תוכן/כותרות)
   const shortLabel = (desc) => {
     if (!desc) return '';
-    let s = String(desc).replace(/\(\*+\)/g, '').replace(/["'״]/g, '').trim();
-    // קיצורים ידועים
-    if (s.includes('ראש בראש') || s.includes('התותחים') || s.includes('מבול')) return 'ראש בראש';
-    if (s.includes('הניחושים המיוחדים')) return 'מיוחדות';
-    if (s.includes('המסלול המהיר')) return 'מסלול מהיר';
-    if (s.includes('מסלול ה') && s.includes('גמר')) return 'מסלול גמר';
-    if (s.includes('שלב הבתים') && s.includes('שאלות')) return 'שאלות בתים';
-    s = s.replace(/^בית\s*/, 'בית ');
-    // חיתוך לאורך סביר
-    return s.length > 16 ? s.slice(0, 15).trim() + '…' : s;
+    const raw = String(desc);
+    // מיפויים מדויקים לפי בקשת המשתמש (רק בתפריטים)
+    if (raw.includes('ראש בראש') || raw.includes('התותחים') || raw.includes('מבול')) return 'ראש בראש';
+    if (raw.includes('הניחושים המיוחדים')) return 'הניחושים המיוחדים';
+    if (raw.includes('המסלול המהיר')) return 'המסלול המהיר';
+
+    // ── רשימות העולות (מתחילות ב"העולות" או "ראש בית"/"נבחרות המקום") → קידומת "עולות" ──
+    const isQualifierList = raw.includes('העולות') || (raw.includes('ראש בית') && raw.includes('סגנית')) || raw.includes('נבחרות המקום');
+    if (isQualifierList) {
+      if (raw.includes('ראש בית') && raw.includes('סגנית')) return 'עולות · ראש בית וסגנית';
+      if (raw.includes('המקום השלישי') || raw.includes('מקום השלישי')) return 'עולות · מקום שלישי';
+      if (raw.includes('שמינית')) return 'עולות · שמינית גמר';
+      if (raw.includes('רבע')) return 'עולות · רבע גמר';
+      if (raw.includes('חצי')) return 'עולות · חצי גמר';
+      if (raw.includes('גמר')) return 'עולות · גמר מונדיאל';
+    }
+
+    // ── שאר השלבים (שאלות מיוחדות, מסלול גמר וכו') — נשארים כפי שהם, ניקוי קל ──
+    if (raw.includes('שלב הבתים')) return 'שלב הבתים';
+    let s = raw.replace(/\(\*+\)/g, '').replace(/["'״]/g, '').replace(/^בית\s*/, 'בית ').trim();
+    return s.length > 18 ? s.slice(0, 17).trim() + '…' : s;
   };
 
   // 📱 ניווט נייד חדש — רצועה אופקית + כפתור קפיצה לרשת מלאה
