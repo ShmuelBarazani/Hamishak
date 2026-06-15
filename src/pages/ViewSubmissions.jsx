@@ -1328,33 +1328,34 @@ export default function ViewSubmissions() {
                 return (
                   <div key={type} style={{ marginBottom:18 }}>
                     <div style={{ fontSize:'0.78rem', color:c, marginBottom:9, fontWeight:700 }}>{groupLabels[type] || type}</div>
-                    <div style={{ display:'grid', gridTemplateColumns: isGroups ? 'repeat(3,1fr)' : '1fr', gap:8 }}>
+                    <div style={{ display:'grid', gridTemplateColumns: isGroups ? 'repeat(3,1fr)' : 'repeat(2,1fr)', gap:8 }}>
                       {grouped[type].map(b => {
                         const active = openSectionsMap[b.sectionKey];
                         return (
                           <button key={b.key}
                             onClick={() => {
-                              // בחירה בלעדית: סגור הכל, פתח את הנבחר, סגור את הבורר
                               Object.keys(openSectionsMap).forEach(k => { if (openSectionsMap[k] && k !== b.sectionKey) toggleSectionFn(k); });
                               if (!openSectionsMap[b.sectionKey]) toggleSectionFn(b.sectionKey);
                               setMobileMenuOpen(false);
+                              setTimeout(() => {
+                                const main = document.querySelector('.lm-page');
+                                if (main) main.scrollTo({ top: 0, behavior: 'smooth' });
+                                else window.scrollTo({ top: 0, behavior: 'smooth' });
+                              }, 60);
                             }}
                             title={b.fullDescription || b.description}
                             style={{
-                              display:'flex', alignItems:'center', justifyContent: isGroups ? 'center' : 'space-between',
-                              padding: isGroups ? '14px 6px' : '13px 16px', borderRadius:'12px',
-                              fontSize: isGroups ? '0.95rem' : '0.92rem', fontWeight: active ? 700 : 500,
+                              display:'flex', alignItems:'center', justifyContent:'center',
+                              padding:'13px 8px', borderRadius:'12px',
+                              fontSize:'0.86rem', fontWeight: active ? 700 : 500,
                               color: active ? '#0f172a' : '#e2e8f0',
                               background: active ? c : 'rgba(255,255,255,0.04)',
                               border:`1.5px solid ${active ? c : `${c}40`}`, cursor:'pointer',
                               fontFamily:'Rubik,Heebo,sans-serif', textAlign:'center',
-                              WebkitTapHighlightColor:'transparent', touchAction:'manipulation', minHeight:'50px',
-                              whiteSpace: isGroups ? 'nowrap' : 'normal', lineHeight:1.3,
+                              WebkitTapHighlightColor:'transparent', touchAction:'manipulation', minHeight:'52px',
+                              whiteSpace:'normal', lineHeight:1.25,
                             }}>
-                            <span style={{ overflow:'hidden', textOverflow:'ellipsis' }}>
-                              {shortLabel(b.houseGrid ? (b.fullDescription || b.description) : b.description)}
-                            </span>
-                            {!isGroups && active && <span style={{ fontSize:'0.85rem' }}>✓</span>}
+                            {shortLabel(b.houseGrid ? (b.fullDescription || b.description) : b.description)}
                           </button>
                         );
                       })}
@@ -1589,10 +1590,10 @@ export default function ViewSubmissions() {
           .vs-simple-row .vs-q-text { font-size: 0.82rem !important; }
         }
       `}</style>
-      <div className="vs-header md:sticky md:top-0 z-30 backdrop-blur-sm shadow-lg" style={{ background: 'rgba(15,23,42,0.95)', borderBottom: '1px solid rgba(6,182,212,0.2)' }}>
+      <div className="vs-header sticky top-0 z-30 backdrop-blur-sm shadow-lg" style={{ background: 'rgba(15,23,42,0.95)', borderBottom: '1px solid rgba(6,182,212,0.2)' }}>
         <style>{`
           @media (max-width: 767px) {
-            .vs-header { position: relative !important; }
+            .vs-header { position: relative !important; top: auto !important; }
             .vs-admin-actions { display: none !important; }
             .vs-admin-actions.vs-actions-open { display: flex !important; }
           }
