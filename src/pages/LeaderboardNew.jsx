@@ -74,10 +74,36 @@ const NON_CASH_PRIZES = [
   { min: 240, max: 240, short: '☕ קפה עוספיה',        title: 'קפה עוספיה',                    full: 'פרס קפה עוספיה.', color: '#a3a3a3' },
   { min: 241, max: 241, short: '🍔 BBB',               title: 'BBB',                           full: 'פרס BBB.', color: '#a3a3a3' },
 ];
+// 🎨 צבע ייחודי לכל סוג פרס (לפי שם — מזוהה מתוך ה-short ללא אימוג'י/מספר)
+const PRIZE_COLORS = {
+  "ג'פניקה":      '#ec4899', // ורוד
+  'בורגר סאלון':  '#f59e0b', // כתום
+  'הופעה בביט':   '#8b5cf6', // סגול
+  'אבו שקארה':    '#ef4444', // אדום (סטייק)
+  "סקאץ' - א.בוקר": '#14b8a6', // טורקיז
+  "סקאץ'":        '#2dd4bf', // טורקיז בהיר
+  'לוקאל קפה':    '#d97706', // ענבר
+  'באגט נשר':     '#eab308', // צהוב
+  'כנאפה תלפיות': '#f97316', // כתום-אדום
+  'באולינג':      '#3b82f6', // כחול
+  'קפה עוספיה':   '#a16207', // חום
+  'BBB':          '#22c55e', // ירוק
+};
+const prizeColorFor = (shortLabel) => {
+  if (!shortLabel) return '#cbd5e1';
+  // מסיר אימוג'י/סוגריים/מספרים ומשאיר את שם הפרס
+  const clean = shortLabel.replace(/[\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}\u{FE0F}]/gu, '').replace(/\(.*?\)/g, '').replace(/זוגית/g,'').trim();
+  for (const [name, col] of Object.entries(PRIZE_COLORS)) {
+    if (clean.includes(name)) return col;
+  }
+  return '#cbd5e1';
+};
 // פרס לא-כספי לפי מיקום ייחודי (אחרי שבירת שוויון א-ב). מיקום מדויק בלבד מ-28 ואילך.
 const nonCashPrizeForPos = (pos) => {
   if (!pos) return null;
-  return NON_CASH_PRIZES.find(p => pos >= p.min && pos <= p.max) || null;
+  const p = NON_CASH_PRIZES.find(p => pos >= p.min && pos <= p.max);
+  if (!p) return null;
+  return { ...p, color: prizeColorFor(p.short) }; // 🎨 צבע לפי סוג הפרס
 };
 
 // מחשב לכל מיקום כמה שותפים יש בו (לחלוקת פרס בשוויון)
@@ -710,7 +736,7 @@ export default function LeaderboardNew() {
                             : (() => {
                                 const ncp = nonCashPrizeForPos(effectivePrizePos[rank.participant_name]);
                                 return ncp
-                                  ? <span onClick={() => setPrizeView(ncp)} title="לחץ לפרטי הפרס" className="text-[9px] md:text-xs font-bold" style={{ color: ncp.color, cursor: 'pointer', whiteSpace: 'nowrap' }}>{ncp.short}</span>
+                                  ? <span onClick={() => setPrizeView(ncp)} title="לחץ לפרטי הפרס" className="text-[11px] md:text-sm font-bold" style={{ color: ncp.color, cursor: 'pointer', whiteSpace: 'nowrap' }}>{ncp.short}</span>
                                   : <span className="text-[9px] md:text-xs" style={{ color: '#475569' }}>—</span>;
                               })()}
                       </td>
@@ -930,7 +956,7 @@ export default function LeaderboardNew() {
 
       {/* 🎁 חלון צף — תיאור מלא של פרס לא-כספי */}
       <Dialog open={!!prizeView} onOpenChange={(o) => { if (!o) setPrizeView(null); }}>
-        <DialogContent style={{ background: '#0b1220', border: `1px solid ${prizeView?.color || '#334155'}66`, maxWidth: 400 }} dir="rtl">
+        <DialogContent className="[&>button]:left-4 [&>button]:right-auto [&>button]:top-4" style={{ background: '#0b1220', border: `1px solid ${prizeView?.color || '#334155'}66`, maxWidth: 400 }} dir="rtl">
           <DialogHeader>
             <DialogTitle style={{ color: '#f8fafc', textAlign: 'right' }}>
               <span style={{ display: 'block', fontSize: '0.72rem', color: prizeView?.color, fontWeight: 700, marginBottom: 4 }}>
