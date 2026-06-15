@@ -209,6 +209,40 @@ export function calculateQuestionScore(question, prediction, allQuestionsInTable
     }
   }
 
+  // ─── 🌍 מונדיאל: T17 "מקום שלישי" — שאלת הנבחרת (qid שלם) ───
+  // לפי הקובץ: D נכון = 10 ; ועוד +7 אם הנבחרת שניחשת סיימה בפועל ראש-בית/סגנית (T16).
+  // (שאלת ".1" — "האם תעפיל" — נשארת בלוגיקת ברירת המחדל: 4 נק' אם בול)
+  if (question.game_id === GAME_WORLD_CUP && question.table_id === 'T17') {
+    const qidNum = parseInt(question.question_id, 10);
+    const isMainQ = Number.isInteger(qidNum) && !String(question.question_id).includes('.');
+    if (isMainQ) {
+      const myActual = question.actual_result;
+      const hasActual = myActual && myActual.trim() !== '' && myActual !== '__CLEAR__';
+      const cleanPred = cleanText(normalizeResult(prediction)).toLowerCase();
+
+      // (א) ניחוש נכון של הנבחרת השלישית → 10
+      if (hasActual) {
+        const cleanThird = cleanText(normalizeResult(myActual)).toLowerCase();
+        if (cleanPred && cleanPred === cleanThird) return question.possible_points || 10;
+      }
+
+      // (ב) +7 — אם הנבחרת שניחשת סיימה בפועל ראש-בית או סגנית באותו בית (T16)
+      if (cleanPred && allGameQuestions) {
+        const headId   = String(2 * qidNum - 1); // ראש בית בבית זה
+        const runnerId = String(2 * qidNum);     // סגנית בבית זה
+        const headQ   = allGameQuestions.find(q => q.table_id === 'T16' && q.question_id === headId);
+        const runnerQ = allGameQuestions.find(q => q.table_id === 'T16' && q.question_id === runnerId);
+        const headAct   = headQ?.actual_result   ? cleanText(normalizeResult(headQ.actual_result)).toLowerCase()   : null;
+        const runnerAct = runnerQ?.actual_result ? cleanText(normalizeResult(runnerQ.actual_result)).toLowerCase() : null;
+        if ((headAct && cleanPred === headAct) || (runnerAct && cleanPred === runnerAct)) return 7;
+      }
+
+      // אם אין עדיין תוצאות בפועל בכלל — אל תנקד
+      if (!hasActual) return null;
+      return 0;
+    }
+  }
+
   if (isAdvancingTeamSlot(question)) {
     const advancingActuals = allQuestionsInTable
       .filter(q => isAdvancingTeamSlot(q))
