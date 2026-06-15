@@ -1916,7 +1916,7 @@ export default function Statistics() {
             <div className="stats-mobile-menu" style={{marginBottom:'12px'}}>
               <style>{`@media(min-width:769px){.stats-mobile-menu{display:none!important}}`}</style>
 
-              {/* בר בחירה — מציג את הסעיף הנוכחי, פותח/סוגר את התפריט */}
+              {/* בר בחירה — מציג את הסעיף הנוכחי, פותח את הבורר */}
               <button onClick={()=>setMobileMenuOpen(o=>!o)} style={{
                 width:'100%',display:'flex',alignItems:'center',justifyContent:'space-between',
                 padding:'12px 14px',borderRadius:'12px',
@@ -1931,47 +1931,78 @@ export default function Statistics() {
                     {currentSectionLabel||'בחר שלב לתצוגה'}
                   </span>
                 </span>
-                <span style={{color:'#22d3ee',fontSize:'0.8rem',transform:mobileMenuOpen?'rotate(180deg)':'none',transition:'transform 0.2s'}}>▼</span>
+                <span style={{color:'#22d3ee',fontSize:'0.9rem',fontWeight:600}}>החלף ▾</span>
               </button>
 
-              {/* פאנל מתקפל — לוח שנה + קבוצות סעיפים */}
-              {mobileMenuOpen && (
-                <div style={{marginTop:8,background:'rgba(10,15,26,0.98)',border:'1px solid rgba(6,182,212,0.25)',borderRadius:14,padding:'12px 10px',maxHeight:'70vh',overflowY:'auto',boxShadow:'0 12px 32px rgba(0,0,0,0.6)'}}>
-                  {hasDates && (
-                    <div style={{marginBottom:10}}>
-                      <div style={{fontSize:'0.6rem',fontWeight:800,letterSpacing:'0.14em',color:'#475569',marginBottom:6}}>לוח משחקים</div>
-                      {renderCalendar()}
+              {/* בורר נפתח מלמטה — portal ל-body כדי לעלות מעל הכותרת (כמו בצפייה בניחושים) */}
+              {mobileMenuOpen && createPortal((
+                <div onClick={()=>setMobileMenuOpen(false)} style={{
+                  position:'fixed',inset:0,zIndex:99999,background:'rgba(0,0,0,0.65)',
+                  display:'flex',alignItems:'flex-end',backdropFilter:'blur(2px)',
+                }}>
+                  <div onClick={e=>e.stopPropagation()} style={{
+                    width:'100%',maxHeight:'82vh',overflowY:'auto',
+                    background:'#0b1220',borderTopLeftRadius:'22px',borderTopRightRadius:'22px',
+                    border:'1px solid rgba(6,182,212,0.3)',borderBottom:'none',
+                    padding:'10px 16px calc(28px + env(safe-area-inset-bottom,0px))',
+                    boxShadow:'0 -10px 40px rgba(0,0,0,0.8)',
+                  }}>
+                    {/* ידית + כותרת */}
+                    <div style={{display:'flex',justifyContent:'center',padding:'4px 0 12px'}}>
+                      <div style={{width:'42px',height:'5px',borderRadius:'3px',background:'rgba(255,255,255,0.2)'}}/>
                     </div>
-                  )}
-                  {menuGroups.map(group=>(
-                    <div key={group.key} style={{marginBottom:10}}>
-                      <div style={{fontSize:'0.72rem',fontWeight:800,color:group.color,marginBottom:6,paddingRight:2}}>{group.label}</div>
-                      <div style={group.grid
-                        ? {display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:5}
-                        : {display:'flex',flexWrap:'wrap',gap:5}}>
-                        {group.buttons.map(btn=>{
-                          const active=selectedSection===btn.key;
-                          const label=group.grid?`בית ${btn.description}`:btn.description;
-                          return(
-                            <button key={btn.key} onClick={()=>{toggleSection(btn.key);setMobileMenuOpen(false);}} style={{
-                              display:'inline-flex',alignItems:'center',justifyContent:group.grid?'center':'flex-start',
-                              padding:group.grid?'9px 4px':'9px 12px',borderRadius:group.grid?8:999,
-                              fontSize:'0.82rem',fontWeight:active?800:500,
-                              color:active?'white':group.color,
-                              background:active?group.activeBg:`${group.color}15`,
-                              border:`1.5px solid ${active?group.color:`${group.color}45`}`,
-                              cursor:'pointer',transition:'all 0.15s',
-                              fontFamily:'Rubik,Heebo,sans-serif',
-                              WebkitTapHighlightColor:'transparent',touchAction:'manipulation',
-                              lineHeight:1.3,
-                            }}>{label}</button>
-                          );
-                        })}
+                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
+                      <span style={{fontSize:'1.05rem',fontWeight:700,color:'#f8fafc'}}>בחר שלב לתצוגה</span>
+                      <button onClick={()=>setMobileMenuOpen(false)} aria-label="סגור" style={{
+                        background:'rgba(255,255,255,0.06)',border:'none',borderRadius:'50%',
+                        width:'32px',height:'32px',color:'#94a3b8',cursor:'pointer',fontSize:'1.1rem',lineHeight:1,
+                      }}>✕</button>
+                    </div>
+
+                    {hasDates && (
+                      <div style={{marginBottom:18}}>
+                        <div style={{fontSize:'0.78rem',fontWeight:700,color:'#06b6d4',marginBottom:9}}>📅 לוח משחקים</div>
+                        {renderCalendar()}
                       </div>
-                    </div>
-                  ))}
+                    )}
+                    {menuGroups.map(group=>(
+                      <div key={group.key} style={{marginBottom:18}}>
+                        <div style={{fontSize:'0.78rem',color:group.color,marginBottom:9,fontWeight:700}}>{group.label}</div>
+                        <div style={{display:'grid',gridTemplateColumns:group.grid?'repeat(3,1fr)':'repeat(2,1fr)',gap:8}}>
+                          {group.buttons.map(btn=>{
+                            const active=selectedSection===btn.key;
+                            const label=group.grid?`בית ${btn.description}`:btn.description;
+                            return(
+                              <button key={btn.key}
+                                onClick={()=>{
+                                  toggleSection(btn.key);
+                                  setMobileMenuOpen(false);
+                                  setTimeout(()=>{
+                                    const main=document.querySelector('.lm-page');
+                                    if(main) main.scrollTo({top:0,behavior:'smooth'});
+                                    else window.scrollTo({top:0,behavior:'smooth'});
+                                  },60);
+                                }}
+                                title={btn.full||btn.description}
+                                style={{
+                                  display:'flex',alignItems:'center',justifyContent:'center',
+                                  padding:'13px 8px',borderRadius:'12px',
+                                  fontSize:'0.86rem',fontWeight:active?700:500,
+                                  color:active?'#0f172a':'#e2e8f0',
+                                  background:active?group.color:'rgba(255,255,255,0.04)',
+                                  border:`1.5px solid ${active?group.color:`${group.color}40`}`,
+                                  cursor:'pointer',fontFamily:'Rubik,Heebo,sans-serif',textAlign:'center',
+                                  WebkitTapHighlightColor:'transparent',touchAction:'manipulation',minHeight:'52px',
+                                  whiteSpace:'normal',lineHeight:1.25,
+                                }}>{label}</button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              )}
+              ), document.body)}
             </div>
 
             {/* 📅 Day view — סיכום + סטטיסטיקות מלאות לכל משחקי היום */}
