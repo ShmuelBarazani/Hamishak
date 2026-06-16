@@ -285,8 +285,10 @@ export default function LeaderboardNew() {
         allRankings[i].current_position = pos;
       }
       const now = new Date().toISOString();
-      for (let i = 0; i < allRankings.length; i += 5) {
-        const batch = allRankings.slice(i, i + 5);
+      // ⚡ אצוות גדולות יותר (12) והשהיה קצרה (80ms) — מאיץ משמעותית את קיבוע הניקוד
+      const BATCH = 12;
+      for (let i = 0; i < allRankings.length; i += BATCH) {
+        const batch = allRankings.slice(i, i + BATCH);
         await Promise.all(batch.map(r =>
           db.Ranking.update(r.id, {
             baseline_score:    r.current_score,
@@ -294,7 +296,7 @@ export default function LeaderboardNew() {
             last_baseline_set: now,
           })
         ));
-        await new Promise(r => setTimeout(r, 300));
+        if (i + BATCH < allRankings.length) await new Promise(r => setTimeout(r, 80));
       }
       toast({
         title: "נקודת ייחוס נקבעה!",
