@@ -164,7 +164,24 @@ export default function ViewSubmissions() {
   const { toast } = useToast();
   const { currentGame } = useGame();
 
+  // 💾 שמירת השלבים הפתוחים — שלא יתאפסו במעבר אפליקציה/לשונית
+  const vsSectionsKey = currentGame?.id ? `vs_sections_${currentGame.id}` : null;
+  const vsRestoredRef = useRef(false);
+  useEffect(() => {
+    if (!vsSectionsKey || vsRestoredRef.current) return;
+    try {
+      const saved = localStorage.getItem(vsSectionsKey);
+      if (saved) { const parsed = JSON.parse(saved); if (parsed && typeof parsed === 'object') setOpenSections(parsed); }
+    } catch (e) { /* ignore */ }
+    vsRestoredRef.current = true;
+  }, [vsSectionsKey]);
+  useEffect(() => {
+    if (!vsSectionsKey || !vsRestoredRef.current) return;
+    try { localStorage.setItem(vsSectionsKey, JSON.stringify(openSections)); } catch (e) { /* ignore */ }
+  }, [openSections, vsSectionsKey]);
+
   const isAdmin = currentUser?.role === 'admin' || currentUser?.user_metadata?.role === 'admin';
+
   // 🌍 דגל מונדיאל
   const isWC = currentGame?.id === WC_GAME_ID;
   // טבלאות מיקומים — לא רלוונטיות למונדיאל
