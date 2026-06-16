@@ -88,7 +88,7 @@ export default function RoundTableResults({ table, teams, results, onResultChang
                                 <th className="text-center py-1 md:py-2 px-0.5 md:px-1 text-blue-300 text-[8px] md:text-xs font-semibold">#</th>
                                 <th className="hidden md:table-cell text-center py-1 md:py-2 px-0.5 md:px-1 text-blue-300 text-[8px] md:text-xs font-semibold w-12">תאריך</th>
                                 <th className="text-center py-1 md:py-2 px-1 md:px-2 text-blue-300 text-[8px] md:text-xs font-semibold">בית</th>
-                                <th className="text-center py-1 md:py-2 px-1 md:px-2 text-blue-300 text-[8px] md:text-xs font-semibold w-20 md:w-28">תוצאה</th>
+                                <th className="text-center py-1 md:py-2 px-1 md:px-2 text-blue-300 text-[8px] md:text-xs font-semibold w-24 md:w-32">תוצאה</th>
                                 <th className="text-center py-1 md:py-2 px-1 md:px-2 text-blue-300 text-[8px] md:text-xs font-semibold">חוץ</th>
                                 <th className="hidden md:table-cell text-center py-1 md:py-2 px-0.5 md:px-1 text-blue-300 text-[8px] md:text-xs font-semibold w-12">נק'</th>
                             </tr>
@@ -166,14 +166,14 @@ export default function RoundTableResults({ table, teams, results, onResultChang
                                             </div>
                                         </TableCell>
                                         {/* 🔧 תא "תוצאה" אחד שמכיל את שני ה-selects + המקף — בדיוק כמו ב-ReadOnly */}
-                                        <TableCell className="text-center py-1 md:py-2 px-1 md:px-2 w-20 md:w-28">
+                                        <TableCell className="text-center py-1 md:py-2 px-1 md:px-2 w-24 md:w-32">
                                             <div className="flex items-center justify-center gap-0.5 md:gap-1">
                                                 <Select
                                                     value={currentScores.home === '' ? '__EMPTY__' : currentScores.home}
                                                     onValueChange={(val) => handleScoreChange(q.id, 'home', val)}
                                                     disabled={!onResultChange}
                                                 >
-                                                    <SelectTrigger className="h-6 md:h-8 w-9 md:w-12 text-center text-[10px] md:text-sm" style={{
+                                                    <SelectTrigger className="h-7 md:h-8 w-12 md:w-14 text-center text-xs md:text-sm px-1" style={{
                                                         background: hasActualResult ? 'rgba(6, 182, 212, 0.2)' : 'rgba(51, 65, 85, 0.5)',
                                                         borderColor: hasActualResult ? '#06b6d4' : 'rgba(100, 116, 139, 1)',
                                                         color: hasActualResult ? '#06b6d4' : '#f8fafc',
@@ -202,7 +202,7 @@ export default function RoundTableResults({ table, teams, results, onResultChang
                                                     onValueChange={(val) => handleScoreChange(q.id, 'away', val)}
                                                     disabled={!onResultChange}
                                                 >
-                                                    <SelectTrigger className="h-6 md:h-8 w-9 md:w-12 text-center text-[10px] md:text-sm" style={{
+                                                    <SelectTrigger className="h-7 md:h-8 w-12 md:w-14 text-center text-xs md:text-sm px-1" style={{
                                                         background: hasActualResult ? 'rgba(6, 182, 212, 0.2)' : 'rgba(51, 65, 85, 0.5)',
                                                         borderColor: hasActualResult ? '#06b6d4' : 'rgba(100, 116, 139, 1)',
                                                         color: hasActualResult ? '#06b6d4' : '#f8fafc',
