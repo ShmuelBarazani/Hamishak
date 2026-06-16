@@ -128,11 +128,29 @@ export default function RoundTableResults({ table, teams, results, onResultChang
                                             </Badge>
                                         </TableCell>
                                         <TableCell className="hidden md:table-cell text-center py-1 md:py-2 px-0.5 md:px-1 w-12">
-                                            {q.game_date ? (
-                                                <span className="text-slate-400 text-[10px]">{q.game_date}</span>
-                                            ) : (
-                                                <span className="text-slate-600 text-[10px]">-</span>
-                                            )}
+                                            {(() => {
+                                                // table_description בפורמט "22:00 - 11/6" → שעה למעלה, תאריך למטה
+                                                const td = q.table_description || q.game_date || '';
+                                                let timePart = '', datePart = '';
+                                                if (td.includes('-')) {
+                                                    const parts = td.split('-').map(x => x.trim());
+                                                    // מזהים מי שעה (כולל ':') ומי תאריך (כולל '/')
+                                                    timePart = parts.find(p => p.includes(':')) || '';
+                                                    datePart = parts.find(p => p.includes('/')) || '';
+                                                } else if (td.includes('/')) {
+                                                    datePart = td.trim();
+                                                } else if (td.includes(':')) {
+                                                    timePart = td.trim();
+                                                }
+                                                return (timePart || datePart) ? (
+                                                    <div className="flex flex-col items-center leading-tight">
+                                                        {datePart && <span className="text-slate-300 text-[10px] font-semibold">{datePart}</span>}
+                                                        {timePart && <span className="text-slate-500 text-[9px]">{timePart}</span>}
+                                                    </div>
+                                                ) : (
+                                                    <span className="text-slate-600 text-[10px]">-</span>
+                                                );
+                                            })()}
                                         </TableCell>
                                         <TableCell className="text-center py-1 md:py-2 px-1 md:px-2">
                                             <div className="flex flex-col items-center gap-0.5 md:gap-1">
