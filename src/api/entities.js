@@ -58,6 +58,14 @@ function createEntity(table) {
       const { data, error } = await supabase.from(table).insert(payloads).select();
       if (error) throw error;
       return data || [];
+    },
+    // ⚡ נוסף: עדכון/יצירה של מערך רשומות בבקשה אחת (ללא .single).
+    //    רשומה עם id קיים → מתעדכנת ; רשומה בלי id → נוצרת. תומך אוטומטית במשתתפים חדשים.
+    async bulkUpsert(payloads, conflictColumn = 'id') {
+      if (!payloads || payloads.length === 0) return [];
+      const { data, error } = await supabase.from(table).upsert(payloads, { onConflict: conflictColumn }).select();
+      if (error) throw error;
+      return data || [];
     }
   };
 }
