@@ -276,7 +276,14 @@ export default function LeaderboardNew() {
     )) return;
     setSettingBaseline(true);
     try {
-      const allRankings = await loadAllRankings(currentGame.id, null);
+      const allRankings = await loadAllRankings(currentGame.id, '-current_score');
+      // 🔧 חישוב מיקום מחדש לפי ניקוד (כולל שוויון) — לפני שמירת ה-baseline,
+      //    אחרת baseline_position נשמר עם מיקום מיושן/שגוי.
+      let pos = 1;
+      for (let i = 0; i < allRankings.length; i++) {
+        if (i > 0 && allRankings[i].current_score !== allRankings[i - 1].current_score) pos = i + 1;
+        allRankings[i].current_position = pos;
+      }
       const now = new Date().toISOString();
       for (let i = 0; i < allRankings.length; i += 5) {
         const batch = allRankings.slice(i, i + 5);
