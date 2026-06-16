@@ -24,6 +24,7 @@ const ROUTE_ACCESS = {
   AdminImport: 'admin', ManageGameParticipants: 'admin',
   UserManagement: 'admin',  FormBuilder: 'admin',
   SystemOverview: 'admin',  CreateGame: 'admin',
+  YossiCup: 'admin',
 };
 
 function getPageName(pathname) {
@@ -34,6 +35,7 @@ function getPageName(pathname) {
     'admin-import':'AdminImport','manage-game':'ManageGameParticipants',
     'user-management':'UserManagement','form-builder':'FormBuilder',
     'system-overview':'SystemOverview','create-game':'CreateGame',
+    'yossi-cup':'YossiCup',
   };
   const lower = pathname.toLowerCase();
   for (const [k,v] of Object.entries(map)) if (lower.includes(k)) return v;
@@ -137,6 +139,7 @@ function LayoutContent({ children }) {
     { title:"מילוי ניחושים",  short:"מילוי",   url:createPageUrl("PredictionForm")  + g, icon:FileText, group:"main" },
   ];
   const adminItems = [
+    { title:"🏆 גביע יוסי",   short:"גביע יוסי", url:createPageUrl("YossiCup") + g,  icon:Award,    group:"admin" },
     { title:"ניהול משתתפים", url:createPageUrl("ManageGameParticipants"), icon:Users,    group:"admin" },
     { title:"ייבוא ניחושים",  url:createPageUrl("AdminImport"),           icon:Upload,   group:"admin" },
     { title:"ניהול משתמשים", url:createPageUrl("UserManagement"),         icon:Shield,   group:"admin" },
