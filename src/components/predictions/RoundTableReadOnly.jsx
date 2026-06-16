@@ -21,6 +21,22 @@ const normalizeTeamName = (name) => {
     .trim();
 };
 
+// 🆕 פיצול table_description ("22:00 - 11/6") לשעה ותאריך
+const splitDateTime = (td) => {
+  let timePart = '', datePart = '';
+  const s = (td || '').trim();
+  if (s.includes('-')) {
+    const parts = s.split('-').map(x => x.trim());
+    timePart = parts.find(p => p.includes(':')) || '';
+    datePart = parts.find(p => p.includes('/')) || '';
+  } else if (s.includes('/')) {
+    datePart = s;
+  } else if (s.includes(':')) {
+    timePart = s;
+  }
+  return { timePart, datePart };
+};
+
 export default function RoundTableReadOnly({ table, teams, predictions, isEditMode = false, handlePredictionEdit = null }) {
     const formatScore = (score) => {
         if (!score || score === '__CLEAR__') return '';
@@ -30,8 +46,6 @@ export default function RoundTableReadOnly({ table, teams, predictions, isEditMo
         }
         return score;
     };
-
-
 
     // 🔥 מיון לפי מספר שאלה בלבד - סדר עולה תמיד
     const sortedQuestions = [...table.questions].sort((a, b) => {
@@ -108,16 +122,12 @@ export default function RoundTableReadOnly({ table, teams, predictions, isEditMo
                                 
                                 if (score !== null) {
                                     if (score === maxScore) {
-                                        // פגיעה מדויקת - ירוק
                                         badgeColor = 'bg-green-600 text-white';
                                     } else if (score === 0) {
-                                        // 0 נקודות - אדום
                                         badgeColor = 'bg-red-600 text-white';
                                     } else if (score >= 7) {
-                                        // 7 נקודות (תוצאה + הפרש) - כחול
                                         badgeColor = 'bg-blue-600 text-white';
                                     } else {
-                                        // 5 נקודות (תוצאה בלבד) או 2-4 נקודות - צהוב
                                         badgeColor = 'bg-yellow-500 text-white';
                                     }
                                 }
@@ -127,6 +137,9 @@ export default function RoundTableReadOnly({ table, teams, predictions, isEditMo
                                     [homeScore, awayScore] = prediction.split('-').map(x => x.trim());
                                 }
 
+                                // 🆕 תאריך ושעת המשחק מתוך table_description
+                                const { timePart, datePart } = splitDateTime(q.table_description || q.game_date);
+
                                 return (
                                     <TableRow key={q.id} className="hover:bg-slate-700/30 border-b border-slate-700">
                                         <TableCell className="text-center py-1 md:py-2 px-0.5 md:px-1 w-8 md:w-12">
@@ -135,8 +148,11 @@ export default function RoundTableReadOnly({ table, teams, predictions, isEditMo
                                             </Badge>
                                         </TableCell>
                                         <TableCell className="hidden md:table-cell text-center py-1 md:py-2 px-0.5 md:px-1 w-12">
-                                            {q.game_date ? (
-                                                <span className="text-slate-400 text-[10px]">{q.game_date}</span>
+                                            {(timePart || datePart) ? (
+                                                <div className="flex flex-col items-center leading-tight">
+                                                    {datePart && <span className="text-slate-300 text-[10px] font-semibold">{datePart}</span>}
+                                                    {timePart && <span className="text-slate-500 text-[9px]">{timePart}</span>}
+                                                </div>
                                             ) : (
                                                 <span className="text-slate-600 text-[10px]">-</span>
                                             )}
