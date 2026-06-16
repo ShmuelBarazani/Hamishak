@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -1202,6 +1202,25 @@ export default function Statistics() {
   const isKnockout = !!(currentGame?.name?.includes('נוק-אאוט')||currentGame?.name?.includes('knock')||currentGame?.id==='9c9c1331-5184-406b-98b3-6becd9577567');
   // 🌍 דגל מונדיאל
   const isWC = currentGame?.id === WC_GAME_ID;
+
+  // 💾 שמירת הבחירה האחרונה — כדי שלא תתאפס במעבר אפליקציה/לשונית
+  const sectionStorageKey = currentGame?.id ? `stats_section_${currentGame.id}` : null;
+  const restoredSectionRef = useRef(false);
+  useEffect(() => {
+    if (!sectionStorageKey || restoredSectionRef.current) return;
+    try {
+      const saved = localStorage.getItem(sectionStorageKey);
+      if (saved) setSelectedSection(saved);
+    } catch (e) { /* ignore */ }
+    restoredSectionRef.current = true;
+  }, [sectionStorageKey]);
+  useEffect(() => {
+    if (!sectionStorageKey || !restoredSectionRef.current) return;
+    try {
+      if (selectedSection) localStorage.setItem(sectionStorageKey, selectedSection);
+      else localStorage.removeItem(sectionStorageKey);
+    } catch (e) { /* ignore */ }
+  }, [selectedSection, sectionStorageKey]);
 
   const formatResult = useCallback(r=>{ if(!r||r==='__CLEAR__') return ''; return r.includes('-')?r.split('-').map(x=>x.trim()).join(' - '):r; },[]);
 
