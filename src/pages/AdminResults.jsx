@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, startTransition } from "react";
+import React, { useState, useEffect, useCallback, useRef, startTransition } from "react";
 import { createPortal } from "react-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -93,6 +93,22 @@ export default function AdminResults() {
   const { currentGame } = useGame();
   // 🌍 דגל מונדיאל
   const isWC = currentGame?.id === WC_GAME_ID;
+
+  // 💾 שמירת השלבים הפתוחים — שלא יתאפסו במעבר אפליקציה/לשונית
+  const arSectionsKey = currentGame?.id ? `ar_sections_${currentGame.id}` : null;
+  const arRestoredRef = useRef(false);
+  useEffect(() => {
+    if (!arSectionsKey || arRestoredRef.current) return;
+    try {
+      const saved = localStorage.getItem(arSectionsKey);
+      if (saved) { const parsed = JSON.parse(saved); if (parsed && typeof parsed === 'object') setOpenSections(parsed); }
+    } catch (e) { /* ignore */ }
+    arRestoredRef.current = true;
+  }, [arSectionsKey]);
+  useEffect(() => {
+    if (!arSectionsKey || !arRestoredRef.current) return;
+    try { localStorage.setItem(arSectionsKey, JSON.stringify(openSections)); } catch (e) { /* ignore */ }
+  }, [openSections, arSectionsKey]);
 
   useEffect(() => {
     const loadUser = async () => {
@@ -332,29 +348,33 @@ export default function AdminResults() {
       const baselineMap = {};
       existingRankings.forEach(r => { baselineMap[r.participant_name] = r; });
       let saved = 0;
-      for (const s of scores) {
-        const base = baselineMap[s.participant_name];
-        setRecalcProgress(`שומר ${++saved}/${scores.length}: ${s.participant_name}`);
-        const data = {
-          participant_name: s.participant_name,
-          game_id: currentGame.id,
-          current_score: s.current_score,
-          current_position: s.current_position,
-          // 🔧 הכל מול הדירוג האחרון שנשמר ("קבע ניקוד" = baseline) — נקודת ייחוס אחת ועקבית
-          previous_score: base?.baseline_score || 0,
-          previous_position: base?.baseline_position || 0,
-          baseline_score: base?.baseline_score || 0,
-          baseline_position: base?.baseline_position || 0,
-          score_change: s.current_score - (base?.baseline_score || 0),
-          position_change: (base?.baseline_position || 0) - s.current_position,
-          last_updated: new Date().toISOString(),
-          last_baseline_set: base?.last_baseline_set || null
-        };
-        try {
-          if (base) await db.Ranking.update(base.id, data);
-          else await db.Ranking.create(data);
-        } catch (err) { console.error('שגיאה בדירוג', s.participant_name, err); }
-        await new Promise(r => setTimeout(r, 100));
+      // ⚡ עיבוד באצוות מקביליות (12) במקום אחד-אחד — מאיץ דרמטית את חישוב הדירוג
+      const RANK_BATCH = 12;
+      for (let i = 0; i < scores.length; i += RANK_BATCH) {
+        const batch = scores.slice(i, i + RANK_BATCH);
+        setRecalcProgress(`שומר ${Math.min(saved + batch.length, scores.length)}/${scores.length}...`);
+        await Promise.all(batch.map(s => {
+          const base = baselineMap[s.participant_name];
+          const data = {
+            participant_name: s.participant_name,
+            game_id: currentGame.id,
+            current_score: s.current_score,
+            current_position: s.current_position,
+            // 🔧 הכל מול הדירוג האחרון שנשמר ("קבע ניקוד" = baseline) — נקודת ייחוס אחת ועקבית
+            previous_score: base?.baseline_score || 0,
+            previous_position: base?.baseline_position || 0,
+            baseline_score: base?.baseline_score || 0,
+            baseline_position: base?.baseline_position || 0,
+            score_change: s.current_score - (base?.baseline_score || 0),
+            position_change: (base?.baseline_position || 0) - s.current_position,
+            last_updated: new Date().toISOString(),
+            last_baseline_set: base?.last_baseline_set || null
+          };
+          return (base ? db.Ranking.update(base.id, data) : db.Ranking.create(data))
+            .catch(err => console.error('שגיאה בדירוג', s.participant_name, err));
+        }));
+        saved += batch.length;
+        if (i + RANK_BATCH < scores.length) await new Promise(r => setTimeout(r, 80));
       }
       setRecalcProgress('');
       toast({ title: "✅ דירוג עודכן!", description: `חושב ניקוד עבור ${scores.length} משתתפים`, className: "bg-green-900/30 border-green-500 text-green-200", duration: 4000 });
@@ -379,11 +399,16 @@ export default function AdminResults() {
         setSaving(false);
         return;
       }
-      for (let i = 0; i < changedQuestions.length; i++) {
-        const q = changedQuestions[i];
-        const val = (results[q.id] === '__CLEAR__' || !results[q.id]) ? null : results[q.id];
-        await db.Question.update(q.id, { actual_result: val });
-        if ((i + 1) % 3 === 0) await new Promise(r => setTimeout(r, 300));
+      // ⚡ שמירת תוצאות באצוות מקביליות (8) במקום אחד-אחד
+      const RES_BATCH = 8;
+      for (let i = 0; i < changedQuestions.length; i += RES_BATCH) {
+        const batch = changedQuestions.slice(i, i + RES_BATCH);
+        await Promise.all(batch.map(q => {
+          const val = (results[q.id] === '__CLEAR__' || !results[q.id]) ? null : results[q.id];
+          return db.Question.update(q.id, { actual_result: val })
+            .catch(err => console.error('שגיאה בשמירת תוצאה', q.id, err));
+        }));
+        if (i + RES_BATCH < changedQuestions.length) await new Promise(r => setTimeout(r, 120));
       }
       toast({ title: "נשמר!", description: `עודכנו ${changedQuestions.length} תוצאות — מחשב דירוג...`, className: "bg-cyan-900/30 border-cyan-500 text-cyan-200", duration: 3000 });
       await loadData();
