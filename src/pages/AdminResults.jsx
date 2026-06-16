@@ -138,20 +138,35 @@ export default function AdminResults() {
   };
 
   const loadAllPredictions = async (gameId) => {
-    // ⚠️ חזרה ל-select('*') — האופטימיזציה הקודמת (4 עמודות) שיבשה את החישוב.
-    //    נכונות הניקוד קודמת לביצועים.
-    let all = [], from = 0;
+    // ⚡ טעינה מהירה ובטוחה: order('id') יציב → חלוקה דטרמיניסטית לעמודים,
+    //    ואז שליפה בגלים של 5 עמודים במקביל. עוצר כשגל מחזיר עמוד חלקי.
     const PAGE = 1000;
-    while (true) {
-      const { data, error } = await supabase
-        .from('predictions').select('*').eq('game_id', gameId)
-        .order('id', { ascending: true })
-        .range(from, from + PAGE - 1);
-      if (error) { console.error('predictions fetch error:', error); break; }
-      if (!data || data.length === 0) break;
-      all = [...all, ...data];
-      if (data.length < PAGE) break;
-      from += PAGE;
+    const WAVE = 5;            // 5 עמודים במקביל בכל גל
+    let all = [];
+    let pageIdx = 0;
+    let done = false;
+
+    while (!done) {
+      // בונים גל של עד WAVE עמודים רצופים
+      const reqs = [];
+      for (let k = 0; k < WAVE; k++) {
+        const from = (pageIdx + k) * PAGE;
+        reqs.push(
+          supabase.from('predictions').select('*').eq('game_id', gameId)
+            .order('id', { ascending: true })
+            .range(from, from + PAGE - 1)
+        );
+      }
+      const results = await Promise.all(reqs);
+
+      for (const res of results) {
+        if (res.error) { console.error('predictions fetch error:', res.error); done = true; break; }
+        const rows = res.data || [];
+        if (rows.length > 0) all = all.concat(rows);
+        if (rows.length < PAGE) { done = true; } // עמוד חלקי = הגענו לסוף
+      }
+      pageIdx += WAVE;
+      if (pageIdx > 1000) break; // בטיחות מפני לולאה אינסופית (מקס מיליון רשומות)
     }
     return all;
   };
