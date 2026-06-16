@@ -138,16 +138,32 @@ export default function AdminResults() {
   };
 
   const loadAllPredictions = async (gameId) => {
-    let all = [], from = 0;
-    const PAGE = 1000;
-    while (true) {
-      const { data, error } = await supabase
-        .from('predictions').select('*').eq('game_id', gameId).range(from, from + PAGE - 1);
-      if (error) { console.error('predictions fetch error:', error); break; }
-      if (!data || data.length === 0) break;
-      all = [...all, ...data];
-      if (data.length < PAGE) break;
-      from += PAGE;
+    // ⚡ אופטימיזציה: (1) שולפים רק את 4 העמודות הדרושות לחישוב (לא '*'),
+    //    (2) עמודים גדולים (2000), (3) אחרי העמוד הראשון — שליפת שאר העמודים במקביל.
+    const COLS = 'participant_name,question_id,text_prediction,created_at';
+    const PAGE = 2000;
+
+    // עמוד ראשון + ספירת סך-הכל בבקשה אחת (count: 'exact')
+    const first = await supabase
+      .from('predictions').select(COLS, { count: 'exact' })
+      .eq('game_id', gameId).range(0, PAGE - 1);
+    if (first.error) { console.error('predictions fetch error:', first.error); return []; }
+    let all = first.data || [];
+    const total = first.count ?? all.length;
+    if (all.length >= total) return all;
+
+    // בניית טווחי העמודות הנותרים ושליפתם במקביל
+    const pagePromises = [];
+    for (let from = PAGE; from < total; from += PAGE) {
+      pagePromises.push(
+        supabase.from('predictions').select(COLS)
+          .eq('game_id', gameId).range(from, from + PAGE - 1)
+      );
+    }
+    const pages = await Promise.all(pagePromises);
+    for (const pg of pages) {
+      if (pg.error) { console.error('predictions page error:', pg.error); continue; }
+      if (pg.data?.length) all = all.concat(pg.data);
     }
     return all;
   };
