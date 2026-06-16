@@ -708,7 +708,6 @@ export default function LeaderboardNew() {
                     {showPrizes ? '🏆 הסתר פרסים' : '🏆 הצג פרסים'}
                   </button>
                 )}
-                <span className="text-[10px] md:text-xs" style={{ color: '#64748b' }}>🏆 פרס מחושב לפי המיקום • בשוויון מתחלק בין השותפים</span>
               </div>
             </div>
           </CardHeader>
