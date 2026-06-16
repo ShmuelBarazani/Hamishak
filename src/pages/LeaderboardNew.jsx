@@ -145,8 +145,14 @@ export default function LeaderboardNew() {
   const [minScore,            setMinScore           ] = useState(0);
   const [sortColumn,          setSortColumn         ] = useState('current_position');
   const [sortDirection,       setSortDirection      ] = useState('asc');
+  const [showPrizes,          setShowPrizes         ] = useState(true); // 🎁 נטען מ-DB (games.show_prizes)
   const { toast }       = useToast();
   const { currentGame } = useGame();
+
+  // 🎁 סנכרון הצגת הפרסים מה-DB (games.show_prizes) — הגדרה גלובלית למשחק, ברירת מחדל true
+  useEffect(() => {
+    if (currentGame) setShowPrizes(currentGame.show_prizes !== false);
+  }, [currentGame]);
 
   useEffect(() => {
     const loadUser = async () => {
@@ -602,6 +608,25 @@ export default function LeaderboardNew() {
   }
 
   const isAdmin        = currentUser?.role === 'admin' || currentUser?.user_metadata?.role === 'admin';
+
+  // 🎁 החלפת הצגת הפרסים — נשמר ב-DB ומשפיע על כל המשתמשים (מנהל בלבד)
+  const togglePrizes = async () => {
+    if (!currentGame || !isAdmin) return;
+    const next = !showPrizes;
+    setShowPrizes(next); // עדכון מיידי בתצוגה
+    try {
+      await db.Game.update(currentGame.id, { show_prizes: next });
+      toast({
+        title: next ? 'הפרסים מוצגים' : 'הפרסים מוסתרים',
+        description: 'השינוי חל על כל המשתמשים',
+        className: 'bg-green-900/30 border-green-500 text-green-200'
+      });
+    } catch (err) {
+      console.error('שגיאה בשמירת הצגת פרסים', err);
+      setShowPrizes(!next); // החזרה אם נכשל
+      toast({ title: 'שגיאה בשמירה', variant: 'destructive' });
+    }
+  };
   const sortedRankings = getSortedRankings();
   // 🏆 חישוב פרסים: כמה שותפים בכל מיקום + המיקום האחרון (לאקי לוזר)
   const positionCounts = buildPositionCounts(rankings);
@@ -667,7 +692,24 @@ export default function LeaderboardNew() {
           <CardHeader className="py-2 md:py-3">
             <div className="flex items-center justify-between flex-wrap gap-2">
               <CardTitle className="text-sm md:text-lg" style={{ color: 'var(--tp)' }}>הדירוג הנוכחי</CardTitle>
-              <span className="text-[10px] md:text-xs" style={{ color: '#64748b' }}>🏆 פרס מחושב לפי המיקום • בשוויון מתחלק בין השותפים</span>
+              <div className="flex items-center gap-2 flex-wrap">
+                {isAdmin && (
+                  <button
+                    onClick={togglePrizes}
+                    className="text-[10px] md:text-xs font-bold rounded-lg transition-colors"
+                    style={{
+                      padding: '5px 12px',
+                      color: showPrizes ? '#fbbf24' : '#94a3b8',
+                      background: showPrizes ? 'rgba(251,191,36,0.12)' : 'rgba(255,255,255,0.04)',
+                      border: `1px solid ${showPrizes ? 'rgba(251,191,36,0.45)' : 'rgba(148,163,184,0.3)'}`,
+                      cursor: 'pointer', whiteSpace: 'nowrap'
+                    }}
+                  >
+                    {showPrizes ? '🏆 הסתר פרסים' : '🏆 הצג פרסים'}
+                  </button>
+                )}
+                <span className="text-[10px] md:text-xs" style={{ color: '#64748b' }}>🏆 פרס מחושב לפי המיקום • בשוויון מתחלק בין השותפים</span>
+              </div>
             </div>
           </CardHeader>
           <CardContent className="p-0">
@@ -683,7 +725,7 @@ export default function LeaderboardNew() {
                       { key: 'previous_score',    label: 'ניקוד קודם',  mobile: null,  align: 'center' },
                       { key: 'score_change',      label: 'שינוי בניקוד', mobile: '+/-', align: 'center' },
                       { key: 'position_change',   label: 'שינוי במיקום', mobile: '↕',  align: 'center' },
-                      { key: 'prize',             label: '🏆 פרס',       mobile: '🏆',  align: 'center', noSort: true },
+                      ...(showPrizes ? [{ key: 'prize', label: '🏆 פרס', mobile: '🏆', align: 'center', noSort: true }] : []),
                     ].map(col => (
                       <th
                         key={col.key}
@@ -741,6 +783,7 @@ export default function LeaderboardNew() {
                           </span>
                         </div>
                       </td>
+                      {showPrizes && (
                       <td className="text-center px-1.5 py-1 md:px-3 md:py-1.5" style={{ whiteSpace: 'nowrap' }}>
                         {prize.lucky
                           ? <span title="לאקי לוזר — מחזיר את דמי ההשתתפות 🃏" className="text-[9px] md:text-xs font-bold" style={{ color: '#a78bfa' }}>{fmtPrize(prize.amount)} 🃏</span>
@@ -755,6 +798,7 @@ export default function LeaderboardNew() {
                                   : <span className="text-[9px] md:text-xs" style={{ color: '#475569' }}>—</span>;
                               })()}
                       </td>
+                      )}
                     </tr>
                   );})}
                 </tbody>
