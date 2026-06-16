@@ -347,34 +347,44 @@ export default function AdminResults() {
       const existingRankings = await loadAllRankings(currentGame.id);
       const baselineMap = {};
       existingRankings.forEach(r => { baselineMap[r.participant_name] = r; });
-      let saved = 0;
-      // ⚡ עיבוד באצוות מקביליות (12) במקום אחד-אחד — מאיץ דרמטית את חישוב הדירוג
-      const RANK_BATCH = 12;
-      for (let i = 0; i < scores.length; i += RANK_BATCH) {
-        const batch = scores.slice(i, i + RANK_BATCH);
-        setRecalcProgress(`שומר ${Math.min(saved + batch.length, scores.length)}/${scores.length}...`);
-        await Promise.all(batch.map(s => {
-          const base = baselineMap[s.participant_name];
-          const data = {
-            participant_name: s.participant_name,
-            game_id: currentGame.id,
-            current_score: s.current_score,
-            current_position: s.current_position,
-            // 🔧 הכל מול הדירוג האחרון שנשמר ("קבע ניקוד" = baseline) — נקודת ייחוס אחת ועקבית
-            previous_score: base?.baseline_score || 0,
-            previous_position: base?.baseline_position || 0,
-            baseline_score: base?.baseline_score || 0,
-            baseline_position: base?.baseline_position || 0,
-            score_change: s.current_score - (base?.baseline_score || 0),
-            position_change: (base?.baseline_position || 0) - s.current_position,
-            last_updated: new Date().toISOString(),
-            last_baseline_set: base?.last_baseline_set || null
-          };
-          return (base ? db.Ranking.update(base.id, data) : db.Ranking.create(data))
-            .catch(err => console.error('שגיאה בדירוג', s.participant_name, err));
-        }));
-        saved += batch.length;
-        if (i + RANK_BATCH < scores.length) await new Promise(r => setTimeout(r, 80));
+      // ⚡ בניית כל הרשומות מראש → שמירה בבקשה אחת (bulkUpsert).
+      //    רשומה קיימת מקבלת id (תתעדכן) ; משתתף חדש ללא id (ייווצר אוטומטית).
+      setRecalcProgress(`מכין ${scores.length} רשומות...`);
+      const rankingRows = scores.map(s => {
+        const base = baselineMap[s.participant_name];
+        const row = {
+          participant_name: s.participant_name,
+          game_id: currentGame.id,
+          current_score: s.current_score,
+          current_position: s.current_position,
+          // 🔧 הכל מול הדירוג האחרון שנשמר ("קבע ניקוד" = baseline) — נקודת ייחוס אחת ועקבית
+          previous_score: base?.baseline_score || 0,
+          previous_position: base?.baseline_position || 0,
+          baseline_score: base?.baseline_score || 0,
+          baseline_position: base?.baseline_position || 0,
+          score_change: s.current_score - (base?.baseline_score || 0),
+          position_change: (base?.baseline_position || 0) - s.current_position,
+          last_updated: new Date().toISOString(),
+          last_baseline_set: base?.last_baseline_set || null
+        };
+        if (base?.id) row.id = base.id; // רשומה קיימת → עדכון לפי id
+        return row;
+      });
+      setRecalcProgress(`שומר ${scores.length} משתתפים...`);
+      // אם ה-DB מגביל גודל בקשה, מחלקים לגושים גדולים (200) — עדיין מעט מאוד בקשות
+      const UPSERT_CHUNK = 200;
+      for (let i = 0; i < rankingRows.length; i += UPSERT_CHUNK) {
+        const chunk = rankingRows.slice(i, i + UPSERT_CHUNK);
+        try {
+          await db.Ranking.bulkUpsert(chunk, 'id');
+        } catch (err) {
+          console.error('שגיאה בשמירת דירוג (גוש)', err);
+          // נפילה חזרה: שמירה בודדת לגוש שנכשל, כדי לא לאבד נתונים
+          await Promise.all(chunk.map(row =>
+            (row.id ? db.Ranking.update(row.id, row) : db.Ranking.create(row))
+              .catch(e => console.error('שגיאה בדירוג', row.participant_name, e))
+          ));
+        }
       }
       setRecalcProgress('');
       toast({ title: "✅ דירוג עודכן!", description: `חושב ניקוד עבור ${scores.length} משתתפים`, className: "bg-green-900/30 border-green-500 text-green-200", duration: 4000 });
