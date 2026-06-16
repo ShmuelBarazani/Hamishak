@@ -285,18 +285,24 @@ export default function LeaderboardNew() {
         allRankings[i].current_position = pos;
       }
       const now = new Date().toISOString();
-      // ⚡ אצוות גדולות יותר (12) והשהיה קצרה (80ms) — מאיץ משמעותית את קיבוע הניקוד
-      const BATCH = 12;
-      for (let i = 0; i < allRankings.length; i += BATCH) {
-        const batch = allRankings.slice(i, i + BATCH);
-        await Promise.all(batch.map(r =>
-          db.Ranking.update(r.id, {
-            baseline_score:    r.current_score,
-            baseline_position: r.current_position,
-            last_baseline_set: now,
-          })
-        ));
-        if (i + BATCH < allRankings.length) await new Promise(r => setTimeout(r, 80));
+      // ⚡ שמירת כל ה-baseline בבקשה אחת (bulkUpsert) במקום לולאה — מהיר דרמטית
+      const baselineRows = allRankings.map(r => ({
+        id: r.id,
+        baseline_score:    r.current_score,
+        baseline_position: r.current_position,
+        last_baseline_set: now,
+      }));
+      const BL_CHUNK = 200;
+      for (let i = 0; i < baselineRows.length; i += BL_CHUNK) {
+        const chunk = baselineRows.slice(i, i + BL_CHUNK);
+        try {
+          await db.Ranking.bulkUpsert(chunk, 'id');
+        } catch (err) {
+          console.error('שגיאה בקיבוע ניקוד (גוש)', err);
+          await Promise.all(chunk.map(row =>
+            db.Ranking.update(row.id, row).catch(e => console.error('שגיאה בקיבוע', row.id, e))
+          ));
+        }
       }
       toast({
         title: "נקודת ייחוס נקבעה!",
