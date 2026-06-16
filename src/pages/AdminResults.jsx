@@ -340,8 +340,9 @@ export default function AdminResults() {
           game_id: currentGame.id,
           current_score: s.current_score,
           current_position: s.current_position,
-          previous_score: base?.current_score || 0,
-          previous_position: base?.current_position || 0,
+          // 🔧 הכל מול הדירוג האחרון שנשמר ("קבע ניקוד" = baseline) — נקודת ייחוס אחת ועקבית
+          previous_score: base?.baseline_score || 0,
+          previous_position: base?.baseline_position || 0,
           baseline_score: base?.baseline_score || 0,
           baseline_position: base?.baseline_position || 0,
           score_change: s.current_score - (base?.baseline_score || 0),
