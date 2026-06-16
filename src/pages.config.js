@@ -14,10 +14,11 @@ import ExportData from './pages/ExportData';
 import ImportData from './pages/ImportData';
 import CleanScoreTable from './pages/CleanScoreTable';
 import TeamComparison from './pages/TeamComparison';
+import YossiCup from './pages/YossiCup';
 import __Layout from './Layout.jsx';
-
 export const PAGES = {
   LeaderboardNew,
+  YossiCup,
   PredictionForm,
   ViewSubmissions,
   Statistics,
@@ -34,7 +35,6 @@ export const PAGES = {
   CleanScoreTable,
   TeamComparison,
 };
-
 export const pagesConfig = {
   mainPage: 'LeaderboardNew',
   Pages: PAGES,
