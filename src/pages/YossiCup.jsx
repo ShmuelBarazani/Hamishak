@@ -8,14 +8,20 @@ import * as db from '@/api/entities';
 import { useToast } from "@/components/ui/use-toast";
 import { useGame } from "@/components/contexts/GameContext";
 
-const CUP_SIZE = 128;
+const CUP_SIZE = 128;       // מספר המשתתפים החל מהסיבוב השני (אחרי הסיבוב המקדים)
+const BYE_COUNT = 14;       // המדורגים 1-14 מקבלים בּיי (כרטיס אוטומטי) בסיבוב המקדים
 const ROUND_NAMES = {
   128: 'סיבוב ראשון (1/64)', 64: 'סיבוב שני (1/32)', 32: 'שמינית גמר',
   16: 'רבע גמר', 8: 'חצי גמר', 4: 'חצי גמר', 2: 'גמר',
 };
 // שמות תקניים לפי גודל הסיבוב (תואם למספר הנבחרות הנותרות)
-const roundLabel = (size) => {
-  const map = { 128: 'סיבוב 1 · 64 דו-קרבות', 64: 'סיבוב 2 · 32 דו-קרבות', 32: 'שמינית גמר', 16: 'רבע גמר', 8: 'חצי גמר', 4: 'חצי גמר', 2: 'גמר', 1: 'אלוף' };
+const roundLabel = (size, isPrelim) => {
+  if (isPrelim) return `סיבוב 1 (מקדים) · ${size} משתתפים`;
+  // אחרי הסיבוב המקדים: 128 = סיבוב 2, 64 = סיבוב 3, וכו'
+  const map = {
+    128: 'סיבוב 2 · 64 דו-קרבות', 64: 'סיבוב 3 · 32 דו-קרבות', 32: 'שמינית גמר',
+    16: 'רבע גמר', 8: 'חצי גמר', 4: 'חצי גמר', 2: 'גמר', 1: 'אלוף'
+  };
   return map[size] || `סיבוב · ${size}`;
 };
 
@@ -57,14 +63,35 @@ export default function YossiCup() {
     const m = {}; rankings.forEach(r => { m[r.participant_name] = r.current_score; }); return m;
   }, [rankings]);
 
-  // ── תצוגה חיה (לפני קיבוע) ──
-  const liveSeeds = useMemo(() => rankings.slice(0, CUP_SIZE).map((r, i) => ({
+  // ── תצוגה חיה (לפני קיבוע) — כל המשתתפים ──
+  const liveSeeds = useMemo(() => rankings.map((r, i) => ({
     seed: i + 1, participant_name: r.participant_name, entry_score: r.current_score,
   })), [rankings]);
+
+  // האם נדרש סיבוב מקדים (יותר מ-128 משתתפים)
+  const needsPrelim = liveSeeds.length > CUP_SIZE;
+  // מספר הבּיי: כמה מדורגים עליונים עוברים אוטומטית. נוסחה גמישה לכל מספר משתתפים:
+  //   byes = 2*CUP_SIZE − total  (ל-242 → 14). אם ≤128, אין בּיי ואין מקדים.
+  const byeCount = needsPrelim ? Math.max(0, 2 * CUP_SIZE - liveSeeds.length) : 0;
+
+  // זוגות הסיבוב המקדים: המדורגים byeCount+1 ואילך משחקים קצה-לקצה
   const livePairs = useMemo(() => {
-    const p = []; for (let i = 0; i < Math.floor(liveSeeds.length / 2); i++) p.push({ a: liveSeeds[i], b: liveSeeds[liveSeeds.length - 1 - i] });
+    const p = [];
+    if (needsPrelim) {
+      const playing = liveSeeds.slice(byeCount); // מי שמשחק (אחרי הבּיי)
+      for (let i = 0; i < Math.floor(playing.length / 2); i++) {
+        p.push({ a: playing[i], b: playing[playing.length - 1 - i] });
+      }
+    } else {
+      for (let i = 0; i < Math.floor(liveSeeds.length / 2); i++) {
+        p.push({ a: liveSeeds[i], b: liveSeeds[liveSeeds.length - 1 - i] });
+      }
+    }
     return p;
-  }, [liveSeeds]);
+  }, [liveSeeds, needsPrelim, byeCount]);
+
+  // המדורגים שמקבלים בּיי (1..byeCount)
+  const byeSeeds = useMemo(() => needsPrelim ? liveSeeds.slice(0, byeCount) : [], [liveSeeds, needsPrelim, byeCount]);
 
   const saveCup = async (newData) => { await db.Game.update(currentGame.id, { yossi_cup_data: newData }); setCupData(newData); };
 
@@ -116,17 +143,27 @@ export default function YossiCup() {
   // ═══ פעולות ═══
   const lockBracket = async () => {
     if (!currentGame || !isAdmin) return;
-    if (liveSeeds.length < CUP_SIZE) { toast({ title: 'אין מספיק משתתפים', description: `נדרשים ${CUP_SIZE}, קיימים ${rankings.length}`, variant: 'destructive' }); return; }
+    if (liveSeeds.length < CUP_SIZE) { toast({ title: 'אין מספיק משתתפים', description: `נדרשים לפחות ${CUP_SIZE}, קיימים ${rankings.length}`, variant: 'destructive' }); return; }
     setWorking(true);
     try {
       const pairs = livePairs.map(p => ({ a: p.a.seed, b: p.b.seed }));
       const cupStart = {}; liveSeeds.forEach(s => { cupStart[s.seed] = s.entry_score; }); // נקודת אפס לכלל ב'
+      // אם יש סיבוב מקדים — שומרים את הבּיי כדי לצרף אותם אחרי הכרעת הסיבוב המקדים
+      const byes = needsPrelim ? byeSeeds.map(s => s.seed) : [];
       await saveCup({
         size: CUP_SIZE, locked_at: new Date().toISOString(), seeds: liveSeeds,
-        current_round: 1, round_size: CUP_SIZE, round_start_scores: {}, round_start_set: false,
+        current_round: 1,
+        is_prelim: needsPrelim,            // סיבוב 1 הוא מקדים?
+        round_size: needsPrelim ? liveSeeds.length : CUP_SIZE,
+        bye_seeds: byes,                   // המדורגים שעוברים אוטומטית לסיבוב 2
+        round_start_scores: {}, round_start_set: false,
         cup_start_scores: cupStart, pairs, history: [], alive: liveSeeds.map(s => s.seed),
       });
-      toast({ title: '🔒 הבראקט קובע!', description: `${CUP_SIZE} משתתפים ננעלו`, className: 'bg-green-900/30 border-green-500 text-green-200' });
+      toast({
+        title: '🔒 הבראקט קובע!',
+        description: needsPrelim ? `סיבוב מקדים: ${pairs.length} דו-קרבות + ${byes.length} בּיי` : `${CUP_SIZE} משתתפים ננעלו`,
+        className: 'bg-green-900/30 border-green-500 text-green-200'
+      });
     } catch (err) { console.error(err); toast({ title: 'שגיאה בקיבוע', variant: 'destructive' }); }
     finally { setWorking(false); }
   };
@@ -163,24 +200,36 @@ export default function YossiCup() {
         return { a: pair.a, b: pair.b, winner: d.winner, loser: d.loser, margin: d.margin, rule: d.rule,
                  sa: roundScoreOf(pair.a), sb: roundScoreOf(pair.b) };
       });
-      const winners = results.map(r => r.winner);
-      const histEntry = { round_size: cupData.round_size, round_index: cupData.current_round, decided_at: new Date().toISOString(), results };
+      const matchWinners = results.map(r => r.winner);
+
+      // 🆕 בסיבוב מקדים — מצרפים את הבּיי (מדורגים 1-14) למנצחי הדו-קרבות → 128
+      const wasPrelim = cupData.is_prelim && cupData.current_round === 1;
+      const byes = wasPrelim ? (cupData.bye_seeds || []) : [];
+      // סדר: קודם הבּיי (מדורגים גבוהים) ואז מנצחי הדו-קרבות — לשמירת סדר seed עולה
+      const advancing = wasPrelim ? [...byes, ...matchWinners].sort((a, b) => a - b) : matchWinners;
+
+      const histEntry = {
+        round_size: cupData.round_size, round_index: cupData.current_round,
+        is_prelim: wasPrelim, bye_seeds: byes,
+        decided_at: new Date().toISOString(), results,
+      };
       const newHistory = [...(cupData.history || []), histEntry];
 
-      // האם הגענו לאלוף?
-      if (winners.length === 1) {
-        await saveCup({ ...cupData, history: newHistory, alive: winners, champion: winners[0], round_start_set: false });
-        toast({ title: '🏆 יש אלוף לגביע יוסי!', description: nameOf(winners[0]), className: 'bg-amber-900/30 border-amber-500 text-amber-200' });
+      if (advancing.length === 1) {
+        await saveCup({ ...cupData, history: newHistory, alive: advancing, champion: advancing[0], round_start_set: false });
+        toast({ title: '🏆 יש אלוף לגביע יוסי!', description: nameOf(advancing[0]), className: 'bg-amber-900/30 border-amber-500 text-amber-200' });
       } else {
-        // בניית זוגות הסיבוב הבא: מנצחים מסודרים לפי הסדר הקיים, ואז זוגיות קצה-לקצה
+        // בניית זוגות הסיבוב הבא: קצה-לקצה (1↔128, 2↔127...)
         const nextPairs = [];
-        for (let i = 0; i < Math.floor(winners.length / 2); i++) nextPairs.push({ a: winners[i], b: winners[winners.length - 1 - i] });
+        for (let i = 0; i < Math.floor(advancing.length / 2); i++) nextPairs.push({ a: advancing[i], b: advancing[advancing.length - 1 - i] });
         await saveCup({
-          ...cupData, history: newHistory, alive: winners,
-          current_round: cupData.current_round + 1, round_size: winners.length,
+          ...cupData, history: newHistory, alive: advancing,
+          current_round: cupData.current_round + 1, round_size: advancing.length,
+          is_prelim: false,            // מהסיבוב הבא ואילך — בראקט רגיל
           pairs: nextPairs, round_start_scores: {}, round_start_set: false,
         });
-        toast({ title: `✅ הסיבוב הוכרע! ${winners.length} ממשיכים`, description: 'קבע ניקוד לסיבוב הבא', className: 'bg-green-900/30 border-green-500 text-green-200' });
+        const desc = wasPrelim ? `${matchWinners.length} מנצחים + ${byes.length} בּיי = ${advancing.length}` : 'קבע ניקוד לסיבוב הבא';
+        toast({ title: `✅ הסיבוב הוכרע! ${advancing.length} ממשיכים`, description: desc, className: 'bg-green-900/30 border-green-500 text-green-200' });
       }
       setViewRound(null);
     } catch (err) { console.error(err); toast({ title: 'שגיאה בהכרעה', variant: 'destructive' }); }
@@ -188,13 +237,12 @@ export default function YossiCup() {
   };
 
   if (loading) return <div className="flex items-center justify-center py-20"><Loader2 className="w-6 h-6 animate-spin text-cyan-400" /><span className="mr-3 text-cyan-300">טוען גביע יוסי...</span></div>;
-  if (!isAdmin) return <div className="flex items-center justify-center py-20 text-slate-400">דף זה מיועד למנהלים בלבד.</div>;
 
   // רשימת השלבים לבורר (מההיסטוריה + הסיבוב הנוכחי)
   const stageButtons = [];
   if (cupData) {
-    (cupData.history || []).forEach((h, i) => stageButtons.push({ idx: i, size: h.round_size, label: roundLabel(h.round_size), done: true }));
-    if (!cupData.champion) stageButtons.push({ idx: 'current', size: cupData.round_size, label: roundLabel(cupData.round_size), done: false });
+    (cupData.history || []).forEach((h, i) => stageButtons.push({ idx: i, size: h.round_size, label: roundLabel(h.round_size, h.is_prelim), done: true }));
+    if (!cupData.champion) stageButtons.push({ idx: 'current', size: cupData.round_size, label: roundLabel(cupData.round_size, cupData.is_prelim), done: false });
   }
   const showingHistory = cupData && viewRound !== null && viewRound !== 'current';
   const histToShow = showingHistory ? cupData.history[viewRound] : null;
@@ -207,18 +255,22 @@ export default function YossiCup() {
           <Trophy className="w-7 h-7 text-amber-400" />
           <div>
             <h1 className="text-xl md:text-2xl font-bold text-amber-300">גביע יוסי</h1>
-            <p className="text-xs md:text-sm text-slate-400">פיילוט — נוק-אאוט במקביל לליגה • גלוי למנהל בלבד</p>
+            <p className="text-xs md:text-sm text-slate-400">פיילוט — נוק-אאוט במקביל לליגה</p>
           </div>
         </div>
-        <Button onClick={loadRankings} disabled={working} size="sm" variant="outline" className="border-slate-600 text-slate-300">
-          <RefreshCw className="w-4 h-4 ml-2" /> רענן ניקוד
-        </Button>
+        {isAdmin && (
+          <Button onClick={loadRankings} disabled={working} size="sm" variant="outline" className="border-slate-600 text-slate-300">
+            <RefreshCw className="w-4 h-4 ml-2" /> רענן ניקוד
+          </Button>
+        )}
       </div>
 
-      <div className="mb-4 p-3 rounded-lg flex items-start gap-2" style={{ background: 'rgba(251,191,36,0.08)', border: '1px solid rgba(251,191,36,0.3)' }}>
-        <AlertTriangle className="w-4 h-4 text-amber-400 mt-0.5 flex-shrink-0" />
-        <span className="text-xs text-amber-200">מסך זה נראה למנהל בלבד. המשתמשים אינם רואים אותו כלל עד שתחליט לחשוף אותו.</span>
-      </div>
+      {isAdmin && (
+        <div className="mb-4 p-3 rounded-lg flex items-start gap-2" style={{ background: 'rgba(251,191,36,0.08)', border: '1px solid rgba(251,191,36,0.3)' }}>
+          <AlertTriangle className="w-4 h-4 text-amber-400 mt-0.5 flex-shrink-0" />
+          <span className="text-xs text-amber-200">כפתורי העריכה והפעולה מופיעים לך כמנהל בלבד. המשתמשים רואים את הבראקט והניקוד בלבד.</span>
+        </div>
+      )}
 
       {/* אלוף */}
       {cupData?.champion && (
@@ -238,18 +290,33 @@ export default function YossiCup() {
             <CardHeader className="py-3">
               <div className="flex items-center justify-between flex-wrap gap-2">
                 <CardTitle className="text-base text-blue-300 flex items-center gap-2">
-                  <RefreshCw className="w-4 h-4" /> תצוגה חיה — {Math.min(liveSeeds.length, CUP_SIZE)} מובילים נוכחיים
+                  <RefreshCw className="w-4 h-4" /> תצוגה חיה — {liveSeeds.length} משתתפים{needsPrelim ? ` (סיבוב מקדים)` : ''}
                 </CardTitle>
-                <Button onClick={lockBracket} disabled={working || liveSeeds.length < CUP_SIZE} size="sm" className="bg-amber-600 hover:bg-amber-700 text-white">
-                  {working ? <Loader2 className="w-4 h-4 animate-spin ml-2" /> : <Lock className="w-4 h-4 ml-2" />} קבע בראקט סופי
-                </Button>
+                {isAdmin && (
+                  <Button onClick={lockBracket} disabled={working || liveSeeds.length < CUP_SIZE} size="sm" className="bg-amber-600 hover:bg-amber-700 text-white">
+                    {working ? <Loader2 className="w-4 h-4 animate-spin ml-2" /> : <Lock className="w-4 h-4 ml-2" />} קבע בראקט סופי
+                  </Button>
+                )}
               </div>
             </CardHeader>
             <CardContent className="pt-0">
               <p className="text-xs text-blue-200">🔴 הזוגות מתעדכנים אוטומטית עם כל שינוי בדירוג. <b>קבע בראקט סופי</b> רק בסוף המחזור הראשון.</p>
-              {liveSeeds.length < CUP_SIZE && <p className="text-xs text-amber-300 mt-1">⚠️ כרגע {liveSeeds.length} משתתפים בלבד — נדרשים {CUP_SIZE}.</p>}
+              {needsPrelim && <p className="text-xs text-cyan-300 mt-1">ℹ️ סיבוב מקדים: {byeCount} המדורגים העליונים מקבלים בּיי (כרטיס אוטומטי) ל-128, ושאר {liveSeeds.length - byeCount} המשתתפים משחקים {livePairs.length} דו-קרבות.</p>}
+              {liveSeeds.length < CUP_SIZE && <p className="text-xs text-amber-300 mt-1">⚠️ כרגע {liveSeeds.length} משתתפים בלבד — נדרשים לפחות {CUP_SIZE}.</p>}
             </CardContent>
           </Card>
+          {needsPrelim && byeSeeds.length > 0 && (
+            <div className="mb-2 p-2 rounded-lg" style={{ background: 'rgba(52,211,153,0.06)', border: '1px solid rgba(52,211,153,0.25)' }}>
+              <p className="text-xs text-green-300 mb-1.5 font-medium">⏭️ בּיי לסיבוב 2 ({byeSeeds.length} מדורגים עליונים):</p>
+              <div className="flex flex-wrap gap-1.5">
+                {byeSeeds.map(s => (
+                  <span key={s.seed} className="text-[11px] text-green-200 px-2 py-0.5 rounded" style={{ background: 'rgba(52,211,153,0.1)' }}>
+                    {s.seed}. {s.participant_name}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
           <div className="grid gap-1.5">
             {livePairs.map((pair, idx) => (
               <Card key={idx} style={{ background: 'rgba(15,23,42,0.5)', border: '1px solid rgba(100,116,139,0.2)' }}>
@@ -300,7 +367,7 @@ export default function YossiCup() {
           {showingHistory ? (
             <Card style={{ background: 'rgba(15,23,42,0.5)', border: '1px solid rgba(239,68,68,0.2)' }}>
               <CardHeader className="py-3">
-                <CardTitle className="text-base text-slate-300 flex items-center gap-2"><History className="w-4 h-4" /> {roundLabel(histToShow.round_size)} — הוכרע (קריאה בלבד)</CardTitle>
+                <CardTitle className="text-base text-slate-300 flex items-center gap-2"><History className="w-4 h-4" /> {roundLabel(histToShow.round_size, histToShow.is_prelim)} — הוכרע (קריאה בלבד)</CardTitle>
               </CardHeader>
               <CardContent className="grid gap-1.5">
                 {histToShow.results.map((r, i) => (
@@ -329,7 +396,8 @@ export default function YossiCup() {
               <Card className="mb-4" style={{ background: 'rgba(15,23,42,0.6)', border: '1px solid rgba(6,182,212,0.2)' }}>
                 <CardHeader className="py-3">
                   <div className="flex items-center justify-between flex-wrap gap-2">
-                    <CardTitle className="text-base text-cyan-300 flex items-center gap-2"><Flag className="w-4 h-4" /> {roundLabel(cupData.round_size)} · פעיל</CardTitle>
+                    <CardTitle className="text-base text-cyan-300 flex items-center gap-2"><Flag className="w-4 h-4" /> {roundLabel(cupData.round_size, cupData.is_prelim)} · פעיל</CardTitle>
+                    {isAdmin && (
                     <div className="flex gap-2 flex-wrap">
                       <Button onClick={setRoundBaseline} disabled={working} size="sm" className={cupData.round_start_set ? "bg-slate-700 hover:bg-slate-600 text-slate-200" : "bg-cyan-600 hover:bg-cyan-700 text-white"}>
                         {working ? <Loader2 className="w-4 h-4 animate-spin ml-2" /> : <Save className="w-4 h-4 ml-2" />}
@@ -342,6 +410,7 @@ export default function YossiCup() {
                         <RefreshCw className="w-4 h-4 ml-2" /> צלם מחדש
                       </Button>
                     </div>
+                    )}
                   </div>
                 </CardHeader>
                 <CardContent className="pt-0">
