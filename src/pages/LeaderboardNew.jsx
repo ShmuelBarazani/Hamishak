@@ -146,8 +146,18 @@ export default function LeaderboardNew() {
   const [sortColumn,          setSortColumn         ] = useState('current_position');
   const [sortDirection,       setSortDirection      ] = useState('asc');
   const [showPrizes,          setShowPrizes         ] = useState(true); // 🎁 נטען מ-DB (games.show_prizes)
+  const [championByName,      setChampionByName     ] = useState({});   // 🆕 ניחוש האלופה (שאלה 28) לכל משתתף
   const { toast }       = useToast();
   const { currentGame } = useGame();
+
+  // 🆕 מפת קבוצות (שם → אובייקט עם logo_url) לפתרון לוגו האלופה ליד השם
+  const teamsMap = useMemo(
+    () => (currentGame?.teams_data || []).reduce((acc, t) => { acc[t.name] = t; return acc; }, {}),
+    [currentGame]
+  );
+  const stripCountry = (n) => (n || '').replace(/\s*\([^)]+\)\s*$/, '').trim();
+  const champLogoFor = (team) =>
+    !team ? null : (teamsMap[team]?.logo_url || teamsMap[stripCountry(team)]?.logo_url || null);
 
   // 🎁 סנכרון הצגת הפרסים מה-DB (games.show_prizes) — הגדרה גלובלית למשחק, ברירת מחדל true
   useEffect(() => {
@@ -227,6 +237,46 @@ export default function LeaderboardNew() {
     return all.filter(p => knownIds.has(p.question_id));
   };
 
+  // 🆕 טעינת ניחוש האלופה (שאלה 28 — שלב המיוחדות) לכל המשתתפים בבת אחת
+  const loadChampionPicks = async (gameId) => {
+    // 1) מציאת שאלת האלופה לפי מספר השאלה (question_id === '28')
+    let questions = [], qFrom = 0; const QPAGE = 1000;
+    while (true) {
+      const { data, error } = await supabase
+        .from('questions').select('id, question_id, table_id, question_text')
+        .eq('game_id', gameId).range(qFrom, qFrom + QPAGE - 1);
+      if (error || !data || data.length === 0) break;
+      questions = [...questions, ...data];
+      if (data.length < QPAGE) break;
+      qFrom += QPAGE;
+    }
+    const champQ = questions.find(q => String(q.question_id).trim() === '28');
+    if (!champQ) return {};
+
+    // 2) טעינת כל הניחושים לשאלה הזו (כל המשתתפים) — שאילתה אחת
+    let preds = [], pFrom = 0; const PPAGE = 1000;
+    while (true) {
+      const { data, error } = await supabase
+        .from('predictions').select('participant_name, text_prediction, created_at')
+        .eq('game_id', gameId).eq('question_id', champQ.id)
+        .range(pFrom, pFrom + PPAGE - 1);
+      if (error || !data || data.length === 0) break;
+      preds = [...preds, ...data];
+      if (data.length < PPAGE) break;
+      pFrom += PPAGE;
+    }
+
+    // 3) ניחוש אחרון לכל משתתף → מפה: שם → שם הנבחרת
+    const latest = {};
+    preds.forEach(p => {
+      const ex = latest[p.participant_name];
+      if (!ex || new Date(p.created_at) > new Date(ex.created_at)) latest[p.participant_name] = p;
+    });
+    const map = {};
+    Object.entries(latest).forEach(([name, p]) => { map[name] = (p.text_prediction || '').trim(); });
+    return map;
+  };
+
   const calcScore = (allQuestions, predictions) => {
     const latest = {};
     predictions.forEach(pred => {
@@ -274,6 +324,19 @@ export default function LeaderboardNew() {
   }, [currentGame, toast]);
 
   useEffect(() => { loadRankings(); }, [loadRankings]);
+
+  // 🆕 טעינת ניחושי האלופה במקביל (לא חוסם את טעינת הטבלה)
+  useEffect(() => {
+    if (!currentGame) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const map = await loadChampionPicks(currentGame.id);
+        if (!cancelled) setChampionByName(map);
+      } catch (e) { console.error('שגיאה בטעינת ניחושי האלופה', e); }
+    })();
+    return () => { cancelled = true; };
+  }, [currentGame]);
 
   const handleSetBaseline = async () => {
     if (!currentGame) return;
@@ -746,6 +809,8 @@ export default function LeaderboardNew() {
                   {sortedRankings.map((rank, idx) => {
                     const prize = computePrize(rank, positionCounts, lastPosition);
                     const isTop3 = rank.current_position <= 3;
+                    const champTeam = championByName[rank.participant_name]; // 🆕 ניחוש האלופה
+                    const champLogo = champLogoFor(champTeam);
                     return (
                     <tr key={rank.id} className="hover:bg-cyan-500/5 transition-colors"
                       style={{ borderBottom: '1px solid var(--tp-10)', background: isTop3 ? 'rgba(251,191,36,0.05)' : (idx % 2 ? 'rgba(255,255,255,0.015)' : 'transparent') }}>
@@ -758,11 +823,36 @@ export default function LeaderboardNew() {
                         </div>
                       </td>
                       <td
-                        className="font-semibold text-[10px] md:text-sm cursor-pointer hover:underline text-right px-1.5 py-1 md:px-3 md:py-1.5"
+                        className="font-semibold text-[10px] md:text-sm cursor-pointer text-right px-1.5 py-1 md:px-3 md:py-1.5"
                         style={{ color: '#f1f5f9' }}
                         onClick={() => loadParticipantDetails(rank.participant_name)}
                       >
-                        {rank.participant_name}
+                        <div className="flex flex-col">
+                          <span className="hover:underline">{rank.participant_name}</span>
+                          {/* 🆕 הנבחרת שעליה הימר המשתתף כאלופה (שאלה 28) */}
+                          {champTeam && (
+                            <span
+                              className="flex items-center gap-1 mt-0.5"
+                              style={{ fontWeight: 400, color: '#64748b', whiteSpace: 'nowrap' }}
+                              title={`אלופה: ${champTeam}`}
+                            >
+                              {champLogo && (
+                                <img
+                                  src={champLogo}
+                                  alt=""
+                                  style={{ width: 13, height: 13, borderRadius: '50%', flexShrink: 0 }}
+                                  onError={e => { e.target.style.display = 'none'; }}
+                                />
+                              )}
+                              <span
+                                className="text-[8px] md:text-[11px]"
+                                style={{ display: 'inline-block', maxWidth: '95px', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                              >
+                                🏆 {stripCountry(champTeam)}
+                              </span>
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="text-center px-1.5 py-1 md:px-3 md:py-1.5">
                         <span className="font-extrabold text-[11px] md:text-sm" style={{ color: 'var(--tp)' }}>{rank.current_score}</span>
