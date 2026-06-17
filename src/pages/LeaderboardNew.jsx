@@ -782,6 +782,7 @@ export default function LeaderboardNew() {
                     {[
                       { key: 'current_position', label: '#',            mobile: '#',   align: 'center' },
                       { key: 'participant_name',  label: 'שם',           mobile: 'שם',  align: 'right'  },
+                      { key: 'champion',          label: '🏆 אלופה',     mobile: '🏆',  align: 'right', noSort: true },
                       { key: 'current_score',     label: "נק'",          mobile: "נק'", align: 'center' },
                       { key: 'previous_position', label: 'מיקום קודם',  mobile: null,  align: 'center' },
                       { key: 'previous_score',    label: 'ניקוד קודם',  mobile: null,  align: 'center' },
@@ -823,36 +824,24 @@ export default function LeaderboardNew() {
                         </div>
                       </td>
                       <td
-                        className="font-semibold text-[10px] md:text-sm cursor-pointer text-right px-1.5 py-1 md:px-3 md:py-1.5"
+                        className="font-semibold text-[10px] md:text-sm cursor-pointer hover:underline text-right px-1.5 py-1 md:px-3 md:py-1.5"
                         style={{ color: '#f1f5f9' }}
                         onClick={() => loadParticipantDetails(rank.participant_name)}
                       >
-                        <div className="flex flex-col">
-                          <span className="hover:underline">{rank.participant_name}</span>
-                          {/* 🆕 הנבחרת שעליה הימר המשתתף כאלופה (שאלה 28) */}
-                          {champTeam && (
-                            <span
-                              className="flex items-center gap-1 mt-0.5"
-                              style={{ fontWeight: 400, color: '#64748b', whiteSpace: 'nowrap' }}
-                              title={`אלופה: ${champTeam}`}
-                            >
-                              {champLogo && (
-                                <img
-                                  src={champLogo}
-                                  alt=""
-                                  style={{ width: 13, height: 13, borderRadius: '50%', flexShrink: 0 }}
-                                  onError={e => { e.target.style.display = 'none'; }}
-                                />
-                              )}
-                              <span
-                                className="text-[8px] md:text-[11px]"
-                                style={{ display: 'inline-block', maxWidth: '95px', overflow: 'hidden', textOverflow: 'ellipsis' }}
-                              >
-                                🏆 {stripCountry(champTeam)}
-                              </span>
-                            </span>
-                          )}
-                        </div>
+                        {rank.participant_name}
+                      </td>
+                      {/* 🆕 עמודת האלופה — הנבחרת שעליה הימר המשתתף (שאלה 28) */}
+                      <td className="text-right px-1.5 py-1 md:px-3 md:py-1.5" style={{ whiteSpace: 'nowrap' }}>
+                        {champTeam ? (
+                          <span className="flex items-center gap-1" style={{ color: '#94a3b8' }} title={`אלופה: ${champTeam}`}>
+                            {champLogo && (
+                              <img src={champLogo} alt="" style={{ width: 15, height: 15, borderRadius: '50%', flexShrink: 0 }} onError={e => { e.target.style.display = 'none'; }} />
+                            )}
+                            <span className="text-[9px] md:text-xs" style={{ display: 'inline-block', maxWidth: '120px', overflow: 'hidden', textOverflow: 'ellipsis' }}>{stripCountry(champTeam)}</span>
+                          </span>
+                        ) : (
+                          <span className="text-[9px] md:text-xs" style={{ color: '#475569' }}>—</span>
+                        )}
                       </td>
                       <td className="text-center px-1.5 py-1 md:px-3 md:py-1.5">
                         <span className="font-extrabold text-[11px] md:text-sm" style={{ color: 'var(--tp)' }}>{rank.current_score}</span>
