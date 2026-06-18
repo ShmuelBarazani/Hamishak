@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Trophy, Loader2, Crown, Flag, Lock, Save, AlertTriangle, RefreshCw, Gavel, History, Play, Check } from "lucide-react";
+import { Trophy, Loader2, Crown, Flag, Lock, Save, AlertTriangle, RefreshCw, Gavel, History, Play, Check, List, GitBranch } from "lucide-react";
 import { supabase } from '@/api/supabaseClient';
 import * as db from '@/api/entities';
 import { useToast } from "@/components/ui/use-toast";
@@ -34,12 +34,21 @@ export default function YossiCup() {
   const [cupData, setCupData] = useState(null);
   const [currentUser, setCurrentUser] = useState(null);
   const [viewRound, setViewRound] = useState(null); // איזה סיבוב מוצג בבורר (null = הנוכחי)
+  const [viewMode, setViewMode] = useState('list'); // 'list' = רשימת כרטיסים | 'tree' = עץ בראקט ויזואלי
 
   const loadRankings = useCallback(async () => {
     if (!currentGame) { setLoading(false); return; }
     try {
       const ranks = await db.Ranking.filter({ game_id: currentGame.id }, '-current_score', 1000);
-      setRankings(ranks || []);
+      // 🔑 מיון לסידינג בבראקט — מאומת מול הלוח הרשמי:
+      //    בזמן הקיבוע, "הניקוד ההתחלתי" = current_score הנוכחי. הסדר נקבע לפי הניקוד יורד.
+      //    בשוויון מדויק — נשבר לפי השם (ליציבות דטרמיניסטית).
+      //    הערה: אחרי הקיבוע ה-seeds ננעלים ב-cupData ולא משתנים, כך שהבראקט יציב לתמיד.
+      const sorted = [...(ranks || [])].sort((x, y) => {
+        if ((y.current_score || 0) !== (x.current_score || 0)) return (y.current_score || 0) - (x.current_score || 0);
+        return (x.participant_name || '').localeCompare(y.participant_name || '', 'he');
+      });
+      setRankings(sorted);
       setCupData(currentGame.yossi_cup_data || null);
     } catch (err) {
       console.error('שגיאה בטעינת גביע יוסי', err);
@@ -112,9 +121,9 @@ export default function YossiCup() {
   };
   // הפרש ניצחון בסיבוב היסטורי מסוים (לכללים ד-ה)
   const marginInRound = (seed, roundIdx) => {
-    const h = cupData.history?.[roundIdx]; if (!h) return 0;
+    const h = cupData.history?.[roundIdx]; if (!h) return null;
     const rec = h.results.find(r => r.winner === seed || r.loser === seed);
-    if (!rec) return 0;
+    if (!rec) return null; // לא שיחק באותו סיבוב (בּיי) → דלג (null), לא 0
     return rec.winner === seed ? (rec.margin ?? 0) : -(rec.margin ?? 0);
   };
 
@@ -129,10 +138,12 @@ export default function YossiCup() {
     // ג. ניקוד התחלתי
     const ea = entryOf(a), eb = entryOf(b);
     if (ea !== eb) { const w = ea > eb ? a : b; return { winner: w, loser: w === a ? b : a, margin: 0, rule: 'ג' }; }
-    // ד-ה. הפרשי ניצחון אחורה (מהסיבוב האחרון שהוכרע ועד סיבוב 1)
+    // ד-ה. הפרשי ניצחון אחורה (מהסיבוב האחרון שהוכרע ועד סיבוב 1).
+    //       סיבוב שבו לאחד מהם היה בּיי (margin=null) — מדולג לגמרי.
     const hist = cupData.history || [];
     for (let i = hist.length - 1; i >= 0; i--) {
       const ma = marginInRound(a, i), mb = marginInRound(b, i);
+      if (ma === null || mb === null) continue; // בּיי לאחד הצדדים → דלג על הסיבוב הזה
       if (ma !== mb) { const w = ma > mb ? a : b; return { winner: w, loser: w === a ? b : a, margin: 0, rule: i === hist.length - 1 ? 'ד' : 'ה' }; }
     }
     // ו. המדורג הגבוה (seed קטן)
@@ -247,8 +258,92 @@ export default function YossiCup() {
   const showingHistory = cupData && viewRound !== null && viewRound !== 'current';
   const histToShow = showingHistory ? cupData.history[viewRound] : null;
 
+  // ── שורת דו-קרב מינימליסטית (קומפקטית, מעט מספרים) ──
+  // side: { seed, name, score?(ניקוד סיבוב), entry? } | won/lost: הדגשה
+  const MatchRow = ({ idx, a, b, sa, sb, won }) => {
+    // won: 'a'|'b'|'tie'|null
+    return (
+      <div className="flex items-center text-sm rounded-md overflow-hidden" style={{ background: 'rgba(255,255,255,0.02)' }}>
+        {/* צד A */}
+        <div className={`flex-1 flex items-center gap-2 px-2.5 py-1.5 min-w-0 ${won === 'b' ? 'opacity-45' : ''}`}>
+          <span className="text-[10px] text-amber-400/70 w-7 flex-shrink-0 tabular-nums">{a.seed}</span>
+          <span className="text-slate-200 truncate">{a.name}</span>
+          {sa != null && <span className={`mr-auto text-xs font-bold flex-shrink-0 ${won === 'a' ? 'text-green-400' : 'text-slate-500'}`}>{sa >= 0 ? '+' : ''}{sa}</span>}
+          {won === 'a' && <Crown className="w-3 h-3 text-amber-400 flex-shrink-0" />}
+        </div>
+        <span className="text-[9px] text-slate-600 px-1 flex-shrink-0">·</span>
+        {/* צד B */}
+        <div className={`flex-1 flex items-center gap-2 px-2.5 py-1.5 justify-end min-w-0 ${won === 'a' ? 'opacity-45' : ''}`}>
+          {won === 'b' && <Crown className="w-3 h-3 text-amber-400 flex-shrink-0" />}
+          {sb != null && <span className={`ml-auto text-xs font-bold flex-shrink-0 ${won === 'b' ? 'text-green-400' : 'text-slate-500'}`}>{sb >= 0 ? '+' : ''}{sb}</span>}
+          <span className="text-slate-200 truncate">{b.name}</span>
+          <span className="text-[10px] text-slate-500 w-7 text-left flex-shrink-0 tabular-nums">{b.seed}</span>
+        </div>
+      </div>
+    );
+  };
+
+  // ── עץ בראקט ויזואלי: עמודה לכל סיבוב, מנצחים מתחברים לסיבוב הבא ──
+  const BracketTree = () => {
+    if (!cupData) return null;
+    // בונים עמודות: כל סיבוב שהוכרע (מההיסטוריה) + הסיבוב הנוכחי
+    const columns = [];
+    (cupData.history || []).forEach(h => {
+      columns.push({
+        label: roundLabel(h.round_size, h.is_prelim),
+        matches: h.results.map(r => ({ a: nameOf(r.a), b: nameOf(r.b), seedA: r.a, seedB: r.b, won: r.winner === r.a ? 'a' : 'b' })),
+      });
+    });
+    if (!cupData.champion) {
+      columns.push({
+        label: roundLabel(cupData.round_size, cupData.is_prelim),
+        matches: cupData.pairs.map(p => {
+          const sa = roundScoreOf(p.a), sb = roundScoreOf(p.b);
+          const w = (sa != null && sb != null) ? (sa > sb ? 'a' : sb > sa ? 'b' : null) : null;
+          return { a: nameOf(p.a), b: nameOf(p.b), seedA: p.a, seedB: p.b, won: w, live: true };
+        }),
+      });
+    } else {
+      columns.push({ label: 'אלוף', champion: nameOf(cupData.champion) });
+    }
+
+    return (
+      <div className="overflow-x-auto pb-2">
+        <div className="flex gap-3 min-w-max">
+          {columns.map((col, ci) => (
+            <div key={ci} className="flex flex-col gap-1.5" style={{ minWidth: 190 }}>
+              <div className="text-[11px] font-bold text-cyan-300 text-center pb-1 sticky top-0">{col.label}</div>
+              {col.champion ? (
+                <div className="flex flex-col items-center justify-center gap-1 py-4 px-3 rounded-lg" style={{ background: 'rgba(251,191,36,0.1)', border: '1px solid rgba(251,191,36,0.4)' }}>
+                  <Crown className="w-6 h-6 text-amber-400" />
+                  <span className="text-sm font-bold text-amber-300 text-center">{col.champion}</span>
+                </div>
+              ) : (
+                col.matches.map((m, mi) => (
+                  <div key={mi} className="rounded-md text-xs overflow-hidden" style={{ background: 'rgba(15,23,42,0.6)', border: `1px solid ${m.live ? 'rgba(6,182,212,0.25)' : 'rgba(100,116,139,0.18)'}` }}>
+                    <div className={`flex items-center gap-1.5 px-2 py-1 ${m.won === 'b' ? 'opacity-40' : ''}`}>
+                      <span className="text-[9px] text-amber-400/60 w-5 flex-shrink-0 tabular-nums">{m.seedA}</span>
+                      <span className="text-slate-200 truncate">{m.a}</span>
+                      {m.won === 'a' && <Crown className="w-2.5 h-2.5 text-amber-400 flex-shrink-0 mr-auto" />}
+                    </div>
+                    <div className="h-px" style={{ background: 'rgba(100,116,139,0.15)' }} />
+                    <div className={`flex items-center gap-1.5 px-2 py-1 ${m.won === 'a' ? 'opacity-40' : ''}`}>
+                      <span className="text-[9px] text-slate-500 w-5 flex-shrink-0 tabular-nums">{m.seedB}</span>
+                      <span className="text-slate-200 truncate">{m.b}</span>
+                      {m.won === 'b' && <Crown className="w-2.5 h-2.5 text-amber-400 flex-shrink-0 mr-auto" />}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
   return (
-    <div className="max-w-7xl mx-auto p-3 md:p-4" dir="rtl">
+    <div className="max-w-5xl mx-auto p-3 md:p-4" dir="rtl">
       {/* כותרת */}
       <div className="flex items-center justify-between flex-wrap gap-2 mb-4">
         <div className="flex items-center gap-3">
@@ -317,25 +412,12 @@ export default function YossiCup() {
               </div>
             </div>
           )}
-          <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-3">
+          <div className="flex flex-col gap-1">
             {livePairs.map((pair, idx) => (
-              <Card key={idx} style={{ background: 'rgba(15,23,42,0.5)', border: '1px solid rgba(100,116,139,0.2)' }}>
-                <CardContent className="py-2 px-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex-1 flex items-center gap-2 min-w-0">
-                      <Badge variant="outline" className="border-amber-400 text-amber-300 text-[10px] flex-shrink-0">{pair.a.seed}</Badge>
-                      <span className="text-sm text-slate-200 font-medium truncate" title={pair.a.participant_name}>{pair.a.participant_name}</span>
-                      <span className="text-[10px] text-slate-500 flex-shrink-0">({pair.a.entry_score})</span>
-                    </div>
-                    <span className="text-xs text-slate-600 px-1 flex-shrink-0">VS</span>
-                    <div className="flex-1 flex items-center gap-2 justify-end min-w-0">
-                      <span className="text-[10px] text-slate-500 flex-shrink-0">({pair.b.entry_score})</span>
-                      <span className="text-sm text-slate-200 font-medium truncate" title={pair.b.participant_name}>{pair.b.participant_name}</span>
-                      <Badge variant="outline" className="border-slate-500 text-slate-400 text-[10px] flex-shrink-0">{pair.b.seed}</Badge>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
+              <MatchRow key={idx} idx={idx}
+                a={{ seed: pair.a.seed, name: pair.a.participant_name }}
+                b={{ seed: pair.b.seed, name: pair.b.participant_name }}
+                sa={null} sb={null} won={null} />
             ))}
           </div>
         </>
@@ -363,33 +445,44 @@ export default function YossiCup() {
             </div>
           </div>
 
+          {/* מתג תצוגה: רשימה / עץ ויזואלי */}
+          <div className="flex gap-1.5 mb-3">
+            <button onClick={() => setViewMode('list')}
+              className="text-[11px] font-bold rounded-lg px-3 py-1.5 transition-colors flex items-center gap-1.5"
+              style={{ color: viewMode === 'list' ? '#0f172a' : '#94a3b8', background: viewMode === 'list' ? '#38bdf8' : 'rgba(255,255,255,0.04)', border: `1px solid ${viewMode === 'list' ? '#38bdf8' : 'rgba(148,163,184,0.3)'}` }}>
+              <List className="w-3.5 h-3.5" /> רשימה
+            </button>
+            <button onClick={() => setViewMode('tree')}
+              className="text-[11px] font-bold rounded-lg px-3 py-1.5 transition-colors flex items-center gap-1.5"
+              style={{ color: viewMode === 'tree' ? '#0f172a' : '#94a3b8', background: viewMode === 'tree' ? '#38bdf8' : 'rgba(255,255,255,0.04)', border: `1px solid ${viewMode === 'tree' ? '#38bdf8' : 'rgba(148,163,184,0.3)'}` }}>
+              <GitBranch className="w-3.5 h-3.5" /> עץ בראקט
+            </button>
+          </div>
+
+          {/* ── תצוגת עץ ויזואלי ── */}
+          {viewMode === 'tree' ? (
+            <Card style={{ background: 'rgba(15,23,42,0.5)', border: '1px solid rgba(6,182,212,0.2)' }}>
+              <CardContent className="py-3 px-3">
+                <BracketTree />
+              </CardContent>
+            </Card>
+          ) : (
+          <>
           {/* תצוגת סיבוב היסטורי (קריאה בלבד) */}
           {showingHistory ? (
             <Card style={{ background: 'rgba(15,23,42,0.5)', border: '1px solid rgba(239,68,68,0.2)' }}>
               <CardHeader className="py-3">
                 <CardTitle className="text-base text-slate-300 flex items-center gap-2"><History className="w-4 h-4" /> {roundLabel(histToShow.round_size, histToShow.is_prelim)} — הוכרע (קריאה בלבד)</CardTitle>
               </CardHeader>
-              <CardContent>
-                <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-3">
+              <CardContent className="flex flex-col gap-1">
                 {histToShow.results.map((r, i) => (
-                  <div key={i} className="flex items-center justify-between gap-2 py-2 px-3 rounded-lg" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(100,116,139,0.15)' }}>
-                    <div className={`flex-1 flex items-center gap-2 min-w-0 ${r.loser === r.a ? 'opacity-50 line-through' : ''}`}>
-                      <Badge variant="outline" className="border-slate-500 text-slate-400 text-[10px] flex-shrink-0">{r.a}</Badge>
-                      <span className="text-sm text-slate-200 truncate" title={nameOf(r.a)}>{nameOf(r.a)}</span>
-                      <span className="text-xs text-slate-500 flex-shrink-0">{r.sa >= 0 ? '+' : ''}{r.sa}</span>
-                      {r.winner === r.a && <Check className="w-3.5 h-3.5 text-green-400 flex-shrink-0" />}
-                    </div>
-                    <span className="text-[10px] text-slate-600 px-1 flex-shrink-0">VS</span>
-                    <div className={`flex-1 flex items-center gap-2 justify-end min-w-0 ${r.loser === r.b ? 'opacity-50 line-through' : ''}`}>
-                      {r.winner === r.b && <Check className="w-3.5 h-3.5 text-green-400 flex-shrink-0" />}
-                      <span className="text-xs text-slate-500 flex-shrink-0">{r.sb >= 0 ? '+' : ''}{r.sb}</span>
-                      <span className="text-sm text-slate-200 truncate" title={nameOf(r.b)}>{nameOf(r.b)}</span>
-                      <Badge variant="outline" className="border-slate-500 text-slate-400 text-[10px] flex-shrink-0">{r.b}</Badge>
-                    </div>
-                  </div>
+                  <MatchRow key={i} idx={i}
+                    a={{ seed: r.a, name: nameOf(r.a) }}
+                    b={{ seed: r.b, name: nameOf(r.b) }}
+                    sa={r.sa} sb={r.sb}
+                    won={r.winner === r.a ? 'a' : 'b'} />
                 ))}
-                </div>
-                <p className="text-[10px] text-slate-600 text-center mt-2">הכרעות לפי כלל א (ניקוד סיבוב) ושובר-שוויון ב-ו לפי הצורך.</p>
+                <p className="text-[10px] text-slate-600 text-center mt-1">הכרעות לפי כלל א (ניקוד סיבוב) ושובר-שוויון ב-ו לפי הצורך.</p>
               </CardContent>
             </Card>
           ) : !cupData.champion && (
@@ -421,34 +514,22 @@ export default function YossiCup() {
                     : <p className="text-xs text-green-300">✅ "ניקוד הסיבוב" מציג את ההפרש מתחילת הסיבוב. לחץ "הכרע סיבוב" בסיומו.</p>}
                 </CardContent>
               </Card>
-              <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-3">
+              <div className="flex flex-col gap-1">
                 {cupData.pairs.map((pair, idx) => {
                   const sa = roundScoreOf(pair.a), sb = roundScoreOf(pair.b);
                   const leader = (sa != null && sb != null) ? (sa > sb ? 'a' : sb > sa ? 'b' : 'tie') : null;
                   return (
-                    <Card key={idx} style={{ background: 'rgba(15,23,42,0.5)', border: `1px solid ${leader && leader !== 'tie' ? 'rgba(94,202,165,0.2)' : 'rgba(100,116,139,0.2)'}` }}>
-                      <CardContent className="py-2 px-3">
-                        <div className="flex items-center justify-between gap-2">
-                          <div className={`flex-1 flex items-center gap-2 min-w-0 ${leader === 'b' ? 'opacity-50' : ''}`}>
-                            <Badge variant="outline" className="border-amber-400 text-amber-300 text-[10px] flex-shrink-0">{pair.a}</Badge>
-                            <span className="text-sm text-slate-200 font-medium truncate" title={nameOf(pair.a)}>{nameOf(pair.a)}</span>
-                            {sa != null && <span className={`text-sm font-bold flex-shrink-0 ${leader === 'a' ? 'text-green-400' : 'text-slate-400'}`}>{sa >= 0 ? '+' : ''}{sa}</span>}
-                            {leader === 'a' && <Crown className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />}
-                          </div>
-                          <span className="text-xs text-slate-600 px-1 flex-shrink-0">VS</span>
-                          <div className={`flex-1 flex items-center gap-2 justify-end min-w-0 ${leader === 'a' ? 'opacity-50' : ''}`}>
-                            {leader === 'b' && <Crown className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />}
-                            {sb != null && <span className={`text-sm font-bold flex-shrink-0 ${leader === 'b' ? 'text-green-400' : 'text-slate-400'}`}>{sb >= 0 ? '+' : ''}{sb}</span>}
-                            <span className="text-sm text-slate-200 font-medium truncate" title={nameOf(pair.b)}>{nameOf(pair.b)}</span>
-                            <Badge variant="outline" className="border-slate-500 text-slate-400 text-[10px] flex-shrink-0">{pair.b}</Badge>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
+                    <MatchRow key={idx} idx={idx}
+                      a={{ seed: pair.a, name: nameOf(pair.a) }}
+                      b={{ seed: pair.b, name: nameOf(pair.b) }}
+                      sa={sa} sb={sb}
+                      won={leader === 'tie' ? null : leader} />
                   );
                 })}
               </div>
             </>
+          )}
+          </>
           )}
         </>
       )}
