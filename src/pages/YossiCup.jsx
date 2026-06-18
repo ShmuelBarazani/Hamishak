@@ -582,14 +582,16 @@ export default function YossiCup() {
     } else {
       startSize = cupData.round_size; startPrelim = !!cupData.is_prelim;
     }
-    // מוסיפים את שלב ההתחלה וכל השלבים קדימה עד הגמר (2)
+    // מוסיפים את שלב ההתחלה ועד 2 שלבים קדימה (סה"כ עד 3 עמודות) — דגש על השלב הפעיל.
+    //   שאר השלבים נגישים דרך בורר השלבים. כך העמודות רחבות וקריאות, במיוחד בנייד.
+    const MAX_STAGES = 3;
     if (startPrelim) {
       sizes.push({ size: startSize, isPrelim: true });
       let s = CUP_SIZE;
-      while (s >= 2) { sizes.push({ size: s, isPrelim: false }); s = Math.floor(s / 2); }
+      while (s >= 2 && sizes.length < MAX_STAGES) { sizes.push({ size: s, isPrelim: false }); s = Math.floor(s / 2); }
     } else {
       let s = startSize;
-      while (s >= 2) { sizes.push({ size: s, isPrelim: false }); s = Math.floor(s / 2); }
+      while (s >= 2 && sizes.length < MAX_STAGES) { sizes.push({ size: s, isPrelim: false }); s = Math.floor(s / 2); }
     }
 
     // 2) לכל שלב — בונים את רשימת התיבות (משחקים). שלב שהוכרע → מההיסטוריה.
@@ -698,12 +700,11 @@ export default function YossiCup() {
     const syncFrom = (src, dst) => { if (dst.current && src.current) dst.current.scrollLeft = src.current.scrollLeft; };
 
     // ── חישוב פריסת עץ אמיתי: מיקום אנכי מצטבר + קווי חיבור ──
-    // ממדי העץ — מותאמים לרוחב המסך. בנייד: עמודה רחבה יותר וגופן מעט גדול יותר
-    //   כדי שהשמות לא ייחתכו, ושתי שורות לשם ארוך.
+    // ממדי העץ — מותאמים לרוחב המסך. מציגים מעט עמודות (3), אז כל עמודה רחבה וקריאה.
     const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
-    const COL_W = isMobile ? 150 : 165;   // רוחב עמודה
-    const COL_GAP = isMobile ? 20 : 28;   // רווח אופקי בין עמודות (מקום לקווים)
-    const BOX_H = isMobile ? 58 : 46;     // גובה תיבת משחק (גבוה יותר בנייד לשתי שורות)
+    const COL_W = isMobile ? 210 : 230;   // רוחב עמודה — רחב לקריאות מלאה
+    const COL_GAP = isMobile ? 24 : 34;   // רווח אופקי בין עמודות (מקום לקווים)
+    const BOX_H = isMobile ? 56 : 50;     // גובה תיבת משחק
     const V_GAP = isMobile ? 12 : 10;     // רווח אנכי בסיסי בין תיבות בעמודה הראשונה
     const LABEL_H = 20;      // גובה תווית השלב למעלה
 
@@ -747,7 +748,7 @@ export default function YossiCup() {
 
     return (
       <div>
-        <p className="text-[10px] text-slate-400 mb-1">↔️ מציג מהשלב הנוכחי קדימה עד הגמר. למעבר לשלבים שהסתיימו — בורר השלבים למעלה.</p>
+        <p className="text-[10px] text-slate-400 mb-1">↔️ מציג את השלב הפעיל + 2 קדימה. למעבר לשאר השלבים — בורר השלבים למעלה.</p>
         {/* פס גלילה עליון — נשאר קבוע (sticky) בראש בזמן גלילה אנכית */}
         <div ref={topRef} onScroll={() => syncFrom(topRef, bottomRef)}
           dir="ltr" style={{ overflowX: 'auto', overflowY: 'hidden', position: 'sticky', top: 0, zIndex: 20, background: '#0f172a', borderBottom: '1px solid rgba(6,182,212,0.2)', paddingBottom: 2 }}>
