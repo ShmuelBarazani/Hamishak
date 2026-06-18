@@ -519,13 +519,24 @@ export default function YossiCup() {
 
       if (isCurrent) {
         // השלב הפעיל
+        const liveMatches = cupData.pairs.map(p => {
+          const sa = roundScoreOf(p.a), sb = roundScoreOf(p.b);
+          const w = (sa != null && sb != null) ? (sa > sb ? 'a' : sb > sa ? 'b' : null) : null;
+          return { a: nameOf(p.a), b: nameOf(p.b), seedA: p.a, seedB: p.b, match_no: p.match_no, global_no: p.global_no, sa, sb, won: w, live: true };
+        });
+        // אם זה המקדים — מוסיפים את הבּיי (עולים אוטומטית) במקומם, כתיבה עם צד אחד.
+        if (st.isPrelim && cupData.current_round === 1) {
+          const ord = bracketOrder(CUP_SIZE);
+          (cupData.bye_seeds || []).forEach(seed => {
+            const posIdx = ord.indexOf(seed);
+            const mn = posIdx >= 0 ? posIdx + 1 : 9999;
+            liveMatches.push({ a: nameOf(seed), b: null, seedA: seed, seedB: null, aBye: true, match_no: mn, global_no: mn, byeRow: true });
+          });
+          liveMatches.sort((x, y) => (x.global_no || x.match_no || 0) - (y.global_no || y.match_no || 0));
+        }
         return {
           label: roundLabel(st.size, st.isPrelim), size: st.size, isPrelim: st.isPrelim,
-          matches: cupData.pairs.map(p => {
-            const sa = roundScoreOf(p.a), sb = roundScoreOf(p.b);
-            const w = (sa != null && sb != null) ? (sa > sb ? 'a' : sb > sa ? 'b' : null) : null;
-            return { a: nameOf(p.a), b: nameOf(p.b), seedA: p.a, seedB: p.b, match_no: p.match_no, global_no: p.global_no, sa, sb, won: w, live: true };
-          }),
+          matches: liveMatches,
         };
       }
 
@@ -630,13 +641,15 @@ export default function YossiCup() {
                   const gno = m.global_no != null ? m.global_no
                             : (col.size != null ? globalMatchNo(col.size, col.isPrelim, mi + 1) : null);
                   return (
-                    <div key={mi} className="rounded text-[11px] overflow-hidden" style={{ background: mine ? 'rgba(56,189,248,0.12)' : 'rgba(15,23,42,0.6)', border: `1px solid ${mine ? 'rgba(56,189,248,0.6)' : m.live ? 'rgba(6,182,212,0.25)' : m.future ? 'rgba(100,116,139,0.1)' : 'rgba(100,116,139,0.18)'}` }}>
+                    <div key={mi} className="rounded text-[11px] overflow-hidden" style={{ background: mine ? 'rgba(56,189,248,0.12)' : m.byeRow ? 'rgba(52,211,153,0.06)' : 'rgba(15,23,42,0.6)', border: `1px solid ${mine ? 'rgba(56,189,248,0.6)' : m.live ? 'rgba(6,182,212,0.25)' : m.byeRow ? 'rgba(52,211,153,0.25)' : m.future ? 'rgba(100,116,139,0.1)' : 'rgba(100,116,139,0.18)'}` }}>
                       {gno != null && <div className="text-[8px] text-slate-500 text-center" style={{ background: 'rgba(100,116,139,0.1)' }}>משחק {gno}</div>}
                       <Cell name={m.a} seed={m.seedA} score={m.sa} scoreClass={scoreClr(m, 'a')} crown={m.won === 'a'} dim={m.won === 'b'} bye={m.aBye} me={meA} from={m.aFrom}
                         onName={(m.a && m.b) ? () => onPeek({ me: m.a, opp: m.b }) : undefined} />
                       <div className="h-px" style={{ background: 'rgba(100,116,139,0.12)' }} />
-                      <Cell name={m.b} seed={m.seedB} score={m.sb} scoreClass={scoreClr(m, 'b')} crown={m.won === 'b'} dim={m.won === 'a'} bye={m.bBye} me={meB} from={m.bFrom}
-                        onName={(m.a && m.b) ? () => onPeek({ me: m.b, opp: m.a }) : undefined} />
+                      {m.byeRow
+                        ? <div className="px-1.5 py-1 text-[9px] text-green-400">⏭️ עולה אוטומטית</div>
+                        : <Cell name={m.b} seed={m.seedB} score={m.sb} scoreClass={scoreClr(m, 'b')} crown={m.won === 'b'} dim={m.won === 'a'} bye={m.bBye} me={meB} from={m.bFrom}
+                            onName={(m.a && m.b) ? () => onPeek({ me: m.b, opp: m.a }) : undefined} />}
                       {champ && <div className="text-[10px] text-amber-300 font-bold text-center py-0.5" style={{ background: 'rgba(251,191,36,0.12)' }}>🏆 {champ}</div>}
                     </div>
                   );
