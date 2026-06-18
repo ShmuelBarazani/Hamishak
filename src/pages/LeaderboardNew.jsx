@@ -254,13 +254,13 @@ export default function LeaderboardNew() {
     try {
       const rankingsData = await loadAllRankings(currentGame.id, '-current_score');
       if (rankingsData.length > 0) {
-        // 🔑 מיון: ניקוד יורד, ובשוויון לפי המיקום הקודם (previous_position) עולה —
-        //    מי שהיה מדורג גבוה יותר קודם, מופיע מעל. ליציבות: נפילה ל-current_position ואז לשם.
+        // 🔑 מיון: ניקוד יורד, ובשוויון לפי המיקום שנקבע אחרון ב"קבע ניקוד" (baseline_position) עולה —
+        //    מי שהיה מדורג גבוה יותר בנקודת הייחוס האחרונה, מופיע מעל. נפילה ל-current_position ואז לשם.
         rankingsData.sort((a, b) => {
           const sa = Number(a.current_score) || 0, sb = Number(b.current_score) || 0;
           if (sb !== sa) return sb - sa;
-          const pa = a.previous_position || a.current_position || 9999;
-          const pb = b.previous_position || b.current_position || 9999;
+          const pa = a.baseline_position || a.current_position || 9999;
+          const pb = b.baseline_position || b.current_position || 9999;
           if (pa !== pb) return pa - pb;
           return String(a.participant_name || '').localeCompare(String(b.participant_name || ''), 'he');
         });
@@ -564,11 +564,11 @@ export default function LeaderboardNew() {
     const aV = Number(a[sortColumn]) || 0;
     const bV = Number(b[sortColumn]) || 0;
     const diff = sortDirection === 'asc' ? aV - bV : bV - aV;
-    // 🔑 בשוויון — שובר לפי המיקום הקודם (previous_position) עולה, כדי שסדר התצוגה
-    //    יהיה עקבי עם הקצאת המיקום ועם הסידינג בגביע. נפילה ל-current_position ואז לשם.
+    // 🔑 בשוויון — שובר לפי המיקום שנקבע אחרון ב"קבע ניקוד" (baseline_position) עולה,
+    //    כדי שסדר התצוגה יהיה עקבי עם הקצאת המיקום ועם הסידינג בגביע.
     if (diff !== 0) return diff;
-    const pa = a.previous_position || a.current_position || 9999;
-    const pb = b.previous_position || b.current_position || 9999;
+    const pa = a.baseline_position || a.current_position || 9999;
+    const pb = b.baseline_position || b.current_position || 9999;
     if (pa !== pb) return pa - pb;
     return String(a.participant_name || '').localeCompare(String(b.participant_name || ''), 'he');
   });
@@ -603,7 +603,7 @@ export default function LeaderboardNew() {
     const beyondCash = rankings.filter(r => (r.current_position || 0) > 10);
     const arr = [...beyondCash].sort((a, b) =>
       (Number(b.current_score) || 0) - (Number(a.current_score) || 0) ||
-      ((a.previous_position || a.current_position || 9999) - (b.previous_position || b.current_position || 9999)) ||
+      ((a.baseline_position || a.current_position || 9999) - (b.baseline_position || b.current_position || 9999)) ||
       String(a.participant_name || '').localeCompare(String(b.participant_name || ''), 'he')
     );
     const map = {};
