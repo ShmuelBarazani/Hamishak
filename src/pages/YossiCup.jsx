@@ -382,11 +382,11 @@ export default function YossiCup() {
     const decidedRounds = cupData.history || [];
     const currentRoundSize = cupData.champion ? 1 : cupData.round_size;
 
-    // שלבי הגדלים: [מקדים?] ואז 128,64,...,1
+    // שלבי הגדלים: [מקדים?] ואז 128,64,...,2 (הגמר). אין עמודת זוכה נפרדת.
     const sizes = [];
     if (hasPrelim) sizes.push({ size: 242, isPrelim: true });
     let s = CUP_SIZE;
-    while (s >= 1) { sizes.push({ size: s, isPrelim: false }); s = Math.floor(s / 2); }
+    while (s >= 2) { sizes.push({ size: s, isPrelim: false }); s = Math.floor(s / 2); }
 
     // 2) לכל שלב — בונים את רשימת התיבות (משחקים). שלב שהוכרע → מההיסטוריה.
     //    שלב נוכחי → cupData.pairs. שלב עתידי → תיבות ריקות.
@@ -395,11 +395,6 @@ export default function YossiCup() {
       // מצא אם השלב הזה הוכרע (לפי גודל + prelim)
       const decided = decidedRounds.find(h => h.round_size === st.size && !!h.is_prelim === st.isPrelim);
       const isCurrent = !cupData.champion && currentRoundSize === st.size && (cupData.is_prelim === st.isPrelim);
-
-      if (st.size === 1) {
-        // עמודת האלוף
-        return { label: 'אלוף', champion: cupData.champion ? nameOf(cupData.champion) : null, isChampCol: true };
-      }
 
       const numMatches = Math.floor(st.size / 2);
 
@@ -453,40 +448,38 @@ export default function YossiCup() {
 
     // תיבת שם בודדת (ריקה / ממולאת)
     const Cell = ({ name, seed, score, scoreClass, crown, dim, bye }) => (
-      <div className={`flex items-center gap-1.5 px-2 py-1 ${dim ? 'opacity-50' : ''}`}>
-        {seed != null && <span className="text-[9px] text-amber-400/60 w-5 flex-shrink-0 tabular-nums">{seed}</span>}
+      <div className={`flex items-center gap-1 px-1.5 py-1 ${dim ? 'opacity-50' : ''}`}>
+        {seed != null && <span className="text-[8px] text-amber-400/60 w-4 flex-shrink-0 tabular-nums">{seed}</span>}
         {name
           ? <span className={`truncate ${bye ? 'text-green-300' : 'text-slate-200'}`}>{name}{bye ? ' ⏭️' : ''}</span>
           : <span className="text-slate-600 italic">—</span>}
-        {score != null && <span className={`mr-auto text-[11px] font-bold flex-shrink-0 ${scoreClass}`}>{score >= 0 ? '+' : ''}{score}</span>}
+        {score != null && <span className={`mr-auto text-[10px] font-bold flex-shrink-0 ${scoreClass}`}>{score >= 0 ? '+' : ''}{score}</span>}
         {crown && <Crown className="w-2.5 h-2.5 text-amber-400 flex-shrink-0" />}
       </div>
     );
 
     return (
       <div className="overflow-x-auto pb-2">
-        <div className="flex gap-3 min-w-max">
-          {columns.map((col, ci) => (
-            <div key={ci} className="flex flex-col gap-1.5" style={{ minWidth: 200 }}>
-              <div className="text-[11px] font-bold text-cyan-300 text-center pb-1">{col.label}</div>
-              {col.isChampCol ? (
-                <div className="flex flex-col items-center justify-center gap-1 py-4 px-3 rounded-lg" style={{ background: col.champion ? 'rgba(251,191,36,0.1)' : 'rgba(15,23,42,0.4)', border: `1px solid ${col.champion ? 'rgba(251,191,36,0.4)' : 'rgba(100,116,139,0.18)'}` }}>
-                  <Crown className={`w-6 h-6 ${col.champion ? 'text-amber-400' : 'text-slate-600'}`} />
-                  {col.champion
-                    ? <span className="text-sm font-bold text-amber-300 text-center">{col.champion}</span>
-                    : <span className="text-xs text-slate-600 italic">ממתין</span>}
-                </div>
-              ) : (
-                col.matches.map((m, mi) => (
-                  <div key={mi} className="rounded-md text-xs overflow-hidden" style={{ background: 'rgba(15,23,42,0.6)', border: `1px solid ${m.live ? 'rgba(6,182,212,0.25)' : m.future ? 'rgba(100,116,139,0.1)' : 'rgba(100,116,139,0.18)'}` }}>
+        <div className="flex gap-1.5 min-w-max">
+          {columns.map((col, ci) => {
+            const isFinal = col.label && col.label.includes('גמר');
+            return (
+            <div key={ci} className="flex flex-col gap-1" style={{ minWidth: 130 }}>
+              <div className="text-[10px] font-bold text-cyan-300 text-center pb-0.5 truncate">{col.label}</div>
+              {col.matches.map((m, mi) => {
+                const champ = isFinal && m.won ? (m.won === 'a' ? m.a : m.b) : null;
+                return (
+                  <div key={mi} className="rounded text-[11px] overflow-hidden" style={{ background: 'rgba(15,23,42,0.6)', border: `1px solid ${m.live ? 'rgba(6,182,212,0.25)' : m.future ? 'rgba(100,116,139,0.1)' : 'rgba(100,116,139,0.18)'}` }}>
                     <Cell name={m.a} seed={m.seedA} score={m.sa} scoreClass={scoreClr(m, 'a')} crown={m.won === 'a'} dim={m.won === 'b'} bye={m.aBye} />
                     <div className="h-px" style={{ background: 'rgba(100,116,139,0.12)' }} />
                     <Cell name={m.b} seed={m.seedB} score={m.sb} scoreClass={scoreClr(m, 'b')} crown={m.won === 'b'} dim={m.won === 'a'} bye={m.bBye} />
+                    {champ && <div className="text-[10px] text-amber-300 font-bold text-center py-0.5" style={{ background: 'rgba(251,191,36,0.12)' }}>🏆 {champ}</div>}
                   </div>
-                ))
-              )}
+                );
+              })}
             </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     );
