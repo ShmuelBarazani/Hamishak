@@ -500,8 +500,13 @@ export default function YossiCup() {
     while (s >= 2 && stages.length < 4) {
       const rng = potentialRangeForStage(myBasePos, s);
       if (rng) {
+        const meTrim = (myName || '').trim();
         const names = [];
-        for (let pos = rng.from; pos < rng.to; pos++) names.push(...namesAtBase(pos));
+        for (let pos = rng.from; pos < rng.to; pos++) {
+          for (const nm of namesAtBase(pos)) {
+            if (nm.trim() !== meTrim && !names.includes(nm)) names.push(nm); // לא לכלול את עצמי ולא כפילויות
+          }
+        }
         stages.push({ size: s, label: roundLabel(s, false), count: names.length, names });
       }
       s = Math.floor(s / 2);
