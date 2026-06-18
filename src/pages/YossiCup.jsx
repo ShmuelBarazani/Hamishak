@@ -87,9 +87,22 @@ export default function YossiCup() {
   }, [rankings]);
 
   // ── תצוגה חיה (לפני קיבוע) — כל המשתתפים ──
-  const liveSeeds = useMemo(() => rankings.map((r, i) => ({
-    seed: i + 1, participant_name: r.participant_name, entry_score: r.current_score,
-  })), [rankings]);
+  //   אם הוטען סידינג קבוע (fixed_seeding מהאקסל) — משתמשים בו במקום בסדר טבלת הדירוג,
+  //   כדי שהמיון יהיה מדויק לבראקט הרשמי (שובר-שוויון פנימי בין משתתפים עם אותו ניקוד).
+  //   הניקוד עדיין נלקח מהדירוג החי (לפי שם) — רק הסדר מגיע מהסידינג הקבוע.
+  const fixedSeeding = currentGame?.yossi_cup_seeding || null;
+  const liveSeeds = useMemo(() => {
+    if (fixedSeeding && Array.isArray(fixedSeeding) && fixedSeeding.length > 0) {
+      return fixedSeeding.map((s) => ({
+        seed: s.seed,
+        participant_name: s.participant_name,
+        entry_score: scoreByName[s.participant_name] ?? 0,
+      }));
+    }
+    return rankings.map((r, i) => ({
+      seed: i + 1, participant_name: r.participant_name, entry_score: r.current_score,
+    }));
+  }, [rankings, fixedSeeding, scoreByName]);
 
   // האם נדרש סיבוב מקדים (יותר מ-128 משתתפים)
   const needsPrelim = liveSeeds.length > CUP_SIZE;
@@ -111,15 +124,15 @@ export default function YossiCup() {
     const seedToParticipant = (s) => liveSeeds[s - 1]; // seed 1-based
     const order = bracketOrder(CUP_SIZE); // 128 עמדות
     const p = [];
-    for (const s of order) {
+    order.forEach((s, posIdx) => {
       const opp = bracketComplement - s; // היריב
       const A = seedToParticipant(s);
-      if (!A) continue;
-      if (opp > total) continue; // אין יריב → bye (לא מוצג כדו-קרב)
+      if (!A) return;
+      if (opp > total) return; // אין יריב → bye (לא מוצג כדו-קרב)
       const B = seedToParticipant(opp);
-      if (!B) continue;
-      p.push({ a: A, b: B });
-    }
+      if (!B) return;
+      p.push({ a: A, b: B, match_no: posIdx + 1 }); // מספר המשחק = עמדה בעץ + 1
+    });
     return p;
   }, [liveSeeds, bracketComplement]);
 
@@ -185,7 +198,7 @@ export default function YossiCup() {
     if (liveSeeds.length < CUP_SIZE) { toast({ title: 'אין מספיק משתתפים', description: `נדרשים לפחות ${CUP_SIZE}, קיימים ${rankings.length}`, variant: 'destructive' }); return; }
     setWorking(true);
     try {
-      const pairs = livePairs.map(p => ({ a: p.a.seed, b: p.b.seed }));
+      const pairs = livePairs.map(p => ({ a: p.a.seed, b: p.b.seed, match_no: p.match_no }));
       const cupStart = {}; liveSeeds.forEach(s => { cupStart[s.seed] = s.entry_score; }); // נקודת אפס לכלל ב'
       // אם יש סיבוב מקדים — שומרים את הבּיי כדי לצרף אותם אחרי הכרעת הסיבוב המקדים
       const byes = needsPrelim ? byeSeeds.map(s => s.seed) : [];
@@ -237,7 +250,7 @@ export default function YossiCup() {
       const results = cupData.pairs.map(pair => {
         const d = decidePair(pair.a, pair.b);
         return { a: pair.a, b: pair.b, winner: d.winner, loser: d.loser, margin: d.margin, rule: d.rule,
-                 sa: roundScoreOf(pair.a), sb: roundScoreOf(pair.b) };
+                 match_no: pair.match_no, sa: roundScoreOf(pair.a), sb: roundScoreOf(pair.b) };
       });
       const matchWinners = results.map(r => r.winner);
 
@@ -276,7 +289,7 @@ export default function YossiCup() {
       } else {
         // זוגות הסיבוב הבא: עמדות עוקבות בעץ נפגשות (0↔1, 2↔3, ...) — שומר מבנה עץ.
         const nextPairs = [];
-        for (let i = 0; i < advancing.length; i += 2) nextPairs.push({ a: advancing[i], b: advancing[i + 1] });
+        for (let i = 0; i < advancing.length; i += 2) nextPairs.push({ a: advancing[i], b: advancing[i + 1], match_no: (i / 2) + 1 });
         await saveCup({
           ...cupData, history: newHistory, alive: advancing,
           current_round: cupData.current_round + 1, round_size: advancing.length,
@@ -304,10 +317,12 @@ export default function YossiCup() {
 
   // ── שורת דו-קרב מינימליסטית (קומפקטית, מעט מספרים) ──
   // side: { seed, name, score?(ניקוד סיבוב), entry? } | won/lost: הדגשה
-  const MatchRow = ({ idx, a, b, sa, sb, won }) => {
+  const MatchRow = ({ idx, a, b, sa, sb, won, matchNo }) => {
     // won: 'a'|'b'|'tie'|null
     return (
       <div className="flex items-center text-sm rounded-md overflow-hidden" style={{ background: 'rgba(255,255,255,0.02)' }}>
+        {/* מספר משחק */}
+        {matchNo != null && <span className="text-[10px] text-slate-500 w-7 text-center flex-shrink-0 tabular-nums" style={{ borderLeft: '1px solid rgba(100,116,139,0.2)' }}>{matchNo}</span>}
         {/* צד A */}
         <div className={`flex-1 flex items-center gap-2 px-2.5 py-1.5 min-w-0 ${won === 'b' ? 'opacity-45' : ''}`}>
           <span className="text-[10px] text-amber-400/70 w-7 flex-shrink-0 tabular-nums">{a.seed}</span>
@@ -458,7 +473,7 @@ export default function YossiCup() {
           )}
           <div className="flex flex-col gap-1">
             {livePairs.map((pair, idx) => (
-              <MatchRow key={idx} idx={idx}
+              <MatchRow key={idx} idx={idx} matchNo={pair.match_no}
                 a={{ seed: pair.a.seed, name: pair.a.participant_name }}
                 b={{ seed: pair.b.seed, name: pair.b.participant_name }}
                 sa={null} sb={null} won={null} />
@@ -520,7 +535,7 @@ export default function YossiCup() {
               </CardHeader>
               <CardContent className="flex flex-col gap-1">
                 {histToShow.results.map((r, i) => (
-                  <MatchRow key={i} idx={i}
+                  <MatchRow key={i} idx={i} matchNo={r.match_no}
                     a={{ seed: r.a, name: nameOf(r.a) }}
                     b={{ seed: r.b, name: nameOf(r.b) }}
                     sa={r.sa} sb={r.sb}
@@ -563,7 +578,7 @@ export default function YossiCup() {
                   const sa = roundScoreOf(pair.a), sb = roundScoreOf(pair.b);
                   const leader = (sa != null && sb != null) ? (sa > sb ? 'a' : sb > sa ? 'b' : 'tie') : null;
                   return (
-                    <MatchRow key={idx} idx={idx}
+                    <MatchRow key={idx} idx={idx} matchNo={pair.match_no}
                       a={{ seed: pair.a, name: nameOf(pair.a) }}
                       b={{ seed: pair.b, name: nameOf(pair.b) }}
                       sa={sa} sb={sb}
