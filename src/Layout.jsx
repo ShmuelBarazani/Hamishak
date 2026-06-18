@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import {
-  Users, FileText, BarChart3, Database, Award, PieChart,
+  Users, FileText, BarChart3, Database, Award, PieChart, Trophy,
   LogOut, Shield, Edit, Upload, Lock, X, Sun, Moon, Pencil, Check,
 } from "lucide-react";
 import { supabase } from "@/api/supabaseClient";
@@ -24,7 +24,7 @@ const ROUTE_ACCESS = {
   AdminImport: 'admin', ManageGameParticipants: 'admin',
   UserManagement: 'admin',  FormBuilder: 'admin',
   SystemOverview: 'admin',  CreateGame: 'admin',
-  YossiCup: 'admin',
+  YossiCup: 'public',
 };
 
 function getPageName(pathname) {
@@ -131,6 +131,7 @@ function LayoutContent({ children }) {
 
   const publicItems = [
     { title:"טבלת דירוג",     short:"דירוג",   url:createPageUrl("LeaderboardNew")  + g, icon:Award,    group:"main" },
+    { title:"🏆 גביע יוסי",   short:"גביע יוסי",url:createPageUrl("YossiCup")       + g, icon:Trophy,   group:"main" },
     { title:"צפייה בניחושים", short:"ניחושים", url:createPageUrl("ViewSubmissions") + g, icon:Users,    group:"main" },
     { title:"תוצאות אמת",     short:"תוצאות",  url:createPageUrl("AdminResults")    + g, icon:BarChart3,group:"main" },
     { title:"סטטיסטיקות",     short:"סטטיסטיקה",url:createPageUrl("Statistics")      + g, icon:PieChart, group:"main" },
@@ -139,7 +140,6 @@ function LayoutContent({ children }) {
     { title:"מילוי ניחושים",  short:"מילוי",   url:createPageUrl("PredictionForm")  + g, icon:FileText, group:"main" },
   ];
   const adminItems = [
-    { title:"🏆 גביע יוסי",   short:"גביע יוסי", url:createPageUrl("YossiCup") + g,  icon:Award,    group:"admin" },
     { title:"ניהול משתתפים", url:createPageUrl("ManageGameParticipants"), icon:Users,    group:"admin" },
     { title:"ייבוא ניחושים",  url:createPageUrl("AdminImport"),           icon:Upload,   group:"admin" },
     { title:"ניהול משתמשים", url:createPageUrl("UserManagement"),         icon:Shield,   group:"admin" },
