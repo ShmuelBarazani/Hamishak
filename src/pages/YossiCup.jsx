@@ -458,6 +458,35 @@ export default function YossiCup() {
     return { from: oppHalfStart, to: oppHalfStart + half };
   };
 
+  // ── יריבים פוטנציאליים מסודרים לפי שלבים (4 שלבים קדימה מהשלב הנוכחי) ──
+  //   לכל שלב: שם השלב + רשימת השמות שיכולים לפגוש את המשתתף בו (לפי עמדות העץ).
+  const potentialByStage = (() => {
+    if (myBasePos == null || !cupData) return [];
+    const ord = bracketOrder(CUP_SIZE);
+    const nameAtBase = (pos) => {
+      const seed = ord[pos];
+      return seed != null ? nameOf(seed) : null;
+    };
+    // נקודת ההתחלה: גודל הסיבוב הנוכחי (אם מקדים — מתחילים מ-128/סיבוב2)
+    let startSize = cupData.champion ? 2 : cupData.round_size;
+    if (cupData.is_prelim) startSize = CUP_SIZE; // מהמקדים, השלב הבא של דו-קרבות אמיתיות הוא 128
+    const stages = [];
+    let s = startSize;
+    while (s >= 2 && stages.length < 4) {
+      const rng = potentialRangeForStage(myBasePos, s);
+      if (rng) {
+        const names = [];
+        for (let pos = rng.from; pos < rng.to; pos++) {
+          const nm = nameAtBase(pos);
+          if (nm && !nm.startsWith('#')) names.push(nm);
+        }
+        stages.push({ size: s, label: roundLabel(s, false), count: rng.to - rng.from, names });
+      }
+      s = Math.floor(s / 2);
+    }
+    return stages;
+  })();
+
   // ── שורת דו-קרב מינימליסטית ──
   //   המוביל בזיווג: ניקוד ירוק + כתר. המפגר: ניקוד אדום + עמעום קל.
   //   תיקו / טרם החל: אפור ניטרלי.
@@ -633,12 +662,11 @@ export default function YossiCup() {
       </div>
     );
 
-    return <BracketTreeScroller columns={columns} isFinalLabel="גמר" scoreClr={scoreClr} Cell={Cell} isMyName={isMyName} globalMatchNo={globalMatchNo} onPeek={setPeekPair}
-      myBasePos={myBasePos} potentialRangeForStage={potentialRangeForStage} showPotential={showPotential} />;
+    return <BracketTreeScroller columns={columns} isFinalLabel="גמר" scoreClr={scoreClr} Cell={Cell} isMyName={isMyName} globalMatchNo={globalMatchNo} onPeek={setPeekPair} />;
   };
 
   // רכיב פנימי שמנהל גלילה אופקית עם פס עליון+תחתון מסונכרנים, וצמידה לימין בפתיחה
-  const BracketTreeScroller = ({ columns, scoreClr, Cell, isMyName, globalMatchNo, onPeek, myBasePos, potentialRangeForStage, showPotential }) => {
+  const BracketTreeScroller = ({ columns, scoreClr, Cell, isMyName, globalMatchNo, onPeek }) => {
     const topRef = React.useRef(null);
     const bottomRef = React.useRef(null);
     const contentRef = React.useRef(null);
@@ -755,21 +783,12 @@ export default function YossiCup() {
                 const gno = m.global_no != null ? m.global_no
                           : (col.size != null ? globalMatchNo(col.size, col.isPrelim, mi + 1) : null);
                 const cy = centersByCol[ci][mi];
-                // יריב פוטנציאלי? — אם הופעל הכפתור ויש למשתתף עמדת בסיס, בודקים אם תא זה
-                //   נמצא בטווח העמדות שיכולות לפגוש את המשתתף בשלב הזה (ולא התא של המשתתף עצמו).
-                let isPotential = false;
-                if (showPotential && myBasePos != null && col.size != null) {
-                  const block = (2 * 128) / col.size;       // עמדות-בסיס לכל משחק בשלב
-                  const cellStart = mi * block, cellEnd = cellStart + block;
-                  const rng = potentialRangeForStage(myBasePos, col.size);
-                  if (rng && cellStart < rng.to && cellEnd > rng.from) isPotential = true;
-                }
                 return (
                   <div key={`${ci}-${mi}`} dir="rtl"
                     style={{ position: 'absolute', left, top: cy - BOX_H / 2, width: COL_W }}
                     className="rounded text-[11px] overflow-hidden"
                     >
-                    <div className="rounded overflow-hidden" style={{ background: mine ? 'rgba(56,189,248,0.12)' : isPotential ? 'rgba(251,146,60,0.12)' : m.byeRow ? 'rgba(52,211,153,0.06)' : 'rgba(15,23,42,0.85)', border: `1px solid ${mine ? 'rgba(56,189,248,0.6)' : isPotential ? 'rgba(251,146,60,0.7)' : m.live ? 'rgba(6,182,212,0.25)' : m.byeRow ? 'rgba(52,211,153,0.25)' : m.future ? 'rgba(100,116,139,0.1)' : 'rgba(100,116,139,0.18)'}` }}>
+                    <div className="rounded overflow-hidden" style={{ background: mine ? 'rgba(56,189,248,0.12)' : m.byeRow ? 'rgba(52,211,153,0.06)' : 'rgba(15,23,42,0.85)', border: `1px solid ${mine ? 'rgba(56,189,248,0.6)' : m.live ? 'rgba(6,182,212,0.25)' : m.byeRow ? 'rgba(52,211,153,0.25)' : m.future ? 'rgba(100,116,139,0.1)' : 'rgba(100,116,139,0.18)'}` }}>
                       {gno != null && <div className="text-[8px] text-slate-500 text-center" style={{ background: 'rgba(100,116,139,0.1)' }}>משחק {gno}</div>}
                       <Cell name={m.a} seed={m.seedA} score={m.sa} scoreClass={scoreClr(m, 'a')} crown={m.won === 'a'} dim={m.won === 'b'} bye={m.aBye} me={meA} from={m.aFrom}
                         onName={(m.a && m.b) ? () => onPeek({ me: m.a, opp: m.b }) : undefined} />
@@ -802,6 +821,43 @@ export default function YossiCup() {
           onClose={() => setPeekPair(null)}
         />
       )}
+
+      {/* חלון צף: יריבים פוטנציאליים לפי שלבים */}
+      {showPotential && createPortal(
+        <div onClick={() => setShowPotential(false)} dir="rtl" style={{ position: 'fixed', inset: 0, zIndex: 100000, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '12px' }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: '560px', maxHeight: '88vh', overflowY: 'auto', background: '#0b1220', backgroundImage: 'linear-gradient(180deg,#101b30,#0b1220)', border: '1px solid rgba(251,146,60,0.5)', borderRadius: '12px', boxShadow: '0 16px 48px rgba(0,0,0,0.85)' }}>
+            <div style={{ position: 'sticky', top: 0, background: '#0b1220', borderBottom: '1px solid rgba(100,116,139,0.3)', padding: '12px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+              <div style={{ fontSize: '0.9rem', fontWeight: 700, color: '#fb923c' }}>
+                🎯 היריבים הפוטנציאליים של {myName.trim()}
+              </div>
+              <button onClick={() => setShowPotential(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', display: 'flex' }}><X className="w-5 h-5" /></button>
+            </div>
+            <div style={{ padding: '10px' }}>
+              {potentialByStage.length === 0 ? (
+                <div style={{ padding: '20px', textAlign: 'center', color: '#94a3b8', fontSize: '0.85rem' }}>אין נתונים להצגה.</div>
+              ) : potentialByStage.map((st, i) => (
+                <div key={i} style={{ marginBottom: '10px', borderRadius: '8px', overflow: 'hidden', border: '1px solid rgba(251,146,60,0.25)' }}>
+                  <div style={{ background: 'rgba(251,146,60,0.12)', padding: '6px 10px', fontSize: '0.82rem', fontWeight: 700, color: '#fdba74' }}>
+                    {st.label} · {st.count} יריבים אפשריים
+                  </div>
+                  <div style={{ padding: '8px 10px', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                    {st.names.length === 0
+                      ? <span style={{ color: '#64748b', fontSize: '0.8rem' }}>טרم ידוע</span>
+                      : st.names.map((nm, j) => (
+                          <span key={j} style={{ fontSize: '0.78rem', color: '#e2e8f0', background: 'rgba(255,255,255,0.05)', padding: '3px 8px', borderRadius: '5px' }}>{nm}</span>
+                        ))}
+                  </div>
+                </div>
+              ))}
+              <p style={{ fontSize: '0.72rem', color: '#64748b', textAlign: 'center', marginTop: '4px' }}>
+                * אלה כל מי שעשוי לפגוש אותך בכל שלב, אם תעלה והם יעלו. ככל שמתקדמים — יותר מתמודדים אפשריים.
+              </p>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
       {/* כותרת */}
       <div className="flex items-center justify-between flex-wrap gap-2 mb-4">
         <div className="flex items-center gap-3">
@@ -841,15 +897,12 @@ export default function YossiCup() {
             ) : (
               <p className="text-slate-400">לא נמצא משתתף בשם זה בסיבוב הנוכחי.</p>
             )}
-            {/* כפתור הצגת יריבים פוטנציאליים בעץ */}
-            <button onClick={() => setShowPotential(v => !v)}
+            {/* כפתור הצגת יריבים פוטנציאליים בחלון צף */}
+            <button onClick={() => setShowPotential(true)}
               className="mt-2 text-xs font-bold rounded-lg px-3 py-1.5 transition-colors flex items-center gap-1.5"
-              style={{ color: showPotential ? '#0f172a' : '#fb923c', background: showPotential ? '#fb923c' : 'rgba(251,146,60,0.12)', border: '1px solid rgba(251,146,60,0.5)' }}>
-              {showPotential ? '✓ ' : ''}🎯 הצג יריבים פוטנציאליים בעץ (בכל שלב)
+              style={{ color: '#fb923c', background: 'rgba(251,146,60,0.12)', border: '1px solid rgba(251,146,60,0.5)' }}>
+              🎯 הצג יריבים פוטנציאליים (4 שלבים קדימה)
             </button>
-            {showPotential && (
-              <p className="text-[11px] text-orange-300/80 mt-1">בעץ, התיבות בכתום הן המתמודדים שתוכל לפגוש בכל שלב — אם תעלה והם יעלו.</p>
-            )}
           </div>
         )}
       </div>
