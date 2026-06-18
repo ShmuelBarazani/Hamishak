@@ -34,10 +34,32 @@ const roundLabel = (size, isPrelim) => {
   // אחרי הסיבוב המקדים: 128 = סיבוב 2, 64 = סיבוב 3, וכו'
   const map = {
     128: 'סיבוב 2 · 64 דו-קרבות', 64: 'סיבוב 3 · 32 דו-קרבות', 32: 'שמינית גמר',
-    16: 'רבע גמר', 8: 'חצי גמר', 4: 'חצי גמר', 2: 'גמר', 1: 'אלוף'
+    16: 'רבע גמר', 8: 'שמינית? ', 4: 'חצי גמר', 2: 'גמר', 1: 'אלוף'
   };
-  return map[size] || `סיבוב · ${size}`;
+  // תיקון: 16→שמינית, 8→רבע, 4→חצי, 2→גמר
+  const map2 = {
+    128: 'סיבוב 2', 64: 'סיבוב 3', 32: 'שמינית גמר',
+    16: 'רבע גמר', 8: 'שמינית גמר', 4: 'חצי גמר', 2: 'גמר', 1: 'אלוף'
+  };
+  return map2[size] || `סיבוב · ${size}`;
 };
+
+// ── מספור גלובלי רציף בין השלבים ──
+//   מקדים תופס מספרים 1..128 (לפי עמדות העץ). כל שלב הבא ממשיך מהמספר הבא.
+//   סיבוב 2 (64 משחקים) → 129..192, סיבוב 3 (32) → 193..224, שמינית(16)→225..240,
+//   רבע(8)→241..248, חצי(4)→249..252, גמר(2... למעשה 1 משחק) → 253.
+//   הקלט: roundSize (גודל הסיבוב = מספר המשתתפים בו), isPrelim, ו-localMatchNo (1-based בתוך השלב).
+const CUP = 128;
+const globalOffset = (roundSize, isPrelim) => {
+  if (isPrelim) return 0;                 // מקדים: מספר גלובלי = localMatchNo (1..128)
+  // אחרי המקדים: השלבים בגדלים 128,64,32,16,8,4,2.
+  // offset מצטבר: לפני סיבוב2 כבר "נוצלו" 128 מספרים (המקדים).
+  let off = CUP;                          // 128 (המקדים)
+  let s = CUP;                            // מתחילים מ-128 (סיבוב 2)
+  while (s > roundSize) { off += s / 2; s = s / 2; }
+  return off;
+};
+const globalMatchNo = (roundSize, isPrelim, localMatchNo) => globalOffset(roundSize, isPrelim) + localMatchNo;
 
 export default function YossiCup() {
   const { currentGame } = useGame();
@@ -220,7 +242,7 @@ export default function YossiCup() {
     if (liveSeeds.length < CUP_SIZE) { toast({ title: 'אין מספיק משתתפים', description: `נדרשים לפחות ${CUP_SIZE}, קיימים ${rankings.length}`, variant: 'destructive' }); return; }
     setWorking(true);
     try {
-      const pairs = livePairs.filter(p => !p.is_bye).map(p => ({ a: p.a.seed, b: p.b.seed, match_no: p.match_no }));
+      const pairs = livePairs.filter(p => !p.is_bye).map(p => ({ a: p.a.seed, b: p.b.seed, match_no: p.match_no, global_no: p.match_no }));
       const cupStart = {}; liveSeeds.forEach(s => { cupStart[s.seed] = s.entry_score; }); // נקודת אפס לכלל ב'
       // אם יש סיבוב מקדים — שומרים את הבּיי כדי לצרף אותם אחרי הכרעת הסיבוב המקדים
       const byes = needsPrelim ? byeSeeds.map(s => s.seed) : [];
@@ -272,9 +294,13 @@ export default function YossiCup() {
       const results = cupData.pairs.map(pair => {
         const d = decidePair(pair.a, pair.b);
         return { a: pair.a, b: pair.b, winner: d.winner, loser: d.loser, margin: d.margin, rule: d.rule,
-                 match_no: pair.match_no, sa: roundScoreOf(pair.a), sb: roundScoreOf(pair.b) };
+                 match_no: pair.match_no, global_no: pair.global_no, sa: roundScoreOf(pair.a), sb: roundScoreOf(pair.b) };
       });
       const matchWinners = results.map(r => r.winner);
+
+      // האם הסיבוב שהוכרע הוא המקדים? והבּיי שלו:
+      const wasPrelim = !!cupData.is_prelim && cupData.current_round === 1;
+      const byes = wasPrelim ? (cupData.bye_seeds || []) : [];
 
       // 🆕 בניית הסיבוב הבא תוך שמירה על מבנה עץ הזריעה.
       let advancing;
@@ -310,8 +336,23 @@ export default function YossiCup() {
         toast({ title: '🏆 יש אלוף לגביע יוסי!', description: nameOf(advancing[0]), className: 'bg-amber-900/30 border-amber-500 text-amber-200' });
       } else {
         // זוגות הסיבוב הבא: עמדות עוקבות בעץ נפגשות (0↔1, 2↔3, ...) — שומר מבנה עץ.
+        // match_no = מקומי (1-based); global_no = רציף בין השלבים.
+        const nextRoundSize = advancing.length; // מספר המשתתפים בסיבוב הבא
         const nextPairs = [];
-        for (let i = 0; i < advancing.length; i += 2) nextPairs.push({ a: advancing[i], b: advancing[i + 1], match_no: (i / 2) + 1 });
+        for (let i = 0; i < advancing.length; i += 2) {
+          const local = (i / 2) + 1;
+          nextPairs.push({ a: advancing[i], b: advancing[i + 1], match_no: local, global_no: globalMatchNo(nextRoundSize, false, local) });
+        }
+
+        // 🔍 בדיקת תקינות הצטלבות: אם הפייבוריטים היו מנצחים, סכום הזרעים בכל דו-קרב
+        //    בסיבוב הבא היה אמור להיות קבוע (גודל_הסיבוב_הבא + 1). זה לא ישפיע על המשחק
+        //    (כי מנצחים בפועל שונים), אבל חריגה במבנה מרמזת על הצטלבות שגויה — נרשום אזהרה.
+        const expectedSum = advancing.length + 1; // 128→129, 64→65, 32→33, 16→17, 8→9, 4→5, 2→3
+        const structuralBad = nextPairs.filter(p => (p.a + p.b) !== expectedSum).length;
+        if (structuralBad > 0) {
+          console.warn(`[גביע יוסי] אזהרת מבנה: ${structuralBad} דו-קרבות בסיבוב הבא חורגים מסכום ${expectedSum} (ייתכן בגלל אפסטים — תקין; אם בתחילת הטורניר — בעיית הצטלבות).`);
+        }
+
         await saveCup({
           ...cupData, history: newHistory, alive: advancing,
           current_round: cupData.current_round + 1, round_size: advancing.length,
@@ -346,7 +387,7 @@ export default function YossiCup() {
     const isMe = (name) => norm(name) === q;
 
     if (!cupData) {
-      // לפני קיבוע — מחפשים ב-livePairs (כולל בּיי)
+      // לפני קיבוע — מחפשים ב-livePairs (כולל בּיי). במקדים global = match_no.
       for (const p of livePairs) {
         if (p.is_bye && isMe(p.a.participant_name)) return { match_no: p.match_no, isBye: true };
         if (!p.is_bye && isMe(p.a.participant_name)) return { match_no: p.match_no, opponent: p.b.participant_name, side: 'a' };
@@ -354,10 +395,11 @@ export default function YossiCup() {
       }
       return null;
     }
-    // אחרי קיבוע — מחפשים בזוגות הסיבוב הנוכחי
+    // אחרי קיבוע — מחפשים בזוגות הסיבוב הנוכחי (מספר גלובלי)
     for (const pair of (cupData.pairs || [])) {
-      if (isMe(nameOf(pair.a))) return { match_no: pair.match_no, opponent: nameOf(pair.b), side: 'a' };
-      if (isMe(nameOf(pair.b))) return { match_no: pair.match_no, opponent: nameOf(pair.a), side: 'b' };
+      const gno = pair.global_no || pair.match_no;
+      if (isMe(nameOf(pair.a))) return { match_no: gno, opponent: nameOf(pair.b), side: 'a' };
+      if (isMe(nameOf(pair.b))) return { match_no: gno, opponent: nameOf(pair.a), side: 'b' };
     }
     // בּיי בסיבוב מקדים
     if (cupData.is_prelim && cupData.current_round === 1) {
@@ -392,7 +434,7 @@ export default function YossiCup() {
     return (
       <div className="flex items-center text-sm rounded-md overflow-hidden" style={{ background: (meA || meB) ? 'rgba(56,189,248,0.12)' : 'rgba(255,255,255,0.02)', boxShadow: (meA || meB) ? 'inset 0 0 0 1px rgba(56,189,248,0.5)' : 'none' }}>
         {/* מספר משחק */}
-        {matchNo != null && <span className="text-[10px] text-slate-500 w-7 text-center flex-shrink-0 tabular-nums" style={{ borderLeft: '1px solid rgba(100,116,139,0.2)' }}>{matchNo}</span>}
+        {matchNo != null && <span className="text-[10px] text-slate-500 w-9 text-center flex-shrink-0 tabular-nums" style={{ borderLeft: '1px solid rgba(100,116,139,0.2)' }}>{matchNo}</span>}
         {/* צד A */}
         <div className={`flex-1 flex items-center gap-2 px-2.5 py-1.5 min-w-0 ${won === 'b' ? 'opacity-60' : ''}`}>
           <span className="text-[10px] text-amber-400/70 w-7 flex-shrink-0 tabular-nums">{a.seed}</span>
@@ -452,9 +494,9 @@ export default function YossiCup() {
       if (decided) {
         // שלב שהוכרע — מההיסטוריה
         return {
-          label: roundLabel(st.size, st.isPrelim),
+          label: roundLabel(st.size, st.isPrelim), size: st.size, isPrelim: st.isPrelim,
           matches: decided.results.map(r => ({
-            a: nameOf(r.a), b: nameOf(r.b), seedA: r.a, seedB: r.b, match_no: r.match_no,
+            a: nameOf(r.a), b: nameOf(r.b), seedA: r.a, seedB: r.b, match_no: r.match_no, global_no: r.global_no,
             sa: r.sa, sb: r.sb, won: r.winner === r.a ? 'a' : 'b',
           })),
         };
@@ -463,11 +505,11 @@ export default function YossiCup() {
       if (isCurrent) {
         // השלב הפעיל
         return {
-          label: roundLabel(st.size, st.isPrelim),
+          label: roundLabel(st.size, st.isPrelim), size: st.size, isPrelim: st.isPrelim,
           matches: cupData.pairs.map(p => {
             const sa = roundScoreOf(p.a), sb = roundScoreOf(p.b);
             const w = (sa != null && sb != null) ? (sa > sb ? 'a' : sb > sa ? 'b' : null) : null;
-            return { a: nameOf(p.a), b: nameOf(p.b), seedA: p.a, seedB: p.b, match_no: p.match_no, sa, sb, won: w, live: true };
+            return { a: nameOf(p.a), b: nameOf(p.b), seedA: p.a, seedB: p.b, match_no: p.match_no, global_no: p.global_no, sa, sb, won: w, live: true };
           }),
         };
       }
@@ -475,7 +517,7 @@ export default function YossiCup() {
       // ── שלב עתידי — תיבות ריקות ──
       // מקרה מיוחד: עמודת 128 (סיבוב 2) כשעדיין בסיבוב מקדים → ממלאים את הבּיי במקומם.
       if (st.size === CUP_SIZE && hasPrelim && cupData.is_prelim && !decided) {
-        // לכל עמדת עץ: אם הזרע bye → ממולא; אחרת ריק (ממתין למנצח המקדים)
+        // לכל עמדת עץ: אם הזרע bye → ממולא; אחרת "מנצח משחק X" (X = עמדת המקדים = global)
         const rows = [];
         for (let i = 0; i < order.length; i += 2) {
           const sTop = order[i], sBot = order[i + 1];
@@ -483,57 +525,108 @@ export default function YossiCup() {
           const botBye = byeSet.has(sBot);
           rows.push({
             a: topBye ? nameOf(sTop) : null, seedA: topBye ? sTop : null, aBye: topBye,
+            aFrom: topBye ? null : (i + 1),       // מנצח משחק מס' (עמדת המקדים)
             b: botBye ? nameOf(sBot) : null, seedB: botBye ? sBot : null, bBye: botBye,
+            bFrom: botBye ? null : (i + 2),
             future: true,
           });
         }
-        return { label: roundLabel(st.size, false), matches: rows };
+        return { label: roundLabel(st.size, false), size: st.size, isPrelim: false, matches: rows };
       }
 
-      // שלב עתידי רגיל — תיבות ריקות לגמרי
+      // שלב עתידי רגיל — תיבות עם "מנצח משחק X" (מהשלב הקודם)
+      const prevSize = st.size * 2;                  // גודל הסיבוב הקודם
+      const prevOffset = globalOffset(prevSize, false);
       return {
-        label: roundLabel(st.size, st.isPrelim),
-        matches: Array.from({ length: numMatches }, () => ({ a: null, b: null, future: true })),
+        label: roundLabel(st.size, st.isPrelim), size: st.size, isPrelim: st.isPrelim,
+        matches: Array.from({ length: numMatches }, (_, k) => ({
+          a: null, b: null, future: true,
+          aFrom: prevOffset + (2 * k + 1),   // מנצח המשחק הגלובלי הזה
+          bFrom: prevOffset + (2 * k + 2),
+        })),
       };
     });
 
-    // תיבת שם בודדת (ריקה / ממולאת)
-    const Cell = ({ name, seed, score, scoreClass, crown, dim, bye, me }) => (
+    // תיבת שם בודדת (ריקה / "מנצח משחק X" / ממולאת)
+    const Cell = ({ name, seed, score, scoreClass, crown, dim, bye, me, from }) => (
       <div className={`flex items-center gap-1 px-1.5 py-1 ${dim ? 'opacity-50' : ''}`}>
         {seed != null && <span className="text-[8px] text-amber-400/60 w-4 flex-shrink-0 tabular-nums">{seed}</span>}
         {name
           ? <span className={`truncate ${me ? 'text-cyan-300 font-bold' : bye ? 'text-green-300' : 'text-slate-200'}`}>{me ? '⭐ ' : ''}{name}{bye ? ' ⏭️' : ''}</span>
-          : <span className="text-slate-600 italic">—</span>}
+          : from
+            ? <span className="text-slate-500 truncate text-[10px]">מנצח משחק {from}</span>
+            : <span className="text-slate-600 italic">—</span>}
         {score != null && <span className={`mr-auto text-[10px] font-bold flex-shrink-0 ${scoreClass}`}>{score >= 0 ? '+' : ''}{score}</span>}
         {crown && <Crown className="w-2.5 h-2.5 text-amber-400 flex-shrink-0" />}
       </div>
     );
 
+    return <BracketTreeScroller columns={columns} isFinalLabel="גמר" scoreClr={scoreClr} Cell={Cell} isMyName={isMyName} globalMatchNo={globalMatchNo} />;
+  };
+
+  // רכיב פנימי שמנהל גלילה אופקית עם פס עליון+תחתון מסונכרנים, וצמידה לימין בפתיחה
+  const BracketTreeScroller = ({ columns, scoreClr, Cell, isMyName, globalMatchNo }) => {
+    const topRef = React.useRef(null);
+    const bottomRef = React.useRef(null);
+    const contentRef = React.useRef(null);
+    const [scrollW, setScrollW] = React.useState(0);
+
+    // מדידת רוחב התוכן לפס הגלילה העליון
+    React.useEffect(() => {
+      if (contentRef.current) setScrollW(contentRef.current.scrollWidth);
+    }, [columns]);
+
+    // בפתיחה — גלילה לקצה הימני (הסיבוב הראשון/המקדים) ב-RTL
+    React.useEffect(() => {
+      const el = bottomRef.current;
+      if (!el) return;
+      // ב-RTL, הקצה הימני הוא scrollLeft=0; חלק מהדפדפנים משתמשים בערכים שליליים.
+      // נגלול לימין הקיצוני בשתי השיטות לכיסוי.
+      requestAnimationFrame(() => {
+        el.scrollLeft = 0;            // רוב הדפדפנים המודרניים ב-RTL
+        if (topRef.current) topRef.current.scrollLeft = el.scrollLeft;
+      });
+    }, [scrollW]);
+
+    const syncFrom = (src, dst) => { if (dst.current && src.current) dst.current.scrollLeft = src.current.scrollLeft; };
+
     return (
-      <div className="overflow-x-auto pb-2" dir="ltr">
-        <div className="flex gap-2 min-w-max" style={{ direction: 'rtl' }}>
-          {columns.map((col, ci) => {
-            const isFinal = col.label && col.label.includes('גמר');
-            return (
-            <div key={ci} className="flex flex-col gap-1 flex-shrink-0" style={{ width: 165 }}>
-              <div className="text-[10px] font-bold text-cyan-300 text-center pb-0.5 truncate">{col.label}</div>
-              {col.matches.map((m, mi) => {
-                const champ = isFinal && m.won ? (m.won === 'a' ? m.a : m.b) : null;
-                const meA = isMyName(m.a), meB = isMyName(m.b);
-                const mine = meA || meB;
-                return (
-                  <div key={mi} className="rounded text-[11px] overflow-hidden" style={{ background: mine ? 'rgba(56,189,248,0.12)' : 'rgba(15,23,42,0.6)', border: `1px solid ${mine ? 'rgba(56,189,248,0.6)' : m.live ? 'rgba(6,182,212,0.25)' : m.future ? 'rgba(100,116,139,0.1)' : 'rgba(100,116,139,0.18)'}` }}>
-                    {m.match_no != null && <div className="text-[8px] text-slate-500 text-center" style={{ background: 'rgba(100,116,139,0.1)' }}>משחק {m.match_no}</div>}
-                    <Cell name={m.a} seed={m.seedA} score={m.sa} scoreClass={scoreClr(m, 'a')} crown={m.won === 'a'} dim={m.won === 'b'} bye={m.aBye} me={meA} />
-                    <div className="h-px" style={{ background: 'rgba(100,116,139,0.12)' }} />
-                    <Cell name={m.b} seed={m.seedB} score={m.sb} scoreClass={scoreClr(m, 'b')} crown={m.won === 'b'} dim={m.won === 'a'} bye={m.bBye} me={meB} />
-                    {champ && <div className="text-[10px] text-amber-300 font-bold text-center py-0.5" style={{ background: 'rgba(251,191,36,0.12)' }}>🏆 {champ}</div>}
-                  </div>
-                );
-              })}
-            </div>
-            );
-          })}
+      <div>
+        {/* פס גלילה עליון (דמה — משקף את רוחב התוכן) */}
+        <div ref={topRef} onScroll={() => syncFrom(topRef, bottomRef)}
+          dir="ltr" style={{ overflowX: 'auto', overflowY: 'hidden' }}>
+          <div style={{ width: scrollW, height: 1 }} />
+        </div>
+
+        {/* התוכן עם פס גלילה תחתון */}
+        <div ref={bottomRef} onScroll={() => syncFrom(bottomRef, topRef)}
+          className="pb-2" dir="ltr" style={{ overflowX: 'auto' }}>
+          <div ref={contentRef} className="flex gap-2 min-w-max" style={{ direction: 'rtl' }}>
+            {columns.map((col, ci) => {
+              const isFinal = col.label && col.label.includes('גמר');
+              return (
+              <div key={ci} className="flex flex-col gap-1 flex-shrink-0" style={{ width: 165 }}>
+                <div className="text-[10px] font-bold text-cyan-300 text-center pb-0.5 truncate">{col.label}</div>
+                {col.matches.map((m, mi) => {
+                  const champ = isFinal && m.won ? (m.won === 'a' ? m.a : m.b) : null;
+                  const meA = isMyName(m.a), meB = isMyName(m.b);
+                  const mine = meA || meB;
+                  const gno = m.global_no != null ? m.global_no
+                            : (col.size != null ? globalMatchNo(col.size, col.isPrelim, mi + 1) : null);
+                  return (
+                    <div key={mi} className="rounded text-[11px] overflow-hidden" style={{ background: mine ? 'rgba(56,189,248,0.12)' : 'rgba(15,23,42,0.6)', border: `1px solid ${mine ? 'rgba(56,189,248,0.6)' : m.live ? 'rgba(6,182,212,0.25)' : m.future ? 'rgba(100,116,139,0.1)' : 'rgba(100,116,139,0.18)'}` }}>
+                      {gno != null && <div className="text-[8px] text-slate-500 text-center" style={{ background: 'rgba(100,116,139,0.1)' }}>משחק {gno}</div>}
+                      <Cell name={m.a} seed={m.seedA} score={m.sa} scoreClass={scoreClr(m, 'a')} crown={m.won === 'a'} dim={m.won === 'b'} bye={m.aBye} me={meA} from={m.aFrom} />
+                      <div className="h-px" style={{ background: 'rgba(100,116,139,0.12)' }} />
+                      <Cell name={m.b} seed={m.seedB} score={m.sb} scoreClass={scoreClr(m, 'b')} crown={m.won === 'b'} dim={m.won === 'a'} bye={m.bBye} me={meB} from={m.bFrom} />
+                      {champ && <div className="text-[10px] text-amber-300 font-bold text-center py-0.5" style={{ background: 'rgba(251,191,36,0.12)' }}>🏆 {champ}</div>}
+                    </div>
+                  );
+                })}
+              </div>
+              );
+            })}
+          </div>
         </div>
       </div>
     );
@@ -729,7 +822,7 @@ export default function YossiCup() {
               </CardHeader>
               <CardContent className="flex flex-col gap-1">
                 {histToShow.results.map((r, i) => (
-                  <MatchRow key={i} idx={i} matchNo={r.match_no}
+                  <MatchRow key={i} idx={i} matchNo={r.global_no || r.match_no}
                     a={{ seed: r.a, name: nameOf(r.a) }}
                     b={{ seed: r.b, name: nameOf(r.b) }}
                     sa={r.sa} sb={r.sb}
@@ -774,19 +867,21 @@ export default function YossiCup() {
                   // בסיבוב מקדים — משלבים את הבּיי (שנשמרו ב-bye_seeds) עם הזוגות, ממוינים לפי מספר משחק.
                   const byeRows = (cupData.is_prelim && cupData.current_round === 1)
                     ? (cupData.bye_seeds || []).map(seed => {
-                        // מספר המשחק של בּיי = עמדת הזרע בעץ + 1
+                        // מספר המשחק של בּיי = עמדת הזרע בעץ + 1 (במקדים global = מקומי)
                         const order = bracketOrder(CUP_SIZE);
                         const posIdx = order.indexOf(seed);
-                        return { is_bye: true, seed, match_no: posIdx >= 0 ? posIdx + 1 : 9999 };
+                        const mn = posIdx >= 0 ? posIdx + 1 : 9999;
+                        return { is_bye: true, seed, match_no: mn, global_no: mn };
                       })
                     : [];
                   const matchRows = cupData.pairs.map(pair => ({ ...pair, is_bye: false }));
-                  const allRows = [...matchRows, ...byeRows].sort((x, y) => (x.match_no || 0) - (y.match_no || 0));
+                  const allRows = [...matchRows, ...byeRows].sort((x, y) => (x.global_no || x.match_no || 0) - (y.global_no || y.match_no || 0));
                   return allRows.map((row, idx) => {
+                    const gno = row.global_no || row.match_no;
                     if (row.is_bye) {
                       return (
                         <div key={`bye-${row.seed}`} className="flex items-center text-sm rounded-md overflow-hidden" style={{ background: 'rgba(52,211,153,0.06)' }}>
-                          <span className="text-[10px] text-slate-500 w-7 text-center flex-shrink-0 tabular-nums" style={{ borderLeft: '1px solid rgba(100,116,139,0.2)' }}>{row.match_no}</span>
+                          <span className="text-[10px] text-slate-500 w-9 text-center flex-shrink-0 tabular-nums" style={{ borderLeft: '1px solid rgba(100,116,139,0.2)' }}>{gno}</span>
                           <div className="flex-1 flex items-center gap-2 px-2.5 py-1.5 min-w-0">
                             <span className="text-[10px] text-amber-400/70 w-7 flex-shrink-0 tabular-nums">{row.seed}</span>
                             <span className="text-slate-200 truncate">{nameOf(row.seed)}</span>
@@ -798,7 +893,7 @@ export default function YossiCup() {
                     const sa = roundScoreOf(row.a), sb = roundScoreOf(row.b);
                     const leader = (sa != null && sb != null) ? (sa > sb ? 'a' : sb > sa ? 'b' : 'tie') : null;
                     return (
-                      <MatchRow key={`m-${idx}`} idx={idx} matchNo={row.match_no}
+                      <MatchRow key={`m-${idx}`} idx={idx} matchNo={gno}
                         a={{ seed: row.a, name: nameOf(row.a) }}
                         b={{ seed: row.b, name: nameOf(row.b) }}
                         sa={sa} sb={sb}
