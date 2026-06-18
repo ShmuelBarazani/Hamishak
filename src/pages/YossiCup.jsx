@@ -436,10 +436,23 @@ export default function YossiCup() {
     const q = (myName || '').trim();
     if (!q || !cupData) return null;
     const ord = bracketOrder(CUP_SIZE);
+    const comp = 2 * CUP_SIZE + 1; // 257
     // מצא את הזרע של המשתתף
     const sEntry = (cupData.seeds || []).find(s => (s.participant_name || '').trim() === q);
     if (!sEntry) return null;
-    const idx = ord.indexOf(sEntry.seed);
+    const seed = sEntry.seed;
+    // עמדת הבסיס בעץ: bracketOrder מכיל זרעים 1-128. אם הזרע > 128, הוא היריב של
+    // זרע נמוך (comp - seed), והוא תופס את העמדה שצמודה לזרע הנמוך.
+    let idx = ord.indexOf(seed);
+    if (idx < 0) {
+      // זרע גבוה (>128): מצא את העמדה של היריב הנמוך, והמשתתף בעמדה הצמודה (השכן בזוג)
+      const lowSeed = comp - seed;             // היריב הנמוך
+      const lowIdx = ord.indexOf(lowSeed);
+      if (lowIdx >= 0) {
+        // בכל זוג עוקב (0,1),(2,3)... — המשתתף הוא השכן של היריב הנמוך
+        idx = (lowIdx % 2 === 0) ? lowIdx + 1 : lowIdx - 1;
+      }
+    }
     return idx >= 0 ? idx : null;
   })();
 
@@ -463,9 +476,21 @@ export default function YossiCup() {
   const potentialByStage = (() => {
     if (myBasePos == null || !cupData) return [];
     const ord = bracketOrder(CUP_SIZE);
-    const nameAtBase = (pos) => {
-      const seed = ord[pos];
-      return seed != null ? nameOf(seed) : null;
+    const comp = 2 * CUP_SIZE + 1; // 257
+    const total = (cupData.seeds || []).length;
+    // לכל עמדת בסיס (0-127): שני המתמודדים במשחק המקדים (זרע נמוך + היריב), או בּיי אחד.
+    const namesAtBase = (pos) => {
+      const lowSeed = ord[pos];
+      if (lowSeed == null) return [];
+      const oppSeed = comp - lowSeed;
+      const out = [];
+      const nLow = nameOf(lowSeed);
+      if (nLow && !nLow.startsWith('#')) out.push(nLow);
+      if (oppSeed <= total) {  // ליריב יש שם (לא בּיי)
+        const nOpp = nameOf(oppSeed);
+        if (nOpp && !nOpp.startsWith('#')) out.push(nOpp);
+      }
+      return out;
     };
     // נקודת ההתחלה: גודל הסיבוב הנוכחי (אם מקדים — מתחילים מ-128/סיבוב2)
     let startSize = cupData.champion ? 2 : cupData.round_size;
@@ -476,11 +501,8 @@ export default function YossiCup() {
       const rng = potentialRangeForStage(myBasePos, s);
       if (rng) {
         const names = [];
-        for (let pos = rng.from; pos < rng.to; pos++) {
-          const nm = nameAtBase(pos);
-          if (nm && !nm.startsWith('#')) names.push(nm);
-        }
-        stages.push({ size: s, label: roundLabel(s, false), count: rng.to - rng.from, names });
+        for (let pos = rng.from; pos < rng.to; pos++) names.push(...namesAtBase(pos));
+        stages.push({ size: s, label: roundLabel(s, false), count: names.length, names });
       }
       s = Math.floor(s / 2);
     }
