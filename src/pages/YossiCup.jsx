@@ -41,11 +41,11 @@ export default function YossiCup() {
     try {
       const ranks = await db.Ranking.filter({ game_id: currentGame.id }, '-current_score', 1000);
       // 🔑 מיון לסידינג בבראקט — עקבי עם טבלת הדירוג:
-      //    ניקוד יורד, ובשוויון לפי המיקום הקודם (previous_position) עולה. נפילה ל-current_position ואז לשם.
+      //    ניקוד יורד, ובשוויון לפי המיקום שנקבע אחרון ב"קבע ניקוד" (baseline_position) עולה.
       const sorted = [...(ranks || [])].sort((x, y) => {
         if ((y.current_score || 0) !== (x.current_score || 0)) return (y.current_score || 0) - (x.current_score || 0);
-        const px = x.previous_position ?? x.current_position ?? 9999;
-        const py = y.previous_position ?? y.current_position ?? 9999;
+        const px = x.baseline_position ?? x.current_position ?? 9999;
+        const py = y.baseline_position ?? y.current_position ?? 9999;
         if (px !== py) return px - py;
         return (x.participant_name || '').localeCompare(y.participant_name || '', 'he');
       });
