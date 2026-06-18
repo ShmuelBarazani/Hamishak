@@ -45,6 +45,7 @@ export default function YossiCup() {
   const [working, setWorking] = useState(false);
   const [rankings, setRankings] = useState([]);
   const [cupData, setCupData] = useState(null);
+  const [seedingFromDb, setSeedingFromDb] = useState(null);
   const [currentUser, setCurrentUser] = useState(null);
   const [viewRound, setViewRound] = useState(null); // איזה סיבוב מוצג בבורר (null = הנוכחי)
   const [viewMode, setViewMode] = useState('list'); // 'list' = רשימת כרטיסים | 'tree' = עץ בראקט ויזואלי
@@ -53,8 +54,6 @@ export default function YossiCup() {
     if (!currentGame) { setLoading(false); return; }
     try {
       const ranks = await db.Ranking.filter({ game_id: currentGame.id }, '-current_score', 1000);
-      // 🔑 מיון לסידינג בבראקט — עקבי עם טבלת הדירוג:
-      //    ניקוד יורד, ובשוויון לפי המיקום שנקבע אחרון ב"קבע ניקוד" (baseline_position) עולה.
       const sorted = [...(ranks || [])].sort((x, y) => {
         if ((y.current_score || 0) !== (x.current_score || 0)) return (y.current_score || 0) - (x.current_score || 0);
         const px = x.baseline_position ?? x.current_position ?? 9999;
@@ -63,7 +62,16 @@ export default function YossiCup() {
         return (x.participant_name || '').localeCompare(y.participant_name || '', 'he');
       });
       setRankings(sorted);
-      setCupData(currentGame.yossi_cup_data || null);
+      // 🔑 טוען את הסידינג הקבוע + נתוני הגביע ישירות מה-DB (לא מסתמך על GameContext,
+      //    שאולי לא טוען את העמודות החדשות). כך הסידינג מהאקסל תמיד זמין.
+      try {
+        const gameRow = await db.Game.get(currentGame.id);
+        setSeedingFromDb(gameRow?.yossi_cup_seeding || null);
+        setCupData(gameRow?.yossi_cup_data || currentGame.yossi_cup_data || null);
+      } catch (e) {
+        setSeedingFromDb(currentGame.yossi_cup_seeding || null);
+        setCupData(currentGame.yossi_cup_data || null);
+      }
     } catch (err) {
       console.error('שגיאה בטעינת גביע יוסי', err);
       toast({ title: 'שגיאה בטעינה', variant: 'destructive' });
@@ -90,7 +98,7 @@ export default function YossiCup() {
   //   אם הוטען סידינג קבוע (fixed_seeding מהאקסל) — משתמשים בו במקום בסדר טבלת הדירוג,
   //   כדי שהמיון יהיה מדויק לבראקט הרשמי (שובר-שוויון פנימי בין משתתפים עם אותו ניקוד).
   //   הניקוד עדיין נלקח מהדירוג החי (לפי שם) — רק הסדר מגיע מהסידינג הקבוע.
-  const fixedSeeding = currentGame?.yossi_cup_seeding || null;
+  const fixedSeeding = seedingFromDb || currentGame?.yossi_cup_seeding || null;
   const liveSeeds = useMemo(() => {
     if (fixedSeeding && Array.isArray(fixedSeeding) && fixedSeeding.length > 0) {
       return fixedSeeding.map((s) => ({
@@ -128,7 +136,11 @@ export default function YossiCup() {
       const opp = bracketComplement - s; // היריב
       const A = seedToParticipant(s);
       if (!A) return;
-      if (opp > total) return; // אין יריב → bye (לא מוצג כדו-קרב)
+      if (opp > total) {
+        // בּיי — אין יריב. מציגים כשורה (כמו באקסל) עם מספר משחק, מסומן is_bye.
+        p.push({ a: A, b: null, match_no: posIdx + 1, is_bye: true });
+        return;
+      }
       const B = seedToParticipant(opp);
       if (!B) return;
       p.push({ a: A, b: B, match_no: posIdx + 1 }); // מספר המשחק = עמדה בעץ + 1
@@ -198,7 +210,7 @@ export default function YossiCup() {
     if (liveSeeds.length < CUP_SIZE) { toast({ title: 'אין מספיק משתתפים', description: `נדרשים לפחות ${CUP_SIZE}, קיימים ${rankings.length}`, variant: 'destructive' }); return; }
     setWorking(true);
     try {
-      const pairs = livePairs.map(p => ({ a: p.a.seed, b: p.b.seed, match_no: p.match_no }));
+      const pairs = livePairs.filter(p => !p.is_bye).map(p => ({ a: p.a.seed, b: p.b.seed, match_no: p.match_no }));
       const cupStart = {}; liveSeeds.forEach(s => { cupStart[s.seed] = s.entry_score; }); // נקודת אפס לכלל ב'
       // אם יש סיבוב מקדים — שומרים את הבּיי כדי לצרף אותם אחרי הכרעת הסיבוב המקדים
       const byes = needsPrelim ? byeSeeds.map(s => s.seed) : [];
@@ -473,10 +485,21 @@ export default function YossiCup() {
           )}
           <div className="flex flex-col gap-1">
             {livePairs.map((pair, idx) => (
-              <MatchRow key={idx} idx={idx} matchNo={pair.match_no}
-                a={{ seed: pair.a.seed, name: pair.a.participant_name }}
-                b={{ seed: pair.b.seed, name: pair.b.participant_name }}
-                sa={null} sb={null} won={null} />
+              pair.is_bye ? (
+                <div key={idx} className="flex items-center text-sm rounded-md overflow-hidden" style={{ background: 'rgba(52,211,153,0.06)' }}>
+                  <span className="text-[10px] text-slate-500 w-7 text-center flex-shrink-0 tabular-nums" style={{ borderLeft: '1px solid rgba(100,116,139,0.2)' }}>{pair.match_no}</span>
+                  <div className="flex-1 flex items-center gap-2 px-2.5 py-1.5 min-w-0">
+                    <span className="text-[10px] text-amber-400/70 w-7 flex-shrink-0 tabular-nums">{pair.a.seed}</span>
+                    <span className="text-slate-200 truncate">{pair.a.participant_name}</span>
+                  </div>
+                  <span className="text-[10px] text-green-400 px-2 flex-shrink-0">⏭️ עולה אוטומטית (בּיי)</span>
+                </div>
+              ) : (
+                <MatchRow key={idx} idx={idx} matchNo={pair.match_no}
+                  a={{ seed: pair.a.seed, name: pair.a.participant_name }}
+                  b={{ seed: pair.b.seed, name: pair.b.participant_name }}
+                  sa={null} sb={null} won={null} />
+              )
             ))}
           </div>
         </>
