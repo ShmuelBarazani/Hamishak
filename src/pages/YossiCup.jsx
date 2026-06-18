@@ -118,16 +118,14 @@ export default function YossiCup() {
 
   // האם נדרש סיבוב מקדים (יותר מ-128 משתתפים)
   const needsPrelim = liveSeeds.length > CUP_SIZE;
-  // מספר הבּיי: כמה מדורגים עליונים עוברים אוטומטית. נוסחה גמישה לכל מספר משתתפים:
-  //   byes = 2*CUP_SIZE − total  (ל-242 → 14). אם ≤128, אין בּיי ואין מקדים.
-  const byeCount = needsPrelim ? Math.max(0, 2 * CUP_SIZE - liveSeeds.length) : 0;
+  // 🔑 גודל הבראקט הרשמי קבוע: המשלים של זרע s הוא (TOTAL_SEEDS + 1 - s).
+  //    TOTAL_SEEDS = מספר המשתתפים בפועל (242 בדרך כלל). הבּיי = זרעים שהמשלים שלהם
+  //    חורג מ-CUP_SIZE*2 ... לא. הנוסחה הרשמית: היריב של s הוא (2*CUP_SIZE+1 - s)=257-s,
+  //    והבּיי הם הזרעים שהיריב שלהם אינו קיים (257-s > מספר המשתתפים).
+  //    כדי שזה יהיה יציב ולא תלוי בכמה שמות הותאמו, נשתמש במספר המשתתפים בפועל.
+  const TOTAL_SEEDS = liveSeeds.length;
+  const byeCount = needsPrelim ? Math.max(0, 2 * CUP_SIZE - TOTAL_SEEDS) : 0;
 
-  // זוגות לפי עץ הזריעה הסטנדרטי — מאומת 100% מול הבראקט הרשמי.
-  //   העמדות בעץ: bracketOrder(128). לכל עמדה seed s, היריב הוא (2*total+1 - s) כאשר
-  //   total = מספר המשתתפים בפועל. אם היריב > total → bye (אין יריב כזה).
-  //   דוגמה ל-242: s=1 → יריב 485-1=484>242 → bye. s=16 → יריב 469-16... לא.
-  //   בפועל הנוסחה הרשמית: total=242 → יריב = 257 - s (כי הבראקט בגודל 256 הקרוב).
-  //   הכללה: bracketFull = הכפולה-של-2 הקרובה ל-total כלפי מעלה ×... → פשוט 2*CUP_SIZE+1 - s = 257 - s.
   const bracketComplement = 2 * CUP_SIZE + 1; // 257 — היריב של זרע s הוא (257 - s)
 
   const livePairs = useMemo(() => {
@@ -331,26 +329,31 @@ export default function YossiCup() {
   const showingHistory = cupData && viewRound !== null && viewRound !== 'current';
   const histToShow = showingHistory ? cupData.history[viewRound] : null;
 
-  // ── שורת דו-קרב מינימליסטית (קומפקטית, מעט מספרים) ──
-  // side: { seed, name, score?(ניקוד סיבוב), entry? } | won/lost: הדגשה
+  // ── שורת דו-קרב מינימליסטית ──
+  //   המוביל בזיווג: ניקוד ירוק + כתר. המפגר: ניקוד אדום + עמעום קל.
+  //   תיקו / טרם החל: אפור ניטרלי.
   const MatchRow = ({ idx, a, b, sa, sb, won, matchNo }) => {
     // won: 'a'|'b'|'tie'|null
+    const scoreColor = (side) => {
+      if (won == null || won === 'tie') return 'text-slate-400'; // טרם הוכרע מוביל
+      return won === side ? 'text-green-400' : 'text-red-400';   // מוביל=ירוק, מפגר=אדום
+    };
     return (
       <div className="flex items-center text-sm rounded-md overflow-hidden" style={{ background: 'rgba(255,255,255,0.02)' }}>
         {/* מספר משחק */}
         {matchNo != null && <span className="text-[10px] text-slate-500 w-7 text-center flex-shrink-0 tabular-nums" style={{ borderLeft: '1px solid rgba(100,116,139,0.2)' }}>{matchNo}</span>}
         {/* צד A */}
-        <div className={`flex-1 flex items-center gap-2 px-2.5 py-1.5 min-w-0 ${won === 'b' ? 'opacity-45' : ''}`}>
+        <div className={`flex-1 flex items-center gap-2 px-2.5 py-1.5 min-w-0 ${won === 'b' ? 'opacity-60' : ''}`}>
           <span className="text-[10px] text-amber-400/70 w-7 flex-shrink-0 tabular-nums">{a.seed}</span>
           <span className="text-slate-200 truncate">{a.name}</span>
-          {sa != null && <span className={`mr-auto text-xs font-bold flex-shrink-0 ${won === 'a' ? 'text-green-400' : 'text-slate-500'}`}>{sa >= 0 ? '+' : ''}{sa}</span>}
+          {sa != null && <span className={`mr-auto text-xs font-bold flex-shrink-0 ${scoreColor('a')}`}>{sa >= 0 ? '+' : ''}{sa}</span>}
           {won === 'a' && <Crown className="w-3 h-3 text-amber-400 flex-shrink-0" />}
         </div>
         <span className="text-[9px] text-slate-600 px-1 flex-shrink-0">·</span>
         {/* צד B */}
-        <div className={`flex-1 flex items-center gap-2 px-2.5 py-1.5 justify-end min-w-0 ${won === 'a' ? 'opacity-45' : ''}`}>
+        <div className={`flex-1 flex items-center gap-2 px-2.5 py-1.5 justify-end min-w-0 ${won === 'a' ? 'opacity-60' : ''}`}>
           {won === 'b' && <Crown className="w-3 h-3 text-amber-400 flex-shrink-0" />}
-          {sb != null && <span className={`ml-auto text-xs font-bold flex-shrink-0 ${won === 'b' ? 'text-green-400' : 'text-slate-500'}`}>{sb >= 0 ? '+' : ''}{sb}</span>}
+          {sb != null && <span className={`ml-auto text-xs font-bold flex-shrink-0 ${scoreColor('b')}`}>{sb >= 0 ? '+' : ''}{sb}</span>}
           <span className="text-slate-200 truncate">{b.name}</span>
           <span className="text-[10px] text-slate-500 w-7 text-left flex-shrink-0 tabular-nums">{b.seed}</span>
         </div>
@@ -599,22 +602,49 @@ export default function YossiCup() {
                 </CardHeader>
                 <CardContent className="pt-0">
                   {!cupData.round_start_set
-                    ? <p className="text-xs text-amber-300">⚠️ עדיין לא נקבעה נקודת ייחוס לסיבוב זה. לחץ "קבע ניקוד לסיבוב" בתחילתו.</p>
-                    : <p className="text-xs text-green-300">✅ "ניקוד הסיבוב" מציג את ההפרש מתחילת הסיבוב. לחץ "הכרע סיבוב" בסיומו.</p>}
+                    ? (isAdmin
+                        ? <p className="text-xs text-amber-300">⚠️ עדיין לא נקבעה נקודת ייחוס לסיבוב זה. לחץ "קבע ניקוד לסיבוב" בתחילתו.</p>
+                        : <p className="text-xs text-slate-400">הסיבוב טרם החל להיספר.</p>)
+                    : <p className="text-xs text-green-300">🟢 ניקוד הסיבוב מתעדכן בזמן אמת — המוביל בכל זיווג מסומן בירוק והמפגר באדום.</p>}
                 </CardContent>
               </Card>
               <div className="flex flex-col gap-1">
-                {cupData.pairs.map((pair, idx) => {
-                  const sa = roundScoreOf(pair.a), sb = roundScoreOf(pair.b);
-                  const leader = (sa != null && sb != null) ? (sa > sb ? 'a' : sb > sa ? 'b' : 'tie') : null;
-                  return (
-                    <MatchRow key={idx} idx={idx} matchNo={pair.match_no}
-                      a={{ seed: pair.a, name: nameOf(pair.a) }}
-                      b={{ seed: pair.b, name: nameOf(pair.b) }}
-                      sa={sa} sb={sb}
-                      won={leader === 'tie' ? null : leader} />
-                  );
-                })}
+                {(() => {
+                  // בסיבוב מקדים — משלבים את הבּיי (שנשמרו ב-bye_seeds) עם הזוגות, ממוינים לפי מספר משחק.
+                  const byeRows = (cupData.is_prelim && cupData.current_round === 1)
+                    ? (cupData.bye_seeds || []).map(seed => {
+                        // מספר המשחק של בּיי = עמדת הזרע בעץ + 1
+                        const order = bracketOrder(CUP_SIZE);
+                        const posIdx = order.indexOf(seed);
+                        return { is_bye: true, seed, match_no: posIdx >= 0 ? posIdx + 1 : 9999 };
+                      })
+                    : [];
+                  const matchRows = cupData.pairs.map(pair => ({ ...pair, is_bye: false }));
+                  const allRows = [...matchRows, ...byeRows].sort((x, y) => (x.match_no || 0) - (y.match_no || 0));
+                  return allRows.map((row, idx) => {
+                    if (row.is_bye) {
+                      return (
+                        <div key={`bye-${row.seed}`} className="flex items-center text-sm rounded-md overflow-hidden" style={{ background: 'rgba(52,211,153,0.06)' }}>
+                          <span className="text-[10px] text-slate-500 w-7 text-center flex-shrink-0 tabular-nums" style={{ borderLeft: '1px solid rgba(100,116,139,0.2)' }}>{row.match_no}</span>
+                          <div className="flex-1 flex items-center gap-2 px-2.5 py-1.5 min-w-0">
+                            <span className="text-[10px] text-amber-400/70 w-7 flex-shrink-0 tabular-nums">{row.seed}</span>
+                            <span className="text-slate-200 truncate">{nameOf(row.seed)}</span>
+                          </div>
+                          <span className="text-[10px] text-green-400 px-2 flex-shrink-0">⏭️ עולה אוטומטית (בּיי)</span>
+                        </div>
+                      );
+                    }
+                    const sa = roundScoreOf(row.a), sb = roundScoreOf(row.b);
+                    const leader = (sa != null && sb != null) ? (sa > sb ? 'a' : sb > sa ? 'b' : 'tie') : null;
+                    return (
+                      <MatchRow key={`m-${idx}`} idx={idx} matchNo={row.match_no}
+                        a={{ seed: row.a, name: nameOf(row.a) }}
+                        b={{ seed: row.b, name: nameOf(row.b) }}
+                        sa={sa} sb={sb}
+                        won={leader === 'tie' ? null : leader} />
+                    );
+                  });
+                })()}
               </div>
             </>
           )}
