@@ -29,20 +29,16 @@ const ROUND_NAMES = {
   128: 'סיבוב ראשון (1/64)', 64: 'סיבוב שני (1/32)', 32: 'שמינית גמר',
   16: 'רבע גמר', 8: 'חצי גמר', 4: 'חצי גמר', 2: 'גמר',
 };
-// שמות תקניים לפי גודל הסיבוב (תואם למספר הנבחרות הנותרות)
+// שמות תקניים לפי גודל הסיבוב (תואם למספר המשתתפים הנותרים)
 const roundLabel = (size, isPrelim) => {
   if (isPrelim) return `סיבוב 1 (מקדים) · ${size} משתתפים`;
-  // אחרי הסיבוב המקדים: 128 = סיבוב 2, 64 = סיבוב 3, וכו'
+  // אחרי המקדים, לפי מספר המשתתפים בסיבוב:
+  //   128→סיבוב 2, 64→סיבוב 3, 32→שלב ה-16, 16→שמינית גמר, 8→רבע גמר, 4→חצי גמר, 2→גמר
   const map = {
-    128: 'סיבוב 2 · 64 דו-קרבות', 64: 'סיבוב 3 · 32 דו-קרבות', 32: 'שמינית גמר',
-    16: 'רבע גמר', 8: 'שמינית? ', 4: 'חצי גמר', 2: 'גמר', 1: 'אלוף'
+    128: 'סיבוב 2', 64: 'סיבוב 3', 32: 'שלב ה-16',
+    16: 'שמינית גמר', 8: 'רבע גמר', 4: 'חצי גמר', 2: 'גמר', 1: 'אלוף'
   };
-  // תיקון: 16→שמינית, 8→רבע, 4→חצי, 2→גמר
-  const map2 = {
-    128: 'סיבוב 2', 64: 'סיבוב 3', 32: 'שמינית גמר',
-    16: 'רבע גמר', 8: 'שמינית גמר', 4: 'חצי גמר', 2: 'גמר', 1: 'אלוף'
-  };
-  return map2[size] || `סיבוב · ${size}`;
+  return map[size] || `סיבוב · ${size}`;
 };
 
 // ── מספור גלובלי רציף בין השלבים ──
@@ -72,9 +68,10 @@ export default function YossiCup() {
   const [seedingFromDb, setSeedingFromDb] = useState(null);
   const [currentUser, setCurrentUser] = useState(null);
   const [viewRound, setViewRound] = useState(null); // איזה סיבוב מוצג בבורר (null = הנוכחי)
-  const [viewMode, setViewMode] = useState('list'); // 'list' = רשימת כרטיסים | 'tree' = עץ בראקט ויזואלי
+  const [viewMode, setViewMode] = useState('tree'); // 'tree' = עץ בראקט (ברירת מחדל) | 'list' = רשימה
   const [myName, setMyName] = useState(''); // שם המשתתף לחיפוש והדגשה
   const [peekPair, setPeekPair] = useState(null); // {me, opp} למסך צף של ניחושי דו-קרב
+  const [showPotential, setShowPotential] = useState(false); // הצגת יריבים פוטנציאליים בעץ
 
   const loadRankings = useCallback(async () => {
     if (!currentGame) { setLoading(false); return; }
@@ -431,6 +428,36 @@ export default function YossiCup() {
     return q && (name || '').trim() === q;
   };
 
+  // ── יריבים פוטנציאליים: עמדת הבסיס של המשתתף בעץ + מי יכול לפגוש אותו בכל שלב ──
+  //   עמדת הבסיס = האינדקס (0-127) של הזרע של המשתתף ב-bracketOrder(128).
+  //   בשלב שגודלו 'size' משתתפים (=2^k), כל בלוק של (128*2/size) עמדות-בסיס מתמזג למשחק אחד.
+  //   היריבים הפוטנציאליים של המשתתף בשלב הזה = העמדות בבלוק שלו, חוץ מהתת-בלוק שכבר "שלו".
+  const myBasePos = (() => {
+    const q = (myName || '').trim();
+    if (!q || !cupData) return null;
+    const ord = bracketOrder(CUP_SIZE);
+    // מצא את הזרע של המשתתף
+    const sEntry = (cupData.seeds || []).find(s => (s.participant_name || '').trim() === q);
+    if (!sEntry) return null;
+    const idx = ord.indexOf(sEntry.seed);
+    return idx >= 0 ? idx : null;
+  })();
+
+  // לעמדת בסיס p ולשלב בגודל 'size' (מספר משתתפים בסיבוב): טווח העמדות [from,to) של
+  // היריבים הפוטנציאליים — אלה שימוזגו עם תת-העץ של p בדיוק בשלב הזה (לא קודם).
+  const potentialRangeForStage = (p, size) => {
+    if (p == null) return null;
+    // block = כמה עמדות-בסיס מתמזגות עד סוף השלב הזה. בשלב עם 'size' משתתפים,
+    // כל משחק מאחד 256/size עמדות... כאן הבסיס הוא 128, אז block = 128/(size/2) = 256/size.
+    const block = (2 * CUP_SIZE) / size;          // עמדות-בסיס לכל משחק בשלב
+    const half = block / 2;
+    const blockStart = Math.floor(p / block) * block;
+    const myHalfStart = Math.floor(p / half) * half;
+    // היריבים = החצי השני של הבלוק (זה שאינו מכיל את p)
+    const oppHalfStart = (myHalfStart === blockStart) ? blockStart + half : blockStart;
+    return { from: oppHalfStart, to: oppHalfStart + half };
+  };
+
   // ── שורת דו-קרב מינימליסטית ──
   //   המוביל בזיווג: ניקוד ירוק + כתר. המפגר: ניקוד אדום + עמעום קל.
   //   תיקו / טרם החל: אפור ניטרלי.
@@ -606,11 +633,12 @@ export default function YossiCup() {
       </div>
     );
 
-    return <BracketTreeScroller columns={columns} isFinalLabel="גמר" scoreClr={scoreClr} Cell={Cell} isMyName={isMyName} globalMatchNo={globalMatchNo} onPeek={setPeekPair} />;
+    return <BracketTreeScroller columns={columns} isFinalLabel="גמר" scoreClr={scoreClr} Cell={Cell} isMyName={isMyName} globalMatchNo={globalMatchNo} onPeek={setPeekPair}
+      myBasePos={myBasePos} potentialRangeForStage={potentialRangeForStage} showPotential={showPotential} />;
   };
 
   // רכיב פנימי שמנהל גלילה אופקית עם פס עליון+תחתון מסונכרנים, וצמידה לימין בפתיחה
-  const BracketTreeScroller = ({ columns, scoreClr, Cell, isMyName, globalMatchNo, onPeek }) => {
+  const BracketTreeScroller = ({ columns, scoreClr, Cell, isMyName, globalMatchNo, onPeek, myBasePos, potentialRangeForStage, showPotential }) => {
     const topRef = React.useRef(null);
     const bottomRef = React.useRef(null);
     const contentRef = React.useRef(null);
@@ -664,10 +692,11 @@ export default function YossiCup() {
 
     return (
       <div>
-        {/* פס גלילה עליון (דמה — משקף את רוחב התוכן) */}
+        <p className="text-[10px] text-slate-400 mb-1">↔️ מציג מהשלב הנוכחי קדימה עד הגמר. למעבר לשלבים שהסתיימו — בורר השלבים למעלה.</p>
+        {/* פס גלילה עליון — נשאר קבוע (sticky) בראש בזמן גלילה אנכית */}
         <div ref={topRef} onScroll={() => syncFrom(topRef, bottomRef)}
-          dir="ltr" style={{ overflowX: 'auto', overflowY: 'hidden' }}>
-          <div style={{ width: totalW, height: 1 }} />
+          dir="ltr" style={{ overflowX: 'auto', overflowY: 'hidden', position: 'sticky', top: 0, zIndex: 20, background: '#0f172a', borderBottom: '1px solid rgba(6,182,212,0.2)', paddingBottom: 2 }}>
+          <div style={{ width: totalW, height: 8 }} />
         </div>
 
         {/* התוכן עם פס גלילה תחתון. RTL מושג ע"י היפוך X (עמודה 0 בימין). */}
@@ -726,12 +755,21 @@ export default function YossiCup() {
                 const gno = m.global_no != null ? m.global_no
                           : (col.size != null ? globalMatchNo(col.size, col.isPrelim, mi + 1) : null);
                 const cy = centersByCol[ci][mi];
+                // יריב פוטנציאלי? — אם הופעל הכפתור ויש למשתתף עמדת בסיס, בודקים אם תא זה
+                //   נמצא בטווח העמדות שיכולות לפגוש את המשתתף בשלב הזה (ולא התא של המשתתף עצמו).
+                let isPotential = false;
+                if (showPotential && myBasePos != null && col.size != null) {
+                  const block = (2 * 128) / col.size;       // עמדות-בסיס לכל משחק בשלב
+                  const cellStart = mi * block, cellEnd = cellStart + block;
+                  const rng = potentialRangeForStage(myBasePos, col.size);
+                  if (rng && cellStart < rng.to && cellEnd > rng.from) isPotential = true;
+                }
                 return (
                   <div key={`${ci}-${mi}`} dir="rtl"
                     style={{ position: 'absolute', left, top: cy - BOX_H / 2, width: COL_W }}
                     className="rounded text-[11px] overflow-hidden"
                     >
-                    <div className="rounded overflow-hidden" style={{ background: mine ? 'rgba(56,189,248,0.12)' : m.byeRow ? 'rgba(52,211,153,0.06)' : 'rgba(15,23,42,0.85)', border: `1px solid ${mine ? 'rgba(56,189,248,0.6)' : m.live ? 'rgba(6,182,212,0.25)' : m.byeRow ? 'rgba(52,211,153,0.25)' : m.future ? 'rgba(100,116,139,0.1)' : 'rgba(100,116,139,0.18)'}` }}>
+                    <div className="rounded overflow-hidden" style={{ background: mine ? 'rgba(56,189,248,0.12)' : isPotential ? 'rgba(251,146,60,0.12)' : m.byeRow ? 'rgba(52,211,153,0.06)' : 'rgba(15,23,42,0.85)', border: `1px solid ${mine ? 'rgba(56,189,248,0.6)' : isPotential ? 'rgba(251,146,60,0.7)' : m.live ? 'rgba(6,182,212,0.25)' : m.byeRow ? 'rgba(52,211,153,0.25)' : m.future ? 'rgba(100,116,139,0.1)' : 'rgba(100,116,139,0.18)'}` }}>
                       {gno != null && <div className="text-[8px] text-slate-500 text-center" style={{ background: 'rgba(100,116,139,0.1)' }}>משחק {gno}</div>}
                       <Cell name={m.a} seed={m.seedA} score={m.sa} scoreClass={scoreClr(m, 'a')} crown={m.won === 'a'} dim={m.won === 'b'} bye={m.aBye} me={meA} from={m.aFrom}
                         onName={(m.a && m.b) ? () => onPeek({ me: m.a, opp: m.b }) : undefined} />
@@ -802,6 +840,15 @@ export default function YossiCup() {
               )
             ) : (
               <p className="text-slate-400">לא נמצא משתתף בשם זה בסיבוב הנוכחי.</p>
+            )}
+            {/* כפתור הצגת יריבים פוטנציאליים בעץ */}
+            <button onClick={() => setShowPotential(v => !v)}
+              className="mt-2 text-xs font-bold rounded-lg px-3 py-1.5 transition-colors flex items-center gap-1.5"
+              style={{ color: showPotential ? '#0f172a' : '#fb923c', background: showPotential ? '#fb923c' : 'rgba(251,146,60,0.12)', border: '1px solid rgba(251,146,60,0.5)' }}>
+              {showPotential ? '✓ ' : ''}🎯 הצג יריבים פוטנציאליים בעץ (בכל שלב)
+            </button>
+            {showPotential && (
+              <p className="text-[11px] text-orange-300/80 mt-1">בעץ, התיבות בכתום הן המתמודדים שתוכל לפגוש בכל שלב — אם תעלה והם יעלו.</p>
             )}
           </div>
         )}
@@ -936,25 +983,24 @@ export default function YossiCup() {
             </div>
           )}
 
-          {/* מתג תצוגה: רשימה / עץ ויזואלי */}
+          {/* מתג תצוגה: עץ ויזואלי / רשימה (עץ ראשון = ברירת מחדל) */}
           <div className="flex gap-1.5 mb-3">
-            <button onClick={() => setViewMode('list')}
-              className="text-[11px] font-bold rounded-lg px-3 py-1.5 transition-colors flex items-center gap-1.5"
-              style={{ color: viewMode === 'list' ? '#0f172a' : '#94a3b8', background: viewMode === 'list' ? '#38bdf8' : 'rgba(255,255,255,0.04)', border: `1px solid ${viewMode === 'list' ? '#38bdf8' : 'rgba(148,163,184,0.3)'}` }}>
-              <List className="w-3.5 h-3.5" /> רשימה
-            </button>
             <button onClick={() => setViewMode('tree')}
               className="text-[11px] font-bold rounded-lg px-3 py-1.5 transition-colors flex items-center gap-1.5"
               style={{ color: viewMode === 'tree' ? '#0f172a' : '#94a3b8', background: viewMode === 'tree' ? '#38bdf8' : 'rgba(255,255,255,0.04)', border: `1px solid ${viewMode === 'tree' ? '#38bdf8' : 'rgba(148,163,184,0.3)'}` }}>
               <GitBranch className="w-3.5 h-3.5" /> עץ בראקט
+            </button>
+            <button onClick={() => setViewMode('list')}
+              className="text-[11px] font-bold rounded-lg px-3 py-1.5 transition-colors flex items-center gap-1.5"
+              style={{ color: viewMode === 'list' ? '#0f172a' : '#94a3b8', background: viewMode === 'list' ? '#38bdf8' : 'rgba(255,255,255,0.04)', border: `1px solid ${viewMode === 'list' ? '#38bdf8' : 'rgba(148,163,184,0.3)'}` }}>
+              <List className="w-3.5 h-3.5" /> רשימה
             </button>
           </div>
 
           {/* ── תצוגת עץ ויזואלי ── */}
           {viewMode === 'tree' ? (
             <Card style={{ background: 'rgba(15,23,42,0.5)', border: '1px solid rgba(6,182,212,0.2)' }}>
-              <CardContent className="py-3 px-2 overflow-hidden">
-                <p className="text-[10px] text-slate-400 mb-2">↔️ מציג מהשלב הנוכחי קדימה עד הגמר. למעבר לשלבים שהסתיימו — בורר השלבים למעלה.</p>
+              <CardContent className="py-3 px-2">
                 <BracketTree />
               </CardContent>
             </Card>
