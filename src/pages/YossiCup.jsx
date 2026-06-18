@@ -369,7 +369,10 @@ export default function YossiCup() {
     (cupData.history || []).forEach(h => {
       columns.push({
         label: roundLabel(h.round_size, h.is_prelim),
-        matches: h.results.map(r => ({ a: nameOf(r.a), b: nameOf(r.b), seedA: r.a, seedB: r.b, won: r.winner === r.a ? 'a' : 'b' })),
+        matches: h.results.map(r => ({
+          a: nameOf(r.a), b: nameOf(r.b), seedA: r.a, seedB: r.b,
+          sa: r.sa, sb: r.sb, won: r.winner === r.a ? 'a' : 'b',
+        })),
       });
     });
     if (!cupData.champion) {
@@ -378,18 +381,24 @@ export default function YossiCup() {
         matches: cupData.pairs.map(p => {
           const sa = roundScoreOf(p.a), sb = roundScoreOf(p.b);
           const w = (sa != null && sb != null) ? (sa > sb ? 'a' : sb > sa ? 'b' : null) : null;
-          return { a: nameOf(p.a), b: nameOf(p.b), seedA: p.a, seedB: p.b, won: w, live: true };
+          return { a: nameOf(p.a), b: nameOf(p.b), seedA: p.a, seedB: p.b, sa, sb, won: w, live: true };
         }),
       });
     } else {
       columns.push({ label: 'אלוף', champion: nameOf(cupData.champion) });
     }
 
+    // צבע ניקוד: מוביל=ירוק, מפגר=אדום, טרם הוכרע=אפור
+    const scoreClr = (m, side) => {
+      if (m.won == null) return 'text-slate-400';
+      return m.won === side ? 'text-green-400' : 'text-red-400';
+    };
+
     return (
       <div className="overflow-x-auto pb-2">
         <div className="flex gap-3 min-w-max">
           {columns.map((col, ci) => (
-            <div key={ci} className="flex flex-col gap-1.5" style={{ minWidth: 190 }}>
+            <div key={ci} className="flex flex-col gap-1.5" style={{ minWidth: 210 }}>
               <div className="text-[11px] font-bold text-cyan-300 text-center pb-1 sticky top-0">{col.label}</div>
               {col.champion ? (
                 <div className="flex flex-col items-center justify-center gap-1 py-4 px-3 rounded-lg" style={{ background: 'rgba(251,191,36,0.1)', border: '1px solid rgba(251,191,36,0.4)' }}>
@@ -399,16 +408,18 @@ export default function YossiCup() {
               ) : (
                 col.matches.map((m, mi) => (
                   <div key={mi} className="rounded-md text-xs overflow-hidden" style={{ background: 'rgba(15,23,42,0.6)', border: `1px solid ${m.live ? 'rgba(6,182,212,0.25)' : 'rgba(100,116,139,0.18)'}` }}>
-                    <div className={`flex items-center gap-1.5 px-2 py-1 ${m.won === 'b' ? 'opacity-40' : ''}`}>
+                    <div className={`flex items-center gap-1.5 px-2 py-1 ${m.won === 'b' ? 'opacity-50' : ''}`}>
                       <span className="text-[9px] text-amber-400/60 w-5 flex-shrink-0 tabular-nums">{m.seedA}</span>
                       <span className="text-slate-200 truncate">{m.a}</span>
-                      {m.won === 'a' && <Crown className="w-2.5 h-2.5 text-amber-400 flex-shrink-0 mr-auto" />}
+                      {m.sa != null && <span className={`mr-auto text-[11px] font-bold flex-shrink-0 ${scoreClr(m, 'a')}`}>{m.sa >= 0 ? '+' : ''}{m.sa}</span>}
+                      {m.won === 'a' && <Crown className="w-2.5 h-2.5 text-amber-400 flex-shrink-0" />}
                     </div>
                     <div className="h-px" style={{ background: 'rgba(100,116,139,0.15)' }} />
-                    <div className={`flex items-center gap-1.5 px-2 py-1 ${m.won === 'a' ? 'opacity-40' : ''}`}>
+                    <div className={`flex items-center gap-1.5 px-2 py-1 ${m.won === 'a' ? 'opacity-50' : ''}`}>
                       <span className="text-[9px] text-slate-500 w-5 flex-shrink-0 tabular-nums">{m.seedB}</span>
                       <span className="text-slate-200 truncate">{m.b}</span>
-                      {m.won === 'b' && <Crown className="w-2.5 h-2.5 text-amber-400 flex-shrink-0 mr-auto" />}
+                      {m.sb != null && <span className={`mr-auto text-[11px] font-bold flex-shrink-0 ${scoreClr(m, 'b')}`}>{m.sb >= 0 ? '+' : ''}{m.sb}</span>}
+                      {m.won === 'b' && <Crown className="w-2.5 h-2.5 text-amber-400 flex-shrink-0" />}
                     </div>
                   </div>
                 ))
@@ -536,6 +547,20 @@ export default function YossiCup() {
               })}
             </div>
           </div>
+
+          {/* תיבת העולים האוטומטיים (בּיי) — מוצגת גם אחרי הקיבוע בסיבוב המקדים */}
+          {cupData.is_prelim && cupData.current_round === 1 && (cupData.bye_seeds || []).length > 0 && (
+            <div className="mb-3 p-2 rounded-lg" style={{ background: 'rgba(52,211,153,0.06)', border: '1px solid rgba(52,211,153,0.25)' }}>
+              <p className="text-xs text-green-300 mb-1.5 font-medium">⏭️ עולים אוטומטית לסיבוב 2 ({(cupData.bye_seeds || []).length} מדורגים עליונים):</p>
+              <div className="flex flex-wrap gap-1.5">
+                {(cupData.bye_seeds || []).map(seed => (
+                  <span key={seed} className="text-[11px] text-green-200 px-2 py-0.5 rounded" style={{ background: 'rgba(52,211,153,0.1)' }}>
+                    {seed}. {nameOf(seed)}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* מתג תצוגה: רשימה / עץ ויזואלי */}
           <div className="flex gap-1.5 mb-3">
