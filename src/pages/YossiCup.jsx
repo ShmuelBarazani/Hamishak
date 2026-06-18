@@ -597,51 +597,124 @@ export default function YossiCup() {
     const topRef = React.useRef(null);
     const bottomRef = React.useRef(null);
     const contentRef = React.useRef(null);
-    const [scrollW, setScrollW] = React.useState(0);
 
-    // מדידת רוחב התוכן לפס הגלילה העליון
-    React.useEffect(() => {
-      if (contentRef.current) setScrollW(contentRef.current.scrollWidth);
-    }, [columns]);
+    const syncFrom = (src, dst) => { if (dst.current && src.current) dst.current.scrollLeft = src.current.scrollLeft; };
 
-    // בפתיחה — גלילה לקצה הימני (הסיבוב הראשון/המקדים) ב-RTL.
-    // ב-Edge/Chrome עם dir=rtl: הימני הקיצוני הוא scrollLeft=0. נגלול לשם.
+    // ── חישוב פריסת עץ אמיתי: מיקום אנכי מצטבר + קווי חיבור ──
+    const COL_W = 165;       // רוחב עמודה
+    const COL_GAP = 28;      // רווח אופקי בין עמודות (מקום לקווים)
+    const BOX_H = 46;        // גובה תיבת משחק
+    const V_GAP = 10;        // רווח אנכי בסיסי בין תיבות בעמודה הראשונה
+    const LABEL_H = 20;      // גובה תווית השלב למעלה
+
+    // לכל עמודה: מערך מרכזי-Y של התיבות.
+    // עמודה 0: תיבות במרווח קבוע. עמודה i>0: כל תיבה במרכז שתי התיבות התואמות בעמודה i-1.
+    const unit = BOX_H + V_GAP;             // המרווח האנכי הבסיסי
+    const centersByCol = [];
+    columns.forEach((col, ci) => {
+      const n = col.matches.length;
+      if (ci === 0) {
+        const arr = [];
+        for (let i = 0; i < n; i++) arr.push(LABEL_H + i * unit + BOX_H / 2);
+        centersByCol.push(arr);
+      } else {
+        const prev = centersByCol[ci - 1];
+        const arr = [];
+        for (let i = 0; i < n; i++) {
+          const top = prev[2 * i], bot = prev[2 * i + 1];
+          // מרכז בין שתי התיבות המזינות; אם אין זוג (עודף) — יורש את הקיים
+          arr.push(bot != null ? (top + bot) / 2 : top);
+        }
+        centersByCol.push(arr);
+      }
+    });
+    const totalH = LABEL_H + (centersByCol[0]?.length || 0) * unit + 10;
+    const totalW = columns.length * COL_W + (columns.length - 1) * COL_GAP;
+
+    // בפתיחה — גלילה לקצה הימני (המקדים, שנמצא בימין בזכות היפוך ה-X). ב-LTR: scrollLeft מקסימלי.
     React.useEffect(() => {
       const el = bottomRef.current;
       if (!el) return;
       requestAnimationFrame(() => {
-        el.scrollLeft = 0;
-        if (topRef.current) topRef.current.scrollLeft = 0;
+        const max = el.scrollWidth - el.clientWidth;
+        el.scrollLeft = max;
+        if (topRef.current) topRef.current.scrollLeft = max;
       });
-    }, [scrollW]);
+    }, [totalW]);
 
-    const syncFrom = (src, dst) => { if (dst.current && src.current) dst.current.scrollLeft = src.current.scrollLeft; };
+    // מיקום X של עמודה (RTL: עמודה 0 בימין)
+    const colLeft = (ci) => ci * (COL_W + COL_GAP);
 
     return (
       <div>
         {/* פס גלילה עליון (דמה — משקף את רוחב התוכן) */}
         <div ref={topRef} onScroll={() => syncFrom(topRef, bottomRef)}
-          dir="rtl" style={{ overflowX: 'auto', overflowY: 'hidden' }}>
-          <div style={{ width: scrollW, height: 1 }} />
+          dir="ltr" style={{ overflowX: 'auto', overflowY: 'hidden' }}>
+          <div style={{ width: totalW, height: 1 }} />
         </div>
 
-        {/* התוכן עם פס גלילה תחתון */}
+        {/* התוכן עם פס גלילה תחתון. RTL מושג ע"י היפוך X (עמודה 0 בימין). */}
         <div ref={bottomRef} onScroll={() => syncFrom(bottomRef, topRef)}
-          className="pb-2" dir="rtl" style={{ overflowX: 'auto' }}>
-          <div ref={contentRef} className="flex gap-2 min-w-max">
+          className="pb-2" dir="ltr" style={{ overflowX: 'auto' }}>
+          <div ref={contentRef} style={{ position: 'relative', width: totalW, height: totalH, direction: 'ltr' }}>
+            {/* קווי חיבור (SVG מאחור) */}
+            <svg width={totalW} height={totalH} style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
+              {columns.map((col, ci) => {
+                if (ci === 0) return null;
+                const prev = centersByCol[ci - 1];
+                const cur = centersByCol[ci];
+                // RTL: עמודה ci בצד שמאל יותר. הילד (ci) מימינו ההורים (ci-1).
+                const childRight = totalW - colLeft(ci) - COL_W;        // קצה ימני של תיבת הילד
+                const parentLeft = totalW - colLeft(ci - 1);            // קצה שמאלי של תיבות ההורה (RTL)
+                const childBoxRightX = childRight + COL_W;              // x של דופן ימין של הילד
+                const parentBoxLeftX = totalW - colLeft(ci - 1) - COL_W; // לא בשימוש; נחשב ידנית למטה
+                return cur.map((cy, i) => {
+                  const pTop = prev[2 * i], pBot = prev[2 * i + 1];
+                  if (pTop == null) return null;
+                  // x של דופן שמאל של הילד (לכיוון ההורים מימין):
+                  const childX = totalW - colLeft(ci) - COL_W;          // שמאל הילד
+                  const childConnX = childX + COL_W;                    // ימין הילד (מחובר להורים מימין)
+                  const parentX = totalW - colLeft(ci - 1) - COL_W;     // שמאל ההורה
+                  const midX = (childConnX + parentX) / 2;
+                  const lineColor = 'rgba(100,116,139,0.35)';
+                  return (
+                    <g key={i} stroke={lineColor} strokeWidth="1.2" fill="none">
+                      {/* מהילד אופקית עד אמצע */}
+                      <path d={`M ${childConnX} ${cy} H ${midX}`} />
+                      {/* אנכית בין שני ההורים */}
+                      <path d={`M ${midX} ${pTop} V ${pBot != null ? pBot : pTop}`} />
+                      {/* מההורה העליון אופקית עד האמצע */}
+                      <path d={`M ${parentX} ${pTop} H ${midX}`} />
+                      {pBot != null && <path d={`M ${parentX} ${pBot} H ${midX}`} />}
+                    </g>
+                  );
+                });
+              })}
+            </svg>
+
+            {/* תוויות שלבים */}
+            {columns.map((col, ci) => (
+              <div key={`lbl-${ci}`} style={{ position: 'absolute', left: totalW - colLeft(ci) - COL_W, top: 0, width: COL_W, textAlign: 'center' }}
+                className="text-[10px] font-bold text-cyan-300 truncate">{col.label}</div>
+            ))}
+
+            {/* תיבות המשחקים */}
             {columns.map((col, ci) => {
               const isFinal = col.label && col.label.includes('גמר');
-              return (
-              <div key={ci} className="flex flex-col gap-1 flex-shrink-0" style={{ width: 165 }}>
-                <div className="text-[10px] font-bold text-cyan-300 text-center pb-0.5 truncate">{col.label}</div>
-                {col.matches.map((m, mi) => {
-                  const champ = isFinal && m.won ? (m.won === 'a' ? m.a : m.b) : null;
-                  const meA = isMyName(m.a), meB = isMyName(m.b);
-                  const mine = meA || meB;
-                  const gno = m.global_no != null ? m.global_no
-                            : (col.size != null ? globalMatchNo(col.size, col.isPrelim, mi + 1) : null);
-                  return (
-                    <div key={mi} className="rounded text-[11px] overflow-hidden" style={{ background: mine ? 'rgba(56,189,248,0.12)' : m.byeRow ? 'rgba(52,211,153,0.06)' : 'rgba(15,23,42,0.6)', border: `1px solid ${mine ? 'rgba(56,189,248,0.6)' : m.live ? 'rgba(6,182,212,0.25)' : m.byeRow ? 'rgba(52,211,153,0.25)' : m.future ? 'rgba(100,116,139,0.1)' : 'rgba(100,116,139,0.18)'}` }}>
+              const left = totalW - colLeft(ci) - COL_W; // RTL: עמודה 0 בימין
+              return col.matches.map((m, mi) => {
+                const champ = isFinal && m.won ? (m.won === 'a' ? m.a : m.b) : null;
+                const meA = isMyName(m.a), meB = isMyName(m.b);
+                const mine = meA || meB;
+                const gno = m.global_no != null ? m.global_no
+                          : (col.size != null ? globalMatchNo(col.size, col.isPrelim, mi + 1) : null);
+                const cy = centersByCol[ci][mi];
+                return (
+                  <div key={`${ci}-${mi}`} dir="rtl"
+                    style={{ position: 'absolute', left, top: cy - BOX_H / 2, width: COL_W }}
+                    className="rounded text-[11px] overflow-hidden"
+                    >
+                    <div className="rounded overflow-hidden" style={{ background: mine ? 'rgba(56,189,248,0.12)' : m.byeRow ? 'rgba(52,211,153,0.06)' : 'rgba(15,23,42,0.85)', border: `1px solid ${mine ? 'rgba(56,189,248,0.6)' : m.live ? 'rgba(6,182,212,0.25)' : m.byeRow ? 'rgba(52,211,153,0.25)' : m.future ? 'rgba(100,116,139,0.1)' : 'rgba(100,116,139,0.18)'}` }}>
                       {gno != null && <div className="text-[8px] text-slate-500 text-center" style={{ background: 'rgba(100,116,139,0.1)' }}>משחק {gno}</div>}
                       <Cell name={m.a} seed={m.seedA} score={m.sa} scoreClass={scoreClr(m, 'a')} crown={m.won === 'a'} dim={m.won === 'b'} bye={m.aBye} me={meA} from={m.aFrom}
                         onName={(m.a && m.b) ? () => onPeek({ me: m.a, opp: m.b }) : undefined} />
@@ -650,12 +723,11 @@ export default function YossiCup() {
                         ? <div className="px-1.5 py-1 text-[9px] text-green-400">⏭️ עולה אוטומטית</div>
                         : <Cell name={m.b} seed={m.seedB} score={m.sb} scoreClass={scoreClr(m, 'b')} crown={m.won === 'b'} dim={m.won === 'a'} bye={m.bBye} me={meB} from={m.bFrom}
                             onName={(m.a && m.b) ? () => onPeek({ me: m.b, opp: m.a }) : undefined} />}
-                      {champ && <div className="text-[10px] text-amber-300 font-bold text-center py-0.5" style={{ background: 'rgba(251,191,36,0.12)' }}>🏆 {champ}</div>}
                     </div>
-                  );
-                })}
-              </div>
-              );
+                    {champ && <div className="text-[10px] text-amber-300 font-bold text-center py-0.5 mt-0.5 rounded" style={{ background: 'rgba(251,191,36,0.12)' }}>🏆 {champ}</div>}
+                  </div>
+                );
+              });
             })}
           </div>
         </div>
