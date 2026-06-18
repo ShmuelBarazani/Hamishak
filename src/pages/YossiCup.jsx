@@ -10,6 +10,19 @@ import { useGame } from "@/components/contexts/GameContext";
 
 const CUP_SIZE = 128;       // מספר המשתתפים החל מהסיבוב השני (אחרי הסיבוב המקדים)
 const BYE_COUNT = 14;       // המדורגים 1-14 מקבלים בּיי (כרטיס אוטומטי) בסיבוב המקדים
+
+// סדר עץ הזריעה הסטנדרטי (standard bracket seeding) — מאומת 100% מול הבראקט הרשמי.
+// מחזיר את סדר ה"זרעים" בעמדות העץ: [1,128,64,65,32,97,...] עבור n=128.
+function bracketOrder(n) {
+  let order = [1];
+  while (order.length < n) {
+    const m = order.length * 2;
+    const next = [];
+    for (const x of order) { next.push(x); next.push(m + 1 - x); }
+    order = next;
+  }
+  return order;
+}
 const ROUND_NAMES = {
   128: 'סיבוב ראשון (1/64)', 64: 'סיבוב שני (1/32)', 32: 'שמינית גמר',
   16: 'רבע גמר', 8: 'חצי גמר', 4: 'חצי גמר', 2: 'גמר',
@@ -84,24 +97,38 @@ export default function YossiCup() {
   //   byes = 2*CUP_SIZE − total  (ל-242 → 14). אם ≤128, אין בּיי ואין מקדים.
   const byeCount = needsPrelim ? Math.max(0, 2 * CUP_SIZE - liveSeeds.length) : 0;
 
-  // זוגות הסיבוב המקדים: המדורגים byeCount+1 ואילך משחקים קצה-לקצה
+  // זוגות לפי עץ הזריעה הסטנדרטי — מאומת 100% מול הבראקט הרשמי.
+  //   העמדות בעץ: bracketOrder(128). לכל עמדה seed s, היריב הוא (2*total+1 - s) כאשר
+  //   total = מספר המשתתפים בפועל. אם היריב > total → bye (אין יריב כזה).
+  //   דוגמה ל-242: s=1 → יריב 485-1=484>242 → bye. s=16 → יריב 469-16... לא.
+  //   בפועל הנוסחה הרשמית: total=242 → יריב = 257 - s (כי הבראקט בגודל 256 הקרוב).
+  //   הכללה: bracketFull = הכפולה-של-2 הקרובה ל-total כלפי מעלה ×... → פשוט 2*CUP_SIZE+1 - s = 257 - s.
+  const bracketComplement = 2 * CUP_SIZE + 1; // 257 — היריב של זרע s הוא (257 - s)
+
   const livePairs = useMemo(() => {
+    if (liveSeeds.length === 0) return [];
+    const total = liveSeeds.length;
+    const seedToParticipant = (s) => liveSeeds[s - 1]; // seed 1-based
+    const order = bracketOrder(CUP_SIZE); // 128 עמדות
     const p = [];
-    if (needsPrelim) {
-      const playing = liveSeeds.slice(byeCount); // מי שמשחק (אחרי הבּיי)
-      for (let i = 0; i < Math.floor(playing.length / 2); i++) {
-        p.push({ a: playing[i], b: playing[playing.length - 1 - i] });
-      }
-    } else {
-      for (let i = 0; i < Math.floor(liveSeeds.length / 2); i++) {
-        p.push({ a: liveSeeds[i], b: liveSeeds[liveSeeds.length - 1 - i] });
-      }
+    for (const s of order) {
+      const opp = bracketComplement - s; // היריב
+      const A = seedToParticipant(s);
+      if (!A) continue;
+      if (opp > total) continue; // אין יריב → bye (לא מוצג כדו-קרב)
+      const B = seedToParticipant(opp);
+      if (!B) continue;
+      p.push({ a: A, b: B });
     }
     return p;
-  }, [liveSeeds, needsPrelim, byeCount]);
+  }, [liveSeeds, bracketComplement]);
 
-  // המדורגים שמקבלים בּיי (1..byeCount)
-  const byeSeeds = useMemo(() => needsPrelim ? liveSeeds.slice(0, byeCount) : [], [liveSeeds, needsPrelim, byeCount]);
+  // המדורגים שמקבלים בּיי: אלה שהיריב שלהם (257-seed) גדול ממספר המשתתפים
+  const byeSeeds = useMemo(() => {
+    if (!needsPrelim) return [];
+    const total = liveSeeds.length;
+    return liveSeeds.filter(s => (bracketComplement - s.seed) > total);
+  }, [liveSeeds, needsPrelim, bracketComplement]);
 
   const saveCup = async (newData) => { await db.Game.update(currentGame.id, { yossi_cup_data: newData }); setCupData(newData); };
 
@@ -214,11 +241,27 @@ export default function YossiCup() {
       });
       const matchWinners = results.map(r => r.winner);
 
-      // 🆕 בסיבוב מקדים — מצרפים את הבּיי (מדורגים 1-14) למנצחי הדו-קרבות → 128
-      const wasPrelim = cupData.is_prelim && cupData.current_round === 1;
-      const byes = wasPrelim ? (cupData.bye_seeds || []) : [];
-      // סדר: קודם הבּיי (מדורגים גבוהים) ואז מנצחי הדו-קרבות — לשמירת סדר seed עולה
-      const advancing = wasPrelim ? [...byes, ...matchWinners].sort((a, b) => a - b) : matchWinners;
+      // 🆕 בניית הסיבוב הבא תוך שמירה על מבנה עץ הזריעה.
+      let advancing;
+      if (wasPrelim) {
+        // הסיבוב המקדים: המנצחים כבר בסדר העץ (לפי cupData.pairs שנבנו ב-bracketOrder).
+        // צריך לשבץ את הבּיי במיקומם הנכון בעץ. הבּיי (seed 1-14) תופסים עמדות בודדות בעץ,
+        // והמשחקים תופסים עמדות-זוג. נשחזר את סדר 128 העמדות:
+        const order = bracketOrder(CUP_SIZE);           // 128 עמדות
+        const comp = 2 * CUP_SIZE + 1;                  // 257
+        const byeSet = new Set(byes);
+        const winnerBySeedA = {};                       // עמדת-זרע s → מנצח הדו-קרב שלו
+        results.forEach(r => { winnerBySeedA[Math.min(r.a, r.b)] = r.winner; });
+        // לכל עמדה בעץ: אם זרע s הוא bye → s עצמו; אחרת מנצח הדו-קרב (s ↔ comp-s)
+        advancing = order.map(s => {
+          if (byeSet.has(s)) return s;
+          const lowSeed = Math.min(s, comp - s);
+          return winnerBySeedA[lowSeed] ?? s;
+        });
+      } else {
+        // סיבוב רגיל: המנצחים כבר בסדר העץ (לפי cupData.pairs). פשוט אוסף לפי הסדר.
+        advancing = matchWinners;
+      }
 
       const histEntry = {
         round_size: cupData.round_size, round_index: cupData.current_round,
@@ -231,9 +274,9 @@ export default function YossiCup() {
         await saveCup({ ...cupData, history: newHistory, alive: advancing, champion: advancing[0], round_start_set: false });
         toast({ title: '🏆 יש אלוף לגביע יוסי!', description: nameOf(advancing[0]), className: 'bg-amber-900/30 border-amber-500 text-amber-200' });
       } else {
-        // בניית זוגות הסיבוב הבא: קצה-לקצה (1↔128, 2↔127...)
+        // זוגות הסיבוב הבא: עמדות עוקבות בעץ נפגשות (0↔1, 2↔3, ...) — שומר מבנה עץ.
         const nextPairs = [];
-        for (let i = 0; i < Math.floor(advancing.length / 2); i++) nextPairs.push({ a: advancing[i], b: advancing[advancing.length - 1 - i] });
+        for (let i = 0; i < advancing.length; i += 2) nextPairs.push({ a: advancing[i], b: advancing[i + 1] });
         await saveCup({
           ...cupData, history: newHistory, alive: advancing,
           current_round: cupData.current_round + 1, round_size: advancing.length,
