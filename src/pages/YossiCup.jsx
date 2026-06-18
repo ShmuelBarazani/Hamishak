@@ -490,11 +490,22 @@ export default function YossiCup() {
     const decidedRounds = cupData.history || [];
     const currentRoundSize = cupData.champion ? 1 : cupData.round_size;
 
-    // שלבי הגדלים: [מקדים?] ואז 128,64,...,2 (הגמר). אין עמודת זוכה נפרדת.
+    // שלבי הגדלים: השלב הנבחר + השלב הבא אחריו (כדי שייראה כעץ עם קווי חיבור).
+    //   ברירת מחדל — השלב הפעיל. מעבר לשלבים קודמים דרך בורר השלבים.
     const sizes = [];
-    if (hasPrelim) sizes.push({ size: 242, isPrelim: true });
-    let s = CUP_SIZE;
-    while (s >= 2) { sizes.push({ size: s, isPrelim: false }); s = Math.floor(s / 2); }
+    const addStageAndNext = (size, isPrelim) => {
+      sizes.push({ size, isPrelim });
+      // השלב הבא: אם מקדים → 128 (סיבוב 2); אחרת חצי מהגודל (עד 2 = גמר)
+      if (isPrelim) sizes.push({ size: CUP_SIZE, isPrelim: false });
+      else if (size > 2) sizes.push({ size: Math.floor(size / 2), isPrelim: false });
+    };
+    if (showingHistory && histToShow) {
+      addStageAndNext(histToShow.round_size, !!histToShow.is_prelim);
+    } else if (cupData.champion) {
+      sizes.push({ size: 2, isPrelim: false }); // הגמר בלבד
+    } else {
+      addStageAndNext(cupData.round_size, !!cupData.is_prelim);
+    }
 
     // 2) לכל שלב — בונים את רשימת התיבות (משחקים). שלב שהוכרע → מההיסטוריה.
     //    שלב נוכחי → cupData.pairs. שלב עתידי → תיבות ריקות.
@@ -903,6 +914,22 @@ export default function YossiCup() {
             </div>
           )}
 
+          {/* כפתורי מנהל — מוצגים בשתי התצוגות (רשימה ועץ), לסיבוב פעיל */}
+          {isAdmin && !cupData.champion && !showingHistory && (
+            <div className="mb-3 flex gap-2 flex-wrap items-center p-2 rounded-lg" style={{ background: 'rgba(15,23,42,0.4)', border: '1px solid rgba(6,182,212,0.2)' }}>
+              <Button onClick={setRoundBaseline} disabled={working} size="sm" className={cupData.round_start_set ? "bg-slate-700 hover:bg-slate-600 text-slate-200" : "bg-cyan-600 hover:bg-cyan-700 text-white"}>
+                {working ? <Loader2 className="w-4 h-4 animate-spin ml-2" /> : <Save className="w-4 h-4 ml-2" />}
+                {cupData.round_start_set ? 'אפס ניקוד סיבוב' : 'קבע ניקוד לסיבוב'}
+              </Button>
+              <Button onClick={decideRound} disabled={working || !cupData.round_start_set} size="sm" className="bg-green-700 hover:bg-green-600 text-white">
+                <Gavel className="w-4 h-4 ml-2" /> הכרע סיבוב → העבר מנצחים
+              </Button>
+              <Button onClick={unlockBracket} disabled={working} size="sm" variant="outline" className="border-red-700 text-red-400">
+                <RefreshCw className="w-4 h-4 ml-2" /> צלם מחדש
+              </Button>
+            </div>
+          )}
+
           {/* מתג תצוגה: רשימה / עץ ויזואלי */}
           <div className="flex gap-1.5 mb-3">
             <button onClick={() => setViewMode('list')}
@@ -921,7 +948,7 @@ export default function YossiCup() {
           {viewMode === 'tree' ? (
             <Card style={{ background: 'rgba(15,23,42,0.5)', border: '1px solid rgba(6,182,212,0.2)' }}>
               <CardContent className="py-3 px-2 overflow-hidden">
-                <p className="text-[10px] text-slate-400 mb-2">↔️ גלול לצדדים לצפייה בכל שלבי העץ עד הגמר</p>
+                <p className="text-[10px] text-slate-400 mb-2">מציג את השלב הנוכחי והבא. למעבר בין שלבים — בורר השלבים למעלה.</p>
                 <BracketTree />
               </CardContent>
             </Card>
@@ -951,20 +978,6 @@ export default function YossiCup() {
                 <CardHeader className="py-3">
                   <div className="flex items-center justify-between flex-wrap gap-2">
                     <CardTitle className="text-base text-cyan-300 flex items-center gap-2"><Flag className="w-4 h-4" /> {roundLabel(cupData.round_size, cupData.is_prelim)} · פעיל</CardTitle>
-                    {isAdmin && (
-                    <div className="flex gap-2 flex-wrap">
-                      <Button onClick={setRoundBaseline} disabled={working} size="sm" className={cupData.round_start_set ? "bg-slate-700 hover:bg-slate-600 text-slate-200" : "bg-cyan-600 hover:bg-cyan-700 text-white"}>
-                        {working ? <Loader2 className="w-4 h-4 animate-spin ml-2" /> : <Save className="w-4 h-4 ml-2" />}
-                        {cupData.round_start_set ? 'אפס ניקוד סיבוב' : 'קבע ניקוד לסיבוב'}
-                      </Button>
-                      <Button onClick={decideRound} disabled={working || !cupData.round_start_set} size="sm" className="bg-green-700 hover:bg-green-600 text-white">
-                        <Gavel className="w-4 h-4 ml-2" /> הכרע סיבוב → העבר מנצחים
-                      </Button>
-                      <Button onClick={unlockBracket} disabled={working} size="sm" variant="outline" className="border-red-700 text-red-400">
-                        <RefreshCw className="w-4 h-4 ml-2" /> צלם מחדש
-                      </Button>
-                    </div>
-                    )}
                   </div>
                 </CardHeader>
                 <CardContent className="pt-0">
