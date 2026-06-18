@@ -361,66 +361,127 @@ export default function YossiCup() {
     );
   };
 
-  // ── עץ בראקט ויזואלי: עמודה לכל סיבוב, מנצחים מתחברים לסיבוב הבא ──
+  // ── עץ בראקט ויזואלי מלא: כל השלבים מצוירים מראש, עתידיים כתיבות ריקות. ──
+  //   הבּיי משובצים במיקומם הנכון וכבר ממולאים בעמודת הסיבוב השני.
   const BracketTree = () => {
     if (!cupData) return null;
-    // בונים עמודות: כל סיבוב שהוכרע (מההיסטוריה) + הסיבוב הנוכחי
-    const columns = [];
-    (cupData.history || []).forEach(h => {
-      columns.push({
-        label: roundLabel(h.round_size, h.is_prelim),
-        matches: h.results.map(r => ({
-          a: nameOf(r.a), b: nameOf(r.b), seedA: r.a, seedB: r.b,
-          sa: r.sa, sb: r.sb, won: r.winner === r.a ? 'a' : 'b',
-        })),
-      });
-    });
-    if (!cupData.champion) {
-      columns.push({
-        label: roundLabel(cupData.round_size, cupData.is_prelim),
-        matches: cupData.pairs.map(p => {
-          const sa = roundScoreOf(p.a), sb = roundScoreOf(p.b);
-          const w = (sa != null && sb != null) ? (sa > sb ? 'a' : sb > sa ? 'b' : null) : null;
-          return { a: nameOf(p.a), b: nameOf(p.b), seedA: p.a, seedB: p.b, sa, sb, won: w, live: true };
-        }),
-      });
-    } else {
-      columns.push({ label: 'אלוף', champion: nameOf(cupData.champion) });
-    }
 
-    // צבע ניקוד: מוביל=ירוק, מפגר=אדום, טרם הוכרע=אפור
+    // צבע ניקוד: מוביל=ירוק, מפגר=אדום, טרם=אפור
     const scoreClr = (m, side) => {
       if (m.won == null) return 'text-slate-400';
       return m.won === side ? 'text-green-400' : 'text-red-400';
     };
 
+    // 1) בונים את שלד כל השלבים. גודל כל שלב: מקדים(אם יש) → 128 → 64 → ... → 1.
+    const order = bracketOrder(CUP_SIZE); // 128 עמדות
+    const comp = 2 * CUP_SIZE + 1;        // 257
+    const byeSet = new Set(cupData.bye_seeds || []);
+    const hasPrelim = cupData.is_prelim || (cupData.history || []).some(h => h.is_prelim);
+
+    // מיפוי: מאיזה סיבוב בהיסטוריה/נוכחי לקחת נתונים
+    const decidedRounds = cupData.history || [];
+    const currentRoundSize = cupData.champion ? 1 : cupData.round_size;
+
+    // שלבי הגדלים: [מקדים?] ואז 128,64,...,1
+    const sizes = [];
+    if (hasPrelim) sizes.push({ size: 242, isPrelim: true });
+    let s = CUP_SIZE;
+    while (s >= 1) { sizes.push({ size: s, isPrelim: false }); s = Math.floor(s / 2); }
+
+    // 2) לכל שלב — בונים את רשימת התיבות (משחקים). שלב שהוכרע → מההיסטוריה.
+    //    שלב נוכחי → cupData.pairs. שלב עתידי → תיבות ריקות.
+    //    בּיי: בעמודת 128 (סיבוב 2) הם כבר ממולאים.
+    const columns = sizes.map((st) => {
+      // מצא אם השלב הזה הוכרע (לפי גודל + prelim)
+      const decided = decidedRounds.find(h => h.round_size === st.size && !!h.is_prelim === st.isPrelim);
+      const isCurrent = !cupData.champion && currentRoundSize === st.size && (cupData.is_prelim === st.isPrelim);
+
+      if (st.size === 1) {
+        // עמודת האלוף
+        return { label: 'אלוף', champion: cupData.champion ? nameOf(cupData.champion) : null, isChampCol: true };
+      }
+
+      const numMatches = Math.floor(st.size / 2);
+
+      if (decided) {
+        // שלב שהוכרע — מההיסטוריה
+        return {
+          label: roundLabel(st.size, st.isPrelim),
+          matches: decided.results.map(r => ({
+            a: nameOf(r.a), b: nameOf(r.b), seedA: r.a, seedB: r.b,
+            sa: r.sa, sb: r.sb, won: r.winner === r.a ? 'a' : 'b',
+          })),
+        };
+      }
+
+      if (isCurrent) {
+        // השלב הפעיל
+        return {
+          label: roundLabel(st.size, st.isPrelim),
+          matches: cupData.pairs.map(p => {
+            const sa = roundScoreOf(p.a), sb = roundScoreOf(p.b);
+            const w = (sa != null && sb != null) ? (sa > sb ? 'a' : sb > sa ? 'b' : null) : null;
+            return { a: nameOf(p.a), b: nameOf(p.b), seedA: p.a, seedB: p.b, sa, sb, won: w, live: true };
+          }),
+        };
+      }
+
+      // ── שלב עתידי — תיבות ריקות ──
+      // מקרה מיוחד: עמודת 128 (סיבוב 2) כשעדיין בסיבוב מקדים → ממלאים את הבּיי במקומם.
+      if (st.size === CUP_SIZE && hasPrelim && cupData.is_prelim && !decided) {
+        // לכל עמדת עץ: אם הזרע bye → ממולא; אחרת ריק (ממתין למנצח המקדים)
+        const rows = [];
+        for (let i = 0; i < order.length; i += 2) {
+          const sTop = order[i], sBot = order[i + 1];
+          const topBye = byeSet.has(sTop);
+          const botBye = byeSet.has(sBot);
+          rows.push({
+            a: topBye ? nameOf(sTop) : null, seedA: topBye ? sTop : null, aBye: topBye,
+            b: botBye ? nameOf(sBot) : null, seedB: botBye ? sBot : null, bBye: botBye,
+            future: true,
+          });
+        }
+        return { label: roundLabel(st.size, false), matches: rows };
+      }
+
+      // שלב עתידי רגיל — תיבות ריקות לגמרי
+      return {
+        label: roundLabel(st.size, st.isPrelim),
+        matches: Array.from({ length: numMatches }, () => ({ a: null, b: null, future: true })),
+      };
+    });
+
+    // תיבת שם בודדת (ריקה / ממולאת)
+    const Cell = ({ name, seed, score, scoreClass, crown, dim, bye }) => (
+      <div className={`flex items-center gap-1.5 px-2 py-1 ${dim ? 'opacity-50' : ''}`}>
+        {seed != null && <span className="text-[9px] text-amber-400/60 w-5 flex-shrink-0 tabular-nums">{seed}</span>}
+        {name
+          ? <span className={`truncate ${bye ? 'text-green-300' : 'text-slate-200'}`}>{name}{bye ? ' ⏭️' : ''}</span>
+          : <span className="text-slate-600 italic">—</span>}
+        {score != null && <span className={`mr-auto text-[11px] font-bold flex-shrink-0 ${scoreClass}`}>{score >= 0 ? '+' : ''}{score}</span>}
+        {crown && <Crown className="w-2.5 h-2.5 text-amber-400 flex-shrink-0" />}
+      </div>
+    );
+
     return (
       <div className="overflow-x-auto pb-2">
         <div className="flex gap-3 min-w-max">
           {columns.map((col, ci) => (
-            <div key={ci} className="flex flex-col gap-1.5" style={{ minWidth: 210 }}>
-              <div className="text-[11px] font-bold text-cyan-300 text-center pb-1 sticky top-0">{col.label}</div>
-              {col.champion ? (
-                <div className="flex flex-col items-center justify-center gap-1 py-4 px-3 rounded-lg" style={{ background: 'rgba(251,191,36,0.1)', border: '1px solid rgba(251,191,36,0.4)' }}>
-                  <Crown className="w-6 h-6 text-amber-400" />
-                  <span className="text-sm font-bold text-amber-300 text-center">{col.champion}</span>
+            <div key={ci} className="flex flex-col gap-1.5" style={{ minWidth: 200 }}>
+              <div className="text-[11px] font-bold text-cyan-300 text-center pb-1">{col.label}</div>
+              {col.isChampCol ? (
+                <div className="flex flex-col items-center justify-center gap-1 py-4 px-3 rounded-lg" style={{ background: col.champion ? 'rgba(251,191,36,0.1)' : 'rgba(15,23,42,0.4)', border: `1px solid ${col.champion ? 'rgba(251,191,36,0.4)' : 'rgba(100,116,139,0.18)'}` }}>
+                  <Crown className={`w-6 h-6 ${col.champion ? 'text-amber-400' : 'text-slate-600'}`} />
+                  {col.champion
+                    ? <span className="text-sm font-bold text-amber-300 text-center">{col.champion}</span>
+                    : <span className="text-xs text-slate-600 italic">ממתין</span>}
                 </div>
               ) : (
                 col.matches.map((m, mi) => (
-                  <div key={mi} className="rounded-md text-xs overflow-hidden" style={{ background: 'rgba(15,23,42,0.6)', border: `1px solid ${m.live ? 'rgba(6,182,212,0.25)' : 'rgba(100,116,139,0.18)'}` }}>
-                    <div className={`flex items-center gap-1.5 px-2 py-1 ${m.won === 'b' ? 'opacity-50' : ''}`}>
-                      <span className="text-[9px] text-amber-400/60 w-5 flex-shrink-0 tabular-nums">{m.seedA}</span>
-                      <span className="text-slate-200 truncate">{m.a}</span>
-                      {m.sa != null && <span className={`mr-auto text-[11px] font-bold flex-shrink-0 ${scoreClr(m, 'a')}`}>{m.sa >= 0 ? '+' : ''}{m.sa}</span>}
-                      {m.won === 'a' && <Crown className="w-2.5 h-2.5 text-amber-400 flex-shrink-0" />}
-                    </div>
-                    <div className="h-px" style={{ background: 'rgba(100,116,139,0.15)' }} />
-                    <div className={`flex items-center gap-1.5 px-2 py-1 ${m.won === 'a' ? 'opacity-50' : ''}`}>
-                      <span className="text-[9px] text-slate-500 w-5 flex-shrink-0 tabular-nums">{m.seedB}</span>
-                      <span className="text-slate-200 truncate">{m.b}</span>
-                      {m.sb != null && <span className={`mr-auto text-[11px] font-bold flex-shrink-0 ${scoreClr(m, 'b')}`}>{m.sb >= 0 ? '+' : ''}{m.sb}</span>}
-                      {m.won === 'b' && <Crown className="w-2.5 h-2.5 text-amber-400 flex-shrink-0" />}
-                    </div>
+                  <div key={mi} className="rounded-md text-xs overflow-hidden" style={{ background: 'rgba(15,23,42,0.6)', border: `1px solid ${m.live ? 'rgba(6,182,212,0.25)' : m.future ? 'rgba(100,116,139,0.1)' : 'rgba(100,116,139,0.18)'}` }}>
+                    <Cell name={m.a} seed={m.seedA} score={m.sa} scoreClass={scoreClr(m, 'a')} crown={m.won === 'a'} dim={m.won === 'b'} bye={m.aBye} />
+                    <div className="h-px" style={{ background: 'rgba(100,116,139,0.12)' }} />
+                    <Cell name={m.b} seed={m.seedB} score={m.sb} scoreClass={scoreClr(m, 'b')} crown={m.won === 'b'} dim={m.won === 'a'} bye={m.bBye} />
                   </div>
                 ))
               )}
@@ -442,11 +503,9 @@ export default function YossiCup() {
             <p className="text-xs md:text-sm text-slate-400">פיילוט — נוק-אאוט במקביל לליגה</p>
           </div>
         </div>
-        {isAdmin && (
-          <Button onClick={loadRankings} disabled={working} size="sm" variant="outline" className="border-slate-600 text-slate-300">
-            <RefreshCw className="w-4 h-4 ml-2" /> רענן ניקוד
-          </Button>
-        )}
+        <Button onClick={loadRankings} disabled={working} size="sm" variant="outline" className="border-slate-600 text-slate-300">
+          <RefreshCw className="w-4 h-4 ml-2" /> רענן ניקוד
+        </Button>
       </div>
 
       {isAdmin && (
