@@ -576,15 +576,14 @@ export default function YossiCup() {
       if (contentRef.current) setScrollW(contentRef.current.scrollWidth);
     }, [columns]);
 
-    // בפתיחה — גלילה לקצה הימני (הסיבוב הראשון/המקדים) ב-RTL
+    // בפתיחה — גלילה לקצה הימני (הסיבוב הראשון/המקדים) ב-RTL.
+    // ב-Edge/Chrome עם dir=rtl: הימני הקיצוני הוא scrollLeft=0. נגלול לשם.
     React.useEffect(() => {
       const el = bottomRef.current;
       if (!el) return;
-      // ב-RTL, הקצה הימני הוא scrollLeft=0; חלק מהדפדפנים משתמשים בערכים שליליים.
-      // נגלול לימין הקיצוני בשתי השיטות לכיסוי.
       requestAnimationFrame(() => {
-        el.scrollLeft = 0;            // רוב הדפדפנים המודרניים ב-RTL
-        if (topRef.current) topRef.current.scrollLeft = el.scrollLeft;
+        el.scrollLeft = 0;
+        if (topRef.current) topRef.current.scrollLeft = 0;
       });
     }, [scrollW]);
 
@@ -594,14 +593,14 @@ export default function YossiCup() {
       <div>
         {/* פס גלילה עליון (דמה — משקף את רוחב התוכן) */}
         <div ref={topRef} onScroll={() => syncFrom(topRef, bottomRef)}
-          dir="ltr" style={{ overflowX: 'auto', overflowY: 'hidden' }}>
+          dir="rtl" style={{ overflowX: 'auto', overflowY: 'hidden' }}>
           <div style={{ width: scrollW, height: 1 }} />
         </div>
 
         {/* התוכן עם פס גלילה תחתון */}
         <div ref={bottomRef} onScroll={() => syncFrom(bottomRef, topRef)}
-          className="pb-2" dir="ltr" style={{ overflowX: 'auto' }}>
-          <div ref={contentRef} className="flex gap-2 min-w-max" style={{ direction: 'rtl' }}>
+          className="pb-2" dir="rtl" style={{ overflowX: 'auto' }}>
+          <div ref={contentRef} className="flex gap-2 min-w-max">
             {columns.map((col, ci) => {
               const isFinal = col.label && col.label.includes('גמר');
               return (
