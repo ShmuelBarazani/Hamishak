@@ -3,9 +3,10 @@ import { createPortal } from "react-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Trophy, Loader2, Crown, Flag, Lock, Save, AlertTriangle, RefreshCw, Gavel, History, Play, Check, List, GitBranch } from "lucide-react";
+import { Trophy, Loader2, Crown, Flag, Lock, Save, AlertTriangle, RefreshCw, Gavel, History, Play, Check, List, GitBranch, X } from "lucide-react";
 import { supabase } from '@/api/supabaseClient';
 import * as db from '@/api/entities';
+import { calculateQuestionScore } from "@/components/scoring/ScoreService";
 import { useToast } from "@/components/ui/use-toast";
 import { useGame } from "@/components/contexts/GameContext";
 
@@ -73,6 +74,7 @@ export default function YossiCup() {
   const [viewRound, setViewRound] = useState(null); // איזה סיבוב מוצג בבורר (null = הנוכחי)
   const [viewMode, setViewMode] = useState('list'); // 'list' = רשימת כרטיסים | 'tree' = עץ בראקט ויזואלי
   const [myName, setMyName] = useState(''); // שם המשתתף לחיפוש והדגשה
+  const [peekPair, setPeekPair] = useState(null); // {me, opp} למסך צף של ניחושי דו-קרב
 
   const loadRankings = useCallback(async () => {
     if (!currentGame) { setLoading(false); return; }
@@ -279,8 +281,17 @@ export default function YossiCup() {
     try {
       const starts = {};
       cupData.seeds.forEach(s => { if (cupData.alive.includes(s.seed)) starts[s.seed] = scoreByName[s.participant_name] ?? 0; });
-      await saveCup({ ...cupData, round_start_scores: starts, round_start_set: true });
-      toast({ title: '✅ נקודת ייחוס לסיבוב נקבעה', className: 'bg-green-900/30 border-green-500 text-green-200' });
+      // 📸 snapshot: רשימת ה-question_id של כל השאלות שכבר היו סגורות (יש actual_result) ברגע זה.
+      //    "שאלות הסיבוב" = שאלות שייסגרו מעכשיו והלאה (לא היו ב-snapshot).
+      let closedNow = [];
+      try {
+        const qs = await db.Question.filter({ game_id: currentGame.id }, null, 10000);
+        closedNow = (qs || [])
+          .filter(q => q.actual_result && String(q.actual_result).trim() !== '' && q.actual_result !== '__CLEAR__')
+          .map(q => q.id);
+      } catch (e) { console.warn('snapshot שאלות סגורות נכשל', e); }
+      await saveCup({ ...cupData, round_start_scores: starts, round_start_set: true, round_start_closed_qids: closedNow });
+      toast({ title: '✅ נקודת ייחוס לסיבוב נקבעה', description: `${closedNow.length} שאלות סגורות נרשמו כבסיס`, className: 'bg-green-900/30 border-green-500 text-green-200' });
     } catch (err) { console.error(err); toast({ title: 'שגיאה', variant: 'destructive' }); }
     finally { setWorking(false); }
   };
@@ -438,7 +449,9 @@ export default function YossiCup() {
         {/* צד A */}
         <div className={`flex-1 flex items-center gap-2 px-2.5 py-1.5 min-w-0 ${won === 'b' ? 'opacity-60' : ''}`}>
           <span className="text-[10px] text-amber-400/70 w-7 flex-shrink-0 tabular-nums">{a.seed}</span>
-          <span className={`truncate ${meA ? 'text-cyan-300 font-bold' : 'text-slate-200'}`}>{a.name}{meA ? ' ⭐' : ''}</span>
+          <span onClick={() => b?.name && setPeekPair({ me: a.name, opp: b.name })}
+            className={`truncate cursor-pointer hover:underline ${meA ? 'text-cyan-300 font-bold' : 'text-slate-200'}`}
+            title="הצג ניחושים מול היריב">{a.name}{meA ? ' ⭐' : ''}</span>
           {sa != null && <span className={`mr-auto text-xs font-bold flex-shrink-0 ${scoreColor('a')}`}>{sa >= 0 ? '+' : ''}{sa}</span>}
           {won === 'a' && <Crown className="w-3 h-3 text-amber-400 flex-shrink-0" />}
         </div>
@@ -447,7 +460,9 @@ export default function YossiCup() {
         <div className={`flex-1 flex items-center gap-2 px-2.5 py-1.5 justify-end min-w-0 ${won === 'a' ? 'opacity-60' : ''}`}>
           {won === 'b' && <Crown className="w-3 h-3 text-amber-400 flex-shrink-0" />}
           {sb != null && <span className={`ml-auto text-xs font-bold flex-shrink-0 ${scoreColor('b')}`}>{sb >= 0 ? '+' : ''}{sb}</span>}
-          <span className={`truncate ${meB ? 'text-cyan-300 font-bold' : 'text-slate-200'}`}>{meB ? '⭐ ' : ''}{b.name}</span>
+          <span onClick={() => a?.name && setPeekPair({ me: b.name, opp: a.name })}
+            className={`truncate cursor-pointer hover:underline ${meB ? 'text-cyan-300 font-bold' : 'text-slate-200'}`}
+            title="הצג ניחושים מול היריב">{meB ? '⭐ ' : ''}{b.name}</span>
           <span className="text-[10px] text-slate-500 w-7 text-left flex-shrink-0 tabular-nums">{b.seed}</span>
         </div>
       </div>
@@ -548,11 +563,13 @@ export default function YossiCup() {
     });
 
     // תיבת שם בודדת (ריקה / "מנצח משחק X" / ממולאת)
-    const Cell = ({ name, seed, score, scoreClass, crown, dim, bye, me, from }) => (
+    const Cell = ({ name, seed, score, scoreClass, crown, dim, bye, me, from, onName }) => (
       <div className={`flex items-center gap-1 px-1.5 py-1 ${dim ? 'opacity-50' : ''}`}>
         {seed != null && <span className="text-[8px] text-amber-400/60 w-4 flex-shrink-0 tabular-nums">{seed}</span>}
         {name
-          ? <span className={`truncate ${me ? 'text-cyan-300 font-bold' : bye ? 'text-green-300' : 'text-slate-200'}`}>{me ? '⭐ ' : ''}{name}{bye ? ' ⏭️' : ''}</span>
+          ? <span onClick={onName || undefined}
+              className={`truncate ${onName ? 'cursor-pointer hover:underline' : ''} ${me ? 'text-cyan-300 font-bold' : bye ? 'text-green-300' : 'text-slate-200'}`}
+              title={onName ? 'הצג ניחושים מול היריב' : undefined}>{me ? '⭐ ' : ''}{name}{bye ? ' ⏭️' : ''}</span>
           : from
             ? <span className="text-slate-500 truncate text-[10px]">מנצח משחק {from}</span>
             : <span className="text-slate-600 italic">—</span>}
@@ -561,11 +578,11 @@ export default function YossiCup() {
       </div>
     );
 
-    return <BracketTreeScroller columns={columns} isFinalLabel="גמר" scoreClr={scoreClr} Cell={Cell} isMyName={isMyName} globalMatchNo={globalMatchNo} />;
+    return <BracketTreeScroller columns={columns} isFinalLabel="גמר" scoreClr={scoreClr} Cell={Cell} isMyName={isMyName} globalMatchNo={globalMatchNo} onPeek={setPeekPair} />;
   };
 
   // רכיב פנימי שמנהל גלילה אופקית עם פס עליון+תחתון מסונכרנים, וצמידה לימין בפתיחה
-  const BracketTreeScroller = ({ columns, scoreClr, Cell, isMyName, globalMatchNo }) => {
+  const BracketTreeScroller = ({ columns, scoreClr, Cell, isMyName, globalMatchNo, onPeek }) => {
     const topRef = React.useRef(null);
     const bottomRef = React.useRef(null);
     const contentRef = React.useRef(null);
@@ -615,9 +632,11 @@ export default function YossiCup() {
                   return (
                     <div key={mi} className="rounded text-[11px] overflow-hidden" style={{ background: mine ? 'rgba(56,189,248,0.12)' : 'rgba(15,23,42,0.6)', border: `1px solid ${mine ? 'rgba(56,189,248,0.6)' : m.live ? 'rgba(6,182,212,0.25)' : m.future ? 'rgba(100,116,139,0.1)' : 'rgba(100,116,139,0.18)'}` }}>
                       {gno != null && <div className="text-[8px] text-slate-500 text-center" style={{ background: 'rgba(100,116,139,0.1)' }}>משחק {gno}</div>}
-                      <Cell name={m.a} seed={m.seedA} score={m.sa} scoreClass={scoreClr(m, 'a')} crown={m.won === 'a'} dim={m.won === 'b'} bye={m.aBye} me={meA} from={m.aFrom} />
+                      <Cell name={m.a} seed={m.seedA} score={m.sa} scoreClass={scoreClr(m, 'a')} crown={m.won === 'a'} dim={m.won === 'b'} bye={m.aBye} me={meA} from={m.aFrom}
+                        onName={(m.a && m.b) ? () => onPeek({ me: m.a, opp: m.b }) : undefined} />
                       <div className="h-px" style={{ background: 'rgba(100,116,139,0.12)' }} />
-                      <Cell name={m.b} seed={m.seedB} score={m.sb} scoreClass={scoreClr(m, 'b')} crown={m.won === 'b'} dim={m.won === 'a'} bye={m.bBye} me={meB} from={m.bFrom} />
+                      <Cell name={m.b} seed={m.seedB} score={m.sb} scoreClass={scoreClr(m, 'b')} crown={m.won === 'b'} dim={m.won === 'a'} bye={m.bBye} me={meB} from={m.bFrom}
+                        onName={(m.a && m.b) ? () => onPeek({ me: m.b, opp: m.a }) : undefined} />
                       {champ && <div className="text-[10px] text-amber-300 font-bold text-center py-0.5" style={{ background: 'rgba(251,191,36,0.12)' }}>🏆 {champ}</div>}
                     </div>
                   );
@@ -633,6 +652,16 @@ export default function YossiCup() {
 
   return (
     <div className="max-w-5xl mx-auto p-3 md:p-4" dir="rtl">
+      {/* מסך צף: ניחושי דו-קרב */}
+      {peekPair && (
+        <DuelPeek
+          me={peekPair.me}
+          opp={peekPair.opp}
+          gameId={currentGame?.id}
+          startClosedQids={cupData?.round_start_closed_qids || []}
+          onClose={() => setPeekPair(null)}
+        />
+      )}
       {/* כותרת */}
       <div className="flex items-center justify-between flex-wrap gap-2 mb-4">
         <div className="flex items-center gap-3">
@@ -1005,5 +1034,138 @@ function ParticipantSearchSelect({ participants, selected, onSelect }) {
       </div>
       {dropdown}
     </div>
+  );
+}
+
+// ── מסך צף: ניחושי שני משתתפים בדו-קרב, אחד מול השני, לשאלות הסיבוב הנוכחי ──
+//   "שאלות הסיבוב" = שאלות שנסגרו (יש actual_result) אך לא היו ב-snapshot של תחילת הסיבוב.
+//   הניקוד לכל שאלה מחושב ע"י calculateQuestionScore — אותה לוגיקה כמו בשאר המסכים.
+function DuelPeek({ me, opp, gameId, startClosedQids, onClose }) {
+  const [loading, setLoading] = useState(true);
+  const [questions, setQuestions] = useState([]);
+  const [predsMe, setPredsMe] = useState({});   // question_id(text) → text_prediction
+  const [predsOpp, setPredsOpp] = useState({});
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      setLoading(true);
+      try {
+        const qs = await db.Question.filter({ game_id: gameId }, null, 10000);
+        const pMe = await db.Prediction.filter({ participant_name: me, game_id: gameId }, null, 10000);
+        const pOpp = await db.Prediction.filter({ participant_name: opp, game_id: gameId }, null, 10000);
+        if (!alive) return;
+        setQuestions(qs || []);
+        const toMap = (arr) => {
+          const m = {};
+          (arr || []).forEach(p => { m[String(p.question_id)] = p.text_prediction; });
+          return m;
+        };
+        setPredsMe(toMap(pMe));
+        setPredsOpp(toMap(pOpp));
+      } catch (e) {
+        console.error('טעינת ניחושי דו-קרב נכשלה', e);
+      } finally { if (alive) setLoading(false); }
+    })();
+    return () => { alive = false; };
+  }, [me, opp, gameId]);
+
+  // שאלות הסיבוב: סגורות עכשיו (actual_result) שלא היו ב-snapshot
+  const snapSet = new Set(startClosedQids || []);
+  const isClosed = (q) => q.actual_result && String(q.actual_result).trim() !== '' && q.actual_result !== '__CLEAR__';
+  const roundQuestions = questions
+    .filter(q => isClosed(q) && !snapSet.has(q.id))
+    .sort((a, b) => (a.table_id || '').localeCompare(b.table_id || '') || (parseInt(a.question_id, 10) || 0) - (parseInt(b.question_id, 10) || 0));
+
+  // צבע badge לפי ניקוד (זהה ל-ViewSubmissions): ירוק=מלא, אדום=0, כחול=70%+, צהוב=חלקי
+  const badgeFor = (score, maxNum) => {
+    if (score == null) return { bg: 'rgba(100,116,139,0.4)', fg: '#cbd5e1' };
+    if (score === maxNum && maxNum > 0) return { bg: '#15803d', fg: '#dcfce7' };
+    if (score === 0) return { bg: '#b91c1c', fg: '#fee2e2' };
+    if (maxNum > 0 && score >= maxNum * 0.7) return { bg: '#1d4ed8', fg: '#dbeafe' };
+    if (score > 0) return { bg: '#eab308', fg: '#fff' };
+    return { bg: 'rgba(100,116,139,0.4)', fg: '#cbd5e1' };
+  };
+
+  const scoreOf = (q, pred) => {
+    if (pred == null || String(pred).trim() === '') return null;
+    const questionsInTable = questions.filter(x => x.table_id === q.table_id);
+    return calculateQuestionScore(q, pred, questionsInTable, {}, questions);
+  };
+  const maxOf = (q) => (q.possible_points != null ? q.possible_points : 0);
+
+  let sumMe = 0, sumOpp = 0;
+  roundQuestions.forEach(q => {
+    const a = scoreOf(q, predsMe[String(q.id)]); const b = scoreOf(q, predsOpp[String(q.id)]);
+    if (typeof a === 'number') sumMe += a;
+    if (typeof b === 'number') sumOpp += b;
+  });
+
+  return createPortal(
+    <div onClick={onClose} dir="rtl" style={{ position: 'fixed', inset: 0, zIndex: 100000, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '12px' }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: '640px', maxHeight: '88vh', overflowY: 'auto', background: '#0b1220', backgroundImage: 'linear-gradient(180deg,#101b30,#0b1220)', border: '1px solid rgba(6,182,212,0.5)', borderRadius: '12px', boxShadow: '0 16px 48px rgba(0,0,0,0.85)' }}>
+        {/* כותרת */}
+        <div style={{ position: 'sticky', top: 0, background: '#0b1220', borderBottom: '1px solid rgba(100,116,139,0.3)', padding: '12px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+          <div style={{ fontSize: '0.9rem', fontWeight: 700, color: '#e2e8f0' }}>
+            ⚔️ השוואת ניחושי הדו-קרב
+          </div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', display: 'flex' }}><X className="w-5 h-5" /></button>
+        </div>
+
+        {/* שמות + סיכום */}
+        <div style={{ display: 'flex', borderBottom: '1px solid rgba(100,116,139,0.2)' }}>
+          <div style={{ flex: 1, textAlign: 'center', padding: '10px', borderLeft: '1px solid rgba(100,116,139,0.2)' }}>
+            <div style={{ color: '#22d3ee', fontWeight: 700, fontSize: '0.85rem' }}>{me}</div>
+            <div style={{ color: '#e2e8f0', fontSize: '1.1rem', fontWeight: 800 }}>{sumMe}</div>
+          </div>
+          <div style={{ flex: 1, textAlign: 'center', padding: '10px' }}>
+            <div style={{ color: '#fbbf24', fontWeight: 700, fontSize: '0.85rem' }}>{opp}</div>
+            <div style={{ color: '#e2e8f0', fontSize: '1.1rem', fontWeight: 800 }}>{sumOpp}</div>
+          </div>
+        </div>
+
+        {/* תוכן */}
+        {loading ? (
+          <div style={{ padding: '30px', textAlign: 'center', color: '#94a3b8' }}>
+            <Loader2 className="w-6 h-6 animate-spin" style={{ margin: '0 auto' }} /> טוען ניחושים...
+          </div>
+        ) : roundQuestions.length === 0 ? (
+          <div style={{ padding: '24px', textAlign: 'center', color: '#94a3b8', fontSize: '0.85rem' }}>
+            עדיין לא נסגרו שאלות בסיבוב זה (מאז שנקבעה נקודת הייחוס).
+          </div>
+        ) : (
+          <div style={{ padding: '8px' }}>
+            {roundQuestions.map((q) => {
+              const predMe = predsMe[String(q.id)];
+              const predOpp = predsOpp[String(q.id)];
+              const sMe = scoreOf(q, predMe), sOpp = scoreOf(q, predOpp);
+              const mx = maxOf(q);
+              const bMe = badgeFor(sMe, mx), bOpp = badgeFor(sOpp, mx);
+              const label = q.question_text || q.table_description || `${q.table_id} · ${q.question_id}`;
+              return (
+                <div key={q.id} style={{ marginBottom: '6px', borderRadius: '8px', overflow: 'hidden', border: '1px solid rgba(100,116,139,0.18)' }}>
+                  <div style={{ background: 'rgba(6,182,212,0.08)', padding: '5px 10px', fontSize: '0.72rem', color: '#94a3b8' }}>
+                    {label} · תוצאה: <b style={{ color: '#22d3ee' }}>{q.actual_result}</b>
+                  </div>
+                  <div style={{ display: 'flex' }}>
+                    {/* שלי */}
+                    <div style={{ flex: 1, padding: '7px 10px', borderLeft: '1px solid rgba(100,116,139,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px' }}>
+                      <span style={{ color: '#e2e8f0', fontSize: '0.82rem' }}>{predMe || <span style={{ color: '#64748b' }}>—</span>}</span>
+                      <span style={{ background: bMe.bg, color: bMe.fg, fontSize: '0.72rem', fontWeight: 700, padding: '2px 7px', borderRadius: '5px', minWidth: '38px', textAlign: 'center', flexShrink: 0 }}>{sMe == null ? `?/${mx}` : `${sMe}/${mx}`}</span>
+                    </div>
+                    {/* היריב */}
+                    <div style={{ flex: 1, padding: '7px 10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px' }}>
+                      <span style={{ color: '#e2e8f0', fontSize: '0.82rem' }}>{predOpp || <span style={{ color: '#64748b' }}>—</span>}</span>
+                      <span style={{ background: bOpp.bg, color: bOpp.fg, fontSize: '0.72rem', fontWeight: 700, padding: '2px 7px', borderRadius: '5px', minWidth: '38px', textAlign: 'center', flexShrink: 0 }}>{sOpp == null ? `?/${mx}` : `${sOpp}/${mx}`}</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>,
+    document.body
   );
 }
