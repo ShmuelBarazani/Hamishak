@@ -101,11 +101,15 @@ export default function YossiCup() {
   const fixedSeeding = seedingFromDb || currentGame?.yossi_cup_seeding || null;
   const liveSeeds = useMemo(() => {
     if (fixedSeeding && Array.isArray(fixedSeeding) && fixedSeeding.length > 0) {
-      return fixedSeeding.map((s) => ({
-        seed: s.seed,
-        participant_name: s.participant_name,
-        entry_score: scoreByName[s.participant_name] ?? 0,
-      }));
+      // ממיינים לפי seed עולה כדי להבטיח ש-liveSeeds[s-1] מצביע על הזרע הנכון
+      // (גם אם ה-JSON מה-DB חזר בסדר אחר).
+      return [...fixedSeeding]
+        .sort((a, b) => (a.seed || 0) - (b.seed || 0))
+        .map((s) => ({
+          seed: s.seed,
+          participant_name: s.participant_name,
+          entry_score: scoreByName[s.participant_name] ?? 0,
+        }));
     }
     return rankings.map((r, i) => ({
       seed: i + 1, participant_name: r.participant_name, entry_score: r.current_score,
@@ -467,7 +471,10 @@ export default function YossiCup() {
             </CardHeader>
             <CardContent className="pt-0">
               <p className="text-xs text-blue-200">🔴 הזוגות מתעדכנים אוטומטית עם כל שינוי בדירוג. <b>קבע בראקט סופי</b> רק בסוף המחזור הראשון.</p>
-              {needsPrelim && <p className="text-xs text-cyan-300 mt-1">ℹ️ סיבוב מקדים: {byeCount} המדורגים העליונים מקבלים בּיי (כרטיס אוטומטי) ל-128, ושאר {liveSeeds.length - byeCount} המשתתפים משחקים {livePairs.length} דו-קרבות.</p>}
+              {fixedSeeding && Array.isArray(fixedSeeding) && fixedSeeding.length > 0
+                ? <p className="text-xs text-green-300 mt-1">✅ סידינג קבוע מהאקסל פעיל ({fixedSeeding.length} משתתפים) — המיון מדויק לבראקט הרשמי.</p>
+                : <p className="text-xs text-red-300 mt-1">⚠️ סידינג קבוע <b>לא</b> נטען — משתמש בטבלת הדירוג (המיון עלול לא להתאים). ודא שהרצת את ה-SQL.</p>}
+              {needsPrelim && <p className="text-xs text-cyan-300 mt-1">ℹ️ סיבוב מקדים: {byeCount} המדורגים העליונים מקבלים בּיי (כרטיס אוטומטי) ל-128, ושאר {liveSeeds.length - byeCount} המשתתפים משחקים {livePairs.filter(p => !p.is_bye).length} דו-קרבות.</p>}
               {liveSeeds.length < CUP_SIZE && <p className="text-xs text-amber-300 mt-1">⚠️ כרגע {liveSeeds.length} משתתפים בלבד — נדרשים לפחות {CUP_SIZE}.</p>}
             </CardContent>
           </Card>
