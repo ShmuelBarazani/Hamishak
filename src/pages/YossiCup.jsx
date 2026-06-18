@@ -49,6 +49,7 @@ export default function YossiCup() {
   const [currentUser, setCurrentUser] = useState(null);
   const [viewRound, setViewRound] = useState(null); // איזה סיבוב מוצג בבורר (null = הנוכחי)
   const [viewMode, setViewMode] = useState('list'); // 'list' = רשימת כרטיסים | 'tree' = עץ בראקט ויזואלי
+  const [myName, setMyName] = useState(''); // שם המשתתף לחיפוש והדגשה
 
   const loadRankings = useCallback(async () => {
     if (!currentGame) { setLoading(false); return; }
@@ -329,6 +330,47 @@ export default function YossiCup() {
   const showingHistory = cupData && viewRound !== null && viewRound !== 'current';
   const histToShow = showingHistory ? cupData.history[viewRound] : null;
 
+  // ── חיפוש: מציאת המשחק של המשתתף לפי שם ──
+  //   מחזיר { match_no, opponent, isBye, side } או null אם לא נמצא / שם ריק.
+  const myMatchInfo = (() => {
+    const q = (myName || '').trim();
+    if (!q) return null;
+    const norm = (s) => (s || '').trim();
+    const isMe = (name) => norm(name) === q;
+
+    if (!cupData) {
+      // לפני קיבוע — מחפשים ב-livePairs (כולל בּיי)
+      for (const p of livePairs) {
+        if (p.is_bye && isMe(p.a.participant_name)) return { match_no: p.match_no, isBye: true };
+        if (!p.is_bye && isMe(p.a.participant_name)) return { match_no: p.match_no, opponent: p.b.participant_name, side: 'a' };
+        if (!p.is_bye && isMe(p.b?.participant_name)) return { match_no: p.match_no, opponent: p.a.participant_name, side: 'b' };
+      }
+      return null;
+    }
+    // אחרי קיבוע — מחפשים בזוגות הסיבוב הנוכחי
+    for (const pair of (cupData.pairs || [])) {
+      if (isMe(nameOf(pair.a))) return { match_no: pair.match_no, opponent: nameOf(pair.b), side: 'a' };
+      if (isMe(nameOf(pair.b))) return { match_no: pair.match_no, opponent: nameOf(pair.a), side: 'b' };
+    }
+    // בּיי בסיבוב מקדים
+    if (cupData.is_prelim && cupData.current_round === 1) {
+      const order = bracketOrder(CUP_SIZE);
+      for (const seed of (cupData.bye_seeds || [])) {
+        if (isMe(nameOf(seed))) {
+          const posIdx = order.indexOf(seed);
+          return { match_no: posIdx >= 0 ? posIdx + 1 : null, isBye: true };
+        }
+      }
+    }
+    return null;
+  })();
+
+  // האם שם נתון הוא "אני" (להדגשה)
+  const isMyName = (name) => {
+    const q = (myName || '').trim();
+    return q && (name || '').trim() === q;
+  };
+
   // ── שורת דו-קרב מינימליסטית ──
   //   המוביל בזיווג: ניקוד ירוק + כתר. המפגר: ניקוד אדום + עמעום קל.
   //   תיקו / טרם החל: אפור ניטרלי.
@@ -338,14 +380,16 @@ export default function YossiCup() {
       if (won == null || won === 'tie') return 'text-slate-400'; // טרם הוכרע מוביל
       return won === side ? 'text-green-400' : 'text-red-400';   // מוביל=ירוק, מפגר=אדום
     };
+    const meA = isMyName(a.name);
+    const meB = isMyName(b.name);
     return (
-      <div className="flex items-center text-sm rounded-md overflow-hidden" style={{ background: 'rgba(255,255,255,0.02)' }}>
+      <div className="flex items-center text-sm rounded-md overflow-hidden" style={{ background: (meA || meB) ? 'rgba(56,189,248,0.12)' : 'rgba(255,255,255,0.02)', boxShadow: (meA || meB) ? 'inset 0 0 0 1px rgba(56,189,248,0.5)' : 'none' }}>
         {/* מספר משחק */}
         {matchNo != null && <span className="text-[10px] text-slate-500 w-7 text-center flex-shrink-0 tabular-nums" style={{ borderLeft: '1px solid rgba(100,116,139,0.2)' }}>{matchNo}</span>}
         {/* צד A */}
         <div className={`flex-1 flex items-center gap-2 px-2.5 py-1.5 min-w-0 ${won === 'b' ? 'opacity-60' : ''}`}>
           <span className="text-[10px] text-amber-400/70 w-7 flex-shrink-0 tabular-nums">{a.seed}</span>
-          <span className="text-slate-200 truncate">{a.name}</span>
+          <span className={`truncate ${meA ? 'text-cyan-300 font-bold' : 'text-slate-200'}`}>{a.name}{meA ? ' ⭐' : ''}</span>
           {sa != null && <span className={`mr-auto text-xs font-bold flex-shrink-0 ${scoreColor('a')}`}>{sa >= 0 ? '+' : ''}{sa}</span>}
           {won === 'a' && <Crown className="w-3 h-3 text-amber-400 flex-shrink-0" />}
         </div>
@@ -354,7 +398,7 @@ export default function YossiCup() {
         <div className={`flex-1 flex items-center gap-2 px-2.5 py-1.5 justify-end min-w-0 ${won === 'a' ? 'opacity-60' : ''}`}>
           {won === 'b' && <Crown className="w-3 h-3 text-amber-400 flex-shrink-0" />}
           {sb != null && <span className={`ml-auto text-xs font-bold flex-shrink-0 ${scoreColor('b')}`}>{sb >= 0 ? '+' : ''}{sb}</span>}
-          <span className="text-slate-200 truncate">{b.name}</span>
+          <span className={`truncate ${meB ? 'text-cyan-300 font-bold' : 'text-slate-200'}`}>{meB ? '⭐ ' : ''}{b.name}</span>
           <span className="text-[10px] text-slate-500 w-7 text-left flex-shrink-0 tabular-nums">{b.seed}</span>
         </div>
       </div>
@@ -403,7 +447,7 @@ export default function YossiCup() {
         return {
           label: roundLabel(st.size, st.isPrelim),
           matches: decided.results.map(r => ({
-            a: nameOf(r.a), b: nameOf(r.b), seedA: r.a, seedB: r.b,
+            a: nameOf(r.a), b: nameOf(r.b), seedA: r.a, seedB: r.b, match_no: r.match_no,
             sa: r.sa, sb: r.sb, won: r.winner === r.a ? 'a' : 'b',
           })),
         };
@@ -416,7 +460,7 @@ export default function YossiCup() {
           matches: cupData.pairs.map(p => {
             const sa = roundScoreOf(p.a), sb = roundScoreOf(p.b);
             const w = (sa != null && sb != null) ? (sa > sb ? 'a' : sb > sa ? 'b' : null) : null;
-            return { a: nameOf(p.a), b: nameOf(p.b), seedA: p.a, seedB: p.b, sa, sb, won: w, live: true };
+            return { a: nameOf(p.a), b: nameOf(p.b), seedA: p.a, seedB: p.b, match_no: p.match_no, sa, sb, won: w, live: true };
           }),
         };
       }
@@ -447,11 +491,11 @@ export default function YossiCup() {
     });
 
     // תיבת שם בודדת (ריקה / ממולאת)
-    const Cell = ({ name, seed, score, scoreClass, crown, dim, bye }) => (
+    const Cell = ({ name, seed, score, scoreClass, crown, dim, bye, me }) => (
       <div className={`flex items-center gap-1 px-1.5 py-1 ${dim ? 'opacity-50' : ''}`}>
         {seed != null && <span className="text-[8px] text-amber-400/60 w-4 flex-shrink-0 tabular-nums">{seed}</span>}
         {name
-          ? <span className={`truncate ${bye ? 'text-green-300' : 'text-slate-200'}`}>{name}{bye ? ' ⏭️' : ''}</span>
+          ? <span className={`truncate ${me ? 'text-cyan-300 font-bold' : bye ? 'text-green-300' : 'text-slate-200'}`}>{me ? '⭐ ' : ''}{name}{bye ? ' ⏭️' : ''}</span>
           : <span className="text-slate-600 italic">—</span>}
         {score != null && <span className={`mr-auto text-[10px] font-bold flex-shrink-0 ${scoreClass}`}>{score >= 0 ? '+' : ''}{score}</span>}
         {crown && <Crown className="w-2.5 h-2.5 text-amber-400 flex-shrink-0" />}
@@ -459,20 +503,23 @@ export default function YossiCup() {
     );
 
     return (
-      <div className="overflow-x-auto pb-2">
-        <div className="flex gap-1.5 min-w-max">
+      <div className="overflow-x-auto pb-2" dir="ltr">
+        <div className="flex gap-2 min-w-max" style={{ direction: 'rtl' }}>
           {columns.map((col, ci) => {
             const isFinal = col.label && col.label.includes('גמר');
             return (
-            <div key={ci} className="flex flex-col gap-1" style={{ minWidth: 130 }}>
+            <div key={ci} className="flex flex-col gap-1 flex-shrink-0" style={{ width: 165 }}>
               <div className="text-[10px] font-bold text-cyan-300 text-center pb-0.5 truncate">{col.label}</div>
               {col.matches.map((m, mi) => {
                 const champ = isFinal && m.won ? (m.won === 'a' ? m.a : m.b) : null;
+                const meA = isMyName(m.a), meB = isMyName(m.b);
+                const mine = meA || meB;
                 return (
-                  <div key={mi} className="rounded text-[11px] overflow-hidden" style={{ background: 'rgba(15,23,42,0.6)', border: `1px solid ${m.live ? 'rgba(6,182,212,0.25)' : m.future ? 'rgba(100,116,139,0.1)' : 'rgba(100,116,139,0.18)'}` }}>
-                    <Cell name={m.a} seed={m.seedA} score={m.sa} scoreClass={scoreClr(m, 'a')} crown={m.won === 'a'} dim={m.won === 'b'} bye={m.aBye} />
+                  <div key={mi} className="rounded text-[11px] overflow-hidden" style={{ background: mine ? 'rgba(56,189,248,0.12)' : 'rgba(15,23,42,0.6)', border: `1px solid ${mine ? 'rgba(56,189,248,0.6)' : m.live ? 'rgba(6,182,212,0.25)' : m.future ? 'rgba(100,116,139,0.1)' : 'rgba(100,116,139,0.18)'}` }}>
+                    {m.match_no != null && <div className="text-[8px] text-slate-500 text-center" style={{ background: 'rgba(100,116,139,0.1)' }}>משחק {m.match_no}</div>}
+                    <Cell name={m.a} seed={m.seedA} score={m.sa} scoreClass={scoreClr(m, 'a')} crown={m.won === 'a'} dim={m.won === 'b'} bye={m.aBye} me={meA} />
                     <div className="h-px" style={{ background: 'rgba(100,116,139,0.12)' }} />
-                    <Cell name={m.b} seed={m.seedB} score={m.sb} scoreClass={scoreClr(m, 'b')} crown={m.won === 'b'} dim={m.won === 'a'} bye={m.bBye} />
+                    <Cell name={m.b} seed={m.seedB} score={m.sb} scoreClass={scoreClr(m, 'b')} crown={m.won === 'b'} dim={m.won === 'a'} bye={m.bBye} me={meB} />
                     {champ && <div className="text-[10px] text-amber-300 font-bold text-center py-0.5" style={{ background: 'rgba(251,191,36,0.12)' }}>🏆 {champ}</div>}
                   </div>
                 );
@@ -499,6 +546,43 @@ export default function YossiCup() {
         <Button onClick={loadRankings} disabled={working} size="sm" variant="outline" className="border-slate-600 text-slate-300">
           <RefreshCw className="w-4 h-4 ml-2" /> רענן ניקוד
         </Button>
+      </div>
+
+      {/* 🔍 חיפוש שם — מציאת המשחק והיריב + הדגשה ברשימה ובעץ */}
+      <div className="mb-4 p-3 rounded-lg" style={{ background: 'rgba(6,182,212,0.06)', border: '1px solid rgba(6,182,212,0.25)' }}>
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-sm text-cyan-300 font-medium flex-shrink-0">🔍 מצא את המשחק שלך:</span>
+          <input
+            type="text"
+            value={myName}
+            onChange={(e) => setMyName(e.target.value)}
+            placeholder="הקלד את שמך המדויק..."
+            className="flex-1 min-w-[160px] text-sm rounded-md px-3 py-1.5 outline-none"
+            style={{ background: 'rgba(15,23,42,0.6)', border: '1px solid rgba(100,116,139,0.4)', color: '#e2e8f0' }}
+          />
+          {myName.trim() && (
+            <button onClick={() => setMyName('')} className="text-xs text-slate-400 px-2 py-1 rounded hover:text-slate-200" style={{ background: 'rgba(255,255,255,0.04)' }}>
+              נקה
+            </button>
+          )}
+        </div>
+        {myName.trim() && (
+          <div className="mt-2 text-sm">
+            {myMatchInfo ? (
+              myMatchInfo.isBye ? (
+                <p className="text-green-300">
+                  ⏭️ <b>{myName.trim()}</b> — עולה אוטומטית לסיבוב 2 (בּיי){myMatchInfo.match_no ? ` · משחק מס' ${myMatchInfo.match_no}` : ''}
+                </p>
+              ) : (
+                <p className="text-cyan-200">
+                  🎯 משחק מס' <b className="text-cyan-300">{myMatchInfo.match_no}</b> · היריב שלך: <b className="text-amber-300">{myMatchInfo.opponent}</b>
+                </p>
+              )
+            ) : (
+              <p className="text-slate-400">לא נמצא משתתף בשם זה בסיבוב הנוכחי. ודא שהשם מדויק (כולל רווחים ו-+).</p>
+            )}
+          </div>
+        )}
       </div>
 
       {isAdmin && (
@@ -631,7 +715,8 @@ export default function YossiCup() {
           {/* ── תצוגת עץ ויזואלי ── */}
           {viewMode === 'tree' ? (
             <Card style={{ background: 'rgba(15,23,42,0.5)', border: '1px solid rgba(6,182,212,0.2)' }}>
-              <CardContent className="py-3 px-3">
+              <CardContent className="py-3 px-2 overflow-hidden">
+                <p className="text-[10px] text-slate-400 mb-2">↔️ גלול לצדדים לצפייה בכל שלבי העץ עד הגמר</p>
                 <BracketTree />
               </CardContent>
             </Card>
