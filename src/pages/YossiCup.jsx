@@ -669,16 +669,17 @@ export default function YossiCup() {
       };
     });
 
-    // תיבת שם בודדת (ריקה / "מנצח משחק X" / ממולאת)
+    // תיבת שם בודדת (ריקה / "מנצח משחק X" / ממולאת). השם נשבר לעד 2 שורות במקום להיחתך.
     const Cell = ({ name, seed, score, scoreClass, crown, dim, bye, me, from, onName }) => (
       <div className={`flex items-center gap-1 px-1.5 py-1 ${dim ? 'opacity-50' : ''}`}>
         {seed != null && <span className="text-[8px] text-amber-400/60 w-4 flex-shrink-0 tabular-nums">{seed}</span>}
         {name
           ? <span onClick={onName || undefined}
-              className={`truncate ${onName ? 'cursor-pointer hover:underline' : ''} ${me ? 'text-cyan-300 font-bold' : bye ? 'text-green-300' : 'text-slate-200'}`}
-              title={onName ? 'הצג ניחושים מול היריב' : undefined}>{me ? '⭐ ' : ''}{name}{bye ? ' ⏭️' : ''}</span>
+              className={`${onName ? 'cursor-pointer hover:underline' : ''} ${me ? 'text-cyan-300 font-bold' : bye ? 'text-green-300' : 'text-slate-200'}`}
+              style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', lineHeight: 1.15, wordBreak: 'break-word' }}
+              title={onName ? 'הצג ניחושים מול היריב' : name}>{me ? '⭐ ' : ''}{name}{bye ? ' ⏭️' : ''}</span>
           : from
-            ? <span className="text-slate-500 truncate text-[10px]">מנצח משחק {from}</span>
+            ? <span className="text-slate-500 text-[10px]">מנצח משחק {from}</span>
             : <span className="text-slate-600 italic">—</span>}
         {score != null && <span className={`mr-auto text-[10px] font-bold flex-shrink-0 ${scoreClass}`}>{score >= 0 ? '+' : ''}{score}</span>}
         {crown && <Crown className="w-2.5 h-2.5 text-amber-400 flex-shrink-0" />}
@@ -697,10 +698,13 @@ export default function YossiCup() {
     const syncFrom = (src, dst) => { if (dst.current && src.current) dst.current.scrollLeft = src.current.scrollLeft; };
 
     // ── חישוב פריסת עץ אמיתי: מיקום אנכי מצטבר + קווי חיבור ──
-    const COL_W = 165;       // רוחב עמודה
-    const COL_GAP = 28;      // רווח אופקי בין עמודות (מקום לקווים)
-    const BOX_H = 46;        // גובה תיבת משחק
-    const V_GAP = 10;        // רווח אנכי בסיסי בין תיבות בעמודה הראשונה
+    // ממדי העץ — מותאמים לרוחב המסך. בנייד: עמודה רחבה יותר וגופן מעט גדול יותר
+    //   כדי שהשמות לא ייחתכו, ושתי שורות לשם ארוך.
+    const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
+    const COL_W = isMobile ? 150 : 165;   // רוחב עמודה
+    const COL_GAP = isMobile ? 20 : 28;   // רווח אופקי בין עמודות (מקום לקווים)
+    const BOX_H = isMobile ? 58 : 46;     // גובה תיבת משחק (גבוה יותר בנייד לשתי שורות)
+    const V_GAP = isMobile ? 12 : 10;     // רווח אנכי בסיסי בין תיבות בעמודה הראשונה
     const LABEL_H = 20;      // גובה תווית השלב למעלה
 
     // לכל עמודה: מערך מרכזי-Y של התיבות.
