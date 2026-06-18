@@ -490,21 +490,27 @@ export default function YossiCup() {
     const decidedRounds = cupData.history || [];
     const currentRoundSize = cupData.champion ? 1 : cupData.round_size;
 
-    // שלבי הגדלים: השלב הנבחר + השלב הבא אחריו (כדי שייראה כעץ עם קווי חיבור).
-    //   ברירת מחדל — השלב הפעיל. מעבר לשלבים קודמים דרך בורר השלבים.
+    // שלבי הגדלים: מהשלב הנבחר (ברירת מחדל = הפעיל) וקדימה עד הגמר.
+    //   שלבים שהסתיימו (אחורה) מוסתרים — מעבר אליהם דרך בורר השלבים.
+    //   שלבים קדימה לא משפיעים על גובה הטבלה (מתמרכזים בתוך העמודה הראשונה).
     const sizes = [];
-    const addStageAndNext = (size, isPrelim) => {
-      sizes.push({ size, isPrelim });
-      // השלב הבא: אם מקדים → 128 (סיבוב 2); אחרת חצי מהגודל (עד 2 = גמר)
-      if (isPrelim) sizes.push({ size: CUP_SIZE, isPrelim: false });
-      else if (size > 2) sizes.push({ size: Math.floor(size / 2), isPrelim: false });
-    };
+    // נקודת ההתחלה: השלב הנבחר בבורר, או הפעיל, או הגמר אם הסתיים
+    let startSize, startPrelim;
     if (showingHistory && histToShow) {
-      addStageAndNext(histToShow.round_size, !!histToShow.is_prelim);
+      startSize = histToShow.round_size; startPrelim = !!histToShow.is_prelim;
     } else if (cupData.champion) {
-      sizes.push({ size: 2, isPrelim: false }); // הגמר בלבד
+      startSize = 2; startPrelim = false;
     } else {
-      addStageAndNext(cupData.round_size, !!cupData.is_prelim);
+      startSize = cupData.round_size; startPrelim = !!cupData.is_prelim;
+    }
+    // מוסיפים את שלב ההתחלה וכל השלבים קדימה עד הגמר (2)
+    if (startPrelim) {
+      sizes.push({ size: startSize, isPrelim: true });
+      let s = CUP_SIZE;
+      while (s >= 2) { sizes.push({ size: s, isPrelim: false }); s = Math.floor(s / 2); }
+    } else {
+      let s = startSize;
+      while (s >= 2) { sizes.push({ size: s, isPrelim: false }); s = Math.floor(s / 2); }
     }
 
     // 2) לכל שלב — בונים את רשימת התיבות (משחקים). שלב שהוכרע → מההיסטוריה.
@@ -948,7 +954,7 @@ export default function YossiCup() {
           {viewMode === 'tree' ? (
             <Card style={{ background: 'rgba(15,23,42,0.5)', border: '1px solid rgba(6,182,212,0.2)' }}>
               <CardContent className="py-3 px-2 overflow-hidden">
-                <p className="text-[10px] text-slate-400 mb-2">מציג את השלב הנוכחי והבא. למעבר בין שלבים — בורר השלבים למעלה.</p>
+                <p className="text-[10px] text-slate-400 mb-2">↔️ מציג מהשלב הנוכחי קדימה עד הגמר. למעבר לשלבים שהסתיימו — בורר השלבים למעלה.</p>
                 <BracketTree />
               </CardContent>
             </Card>
