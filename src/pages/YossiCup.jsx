@@ -445,13 +445,9 @@ export default function YossiCup() {
     // זרע נמוך (comp - seed), והוא תופס את העמדה שצמודה לזרע הנמוך.
     let idx = ord.indexOf(seed);
     if (idx < 0) {
-      // זרע גבוה (>128): מצא את העמדה של היריב הנמוך, והמשתתף בעמדה הצמודה (השכן בזוג)
+      // זרע גבוה (>128): הוא היריב של זרע נמוך באותו משחק מקדים — חולקים אותה עמדת-בסיס.
       const lowSeed = comp - seed;             // היריב הנמוך
-      const lowIdx = ord.indexOf(lowSeed);
-      if (lowIdx >= 0) {
-        // בכל זוג עוקב (0,1),(2,3)... — המשתתף הוא השכן של היריב הנמוך
-        idx = (lowIdx % 2 === 0) ? lowIdx + 1 : lowIdx - 1;
-      }
+      idx = ord.indexOf(lowSeed);              // אותה עמדה בדיוק (לא השכן!)
     }
     return idx >= 0 ? idx : null;
   })();
