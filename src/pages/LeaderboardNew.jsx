@@ -11,7 +11,7 @@ import { supabase } from '@/api/supabaseClient';
 import * as db from '@/api/entities';
 import { useToast } from "@/components/ui/use-toast";
 import { useGame } from "@/components/contexts/GameContext";
-import { calculateTotalScore, calculateQuestionScore } from "@/components/scoring/ScoreService";
+import { calculateTotalScore, calculateQuestionScore, isScoreFinal } from "@/components/scoring/ScoreService";
 
 // 🏆 טבלת הפרסים לפי מיקום (₪)
 const PRIZE_TABLE = { 1:8000, 2:4500, 3:3000, 4:2500, 5:2000, 6:1500, 7:1000, 8:800, 9:500, 10:300 };
@@ -529,11 +529,13 @@ export default function LeaderboardNew() {
           );
           // ניקוד מדויק:
           let exactScore = null;
+          let exactFinal = false;
           if (useScoreService) {
             // אותה לוגיקה כמו כל המסכים — מתייחס לזוג ראש/סגנית ולמקום השלישי יחד
             exactScore = calculateQuestionScore(q, disp, tSlots, {}, allQuestions);
+            exactFinal = isScoreFinal(q, allQuestions);
           }
-          return { pred: disp, isAdv, isElim, pts: q.possible_points || 0, exactScore, useScoreService };
+          return { pred: disp, isAdv, isElim, pts: q.possible_points || 0, exactScore, exactFinal, useScoreService };
         });
 
         const guessedSet = new Set(preds.map(p => normT(p.pred)).filter(Boolean));
@@ -914,22 +916,25 @@ export default function LeaderboardNew() {
                             // T16/T17 — ניקוד מדויק מ-ScoreService (15/10/7 או 14/10/4/7/7)
                             if (p.useScoreService) {
                               const hasScore = typeof p.exactScore === 'number';
-                              const earned = hasScore && p.exactScore > 0;
-                              const zero = hasScore && p.exactScore === 0;
-                              const icon  = p.pred ? (earned ? '✅' : zero ? '❌' : '❓') : '—';
-                              const color = earned ? '#34d399' : zero ? '#f87171' : '#94a3b8';
-                              const bg    = earned ? 'rgba(16,185,129,0.10)' : zero ? 'rgba(239,68,68,0.08)' : 'rgba(15,23,42,0.3)';
+                              const full    = hasScore && p.pts > 0 && p.exactScore === p.pts;
+                              const partial = hasScore && p.exactScore > 0 && !full;   // ניקוד חלקי — צהוב
+                              const zeroFinal = hasScore && p.exactScore === 0 && p.exactFinal;   // 0 סופי — אדום
+                              // 0 לא-סופי / טרם נוקד → אפור
+                              const icon  = !p.pred ? '—' : full ? '✅' : partial ? '🟡' : zeroFinal ? '❌' : '❓';
+                              const color = full ? '#34d399' : partial ? '#eab308' : zeroFinal ? '#f87171' : '#94a3b8';
+                              const bg    = full ? 'rgba(16,185,129,0.10)' : partial ? 'rgba(234,179,8,0.10)' : zeroFinal ? 'rgba(239,68,68,0.08)' : 'rgba(15,23,42,0.3)';
+                              const brd   = full ? 'rgba(16,185,129,0.25)' : partial ? 'rgba(234,179,8,0.35)' : zeroFinal ? 'rgba(239,68,68,0.20)' : 'rgba(71,85,105,0.3)';
                               const scoreTxt = !p.pred
                                 ? `?/${p.pts}`
-                                : earned
+                                : (full || partial)
                                   ? `+${p.exactScore}`
-                                  : zero
+                                  : zeroFinal
                                     ? '0'
                                     : `?/${p.pts}`;
                               return (
-                                <div key={i} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'5px 8px', borderRadius:'6px', background: bg, border:`1px solid ${earned ? 'rgba(16,185,129,0.25)' : zero ? 'rgba(239,68,68,0.20)' : 'rgba(71,85,105,0.3)'}` }}>
-                                  <span style={{ fontSize:'0.82rem', color, fontWeight: earned ? 700 : 400 }}>{icon} {p.pred || <span style={{color:'#475569'}}>—</span>}</span>
-                                  <span style={{ fontSize:'0.72rem', fontWeight:700, color: earned ? '#34d399' : zero ? '#f87171' : '#64748b', marginRight:'6px' }}>{scoreTxt}</span>
+                                <div key={i} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'5px 8px', borderRadius:'6px', background: bg, border:`1px solid ${brd}` }}>
+                                  <span style={{ fontSize:'0.82rem', color, fontWeight: full ? 700 : 400 }}>{icon} {p.pred || <span style={{color:'#475569'}}>—</span>}</span>
+                                  <span style={{ fontSize:'0.72rem', fontWeight:700, color, marginRight:'6px' }}>{scoreTxt}</span>
                                 </div>
                               );
                             }
