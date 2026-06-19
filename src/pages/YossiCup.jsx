@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Trophy, Loader2, Crown, Flag, Lock, Save, AlertTriangle, RefreshCw, Gavel, History, Play, Check, List, GitBranch, X } from "lucide-react";
 import { supabase } from '@/api/supabaseClient';
 import * as db from '@/api/entities';
-import { calculateQuestionScore } from "@/components/scoring/ScoreService";
+import { calculateQuestionScore, isScoreFinal } from "@/components/scoring/ScoreService";
 import { useToast } from "@/components/ui/use-toast";
 import { useGame } from "@/components/contexts/GameContext";
 
@@ -1332,14 +1332,14 @@ function DuelPeek({ me, opp, gameId, startClosedQids, onClose }) {
     })
     .sort((a, b) => (a.table_id || '').localeCompare(b.table_id || '') || (parseInt(a.question_id, 10) || 0) - (parseInt(b.question_id, 10) || 0));
 
-  // צבע badge לפי ניקוד (זהה ל-ViewSubmissions): ירוק=מלא, אדום=0, כחול=70%+, צהוב=חלקי
-  const badgeFor = (score, maxNum) => {
-    if (score == null) return { bg: 'rgba(100,116,139,0.4)', fg: '#cbd5e1' };
-    if (score === maxNum && maxNum > 0) return { bg: '#15803d', fg: '#dcfce7' };
-    if (score === 0) return { bg: '#b91c1c', fg: '#fee2e2' };
-    if (maxNum > 0 && score >= maxNum * 0.7) return { bg: '#1d4ed8', fg: '#dbeafe' };
-    if (score > 0) return { bg: '#eab308', fg: '#fff' };
-    return { bg: 'rgba(100,116,139,0.4)', fg: '#cbd5e1' };
+  // צבע badge לפי ניקוד: ירוק=מלא | צהוב=חלקי | אדום=0 סופי | אפור=0 לא-סופי/טרם
+  const badgeFor = (score, maxNum, isFinal) => {
+    if (score == null) return { bg: 'rgba(100,116,139,0.4)', fg: '#cbd5e1' };       // טרם נוקד
+    if (score === maxNum && maxNum > 0) return { bg: '#15803d', fg: '#dcfce7' };    // מלא — ירוק
+    if (score > 0) return { bg: '#eab308', fg: '#fff' };                            // חלקי — צהוב
+    // score === 0:
+    if (isFinal) return { bg: '#b91c1c', fg: '#fee2e2' };                           // 0 סופי — אדום
+    return { bg: 'rgba(100,116,139,0.4)', fg: '#cbd5e1' };                          // 0 לא-סופי — אפור
   };
 
   const maxOf = (q) => (q.possible_points != null ? q.possible_points : 0);
@@ -1390,7 +1390,8 @@ function DuelPeek({ me, opp, gameId, startClosedQids, onClose }) {
               const predOpp = predsOpp[String(q.id)];
               const sMe = scoreOf(q, predMe), sOpp = scoreOf(q, predOpp);
               const mx = maxOf(q);
-              const bMe = badgeFor(sMe, mx), bOpp = badgeFor(sOpp, mx);
+              const isFinal = isScoreFinal(q, questions);
+              const bMe = badgeFor(sMe, mx, isFinal), bOpp = badgeFor(sOpp, mx, isFinal);
               const label = q.question_text || q.table_description || `${q.table_id} · ${q.question_id}`;
               return (
                 <div key={q.id} style={{ marginBottom: '6px', borderRadius: '8px', overflow: 'hidden', border: '1px solid rgba(100,116,139,0.18)' }}>
@@ -1401,12 +1402,12 @@ function DuelPeek({ me, opp, gameId, startClosedQids, onClose }) {
                     {/* שלי */}
                     <div style={{ flex: 1, padding: '7px 10px', borderLeft: '1px solid rgba(100,116,139,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px' }}>
                       <span style={{ color: '#e2e8f0', fontSize: '0.82rem' }}>{predMe || <span style={{ color: '#64748b' }}>—</span>}</span>
-                      <span style={{ background: bMe.bg, color: bMe.fg, fontSize: '0.72rem', fontWeight: 700, padding: '2px 7px', borderRadius: '5px', minWidth: '38px', textAlign: 'center', flexShrink: 0 }}>{sMe == null ? `?/${mx}` : `${sMe}/${mx}`}</span>
+                      <span style={{ background: bMe.bg, color: bMe.fg, fontSize: '0.72rem', fontWeight: 700, padding: '2px 7px', borderRadius: '5px', minWidth: '38px', textAlign: 'center', flexShrink: 0 }}>{sMe == null ? `?/${mx}` : (sMe === 0 && !isFinal) ? `?/${mx}` : `${sMe}/${mx}`}</span>
                     </div>
                     {/* היריב */}
                     <div style={{ flex: 1, padding: '7px 10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px' }}>
                       <span style={{ color: '#e2e8f0', fontSize: '0.82rem' }}>{predOpp || <span style={{ color: '#64748b' }}>—</span>}</span>
-                      <span style={{ background: bOpp.bg, color: bOpp.fg, fontSize: '0.72rem', fontWeight: 700, padding: '2px 7px', borderRadius: '5px', minWidth: '38px', textAlign: 'center', flexShrink: 0 }}>{sOpp == null ? `?/${mx}` : `${sOpp}/${mx}`}</span>
+                      <span style={{ background: bOpp.bg, color: bOpp.fg, fontSize: '0.72rem', fontWeight: 700, padding: '2px 7px', borderRadius: '5px', minWidth: '38px', textAlign: 'center', flexShrink: 0 }}>{sOpp == null ? `?/${mx}` : (sOpp === 0 && !isFinal) ? `?/${mx}` : `${sOpp}/${mx}`}</span>
                     </div>
                   </div>
                 </div>
