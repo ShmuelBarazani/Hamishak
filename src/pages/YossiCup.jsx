@@ -1377,6 +1377,7 @@ function DuelPeek({ me, opp, gameId, startClosedQids, onClose }) {
                 <div key={q.id} style={{ marginBottom: '6px', borderRadius: '8px', overflow: 'hidden', border: '1px solid rgba(100,116,139,0.18)' }}>
                   <div style={{ background: 'rgba(6,182,212,0.08)', padding: '5px 10px', fontSize: '0.72rem', color: '#94a3b8' }}>
                     {label} · תוצאה: <b style={{ color: '#22d3ee' }}>{q.actual_result}</b>
+                    <span style={{ color: '#f87171', fontSize: '0.62rem' }}> [qid={q.question_id} · table={q.table_id} · predMe="{String(predMe)}" · sMe={String(sMe)}]</span>
                   </div>
                   <div style={{ display: 'flex' }}>
                     {/* שלי */}
