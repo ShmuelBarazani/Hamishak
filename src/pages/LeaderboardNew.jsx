@@ -131,6 +131,11 @@ function computePrize(rank, positionCounts, lastPosition) {
 
 const fmtPrize = n => n.toLocaleString('he-IL') + ' ₪';
 
+// 🏆 שאלת האלופה — שאלה 28 בשלב הניחושים המיוחדים (הנבחרת שהמשתתף ניחש שתזכה במונדיאל)
+const CHAMPION_QUESTION_ID = '28';
+// מנקה סיומת מדינה בסוגריים משם נבחרת (לתצוגה קומפקטית)
+const stripCountry = (name) => (name || '').replace(/\s*\([^)]+\)\s*$/, '').trim();
+
 export default function LeaderboardNew() {
   const [rankings,            setRankings           ] = useState([]);
   const [loading,             setLoading            ] = useState(true);
@@ -146,12 +151,26 @@ export default function LeaderboardNew() {
   const [sortColumn,          setSortColumn         ] = useState('current_position');
   const [sortDirection,       setSortDirection      ] = useState('asc');
   const [showPrizes,          setShowPrizes         ] = useState(true); // 🎁 נטען מ-DB (games.show_prizes)
+  const [championByName,      setChampionByName     ] = useState({});   // 🏆 ניחוש האלופה לכל משתתף (שאלה 28)
+  const [teamLogoMap,         setTeamLogoMap        ] = useState({});   // 🏆 שם נבחרת → לוגו (מ-teams_data)
   const { toast }       = useToast();
   const { currentGame } = useGame();
 
   // 🎁 סנכרון הצגת הפרסים מה-DB (games.show_prizes) — הגדרה גלובלית למשחק, ברירת מחדל true
   useEffect(() => {
     if (currentGame) setShowPrizes(currentGame.show_prizes !== false);
+  }, [currentGame]);
+
+  // 🏆 מפת לוגואים של נבחרות מתוך teams_data של המשחק (שם → לוגו)
+  useEffect(() => {
+    const m = {};
+    (currentGame?.teams_data || []).forEach(t => {
+      if (t?.name) {
+        m[t.name] = t.logo_url || null;
+        m[stripCountry(t.name)] = t.logo_url || null;
+      }
+    });
+    setTeamLogoMap(m);
   }, [currentGame]);
 
   useEffect(() => {
@@ -191,6 +210,45 @@ export default function LeaderboardNew() {
       from += PAGE;
     }
     return all;
+  };
+
+  // 🏆 טעינת ניחוש האלופה (שאלה 28) לכל המשתתפים — בבת אחת, לתצוגה בטבלת הדירוג.
+  const loadChampionPredictions = async (gameId) => {
+    try {
+      // 1) מצא את ה-UUID של שאלת האלופה (question_id = '28')
+      const { data: qRows } = await supabase
+        .from('questions').select('id, question_id')
+        .eq('game_id', gameId)
+        .eq('question_id', CHAMPION_QUESTION_ID);
+      if (!qRows || qRows.length === 0) return {};
+      const champQId = qRows[0].id;
+      // 2) טען את כל הניחושים לשאלה הזו (כל המשתתפים), עם דפדוף
+      let all = [], from = 0;
+      const PAGE = 1000;
+      while (true) {
+        const { data, error } = await supabase
+          .from('predictions').select('participant_name, text_prediction, created_at')
+          .eq('game_id', gameId)
+          .eq('question_id', String(champQId))
+          .range(from, from + PAGE - 1);
+        if (error || !data || data.length === 0) break;
+        all = [...all, ...data];
+        if (data.length < PAGE) break;
+        from += PAGE;
+      }
+      // 3) לכל משתתף — הניחוש האחרון (לפי created_at)
+      const latest = {};
+      all.forEach(p => {
+        const ex = latest[p.participant_name];
+        if (!ex || new Date(p.created_at) > new Date(ex.created_at)) latest[p.participant_name] = p;
+      });
+      const map = {};
+      Object.entries(latest).forEach(([name, p]) => { map[name] = p.text_prediction || ''; });
+      return map;
+    } catch (e) {
+      console.warn('טעינת ניחושי אלופה נכשלה', e);
+      return {};
+    }
   };
 
   const loadQuestionsForGame = async (gameId) => {
@@ -276,6 +334,9 @@ export default function LeaderboardNew() {
         setMaxScore(Math.max(...scores));
         setMinScore(Math.min(...scores));
       } else setRankings([]);
+      // 🏆 טען את ניחושי האלופה (שאלה 28) לכל המשתתפים — לתצוגה בעמודה
+      const champMap = await loadChampionPredictions(currentGame.id);
+      setChampionByName(champMap);
     } catch (error) {
       console.error("Error loading rankings:", error);
       toast({ title: "שגיאה", description: "טעינת הדירוג נכשלה", variant: "destructive" });
@@ -610,6 +671,19 @@ export default function LeaderboardNew() {
     return          <Minus         className="w-3 h-3 md:w-4 md:h-4 text-gray-400"  />;
   };
 
+  // 🏆 תא עמודת האלופה — לוגו (אם קיים) + שם הנבחרת שהמשתתף ניחש בשאלה 28, או "—"
+  const renderChampionCell = (participantName) => {
+    const team = championByName[participantName];
+    if (!team) return <span className="text-[9px] md:text-xs" style={{ color: '#475569' }}>—</span>;
+    const logo = teamLogoMap[team] || teamLogoMap[stripCountry(team)] || null;
+    return (
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap' }}>
+        {logo && <img src={logo} alt="" style={{ width: 16, height: 16, borderRadius: '50%', flexShrink: 0 }} onError={e => e.target.style.display = 'none'} />}
+        <span className="text-[9px] md:text-xs font-semibold" style={{ color: '#fbbf24' }}>{stripCountry(team)}</span>
+      </span>
+    );
+  };
+
   // 🎁 מיקום ייחודי לפרס הלא-כספי: שוברים שוויון לפי שם (א-ב עולה) רק עבור
   //    מי שמעבר לפרסים הכספיים (current_position ≥ 11). מי שבמקום כספי (1-10)
   //    מקבל כספי ולא נכלל כאן. כך מי ש"במקום 11" בשוויון מתפצל ל-11,12,13...
@@ -750,6 +824,7 @@ export default function LeaderboardNew() {
                     {[
                       { key: 'current_position', label: '#',            mobile: '#',   align: 'center' },
                       { key: 'participant_name',  label: 'שם',           mobile: 'שם',  align: 'right'  },
+                      { key: 'champion',          label: '🏆 אלופה',     mobile: '🏆',  align: 'right', noSort: true },
                       { key: 'current_score',     label: "נק'",          mobile: "נק'", align: 'center' },
                       { key: 'previous_position', label: 'מיקום קודם',  mobile: null,  align: 'center' },
                       { key: 'previous_score',    label: 'ניקוד קודם',  mobile: null,  align: 'center' },
@@ -794,6 +869,9 @@ export default function LeaderboardNew() {
                         onClick={() => loadParticipantDetails(rank.participant_name)}
                       >
                         {rank.participant_name}
+                      </td>
+                      <td className="text-right px-1.5 py-1 md:px-3 md:py-1.5">
+                        {renderChampionCell(rank.participant_name)}
                       </td>
                       <td className="text-center px-1.5 py-1 md:px-3 md:py-1.5">
                         <span className="font-extrabold text-[11px] md:text-sm" style={{ color: 'var(--tp)' }}>{rank.current_score}</span>
