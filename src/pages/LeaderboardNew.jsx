@@ -11,7 +11,7 @@ import { supabase } from '@/api/supabaseClient';
 import * as db from '@/api/entities';
 import { useToast } from "@/components/ui/use-toast";
 import { useGame } from "@/components/contexts/GameContext";
-import { calculateTotalScore } from "@/components/scoring/ScoreService";
+import { calculateTotalScore, calculateQuestionScore } from "@/components/scoring/ScoreService";
 
 // 🏆 טבלת הפרסים לפי מיקום (₪)
 const PRIZE_TABLE = { 1:8000, 2:4500, 3:3000, 4:2500, 5:2000, 6:1500, 7:1000, 8:800, 9:500, 10:300 };
@@ -511,6 +511,14 @@ export default function LeaderboardNew() {
           .map(tid => tableMetaMap[tid])
           .filter(meta => meta.allResultsIn && meta.advSet.size > 0);
 
+        // ── ניקוד פר-שאלה ──
+        //   T16 (ראש בית/סגנית 15/10/7) ו-T17 (מקום שלישי 14/10/4/7/7) — לוגיקה
+        //   מורכבת שמתייחסת לשתי השאלות של הבית + טבלת המקום השלישי כמקשה אחת.
+        //   לכן משתמשים ב-calculateQuestionScore מ-ScoreService (מקור אמת יחיד),
+        //   בדיוק כמו במסך "צפייה בניחושים" ובחלון הצף של הגביע.
+        //   שאר טבלאות העולות (עולה/לא-עולה) — לוגיקת isAdv/isElim כמקודם.
+        const useScoreService = (tableId === 'T16' || tableId === 'T17');
+
         const preds = tSlots.map(q => {
           const disp = getPredDisplay(q.id);
           const norm = normT(disp);
@@ -519,7 +527,13 @@ export default function LeaderboardNew() {
             allResultsIn ||
             prevCompleteTables.some(prevMeta => !prevMeta.advSet.has(norm))
           );
-          return { pred: disp, isAdv, isElim, pts: q.possible_points || 0 };
+          // ניקוד מדויק:
+          let exactScore = null;
+          if (useScoreService) {
+            // אותה לוגיקה כמו כל המסכים — מתייחס לזוג ראש/סגנית ולמקום השלישי יחד
+            exactScore = calculateQuestionScore(q, disp, tSlots, {}, allQuestions);
+          }
+          return { pred: disp, isAdv, isElim, pts: q.possible_points || 0, exactScore, useScoreService };
         });
 
         const guessedSet = new Set(preds.map(p => normT(p.pred)).filter(Boolean));
@@ -897,6 +911,28 @@ export default function LeaderboardNew() {
                         </div>
                         <div style={{ display:'grid', gridTemplateColumns:'repeat(2, 1fr)', gap:'4px' }}>
                           {sec.preds.map((p, i) => {
+                            // T16/T17 — ניקוד מדויק מ-ScoreService (15/10/7 או 14/10/4/7/7)
+                            if (p.useScoreService) {
+                              const hasScore = typeof p.exactScore === 'number';
+                              const earned = hasScore && p.exactScore > 0;
+                              const zero = hasScore && p.exactScore === 0;
+                              const icon  = p.pred ? (earned ? '✅' : zero ? '❌' : '❓') : '—';
+                              const color = earned ? '#34d399' : zero ? '#f87171' : '#94a3b8';
+                              const bg    = earned ? 'rgba(16,185,129,0.10)' : zero ? 'rgba(239,68,68,0.08)' : 'rgba(15,23,42,0.3)';
+                              const scoreTxt = !p.pred
+                                ? `?/${p.pts}`
+                                : earned
+                                  ? `+${p.exactScore}`
+                                  : zero
+                                    ? '0'
+                                    : `?/${p.pts}`;
+                              return (
+                                <div key={i} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'5px 8px', borderRadius:'6px', background: bg, border:`1px solid ${earned ? 'rgba(16,185,129,0.25)' : zero ? 'rgba(239,68,68,0.20)' : 'rgba(71,85,105,0.3)'}` }}>
+                                  <span style={{ fontSize:'0.82rem', color, fontWeight: earned ? 700 : 400 }}>{icon} {p.pred || <span style={{color:'#475569'}}>—</span>}</span>
+                                  <span style={{ fontSize:'0.72rem', fontWeight:700, color: earned ? '#34d399' : zero ? '#f87171' : '#64748b', marginRight:'6px' }}>{scoreTxt}</span>
+                                </div>
+                              );
+                            }
                             const icon  = p.pred ? (p.isAdv ? '✅' : p.isElim ? '❌' : '❓') : '—';
                             const color = p.isAdv ? '#34d399' : p.isElim ? '#f87171' : '#94a3b8';
                             const bg    = p.isAdv ? 'rgba(16,185,129,0.10)' : p.isElim ? 'rgba(239,68,68,0.08)' : 'rgba(15,23,42,0.3)';
