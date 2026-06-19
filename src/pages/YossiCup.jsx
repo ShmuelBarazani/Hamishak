@@ -1315,15 +1315,6 @@ function DuelPeek({ me, opp, gameId, startClosedQids, onClose }) {
   };
 
   const isPairTable = (q) => q.table_id === 'T16' || q.table_id === 'T17';
-  // שאלת זוג ריקה תיכלל רק אם השותף שלה (ראש/סגנית באותו בית) נסגר *בסיבוב הזה*
-  //   (כלומר אינו ב-snapshot) — כך שהניקוד שייך לסיבוב הנוכחי ולא לישן.
-  const partnerClosedThisRound = (q) => {
-    const qid = parseInt(q.question_id, 10);
-    if (!Number.isInteger(qid)) return false;
-    const partnerId = String(qid % 2 === 1 ? qid + 1 : qid - 1);
-    const partner = questions.find(x => x.table_id === q.table_id && x.question_id === partnerId);
-    return partner && isClosed(partner) && !snapSet.has(partner.id);
-  };
   const earnsScore = (q) => {
     const a = scoreOf(q, predsMe[String(q.id)]);
     const b = scoreOf(q, predsOpp[String(q.id)]);
@@ -1334,8 +1325,9 @@ function DuelPeek({ me, opp, gameId, startClosedQids, onClose }) {
     .filter(q => {
       if (snapSet.has(q.id)) return false;
       if (isClosed(q)) return true;
-      // שאלת זוג ריקה (סגנית/שלישי שטרם נקבעו) — תוצג אם השותף נסגר בסיבוב זה ויש ניקוד
-      if (isPairTable(q) && partnerClosedThisRound(q) && earnsScore(q)) return true;
+      // שאלת זוג ריקה (סגנית/שלישי שטרם נקבעו) — תוצג אם אחד המשתתפים כבר זכאי לניקוד
+      //   (הניקוד נובע מתוצאות אחרות שכבר נקבעו בבית — למשל מקסיקו עלתה כראש).
+      if (isPairTable(q) && earnsScore(q)) return true;
       return false;
     })
     .sort((a, b) => (a.table_id || '').localeCompare(b.table_id || '') || (parseInt(a.question_id, 10) || 0) - (parseInt(b.question_id, 10) || 0));
