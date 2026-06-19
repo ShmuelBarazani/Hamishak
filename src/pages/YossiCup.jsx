@@ -1301,11 +1301,43 @@ function DuelPeek({ me, opp, gameId, startClosedQids, onClose }) {
     return () => { alive = false; };
   }, [me, opp, gameId]);
 
-  // שאלות הסיבוב: סגורות עכשיו (actual_result) שלא היו ב-snapshot
+  // שאלות הסיבוב: סגורות עכשיו (actual_result) שלא היו ב-snapshot.
+  //   חריג ל-T16/T17 (ראש בית/סגנית/מקום שלישי): שאלה ריקה תיכלל אם אחד מהמשתתפים
+  //   כבר זכאי לניקוד עליה (כי הניחוש מתייחס לתוצאות אחרות שכבר נקבעו בבית).
   const snapSet = new Set(startClosedQids || []);
   const isClosed = (q) => q.actual_result && String(q.actual_result).trim() !== '' && q.actual_result !== '__CLEAR__';
+
+  // scoreOf מוגדר כאן (לפני הסינון) כדי שנוכל להחליט אילו שאלות ריקות בכל זאת מציגות ניקוד
+  const scoreOf = (q, pred) => {
+    if (pred == null || String(pred).trim() === '') return null;
+    const questionsInTable = questions.filter(x => x.table_id === q.table_id);
+    return calculateQuestionScore(q, pred, questionsInTable, {}, questions);
+  };
+
+  const isPairTable = (q) => q.table_id === 'T16' || q.table_id === 'T17';
+  // שאלת זוג ריקה תיכלל רק אם השותף שלה (ראש/סגנית באותו בית) נסגר *בסיבוב הזה*
+  //   (כלומר אינו ב-snapshot) — כך שהניקוד שייך לסיבוב הנוכחי ולא לישן.
+  const partnerClosedThisRound = (q) => {
+    const qid = parseInt(q.question_id, 10);
+    if (!Number.isInteger(qid)) return false;
+    const partnerId = String(qid % 2 === 1 ? qid + 1 : qid - 1);
+    const partner = questions.find(x => x.table_id === q.table_id && x.question_id === partnerId);
+    return partner && isClosed(partner) && !snapSet.has(partner.id);
+  };
+  const earnsScore = (q) => {
+    const a = scoreOf(q, predsMe[String(q.id)]);
+    const b = scoreOf(q, predsOpp[String(q.id)]);
+    return typeof a === 'number' || typeof b === 'number';
+  };
+
   const roundQuestions = questions
-    .filter(q => isClosed(q) && !snapSet.has(q.id))
+    .filter(q => {
+      if (snapSet.has(q.id)) return false;
+      if (isClosed(q)) return true;
+      // שאלת זוג ריקה (סגנית/שלישי שטרם נקבעו) — תוצג אם השותף נסגר בסיבוב זה ויש ניקוד
+      if (isPairTable(q) && partnerClosedThisRound(q) && earnsScore(q)) return true;
+      return false;
+    })
     .sort((a, b) => (a.table_id || '').localeCompare(b.table_id || '') || (parseInt(a.question_id, 10) || 0) - (parseInt(b.question_id, 10) || 0));
 
   // צבע badge לפי ניקוד (זהה ל-ViewSubmissions): ירוק=מלא, אדום=0, כחול=70%+, צהוב=חלקי
@@ -1318,11 +1350,6 @@ function DuelPeek({ me, opp, gameId, startClosedQids, onClose }) {
     return { bg: 'rgba(100,116,139,0.4)', fg: '#cbd5e1' };
   };
 
-  const scoreOf = (q, pred) => {
-    if (pred == null || String(pred).trim() === '') return null;
-    const questionsInTable = questions.filter(x => x.table_id === q.table_id);
-    return calculateQuestionScore(q, pred, questionsInTable, {}, questions);
-  };
   const maxOf = (q) => (q.possible_points != null ? q.possible_points : 0);
 
   let sumMe = 0, sumOpp = 0;
