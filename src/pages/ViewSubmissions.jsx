@@ -12,7 +12,7 @@ import * as db from '@/api/entities';
 import { Users, Loader2, ChevronDown, ChevronUp, FileText, Trash2, AlertTriangle, Trophy, Pencil, Save, Download, Award, CheckCircle } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 import RoundTableReadOnly from "../components/predictions/RoundTableReadOnly";
-import { calculateQuestionScore, calculateLocationBonus } from "@/components/scoring/ScoreService";
+import { calculateQuestionScore, calculateLocationBonus, isScoreFinal } from "@/components/scoring/ScoreService";
 import StandingsTable from "../components/predictions/StandingsTable";
 import { useGame } from "@/components/contexts/GameContext";
 
@@ -672,11 +672,10 @@ export default function ViewSubmissions() {
 
   const getMaxPossibleScore = (question) => {
     if (question.table_id === 'T20' && question.home_team && question.away_team) return 6;
-    // 🌍 T17 מקום שלישי: מקס נומרי נקי. שאלה ראשית = 14 (לפי נוסחת האקסל 14/10/4/7/7) ;
-    //   תת-שאלה ".1" = 4 (לא נותנת ניקוד נפרד — מוצגת כמקף, אך נשמר מקס נומרי לעקביות).
+    // 🌍 T17 מקום שלישי: כשלא-סופי מציגים אפשרויות '10/7' באפור (כמו קודם) ; תת-שאלה ".1" = 4
     if (question.game_id === WC_GAME_ID && question.table_id === 'T17') {
       const isSub = String(question.question_id).includes('.');
-      return isSub ? 4 : 14;
+      return isSub ? 4 : '10/7';
     }
     if (question.possible_points != null && question.possible_points > 0) return question.possible_points;
     if (question.actual_result != null && question.actual_result !== '') return 10;
@@ -787,17 +786,25 @@ export default function ViewSubmissions() {
       score = calculateQuestionScore(question, originalValue, questionsInTable, {}, data.questions);
     }
 
-    let badgeColor = 'bg-slate-600 text-slate-300';
     // maxScore יכול להיות מחרוזת כמו "10/7" (T17) — נחשב מקס נומרי להשוואת צבע
     const maxNum = typeof maxScore === 'string'
       ? Math.max(...maxScore.split('/').map(n => parseInt(n, 10)).filter(n => !isNaN(n)))
       : maxScore;
-    if (score !== null) {
-      if (score === maxNum && maxNum > 0) badgeColor = 'bg-green-700 text-green-100';
-      else if (score === 0) badgeColor = 'bg-red-700 text-red-100';
-      else if (maxNum > 0 && score >= maxNum * 0.7) badgeColor = 'bg-blue-700 text-blue-100';
-      else if (score > 0) badgeColor = 'bg-yellow-500 text-white';
-    }
+
+    // צבע התג לפי ניקוד ומקס — לפי הכללים שקבענו (ירוק=מלא, אדום=0, כחול=גבוה-חלקי, צהוב=חלקי)
+    const GRAY = 'bg-slate-600 text-slate-300';
+    const colorFor = (s, mx) => {
+      if (s === null) return GRAY;
+      if (s === mx && mx > 0) return 'bg-green-700 text-green-100';
+      if (s === 0) return 'bg-red-700 text-red-100';
+      if (mx > 0 && s >= mx * 0.7) return 'bg-blue-700 text-blue-100';
+      if (s > 0) return 'bg-yellow-500 text-white';
+      return GRAY;
+    };
+    const badgeColor = colorFor(score, maxNum);
+
+    const badge = (cls, txt, bold = true) =>
+      <Badge className={`${cls} text-xs ${bold ? 'font-bold ' : ''}px-1.5 py-0.5 min-w-[40px] justify-center`}>{txt}</Badge>;
 
     return (
       <>
@@ -813,22 +820,37 @@ export default function ViewSubmissions() {
           const isT17    = question.game_id === WC_GAME_ID && question.table_id === 'T17';
           const isT17Sub = isT17 && String(question.question_id).includes('.');
 
-          // 🌍 T17 שאלת ".1" (כן/לא) — הניקוד מרוכז בשאלה הראשית → מציגים מקף
-          if (isT17Sub) {
-            return <Badge className="bg-slate-600 text-slate-300 text-xs font-bold px-1.5 py-0.5 min-w-[40px] justify-center">—</Badge>;
-          }
-
-          // 🌍 T17 שאלת המקום השלישי הראשית — מציגים רק את הניקוד בפועל (בלי מכנה)
           if (isT17) {
-            return score !== null
-              ? <Badge className={`${badgeColor} text-xs font-bold px-1.5 py-0.5 min-w-[40px] justify-center`}>{score}</Badge>
-              : <Badge className="bg-slate-600 text-slate-300 text-xs font-bold px-1.5 py-0.5 min-w-[40px] justify-center">?</Badge>;
+            // סופי = כל 4 התוצאות של הבית נקבעו (ראש/סגנית/שלישי/העפלה)
+            const final = isScoreFinal(question, data.questions);
+
+            // ── תת-שאלה ".1" (כן/לא) ──
+            if (isT17Sub) {
+              // אם התת-שאלה עצמה קיבלה ניקוד נפרד → צבע לפי הכללים הרגילים
+              if (score !== null) return badge(colorFor(score, maxNum), `${score}/${maxScore}`);
+              // לא סופי → אפור עם אפשרויות הניקוד (כמו קודם): ?/4
+              if (!final) return badge(GRAY, `?/${maxScore}`, false);
+              // סופי → מקף, צבוע בצבע הניקוד של השאלה הראשית של אותו בית
+              const mainQid  = String(parseInt(question.question_id, 10));
+              const mainQ    = data.questions.find(q => q.table_id === 'T17' && q.question_id === mainQid);
+              const mainPred = mainQ ? (participantPredictions[mainQ.id] || '') : '';
+              const mainScore = mainQ
+                ? calculateQuestionScore(mainQ, mainPred, data.questions.filter(q => q.table_id === 'T17'), {}, data.questions)
+                : null;
+              return badge(colorFor(mainScore, 14), '—');
+            }
+
+            // ── שאלת המקום השלישי הראשית ──
+            // לא סופי → אפור עם אפשרויות הניקוד (כמו קודם): ?/10/7
+            if (!final) return badge(GRAY, `?/${maxScore}`, false);
+            // סופי → רק הניקוד בפועל, צבוע (מקס אמיתי = 14 לפי נוסחת האקסל)
+            return badge(colorFor(score, 14), score === null ? '?' : score);
           }
 
           // כל שאר השאלות — ניקוד/מקס כרגיל
           return score !== null
-            ? <Badge className={`${badgeColor} text-xs font-bold px-1.5 py-0.5 min-w-[40px] justify-center`}>{score}/{maxScore}</Badge>
-            : <Badge className="bg-slate-600 text-slate-300 text-xs px-1.5 py-0.5 min-w-[40px] justify-center">?/{maxScore}</Badge>;
+            ? badge(badgeColor, `${score}/${maxScore}`)
+            : badge(GRAY, `?/${maxScore}`, false);
         })()}
       </>
     );
