@@ -672,10 +672,11 @@ export default function ViewSubmissions() {
 
   const getMaxPossibleScore = (question) => {
     if (question.table_id === 'T20' && question.home_team && question.away_team) return 6;
-    // 🌍 T17 מקום שלישי: שאלה ראשית = 10 או 7 (לא מצטבר) ; תת-שאלה ".1" = 4
+    // 🌍 T17 מקום שלישי: מקס נומרי נקי. שאלה ראשית = 14 (לפי נוסחת האקסל 14/10/4/7/7) ;
+    //   תת-שאלה ".1" = 4 (לא נותנת ניקוד נפרד — מוצגת כמקף, אך נשמר מקס נומרי לעקביות).
     if (question.game_id === WC_GAME_ID && question.table_id === 'T17') {
       const isSub = String(question.question_id).includes('.');
-      return isSub ? 4 : '10/7';
+      return isSub ? 4 : 14;
     }
     if (question.possible_points != null && question.possible_points > 0) return question.possible_points;
     if (question.actual_result != null && question.actual_result !== '') return 10;
@@ -808,11 +809,27 @@ export default function ViewSubmissions() {
           {team?.logo_url && <img src={team.logo_url} alt={displayTeamNameForReadonly} className="w-4 h-4 rounded-full flex-shrink-0" onError={(e) => e.target.style.display='none'} />}
           <span style={{ color: textColor, fontSize: isQuestion11_1 ? '0.65rem' : '0.875rem', fontWeight: hasActualResult ? '700' : 'normal' }}>{displayTeamNameForReadonly}</span>
         </div>
-        {score !== null ? (
-          <Badge className={`${badgeColor} text-xs font-bold px-1.5 py-0.5 min-w-[40px] justify-center`}>{score}/{maxScore}</Badge>
-        ) : (
-          <Badge className="bg-slate-600 text-slate-300 text-xs px-1.5 py-0.5 min-w-[40px] justify-center">?/{maxScore}</Badge>
-        )}
+        {(() => {
+          const isT17    = question.game_id === WC_GAME_ID && question.table_id === 'T17';
+          const isT17Sub = isT17 && String(question.question_id).includes('.');
+
+          // 🌍 T17 שאלת ".1" (כן/לא) — הניקוד מרוכז בשאלה הראשית → מציגים מקף
+          if (isT17Sub) {
+            return <Badge className="bg-slate-600 text-slate-300 text-xs font-bold px-1.5 py-0.5 min-w-[40px] justify-center">—</Badge>;
+          }
+
+          // 🌍 T17 שאלת המקום השלישי הראשית — מציגים רק את הניקוד בפועל (בלי מכנה)
+          if (isT17) {
+            return score !== null
+              ? <Badge className={`${badgeColor} text-xs font-bold px-1.5 py-0.5 min-w-[40px] justify-center`}>{score}</Badge>
+              : <Badge className="bg-slate-600 text-slate-300 text-xs font-bold px-1.5 py-0.5 min-w-[40px] justify-center">?</Badge>;
+          }
+
+          // כל שאר השאלות — ניקוד/מקס כרגיל
+          return score !== null
+            ? <Badge className={`${badgeColor} text-xs font-bold px-1.5 py-0.5 min-w-[40px] justify-center`}>{score}/{maxScore}</Badge>
+            : <Badge className="bg-slate-600 text-slate-300 text-xs px-1.5 py-0.5 min-w-[40px] justify-center">?/{maxScore}</Badge>;
+        })()}
       </>
     );
   };
