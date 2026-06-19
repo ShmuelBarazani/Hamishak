@@ -186,14 +186,23 @@ export function calculateQuestionScore(question, prediction, allQuestionsInTable
 
       const myActual      = question.actual_result;
       const partnerActual = partnerQ?.actual_result;
-      if (!myActual || myActual.trim() === '' || myActual === '__CLEAR__') return null;
+
+      const hasMine    = myActual && myActual.trim() !== '' && myActual !== '__CLEAR__';
+      const hasPartner = partnerActual && partnerActual.trim() !== '' && partnerActual !== '__CLEAR__';
+
+      // אם אין תוצאה לא לשאלה זו ולא לשותף — עדיין לא ניתן לנקד.
+      if (!hasMine && !hasPartner) return null;
 
       const cleanPred    = cleanText(normalizeResult(prediction)).toLowerCase();
-      const cleanMine    = cleanText(normalizeResult(myActual)).toLowerCase();
-      const cleanPartner = partnerActual ? cleanText(normalizeResult(partnerActual)).toLowerCase() : null;
+      const cleanMine    = hasMine ? cleanText(normalizeResult(myActual)).toLowerCase() : null;
+      const cleanPartner = hasPartner ? cleanText(normalizeResult(partnerActual)).toLowerCase() : null;
 
-      if (cleanPred === cleanMine) return 15;            // בול במיקום
-      if (cleanPartner && cleanPred === cleanPartner) return 10; // התהפכו התפקידים
+      // לפי נוסחת האקסל — הניקוד נבדק מול שתי התוצאות (המיקום הזה והשותף), גם אם
+      //   רק אחת מהן כבר נקבעה:
+      //   • הניחוש = התוצאה במיקום הזה        → 15 (פגעת בול)
+      //   • הניחוש = התוצאה במיקום השותף      → 10 (הקבוצה עולה, אך טעית בין ראש/סגנית)
+      if (cleanMine && cleanPred === cleanMine) return 15;
+      if (cleanPartner && cleanPred === cleanPartner) return 10;
 
       // העפילה ממקום 3 (דורש את שאלות T17 מכלל שאלות המשחק)
       if (allGameQuestions) {
@@ -205,7 +214,12 @@ export function calculateQuestionScore(question, prediction, allQuestionsInTable
           if (cleanPred === clean3rd && advanced) return 7;
         }
       }
-      return 0;
+
+      // אם המיקום שלי כבר נקבע (יש תוצאה) והניחוש לא תאם כלום — 0.
+      // אם רק השותף נקבע ושלי עדיין ריק — מחזירים null (טרם הוכרע סופית עבור ניחוש זה),
+      //   אלא אם כבר זוהתה התאמה למעלה.
+      if (hasMine) return 0;
+      return null;
     }
   }
 
