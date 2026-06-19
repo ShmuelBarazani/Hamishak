@@ -475,16 +475,17 @@ export default function YossiCup() {
     const comp = 2 * CUP_SIZE + 1; // 257
     const total = (cupData.seeds || []).length;
     // לכל עמדת בסיס (0-127): שני המתמודדים במשחק המקדים (זרע נמוך + היריב), או בּיי אחד.
+    //   מחזיר {name, seed} כדי שנוכל להציג את הדירוג.
     const namesAtBase = (pos) => {
       const lowSeed = ord[pos];
       if (lowSeed == null) return [];
       const oppSeed = comp - lowSeed;
       const out = [];
       const nLow = nameOf(lowSeed);
-      if (nLow && !nLow.startsWith('#')) out.push(nLow);
+      if (nLow && !nLow.startsWith('#')) out.push({ name: nLow, seed: lowSeed });
       if (oppSeed <= total) {  // ליריב יש שם (לא בּיי)
         const nOpp = nameOf(oppSeed);
-        if (nOpp && !nOpp.startsWith('#')) out.push(nOpp);
+        if (nOpp && !nOpp.startsWith('#')) out.push({ name: nOpp, seed: oppSeed });
       }
       return out;
     };
@@ -498,9 +499,13 @@ export default function YossiCup() {
       if (rng) {
         const meTrim = (myName || '').trim();
         const names = [];
+        const seen = new Set();
         for (let pos = rng.from; pos < rng.to; pos++) {
-          for (const nm of namesAtBase(pos)) {
-            if (nm.trim() !== meTrim && !names.includes(nm)) names.push(nm); // לא לכלול את עצמי ולא כפילויות
+          for (const item of namesAtBase(pos)) {
+            if (item.name.trim() !== meTrim && !seen.has(item.name)) { // לא לכלול את עצמי ולא כפילויות
+              seen.add(item.name);
+              names.push(item);
+            }
           }
         }
         stages.push({ size: s, label: roundLabel(s, false), count: names.length, names });
@@ -871,8 +876,11 @@ export default function YossiCup() {
                   <div style={{ padding: '8px 10px', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                     {st.names.length === 0
                       ? <span style={{ color: '#64748b', fontSize: '0.8rem' }}>טרم ידוע</span>
-                      : st.names.map((nm, j) => (
-                          <span key={j} style={{ fontSize: '0.78rem', color: '#e2e8f0', background: 'rgba(255,255,255,0.05)', padding: '3px 8px', borderRadius: '5px' }}>{nm}</span>
+                      : st.names.map((item, j) => (
+                          <span key={j} style={{ fontSize: '0.78rem', color: '#e2e8f0', background: 'rgba(255,255,255,0.05)', padding: '3px 8px', borderRadius: '5px', display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                            <span>{item.name}</span>
+                            <span style={{ fontSize: '0.68rem', color: '#fbbf24', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{item.seed}</span>
+                          </span>
                         ))}
                   </div>
                 </div>
