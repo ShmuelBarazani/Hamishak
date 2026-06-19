@@ -821,29 +821,57 @@ export default function ViewSubmissions() {
           const isT17Sub = isT17 && String(question.question_id).includes('.');
 
           if (isT17) {
-            // סופי = כל 4 התוצאות של הבית נקבעו (ראש/סגנית/שלישי/העפלה)
-            const final = isScoreFinal(question, data.questions);
+            // 🌍 האם הניקוד של הניחוש הזה כבר "נעול" (לא ישתנה יותר)?
+            //   נקבע לפי המיקום בפועל של הקבוצה שניחש המשתתף:
+            //   • הקבוצה סיימה ראש/סגנית בפועל → +7 נעול (אין עוד מה להשתנות).
+            //   • הקבוצה היא השלישית בפועל → 14/10, נעול רק כשגם ההעפלה (".1") ידועה.
+            //   • אחרת → נעול רק כשכל 4 התוצאות של הבית הוכרעו (אז גם 4/0 סופי).
+            //   כל עוד לא נעול → אפור עם אפשרויות הניקוד (כמו קודם).
+            const t17Locked = (mainQ, predText) => {
+              const g = parseInt(mainQ.question_id, 10);
+              if (!Number.isInteger(g)) return false;
+              const Q = data.questions;
+              const act = (tbl, qid) => {
+                const q = Q.find(x => x.table_id === tbl && x.question_id === qid);
+                return (q && q.actual_result && q.actual_result !== '__CLEAR__' && String(q.actual_result).trim() !== '')
+                  ? stripParens(q.actual_result).trim().toLowerCase() : null;
+              };
+              const hasAdvRes = !!Q.find(x => x.table_id === 'T17' && x.question_id === `${g}.1`
+                && x.actual_result && x.actual_result !== '__CLEAR__' && String(x.actual_result).trim() !== '');
+              const headAct   = act('T16', String(2 * g - 1));
+              const runnerAct = act('T16', String(2 * g));
+              const thirdAct  = act('T17', String(g));
+              const predC = stripParens(predText || '').trim().toLowerCase();
+              if (!predC) return isScoreFinal(mainQ, data.questions);
+              if (headAct && predC === headAct)     return true;   // הקבוצה ראש בפועל → +7 נעול
+              if (runnerAct && predC === runnerAct)  return true;   // הקבוצה סגנית בפועל → +7 נעול
+              if (thirdAct && predC === thirdAct)    return hasAdvRes; // שלישי בפועל → צריך גם העפלה
+              return !!(headAct && runnerAct && thirdAct && hasAdvRes); // אחרת — הכל חייב להיות מוכרע
+            };
 
             // ── תת-שאלה ".1" (כן/לא) ──
             if (isT17Sub) {
-              // אם התת-שאלה עצמה קיבלה ניקוד נפרד → צבע לפי הכללים הרגילים
-              if (score !== null) return badge(colorFor(score, maxNum), `${score}/${maxScore}`);
-              // לא סופי → אפור עם אפשרויות הניקוד (כמו קודם): ?/4
-              if (!final) return badge(GRAY, `?/${maxScore}`, false);
-              // סופי → מקף, צבוע בצבע הניקוד של השאלה הראשית של אותו בית
-              const mainQid  = String(parseInt(question.question_id, 10));
-              const mainQ    = data.questions.find(q => q.table_id === 'T17' && q.question_id === mainQid);
-              const mainPred = mainQ ? (participantPredictions[mainQ.id] || '') : '';
+              const mainQid   = String(parseInt(question.question_id, 10));
+              const mainQ     = data.questions.find(q => q.table_id === 'T17' && q.question_id === mainQid);
+              const mainPred  = mainQ ? (participantPredictions[mainQ.id] || '') : '';
               const mainScore = mainQ
                 ? calculateQuestionScore(mainQ, mainPred, data.questions.filter(q => q.table_id === 'T17'), {}, data.questions)
                 : null;
+              const mainLocked = mainQ ? t17Locked(mainQ, mainPred) : false;
+
+              // אם התת-שאלה עצמה קיבלה ניקוד נפרד → צבע לפי הכללים הרגילים
+              if (score !== null) return badge(colorFor(score, maxNum), `${score}/${maxScore}`);
+              // לא נעול → אפור עם אפשרויות הניקוד (כמו קודם): ?/4
+              if (!mainLocked) return badge(GRAY, `?/${maxScore}`, false);
+              // נעול → מקף, צבוע בצבע הניקוד של השאלה הראשית (הניקוד מרוכז שם)
               return badge(colorFor(mainScore, 14), '—');
             }
 
             // ── שאלת המקום השלישי הראשית ──
-            // לא סופי → אפור עם אפשרויות הניקוד (כמו קודם): ?/10/7
-            if (!final) return badge(GRAY, `?/${maxScore}`, false);
-            // סופי → רק הניקוד בפועל, צבוע (מקס אמיתי = 14 לפי נוסחת האקסל)
+            const locked = t17Locked(question, originalValue);
+            // לא נעול → אפור עם אפשרויות הניקוד (כמו קודם): ?/10/7
+            if (!locked) return badge(GRAY, `?/${maxScore}`, false);
+            // נעול → רק הניקוד בפועל, צבוע (מקס אמיתי = 14 לפי נוסחת האקסל)
             return badge(colorFor(score, 14), score === null ? '?' : score);
           }
 
