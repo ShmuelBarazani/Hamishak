@@ -391,6 +391,39 @@ export function calculateQuestionScore(question, prediction, allQuestionsInTable
   return cleanActual === cleanPred ? (question.possible_points || 0) : 0;
 }
 
+/**
+ * isScoreFinal — האם הניקוד של שאלה הוא *סופי* (לא ישתנה יותר)?
+ *   חשוב לצביעה: ניקוד 0 צבוע אדום רק אם הוא סופי; אחרת אפור (טרם הוכרע).
+ *
+ *   ל-T16/T17 (ראש בית/סגנית/מקום שלישי) הניקוד תלוי ב-3 תוצאות של אותו בית:
+ *   ראש הבית, הסגנית, והמקום השלישי (+האם עלה). כל עוד אחת מהן ריקה —
+ *   ניחוש שקיבל 0 עדיין יכול להפוך ל-10 (אם יתברר כסגנית) או ל-7 (אם יתברר
+ *   כשלישי שעולה), ולכן ה-0 אינו סופי.
+ *
+ *   לשאר השאלות: הניקוד סופי ברגע שיש לשאלה actual_result.
+ */
+export function isScoreFinal(question, allGameQuestions = null) {
+  const hasResult = (q) => q && q.actual_result && String(q.actual_result).trim() !== '' && q.actual_result !== '__CLEAR__';
+
+  if (question.game_id === GAME_WORLD_CUP && (question.table_id === 'T16' || question.table_id === 'T17')) {
+    if (!allGameQuestions) return hasResult(question); // ללא הקשר — נופלים לברירת מחדל
+    // groupIdx = מספר הבית (1-12)
+    const qidNum = parseInt(question.question_id, 10);
+    if (!Number.isInteger(qidNum)) return hasResult(question);
+    const groupIdx = question.table_id === 'T16' ? Math.ceil(qidNum / 2) : qidNum;
+
+    const headQ   = allGameQuestions.find(q => q.table_id === 'T16' && q.question_id === String(2 * groupIdx - 1));
+    const runnerQ = allGameQuestions.find(q => q.table_id === 'T16' && q.question_id === String(2 * groupIdx));
+    const thirdQ  = allGameQuestions.find(q => q.table_id === 'T17' && q.question_id === String(groupIdx));
+    const advQ    = allGameQuestions.find(q => q.table_id === 'T17' && q.question_id === `${groupIdx}.1`);
+
+    // סופי רק כששלוש התוצאות של הבית נקבעו: ראש, סגנית, ומקום שלישי (+העפלה).
+    return !!(hasResult(headQ) && hasResult(runnerQ) && hasResult(thirdQ) && hasResult(advQ));
+  }
+
+  return !!hasResult(question);
+}
+
 export function getMaxScore(question) {
   if (question.table_id === 'T1') return 0;
   const isMatchQuestion = !!(question.home_team && question.away_team);
