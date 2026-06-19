@@ -223,37 +223,78 @@ export function calculateQuestionScore(question, prediction, allQuestionsInTable
     }
   }
 
-  // ─── 🌍 מונדיאל: T17 "מקום שלישי" — שאלת הנבחרת (qid שלם) ───
-  // לפי הקובץ: D נכון = 10 ; ועוד +7 אם הנבחרת שניחשת סיימה בפועל ראש-בית/סגנית (T16).
-  // (שאלת ".1" — "האם תעפיל" — נשארת בלוגיקת ברירת המחדל: 4 נק' אם בול)
+  // ─── 🌍 מונדיאל: T17 "מקום שלישי" — לפי נוסחת האקסל המלאה ───
+  //   המשתתף מנחש לכל בית 2 דברים: D=הנבחרת השלישית, E=האם תעפיל (כן/לא).
+  //   הניקוד (מצטבר, לפי הנוסחה):
+  //     14 — D נכון וגם E נכון
+  //     10 — D נכון אבל E שגוי
+  //      4 — E נכון אבל D שגוי
+  //     +7 — הנבחרת שניחשת כשלישית סיימה בפועל ראש-בית (T16)
+  //     +7 — הנבחרת שניחשת כשלישית סיימה בפועל סגנית (T16)
+  //   גישה א': כל הניקוד מרוכז על השאלה הראשית (qid שלם = הנבחרת השלישית).
+  //   שאלת ".1" (האם תעפיל) אינה נותנת ניקוד נפרד — מחזירה null.
   if (question.game_id === GAME_WORLD_CUP && question.table_id === 'T17') {
+    const isAdvQ = String(question.question_id).includes('.');   // שאלת ".1" = האם תעפיל
     const qidNum = parseInt(question.question_id, 10);
-    const isMainQ = Number.isInteger(qidNum) && !String(question.question_id).includes('.');
-    if (isMainQ) {
-      const myActual = question.actual_result;
-      const hasActual = myActual && myActual.trim() !== '' && myActual !== '__CLEAR__';
-      const cleanPred = cleanText(normalizeResult(prediction)).toLowerCase();
 
-      // (א) ניחוש נכון של הנבחרת השלישית → 10
-      if (hasActual) {
-        const cleanThird = cleanText(normalizeResult(myActual)).toLowerCase();
-        if (cleanPred && cleanPred === cleanThird) return question.possible_points || 10;
+    if (isAdvQ) return null;   // הניקוד מרוכז על השאלה הראשית — שאלת ההעפלה לא נותנת ניקוד נפרד
+
+    if (Number.isInteger(qidNum)) {
+      // השאלה הראשית = הנבחרת השלישית (D). שאלת ההעפלה (E) = qid.1
+      const advQ = allQuestionsInTable.find(q => q.question_id === `${qidNum}.1`)
+                || (allGameQuestions || []).find(q => q.table_id === 'T17' && q.question_id === `${qidNum}.1`);
+
+      const myThirdActual = question.actual_result;                         // D בפועל (הנבחרת השלישית)
+      const myAdvActual   = advQ?.actual_result;                            // E בפועל (האם העפילה)
+
+      const hasThird = myThirdActual && myThirdActual.trim() !== '' && myThirdActual !== '__CLEAR__';
+      const hasAdv   = myAdvActual   && myAdvActual.trim()   !== '' && myAdvActual   !== '__CLEAR__';
+
+      const cleanPredD = cleanText(normalizeResult(prediction)).toLowerCase();   // הניחוש לנבחרת השלישית (D)
+      // הניחוש להעפלה (E) — מגיע מהניחוש לשאלת ".1". משתמשים ב-allPredictions אם הועבר.
+      let cleanPredE = null;
+      if (advQ && allPredictions && allPredictions[advQ.id] != null) {
+        cleanPredE = cleanText(normalizeResult(allPredictions[advQ.id])).toLowerCase();
       }
 
-      // (ב) +7 — אם הנבחרת שניחשת סיימה בפועל ראש-בית או סגנית באותו בית (T16)
-      if (cleanPred && allGameQuestions) {
-        const headId   = String(2 * qidNum - 1); // ראש בית בבית זה
-        const runnerId = String(2 * qidNum);     // סגנית בבית זה
-        const headQ   = allGameQuestions.find(q => q.table_id === 'T16' && q.question_id === headId);
-        const runnerQ = allGameQuestions.find(q => q.table_id === 'T16' && q.question_id === runnerId);
+      // אם אין עדיין שום תוצאה רלוונטית (לא שלישי, לא ראש/סגנית) — לא לנקד
+      const headRunnerKnown = (allGameQuestions || []).some(q =>
+        q.table_id === 'T16' && q.actual_result && q.actual_result.trim() !== '' && q.actual_result !== '__CLEAR__');
+      if (!hasThird && !headRunnerKnown) return null;
+
+      let score = 0;
+
+      // רכיבי D/E (זהות השלישי + העפלה) — רק אם תוצאת השלישי כבר ידועה
+      if (hasThird && cleanPredD) {
+        const cleanThird = cleanText(normalizeResult(myThirdActual)).toLowerCase();
+        const dCorrect = cleanPredD === cleanThird;
+        // השוואת ההעפלה: שתי התשובות צריכות להיות ידועות כדי לבדוק נכון/שגוי
+        let eCorrect = null;
+        if (hasAdv && cleanPredE != null) {
+          const cleanAdvActual = cleanText(normalizeResult(myAdvActual)).toLowerCase();
+          eCorrect = (cleanPredE === cleanAdvActual);
+        }
+        if (dCorrect && eCorrect === true) score += 14;       // D נכון + E נכון
+        else if (dCorrect && eCorrect === false) score += 10; // D נכון + E שגוי
+        else if (dCorrect && eCorrect === null) score += 10;  // D נכון, E עדיין לא הוכרע → לפחות 10
+        else if (!dCorrect && eCorrect === true) score += 4;  // E נכון + D שגוי
+      }
+
+      // בונוס +7+7 — הנבחרת שניחשת כשלישית סיימה בפועל ראש-בית / סגנית (T16)
+      if (cleanPredD && allGameQuestions) {
+        const headId   = String(2 * qidNum - 1);
+        const runnerId = String(2 * qidNum);
+        const headQ    = allGameQuestions.find(q => q.table_id === 'T16' && q.question_id === headId);
+        const runnerQ  = allGameQuestions.find(q => q.table_id === 'T16' && q.question_id === runnerId);
         const headAct   = headQ?.actual_result   ? cleanText(normalizeResult(headQ.actual_result)).toLowerCase()   : null;
         const runnerAct = runnerQ?.actual_result ? cleanText(normalizeResult(runnerQ.actual_result)).toLowerCase() : null;
-        if ((headAct && cleanPred === headAct) || (runnerAct && cleanPred === runnerAct)) return 7;
+        if (headAct && cleanPredD === headAct)     score += 7;
+        if (runnerAct && cleanPredD === runnerAct) score += 7;
       }
 
-      // אם אין עדיין תוצאות בפועל בכלל — אל תנקד
-      if (!hasActual) return null;
-      return 0;
+      // אם לא נצבר כלום: 0 אם כבר יש תוצאת שלישי, אחרת null (טרם הוכרע)
+      if (score === 0 && !hasThird) return null;
+      return score;
     }
   }
 
