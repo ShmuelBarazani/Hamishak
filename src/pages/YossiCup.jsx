@@ -398,16 +398,16 @@ export default function YossiCup() {
       // לפני קיבוע — מחפשים ב-livePairs (כולל בּיי). במקדים global = match_no.
       for (const p of livePairs) {
         if (p.is_bye && isMe(p.a.participant_name)) return { match_no: p.match_no, isBye: true };
-        if (!p.is_bye && isMe(p.a.participant_name)) return { match_no: p.match_no, opponent: p.b.participant_name, side: 'a' };
-        if (!p.is_bye && isMe(p.b?.participant_name)) return { match_no: p.match_no, opponent: p.a.participant_name, side: 'b' };
+        if (!p.is_bye && isMe(p.a.participant_name)) return { match_no: p.match_no, opponent: p.b.participant_name, side: 'a', mySeed: p.a.seed, oppSeed: p.b?.seed };
+        if (!p.is_bye && isMe(p.b?.participant_name)) return { match_no: p.match_no, opponent: p.a.participant_name, side: 'b', mySeed: p.b.seed, oppSeed: p.a.seed };
       }
       return null;
     }
     // אחרי קיבוע — מחפשים בזוגות הסיבוב הנוכחי (מספר גלובלי)
     for (const pair of (cupData.pairs || [])) {
       const gno = pair.global_no || pair.match_no;
-      if (isMe(nameOf(pair.a))) return { match_no: gno, opponent: nameOf(pair.b), side: 'a' };
-      if (isMe(nameOf(pair.b))) return { match_no: gno, opponent: nameOf(pair.a), side: 'b' };
+      if (isMe(nameOf(pair.a))) return { match_no: gno, opponent: nameOf(pair.b), side: 'a', mySeed: pair.a, oppSeed: pair.b };
+      if (isMe(nameOf(pair.b))) return { match_no: gno, opponent: nameOf(pair.a), side: 'b', mySeed: pair.b, oppSeed: pair.a };
     }
     // בּיי בסיבוב מקדים
     if (cupData.is_prelim && cupData.current_round === 1) {
@@ -925,7 +925,12 @@ export default function YossiCup() {
                 <p className="text-green-300">
                   ⏭️ <b>{myName.trim()}</b> — עולה אוטומטית לסיבוב 2 (בּיי){myMatchInfo.match_no ? ` · משחק מס' ${myMatchInfo.match_no}` : ''}
                 </p>
-              ) : (
+              ) : (() => {
+                const myRS  = roundScoreOf(myMatchInfo.mySeed);
+                const oppRS = roundScoreOf(myMatchInfo.oppSeed);
+                const hasScore = myRS != null && oppRS != null;
+                const lead = hasScore ? (myRS > oppRS ? 'lead' : myRS < oppRS ? 'behind' : 'tie') : null;
+                return (
                 <button
                   type="button"
                   onClick={() => myMatchInfo.opponent && setPeekPair({ me: myName.trim(), opp: myMatchInfo.opponent })}
@@ -934,9 +939,22 @@ export default function YossiCup() {
                   style={{ background: 'rgba(6,182,212,0.08)', border: '1px solid rgba(6,182,212,0.3)', cursor: 'pointer' }}
                 >
                   🎯 משחק מס' <b className="text-cyan-300">{myMatchInfo.match_no}</b> · היריב שלך: <b className="text-amber-300">{myMatchInfo.opponent}</b>
+                  {hasScore ? (
+                    <span className="block text-[13px] mt-1">
+                      📊 ניקוד הסיבוב: <b className="text-cyan-300">{myName.trim()} {myRS}</b>
+                      <span className="text-slate-400"> · </span>
+                      <b className="text-amber-300">{myMatchInfo.opponent} {oppRS}</b>
+                      {lead === 'lead'   && <span className="font-bold" style={{ color: '#34d399' }}> · אתה מוביל 🟢</span>}
+                      {lead === 'behind' && <span className="font-bold" style={{ color: '#f87171' }}> · אתה מאחור 🔴</span>}
+                      {lead === 'tie'    && <span className="font-bold" style={{ color: '#fbbf24' }}> · שוויון ⚖️</span>}
+                    </span>
+                  ) : (
+                    <span className="block text-[11px] mt-1 text-slate-400">📊 ניקוד הסיבוב יוצג לאחר שייקבע ניקוד פתיחה לסיבוב</span>
+                  )}
                   <span className="block text-[11px] font-bold mt-1" style={{ color: '#38bdf8' }}>👁 לחץ לפירוט הניקוד של הדו-קרב</span>
                 </button>
-              )
+                );
+              })()
             ) : (
               <p className="text-slate-400">לא נמצא משתתף בשם זה בסיבוב הנוכחי.</p>
             )}
