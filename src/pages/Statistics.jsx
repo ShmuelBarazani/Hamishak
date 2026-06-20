@@ -67,6 +67,9 @@ const NC = new Map(), CC = new Map(), PC = new Map();
 const normalizeTeam = n => { if(!n) return n; if(NC.has(n)) return NC.get(n); const r=n.replace(/קרבאך/g,'קרבאח').replace(/קראבח/g,'קרבאח').replace(/קראבך/g,'קרבאח').trim(); NC.set(n,r); return r; };
 const cleanTeam    = n => { if(!n) return n; if(CC.has(n)) return CC.get(n); const r=n.replace(/\s*\([^)]+\)\s*$/,'').trim(); CC.set(n,r); return r; };
 const normPred     = s => s ? s.replace(/\s+/g,'').trim() : '';
+// 🆕 מסיר קידומת "בית " מתשובות בית (למשל "בית ב" → "ב") — ממזג כפילויות ומנקה את התווית.
+//    בטוח: תופס רק מחרוזת שמתחילה ב-"בית" + רווח, ולכן לא נוגע ב-"בית" (ניצחון בית) או בשמות נבחרות/תוצאות.
+const stripGroupPrefix = a => String(a == null ? '' : a).replace(/^בית\s+/, '').trim();
 const parseQId     = id => { if(!id) return 0; if(PC.has(id)) return PC.get(id); const r=parseFloat(id.replace(/[^\d.]/g,''))||0; PC.set(id,r); return r; };
 const pct          = (n,d) => d>0 ? ((n/d)*100).toFixed(1) : '0.0';
 const extractCountry = name => { const m=name?.match(/\(([^)]+)\)$/); return m?m[1]:null; };
@@ -1430,9 +1433,10 @@ export default function Statistics() {
           rawPreds.forEach(p=>{const ex=latestByPart[p.participant_name];if(!ex||new Date(p.created_at)>new Date(ex.created_at))latestByPart[p.participant_name]=p;});
           const preds=Object.values(latestByPart);
           const counts=preds.reduce((acc,p)=>{
-            const r=(!p.text_prediction?.trim()&&p.home_prediction!=null&&p.away_prediction!=null)
+            let r=(!p.text_prediction?.trim()&&p.home_prediction!=null&&p.away_prediction!=null)
               ?`${p.home_prediction}-${p.away_prediction}`
               :(p.text_prediction||'לא ניחש');
+            r=stripGroupPrefix(r)||'לא ניחש';
             acc[r]=(acc[r]||0)+1;return acc;
           },{});
           const total=preds.length;
@@ -1579,6 +1583,8 @@ export default function Statistics() {
                   ?`${pred.home_prediction}-${pred.away_prediction}`
                   :String(pred.text_prediction||'').trim();
                 if(!answer||answer==='__CLEAR__'||answer.toLowerCase()==='null'||answer.toLowerCase()==='undefined') return acc;
+                answer=stripGroupPrefix(answer);
+                if(!answer) return acc;
                 const isYN=['כן','לא','yes','no'].includes(answer), isNum=!isNaN(Number(answer));
                 if(!isYN&&!isNum&&(q.validation_list?.toLowerCase().includes('קבוצ')||q.validation_list?.toLowerCase().includes('נבחר'))) answer=cleanTeam(answer);
                 if(!answer.trim()) return acc;
