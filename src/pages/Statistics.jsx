@@ -900,7 +900,7 @@ function InsightCard({ insight }) {
           <BarChart data={insight.chartData} layout="vertical" margin={{top:4,right:50,left:0,bottom:4}}>
             <CartesianGrid strokeDasharray="3 3" stroke="#334155" horizontal={false}/>
             <XAxis type="number" stroke="#94a3b8" tick={{fontSize:10,fill:'#94a3b8'}}/>
-            <YAxis type="category" dataKey="name" width={130} stroke="#334155" tick={{fontSize:11,fill:'#f8fafc'}}/>
+            <YAxis type="category" dataKey="name" width={130} interval={0} stroke="#334155" tick={{fontSize:11,fill:'#f8fafc'}}/>
             <Tooltip content={({payload})=>payload?.[0]?<div style={{background:'#0a0f1a',border:`1px solid ${insight.color}`,borderRadius:6,padding:'8px 12px'}}><p style={{color:insight.color,fontWeight:700}}>{payload[0].payload.name}</p><p style={{color:'#f8fafc'}}>{payload[0].value}</p></div>:null}/>
             <Bar dataKey="value" radius={[0,6,6,0]} label={{position:'right',fill:'#94a3b8',fontSize:10,formatter:v=>v}}>
               {insight.chartData.map((_,i)=><Cell key={i} fill={COLORS[i%COLORS.length]}/>)}
@@ -916,7 +916,7 @@ function InsightCard({ insight }) {
         <ResponsiveContainer width="100%" height={180}>
           <BarChart data={insight.chartData} margin={{top:10,right:20,left:0,bottom:10}}>
             <CartesianGrid strokeDasharray="3 3" stroke="#334155"/>
-            <XAxis dataKey="name" stroke="#94a3b8" tick={{fontSize:11,fill:'#94a3b8'}}/>
+            <XAxis dataKey="name" stroke="#94a3b8" interval={0} tick={{fontSize:11,fill:'#94a3b8'}}/>
             <YAxis stroke="#94a3b8" tick={{fontSize:10,fill:'#94a3b8'}}/>
             <Tooltip content={({payload})=>payload?.[0]?<div style={{background:'#0a0f1a',border:`1px solid ${insight.color}`,borderRadius:6,padding:'8px 12px'}}><p style={{color:insight.color,fontWeight:700}}>{payload[0].payload.name}</p><p style={{color:'#f8fafc'}}>{payload[0].value}</p></div>:null}/>
             <Bar dataKey="value" radius={[6,6,0,0]}>
@@ -1002,7 +1002,7 @@ function TeamListBarChart({ chartData, participantsMap, panelKey, accent, locked
             <BarChart data={chartData} layout="vertical" margin={{ top: 10, right: 56, left: 0, bottom: 10 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#334155" horizontal={false} />
               <XAxis type="number" stroke="#94a3b8" tick={{ fontSize: 10, fill: '#94a3b8' }} />
-              <YAxis type="category" dataKey="team" width={compact ? 130 : 190} stroke="#334155" tick={{ fontSize: compact ? 11 : 12, fill: '#f8fafc', fontFamily: 'Rubik,Heebo,sans-serif' }} />
+              <YAxis type="category" dataKey="team" width={compact ? 130 : 190} interval={0} stroke="#334155" tick={{ fontSize: compact ? 11 : 12, fill: '#f8fafc', fontFamily: 'Rubik,Heebo,sans-serif' }} />
               <Tooltip
                 cursor={{ fill: `${accent}14` }}
                 content={({ payload }) => payload?.[0] ? (
@@ -2326,14 +2326,14 @@ export default function Statistics() {
                                             <Tooltip cursor={false} content={({payload})=>payload?.[0]?<div style={{background:'#0a0f1a',border:'1px solid #06b6d4',borderRadius:6,padding:'8px 10px',pointerEvents:'none'}}><p style={{color:'#06b6d4',fontWeight:700,fontSize:'0.82rem'}}>{payload[0].payload.answer}</p><p style={{color:'#f8fafc',fontSize:'0.78rem'}}>{payload[0].value} ({payload[0].payload.percentage}%)</p><p style={{color:'#64748b',fontSize:'0.7rem',marginTop:2}}>לחץ לנעילה</p></div>:null}/>
                                           </RechartsPieChart>
                                         ):(
-                                          <BarChart data={qStat.chartData.slice(0,10)} margin={{top:8,right:5,left:5,bottom:55}}
+                                          <BarChart data={qStat.chartData} margin={{top:8,right:5,left:5,bottom:55}}
                                             onClick={data=>{if(data?.activePayload?.[0]){const e=data.activePayload[0].payload;lockPanel(panelKey,{title:e.answer,count:e.count,percentage:e.percentage,participants:getParticipants(q.id,e.answer),color:'#06b6d4'});}}}>
                                             <CartesianGrid strokeDasharray="3 3" stroke="#334155"/>
                                             <XAxis dataKey="answer" stroke="#94a3b8" interval={0} height={55} tick={({x,y,payload})=>{const ws=String(payload.value).split(' ');const ls=[];let cur='';ws.forEach(w=>{const t=cur?`${cur} ${w}`:w;if(t.length<=8)cur=t;else{if(cur)ls.push(cur);cur=w;}});if(cur)ls.push(cur);return <g transform={`translate(${x},${y})`}>{ls.slice(0,3).map((l,i)=><text key={i} x={0} y={i*10+6} textAnchor="middle" fill="#94a3b8" fontSize="8px">{l}</text>)}</g>;}}/>
                                             <YAxis stroke="#94a3b8" tick={{fontSize:10,fill:'#94a3b8'}}/>
                                             <Tooltip cursor={{fill:'rgba(6,182,212,0.08)'}} content={({payload})=>payload?.[0]?<div style={{background:'#0a0f1a',border:'1px solid #06b6d4',borderRadius:6,padding:'8px 10px',pointerEvents:'none'}}><p style={{color:'#06b6d4',fontWeight:700,fontSize:'0.82rem'}}>{payload[0].payload.answer}</p><p style={{color:'#f8fafc',fontSize:'0.78rem'}}>{payload[0].value} ({payload[0].payload.percentage}%)</p><p style={{color:'#64748b',fontSize:'0.7rem',marginTop:2}}>לחץ לנעילה</p></div>:null}/>
                                             <Bar dataKey="count" radius={[5,5,0,0]} style={{cursor:'pointer'}}>
-                                              {qStat.chartData.slice(0,10).map((_,i)=><Cell key={i} fill={COLORS[i%COLORS.length]}/>)}
+                                              {qStat.chartData.map((_,i)=><Cell key={i} fill={COLORS[i%COLORS.length]}/>)}
                                             </Bar>
                                           </BarChart>
                                         )}
