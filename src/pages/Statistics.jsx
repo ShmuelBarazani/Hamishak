@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
   BarChart3, Users, Target, Loader2, PieChart, TrendingUp,
-  Award, AlertTriangle, Trophy, Brain, Zap, Star, ThumbsUp, ThumbsDown
+  Award, AlertTriangle, Trophy, Brain, Zap, Star, ThumbsUp, ThumbsDown, Copy
 } from "lucide-react";
 import {
   PieChart as RechartsPieChart, Pie, Cell, ResponsiveContainer,
@@ -13,6 +13,8 @@ import {
 import { supabase } from '@/api/supabaseClient';
 import * as db from '@/api/entities';
 import { useGame } from "@/components/contexts/GameContext";
+import { useToast } from "@/components/ui/use-toast";
+import html2canvas from "html2canvas";
 
 const COLORS = ['#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6','#ec4899','#14b8a6','#f97316','#06b6d4','#84cc16'];
 
@@ -1202,6 +1204,32 @@ export default function Statistics() {
   const [mobileMenuOpen,   setMobileMenuOpen  ] = useState(false); // 🆕 תפריט נייד מתקפל
 
   const { currentGame } = useGame();
+  const { toast } = useToast();
+
+  // 📋 העתקת תמונה מושלמת של כרטיס גרף ללוח (עם נפילה רכה להורדה אם הדפדפן לא תומך)
+  const copyChartImage = async (cardEl, title = 'גרף') => {
+    if (!cardEl) return;
+    try {
+      const canvas = await html2canvas(cardEl, { backgroundColor: '#0f172a', scale: 2, useCORS: true, logging: false });
+      canvas.toBlob(async (blob) => {
+        if (!blob) { toast({ title: 'שגיאה ביצירת התמונה', variant: 'destructive', duration: 2000 }); return; }
+        try {
+          await navigator.clipboard.write([new window.ClipboardItem({ 'image/png': blob })]);
+          toast({ title: '📋 הגרף הועתק ללוח', description: 'אפשר להדביק בכל מקום', className: 'bg-green-900/30 border-green-500 text-green-200', duration: 2000 });
+        } catch {
+          // העתקה ללוח לא נתמכת בדפדפן זה → הורדה כקובץ תמונה
+          const a = document.createElement('a');
+          a.href = URL.createObjectURL(blob);
+          a.download = `${title}.png`.replace(/[\\/:*?"<>|]/g, '_');
+          a.click();
+          setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+          toast({ title: '⬇️ הגרף הורד כתמונה', description: 'העתקה ישירה ללוח אינה נתמכת בדפדפן זה', duration: 2500 });
+        }
+      }, 'image/png');
+    } catch (e) {
+      toast({ title: 'שגיאה בהעתקת הגרף', variant: 'destructive', duration: 2000 });
+    }
+  };
   const isKnockout = !!(currentGame?.name?.includes('נוק-אאוט')||currentGame?.name?.includes('knock')||currentGame?.id==='9c9c1331-5184-406b-98b3-6becd9577567');
   // 🌍 דגל מונדיאל
   const isWC = currentGame?.id === WC_GAME_ID;
@@ -2303,15 +2331,26 @@ export default function Statistics() {
                           //    כל שם מוצג במלואו בשורה משלו, במקום תוויות דחוסות ובלתי-קריאות על ציר ה-X.
                           const longLabel=qStat.chartData.some(d=>isNaN(Number(String(d.answer).trim()))&&String(d.answer).trim().length>5);
                           const useHorizontal=!usePie&&(qStat.chartData.length>7||longLabel);
+                          // בגרף אופקי ממיינים יורד (הפופולרי למעלה); באנכי משאירים את סדר ה-alternateSlice
+                          const chartRows=useHorizontal?[...qStat.chartData].sort((a,b)=>b.count-a.count):qStat.chartData;
                           const chartH=useHorizontal?Math.max(240,qStat.chartData.length*26):240;
                           const hasActual=q.actual_result?.trim()&&q.actual_result!=='__CLEAR__';
                           const panelKey=`special_${q.id}`;
                           return(
-                            <Card key={q.id} className="bg-slate-800/40 border-slate-700 flex flex-col">
+                            <Card key={q.id} data-chart-card className="bg-slate-800/40 border-slate-700 flex flex-col">
                               <CardHeader className="pb-3">
                                 <div className="flex items-center justify-between mb-2">
                                   <Badge variant="outline" style={{borderColor:'rgba(6,182,212,0.5)',color:'#06b6d4',minWidth:'50px'}} className="justify-center">{q.question_id}</Badge>
-                                  <Badge className="bg-gradient-to-r from-green-600 to-emerald-600 text-white text-xs">{qStat.totalAnswers} תשובות</Badge>
+                                  <div className="flex items-center gap-1.5">
+                                    <button type="button" title="העתק תמונה של הגרף"
+                                      onClick={e=>copyChartImage(e.currentTarget.closest('[data-chart-card]'),`גרף_${q.question_id}`)}
+                                      data-html2canvas-ignore="true"
+                                      className="flex items-center justify-center w-7 h-7 rounded-md transition-colors hover:bg-cyan-500/20"
+                                      style={{border:'1px solid rgba(6,182,212,0.4)',color:'#06b6d4'}}>
+                                      <Copy size={14}/>
+                                    </button>
+                                    <Badge className="bg-gradient-to-r from-green-600 to-emerald-600 text-white text-xs">{qStat.totalAnswers} תשובות</Badge>
+                                  </div>
                                 </div>
                                 <p className="text-sm text-slate-200 leading-tight min-h-[36px]">{q.question_text}</p>
                                 <p style={{color:'#64748b',fontSize:'0.68rem',marginTop:2}}>לחץ על קטע לנעילת רשימה</p>
@@ -2325,7 +2364,7 @@ export default function Statistics() {
                                         <span style={{fontSize:'0.82rem',color:'#f8fafc',fontWeight:600}}>{formatResult(myPredByQid[q.id])}</span>
                                       </div>
                                     )}
-                                    <div style={{height:chartH+'px',display:'flex',alignItems:useHorizontal?'stretch':'flex-end'}}>
+                                    <div style={{height:chartH+'px',display:'flex',alignItems:useHorizontal?'stretch':'flex-end',direction:useHorizontal?'ltr':'rtl'}}>
                                       <ResponsiveContainer width="100%" height="100%">
                                         {usePie?(
                                           <RechartsPieChart>
@@ -2337,15 +2376,15 @@ export default function Statistics() {
                                             <Tooltip cursor={false} content={({payload})=>payload?.[0]?<div style={{background:'#0a0f1a',border:'1px solid #06b6d4',borderRadius:6,padding:'8px 10px',pointerEvents:'none'}}><p style={{color:'#06b6d4',fontWeight:700,fontSize:'0.82rem'}}>{payload[0].payload.answer}</p><p style={{color:'#f8fafc',fontSize:'0.78rem'}}>{payload[0].value} ({payload[0].payload.percentage}%)</p><p style={{color:'#64748b',fontSize:'0.7rem',marginTop:2}}>לחץ לנעילה</p></div>:null}/>
                                           </RechartsPieChart>
                                         ):useHorizontal?(
-                                          <BarChart data={qStat.chartData} layout="vertical" margin={{top:4,right:46,left:4,bottom:4}}
+                                          <BarChart data={chartRows} layout="vertical" margin={{top:4,right:46,left:4,bottom:4}}
                                             onClick={data=>{if(data?.activePayload?.[0]){const e=data.activePayload[0].payload;lockPanel(panelKey,{title:e.answer,count:e.count,percentage:e.percentage,participants:getParticipants(q.id,e.answer),color:'#06b6d4'});}}}>
                                             <CartesianGrid strokeDasharray="3 3" stroke="#334155" horizontal={false}/>
                                             <XAxis type="number" stroke="#94a3b8" allowDecimals={false} tick={{fontSize:10,fill:'#94a3b8'}}/>
-                                            <YAxis type="category" dataKey="answer" width={120} interval={0} stroke="#334155" tick={{fontSize:10,fill:'#f8fafc',fontFamily:'Rubik,Heebo,sans-serif'}}/>
+                                            <YAxis type="category" dataKey="answer" width={145} interval={0} stroke="#334155" tick={{fontSize:10,fill:'#f8fafc',fontFamily:'Rubik,Heebo,sans-serif'}}/>
                                             <Tooltip cursor={{fill:'rgba(6,182,212,0.08)'}} content={({payload})=>payload?.[0]?<div style={{background:'#0a0f1a',border:'1px solid #06b6d4',borderRadius:6,padding:'8px 10px',pointerEvents:'none'}}><p style={{color:'#06b6d4',fontWeight:700,fontSize:'0.82rem'}}>{payload[0].payload.answer}</p><p style={{color:'#f8fafc',fontSize:'0.78rem'}}>{payload[0].value} ({payload[0].payload.percentage}%)</p><p style={{color:'#64748b',fontSize:'0.7rem',marginTop:2}}>לחץ לנעילה</p></div>:null}/>
                                             <Bar dataKey="count" radius={[0,5,5,0]} style={{cursor:'pointer'}}>
                                               <LabelList dataKey="count" position="right" style={{fontSize:'9px',fill:'#94a3b8'}}/>
-                                              {qStat.chartData.map((e,i)=><Cell key={i} fill={COLORS[i%COLORS.length]} stroke={hasActual&&e.answer===q.actual_result?'#fbbf24':'none'} strokeWidth={hasActual&&e.answer===q.actual_result?2:0}/>)}
+                                              {chartRows.map((e,i)=><Cell key={i} fill={COLORS[i%COLORS.length]} stroke={hasActual&&e.answer===q.actual_result?'#fbbf24':'none'} strokeWidth={hasActual&&e.answer===q.actual_result?2:0}/>)}
                                             </Bar>
                                           </BarChart>
                                         ):(
