@@ -30,7 +30,7 @@ const WC_STAGE_BY_DAY = (() => {
   add(6, 28, 30, 'שלב 1/16');
   add(7, 1, 3,  'שלב 1/16');
   add(7, 4, 7,  'שמינית הגמר');
-  add(7, 9, 11, 'רבע הגמר');
+  add(7, 9, 12, 'רבע הגמר');
   add(7, 14, 15,'חצי הגמר');
   add(7, 18, 18,'משחק על המקום השלישי');
   add(7, 19, 19,'הגמר 🏆');
@@ -46,6 +46,7 @@ const koSlotLabel = s => {
   if(s.kind==='R')   return `סגנית בית ${WC_KO_HE[s.g]}`;
   if(s.kind==='3')   return `שלישית ${s.g}`;
   if(s.kind==='win') return `מנצח/ת משחק ${s.m}`;
+  if(s.kind==='lose')return `מפסיד/ה משחק ${s.m}`;
   return s.label || '';
 };
 const WC_KNOCKOUT = [
@@ -66,6 +67,26 @@ const WC_KNOCKOUT = [
   {m:88,stage:'שלב 1/16',key:'7-3', time:'21:00',h:{kind:'R',g:'D'},a:{kind:'R',g:'G'}},
   {m:86,stage:'שלב 1/16',key:'7-4', time:'01:00',h:{kind:'W',g:'J'},a:{kind:'R',g:'H'}},
   {m:87,stage:'שלב 1/16',key:'7-4', time:'04:30',h:{kind:'W',g:'K'},a:{kind:'3',g:'D/E/I/J/L'}},
+  // ── שמינית הגמר (Round of 16) — 4–7/7 ── feeders לפי בראקט FIFA
+  {m:89,stage:'שמינית הגמר',key:'7-4', time:'20:00',h:{kind:'win',m:74},a:{kind:'win',m:77}},
+  {m:90,stage:'שמינית הגמר',key:'7-5', time:'00:00',h:{kind:'win',m:73},a:{kind:'win',m:75}},
+  {m:91,stage:'שמינית הגמר',key:'7-5', time:'23:00',h:{kind:'win',m:76},a:{kind:'win',m:78}},
+  {m:92,stage:'שמינית הגמר',key:'7-6', time:'03:00',h:{kind:'win',m:79},a:{kind:'win',m:80}},
+  {m:93,stage:'שמינית הגמר',key:'7-6', time:'22:00',h:{kind:'win',m:83},a:{kind:'win',m:84}},
+  {m:94,stage:'שמינית הגמר',key:'7-7', time:'00:00',h:{kind:'win',m:81},a:{kind:'win',m:82}},
+  {m:95,stage:'שמינית הגמר',key:'7-7', time:'19:00',h:{kind:'win',m:86},a:{kind:'win',m:88}},
+  {m:96,stage:'שמינית הגמר',key:'7-7', time:'23:00',h:{kind:'win',m:85},a:{kind:'win',m:87}},
+  // ── רבע הגמר — 9–12/7 ──
+  {m:97, stage:'רבע הגמר',key:'7-9', time:'23:00',h:{kind:'win',m:89},a:{kind:'win',m:90}},
+  {m:98, stage:'רבע הגמר',key:'7-10',time:'22:00',h:{kind:'win',m:93},a:{kind:'win',m:94}},
+  {m:99, stage:'רבע הגמר',key:'7-12',time:'00:00',h:{kind:'win',m:91},a:{kind:'win',m:92}},
+  {m:100,stage:'רבע הגמר',key:'7-12',time:'04:00',h:{kind:'win',m:95},a:{kind:'win',m:96}},
+  // ── חצי הגמר — 14–15/7 ──
+  {m:101,stage:'חצי הגמר',key:'7-14',time:'22:00',h:{kind:'win',m:97},a:{kind:'win',m:98}},
+  {m:102,stage:'חצי הגמר',key:'7-15',time:'22:00',h:{kind:'win',m:99},a:{kind:'win',m:100}},
+  // ── מקום שלישי + גמר — 19/7 (שעון ישראל) ──
+  {m:103,stage:'משחק על המקום השלישי',key:'7-19',time:'00:00',h:{kind:'lose',m:101},a:{kind:'lose',m:102}},
+  {m:104,stage:'הגמר 🏆',key:'7-19',time:'22:00',h:{kind:'win',m:101},a:{kind:'win',m:102}},
 ];
 
 // 💼 קבוצות מקצוע — לפי סדר בדיקה (הראשון שתואם מנצח)
@@ -1850,17 +1871,19 @@ export default function Statistics() {
             const key=`${M.m+1}-${d}`;
             const has=!!matchesByDay[key];
             const stage=isWC?WC_STAGE_BY_DAY[key]:null;
-            const clickable=has||!!stage;
+            const hasKo=isWC&&WC_KNOCKOUT.some(k=>k.key===key);
+            const stageLike=!!stage||hasKo;
+            const clickable=has||stageLike;
             const isToday=todayD.getFullYear()===M.y&&todayD.getMonth()===M.m&&todayD.getDate()===d;
             const sel=selectedSection===`day_${key}`;
             return (
               <span key={d}
                 onClick={clickable?()=>{toggleSection(`day_${key}`);if(afterSelect)afterSelect();}:undefined}
-                title={stage||''}
+                title={stage||(hasKo?'משחקי נוק-אאוט':'')}
                 style={{fontSize:'0.72rem',textAlign:'center',padding:'5px 0',borderRadius:6,
-                  color:sel?'#fff':has?'#cbd5e1':stage?'#7dd3fc':'#334155',
-                  background:sel?'#0891b2':has?'rgba(6,182,212,0.10)':stage?'rgba(59,130,246,0.08)':'transparent',
-                  border:sel?'1px solid #22d3ee':isToday?'1px solid #f59e0b':has?'1px solid rgba(6,182,212,0.22)':stage?'1px solid rgba(59,130,246,0.18)':'1px solid transparent',
+                  color:sel?'#fff':has?'#cbd5e1':stageLike?'#7dd3fc':'#334155',
+                  background:sel?'#0891b2':has?'rgba(6,182,212,0.10)':stageLike?'rgba(59,130,246,0.08)':'transparent',
+                  border:sel?'1px solid #22d3ee':isToday?'1px solid #f59e0b':has?'1px solid rgba(6,182,212,0.22)':stageLike?'1px solid rgba(59,130,246,0.18)':'1px solid transparent',
                   fontWeight:sel?700:isToday?700:400,
                   cursor:clickable?'pointer':'default',
                   boxShadow:sel?'0 0 8px rgba(6,182,212,0.5)':'none'}}>
