@@ -82,18 +82,12 @@ const parseMatchDate = txt => {
   const s = String(txt);
   const m = s.match(/(\d{1,2})\/(\d{1,2})/);
   if(!m) return null;
-  let day=+m[1], mon=+m[2];
+  const day=+m[1], mon=+m[2];
   if(mon<6||mon>7||day<1||day>31) return null;
   // חילוץ שעה — תומך ב-HH:MM או HH.MM, עם מפריד אופציונלי (-, –, רווח)
-  let time='', isMidnight=false;
+  let time='';
   const tm = s.match(/(\d{1,2})[:\.](\d{2})/);
-  if(tm){ const h=+tm[1], mm=tm[2]; if(h>=0&&h<=23){ time=`${String(h).padStart(2,'0')}:${mm}`; if(h===0&&mm==='00') isMidnight=true; } }
-  // 🕛 משחק בחצות (00:00) שייך כרונולוגית ליום הבא — במקור הוא נרשם לעיתים תחת ערב היום הקודם.
-  if(isMidnight){
-    const daysInMon = mon===6 ? 30 : 31; // יוני=30, יולי=31
-    day += 1;
-    if(day>daysInMon){ day=1; mon+=1; }
-  }
+  if(tm){ const h=+tm[1], mm=tm[2]; if(h>=0&&h<=23) time=`${String(h).padStart(2,'0')}:${mm}`; }
   return { day, mon, time, key:`${mon}-${day}` };
 };
 
@@ -2151,7 +2145,7 @@ export default function Statistics() {
                       ))}
                     </div>
 
-                    <div className="grid md:grid-cols-2 gap-6">
+                    <div className={`grid grid-cols-1 ${isDaySection?'':'md:grid-cols-2'} gap-6`}>
                       {gameStatsArr.sort((a,b)=>parseQId(a.question.question_id)-parseQId(b.question.question_id)).map(game=>{
                         const q=game.question;
                         const homeT=teams[normalizeTeam(q.home_team)],awayT=teams[normalizeTeam(q.away_team)];
