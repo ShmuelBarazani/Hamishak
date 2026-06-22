@@ -82,12 +82,18 @@ const parseMatchDate = txt => {
   const s = String(txt);
   const m = s.match(/(\d{1,2})\/(\d{1,2})/);
   if(!m) return null;
-  const day=+m[1], mon=+m[2];
+  let day=+m[1], mon=+m[2];
   if(mon<6||mon>7||day<1||day>31) return null;
   // חילוץ שעה — תומך ב-HH:MM או HH.MM, עם מפריד אופציונלי (-, –, רווח)
-  let time='';
+  let time='', isMidnight=false;
   const tm = s.match(/(\d{1,2})[:\.](\d{2})/);
-  if(tm){ const h=+tm[1], mm=tm[2]; if(h>=0&&h<=23) time=`${h}:${mm}`; }
+  if(tm){ const h=+tm[1], mm=tm[2]; if(h>=0&&h<=23){ time=`${String(h).padStart(2,'0')}:${mm}`; if(h===0&&mm==='00') isMidnight=true; } }
+  // 🕛 משחק בחצות (00:00) שייך כרונולוגית ליום הבא — במקור הוא נרשם לעיתים תחת ערב היום הקודם.
+  if(isMidnight){
+    const daysInMon = mon===6 ? 30 : 31; // יוני=30, יולי=31
+    day += 1;
+    if(day>daysInMon){ day=1; mon+=1; }
+  }
   return { day, mon, time, key:`${mon}-${day}` };
 };
 
@@ -1856,27 +1862,30 @@ export default function Statistics() {
               const homeT=teams[normalizeTeam(q.home_team)], awayT=teams[normalizeTeam(q.away_team)];
               return (
                 <div key={q.id} style={{position:'relative',borderRadius:10,border:'1px solid rgba(6,182,212,0.15)',background:'rgba(0,0,0,0.25)',padding:'10px 12px'}}>
-                  <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:10}}>
-                    {/* שעת המשחק (שעון ישראל) — בקצה */}
-                    {time&&(
-                      <span style={{position:'absolute',insetInlineStart:22,display:'inline-flex',alignItems:'center',gap:4,color:'#67e8f9',fontSize:'0.72rem',fontWeight:600,background:'rgba(6,182,212,0.1)',border:'1px solid rgba(6,182,212,0.25)',borderRadius:6,padding:'2px 7px'}}>
-                        🕐 {time}
+                  <div style={{display:'flex',alignItems:'center',gap:8}}>
+                    {/* שעת המשחק (שעון ישראל) — עמודה קבועה בקצה ההתחלה, לא נחפפת ע"י שמות */}
+                    <span style={{flex:'0 0 auto',minWidth:60,display:'inline-flex',alignItems:'center',gap:3,color:'#67e8f9',fontSize:'0.72rem',fontWeight:600,whiteSpace:'nowrap'}}>
+                      {time&&<><span>🕐</span><span>{time}</span></>}
+                    </span>
+                    {/* המשחק — ממורכז בשטח שנותר */}
+                    <div style={{flex:'1 1 auto',minWidth:0,display:'flex',alignItems:'center',justifyContent:'center',gap:8}}>
+                      {/* קבוצת בית (מימין ב-RTL) */}
+                      <span style={{display:'flex',alignItems:'center',gap:6,fontSize:'0.9rem',color:'#f8fafc',justifyContent:'flex-end',minWidth:0,flex:'1 1 0'}}>
+                        <span style={{minWidth:0,wordBreak:'break-word'}}>{cleanTeam(q.home_team)}</span>
+                        {homeT?.logo_url&&<img src={homeT.logo_url} alt="" style={{width:22,height:22,borderRadius:'50%',flexShrink:0}}/>}
                       </span>
-                    )}
-                    {/* קבוצת בית (מימין ב-RTL) — צמודה למרכז */}
-                    <span style={{display:'flex',alignItems:'center',gap:6,fontSize:'0.9rem',color:'#f8fafc',justifyContent:'flex-end',minWidth:0,flex:'0 1 auto'}}>
-                      {cleanTeam(q.home_team)}
-                      {homeT?.logo_url&&<img src={homeT.logo_url} alt="" style={{width:22,height:22,borderRadius:'50%',flexShrink:0}}/>}
-                    </span>
-                    {/* תוצאה — במרכז */}
-                    <span style={{textAlign:'center',fontWeight:700,color:st.hasActual?'#fde68a':'#64748b',fontSize:'0.95rem',minWidth:56,flexShrink:0}}>
-                      {st.hasActual?formatResult(q.actual_result):'? - ?'}
-                    </span>
-                    {/* קבוצת חוץ (משמאל ב-RTL) — צמודה למרכז */}
-                    <span style={{display:'flex',alignItems:'center',gap:6,fontSize:'0.9rem',color:'#f8fafc',justifyContent:'flex-start',minWidth:0,flex:'0 1 auto'}}>
-                      {awayT?.logo_url&&<img src={awayT.logo_url} alt="" style={{width:22,height:22,borderRadius:'50%',flexShrink:0}}/>}
-                      {cleanTeam(q.away_team)}
-                    </span>
+                      {/* תוצאה — במרכז */}
+                      <span style={{textAlign:'center',fontWeight:700,color:st.hasActual?'#fde68a':'#64748b',fontSize:'0.95rem',minWidth:52,flexShrink:0}}>
+                        {st.hasActual?formatResult(q.actual_result):'? - ?'}
+                      </span>
+                      {/* קבוצת חוץ (משמאל ב-RTL) */}
+                      <span style={{display:'flex',alignItems:'center',gap:6,fontSize:'0.9rem',color:'#f8fafc',justifyContent:'flex-start',minWidth:0,flex:'1 1 0'}}>
+                        {awayT?.logo_url&&<img src={awayT.logo_url} alt="" style={{width:22,height:22,borderRadius:'50%',flexShrink:0}}/>}
+                        <span style={{minWidth:0,wordBreak:'break-word'}}>{cleanTeam(q.away_team)}</span>
+                      </span>
+                    </div>
+                    {/* מרווח מאזן בקצה — שומר על מרכוז המשחק */}
+                    <span style={{flex:'0 0 auto',minWidth:60}}/>
                   </div>
                   <div style={{display:'flex',gap:14,marginTop:8,paddingTop:8,borderTop:'1px solid rgba(255,255,255,0.05)',fontSize:'0.74rem',color:'#94a3b8',flexWrap:'wrap'}}>
                     <span>{q.stage_name} • {st.total} ניחושים</span>
