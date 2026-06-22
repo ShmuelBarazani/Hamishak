@@ -14,7 +14,6 @@ import { supabase } from '@/api/supabaseClient';
 import * as db from '@/api/entities';
 import { useGame } from "@/components/contexts/GameContext";
 import { useToast } from "@/components/ui/use-toast";
-import html2canvas from "html2canvas";
 
 const COLORS = ['#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6','#ec4899','#14b8a6','#f97316','#06b6d4','#84cc16'];
 
@@ -1238,9 +1237,19 @@ export default function Statistics() {
   const { toast } = useToast();
 
   // 📋 העתקת תמונה מושלמת של כרטיס גרף ללוח (עם נפילה רכה להורדה אם הדפדפן לא תומך)
+  // html2canvas נטען מ-CDN בזמן ריצה — אין צורך בהתקנת npm ואין סיכון לשבירת ה-build.
+  const loadHtml2Canvas = () => new Promise((resolve, reject) => {
+    if (window.html2canvas) return resolve(window.html2canvas);
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+    s.onload = () => resolve(window.html2canvas);
+    s.onerror = () => reject(new Error('html2canvas load failed'));
+    document.head.appendChild(s);
+  });
   const copyChartImage = async (cardEl, title = 'גרף') => {
     if (!cardEl) return;
     try {
+      const html2canvas = await loadHtml2Canvas();
       const canvas = await html2canvas(cardEl, { backgroundColor: '#0f172a', scale: 2, useCORS: true, logging: false });
       canvas.toBlob(async (blob) => {
         if (!blob) { toast({ title: 'שגיאה ביצירת התמונה', variant: 'destructive', duration: 2000 }); return; }
