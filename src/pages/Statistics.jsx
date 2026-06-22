@@ -1416,39 +1416,48 @@ export default function Statistics() {
 
   // 🏆 דירוג כל בית מתוך התוצאות בפועל — לשיבוץ אוטומטי של מנצחת/סגנית בנוק-אאוט.
   // משבץ רק כשכל משחקי הבית הסתיימו (אחרת נשארת התווית "מנצחת בית X").
+  // 🏆 מקור השיבוץ לבראקט: טבלת "מובילי הבית" (T16) — qid אי-זוגי=ראש בית, זוגי=סגנית,
+  //    groupIdx=ceil(qid/2). זמין מיד כשמזינים את העולה (גם לפני שכל הבית שוחק).
+  //    גיבוי: חישוב דירוג מתוצאות משחקי הבית (אם T16 ריק אך הבית הסתיים).
   const koGroupWinners = useMemo(()=>{
-    const byGroup={};
+    const byIdx={}; // 1-12 → {winner,runner} מתוך T16
+    allQuestions.forEach(q=>{
+      if(q.table_id!=='T16') return;
+      const qid=parseInt(q.question_id,10);
+      if(!Number.isInteger(qid)) return;
+      const res=q.actual_result;
+      if(!res||!String(res).trim()||res==='__CLEAR__') return;
+      const team=cleanTeam(String(res).trim());
+      if(!team||team.toLowerCase()==='null') return;
+      const idx=Math.ceil(qid/2);
+      byIdx[idx]=byIdx[idx]||{};
+      if(qid%2===1) byIdx[idx].winner=team; else byIdx[idx].runner=team;
+    });
+    // גיבוי — דירוג בית מתוצאות המשחקים (לפי אות הבית בעברית)
+    const byHe={}, grp={};
     allQuestions.forEach(q=>{
       if(!q.home_team||!q.away_team||!q.stage_name) return;
-      const mg=String(q.stage_name).match(/בית\s+(\S+)/);
-      if(!mg) return;
-      const he=mg[1].replace(/['׳’]/g,'');
-      (byGroup[he]=byGroup[he]||[]).push(q);
+      const mg=String(q.stage_name).match(/בית\s+(\S+)/); if(!mg) return;
+      const he=mg[1].replace(/['׳’]/g,''); (grp[he]=grp[he]||[]).push(q);
     });
-    const parseRes=r=>{const m=String(r||'').match(/(\d+)\s*[-:]\s*(\d+)/);return m?{h:+m[1],a:+m[2]}:null;};
-    const out={};
-    Object.entries(byGroup).forEach(([he,qs])=>{
-      const tbl={}; let complete=true;
-      qs.forEach(q=>{
-        const H=cleanTeam(q.home_team), A=cleanTeam(q.away_team);
-        tbl[H]=tbl[H]||{team:H,pts:0,gf:0,ga:0};
-        tbl[A]=tbl[A]||{team:A,pts:0,gf:0,ga:0};
-        const r=parseRes(q.actual_result);
-        if(!r){complete=false;return;}
-        tbl[H].gf+=r.h;tbl[H].ga+=r.a;tbl[A].gf+=r.a;tbl[A].ga+=r.h;
-        if(r.h>r.a)tbl[H].pts+=3;else if(r.h<r.a)tbl[A].pts+=3;else{tbl[H].pts++;tbl[A].pts++;}
-      });
-      if(!complete) return;
+    const pr=r=>{const m=String(r||'').match(/(\d+)\s*[-:]\s*(\d+)/);return m?{h:+m[1],a:+m[2]}:null;};
+    Object.entries(grp).forEach(([he,qs])=>{
+      const tbl={};let complete=true;
+      qs.forEach(q=>{const H=cleanTeam(q.home_team),A=cleanTeam(q.away_team);tbl[H]=tbl[H]||{team:H,pts:0,gf:0,ga:0};tbl[A]=tbl[A]||{team:A,pts:0,gf:0,ga:0};const r=pr(q.actual_result);if(!r){complete=false;return;}tbl[H].gf+=r.h;tbl[H].ga+=r.a;tbl[A].gf+=r.a;tbl[A].ga+=r.h;if(r.h>r.a)tbl[H].pts+=3;else if(r.h<r.a)tbl[A].pts+=3;else{tbl[H].pts++;tbl[A].pts++;}});
+      if(!complete)return;
       const arr=Object.values(tbl).map(t=>({...t,gd:t.gf-t.ga})).sort((a,b)=>b.pts-a.pts||b.gd-a.gd||b.gf-a.gf);
-      if(arr.length>=2) out[he]={winner:arr[0].team,runner:arr[1].team};
+      if(arr.length>=2) byHe[he]={winner:arr[0].team,runner:arr[1].team};
     });
-    return out;
+    return {byIdx,byHe};
   },[allQuestions]);
 
   const resolveKoSlot = slot => {
     if(slot.kind==='W'||slot.kind==='R'){
-      const gw=koGroupWinners[WC_KO_LATIN_TO_HE[slot.g]];
-      if(gw) return slot.kind==='W'?gw.winner:gw.runner;
+      const idx=slot.g.charCodeAt(0)-64;            // A=1 … L=12
+      const t16=koGroupWinners.byIdx[idx];
+      if(t16){ const t=slot.kind==='W'?t16.winner:t16.runner; if(t) return t; }
+      const st=koGroupWinners.byHe[WC_KO_LATIN_TO_HE[slot.g]];
+      if(st) return slot.kind==='W'?st.winner:st.runner;
     }
     return koSlotLabel(slot);
   };
