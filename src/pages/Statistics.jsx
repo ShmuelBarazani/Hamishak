@@ -38,6 +38,37 @@ const WC_STAGE_BY_DAY = (() => {
   return m;
 })();
 
+// 🏆 בראקט הנוק-אאוט (מונדיאל 2026) — כל השעות בשעון ישראל (הומר מבריטניה +2 / ET +7)
+// kind: W=מנצחת בית · R=סגנית בית · 3=שלישית (מתוך סט בתים) · win=מנצח/ת משחק
+const WC_KO_HE = {A:"א'",B:"ב'",C:"ג'",D:"ד'",E:"ה'",F:"ו'",G:"ז'",H:"ח'",I:"ט'",J:"י'",K:"יא'",L:"יב'"};
+const WC_KO_LATIN_TO_HE = {A:'א',B:'ב',C:'ג',D:'ד',E:'ה',F:'ו',G:'ז',H:'ח',I:'ט',J:'י',K:'יא',L:'יב'};
+const koSlotLabel = s => {
+  if(s.kind==='W')   return `מנצחת בית ${WC_KO_HE[s.g]}`;
+  if(s.kind==='R')   return `סגנית בית ${WC_KO_HE[s.g]}`;
+  if(s.kind==='3')   return `שלישית ${s.g}`;
+  if(s.kind==='win') return `מנצח/ת משחק ${s.m}`;
+  return s.label || '';
+};
+const WC_KNOCKOUT = [
+  // ── שלב 1/16 (Round of 32) ── מקור: Sky/FIFA, שעון ישראל
+  {m:73,stage:'שלב 1/16',key:'6-28',time:'22:00',h:{kind:'R',g:'A'},a:{kind:'R',g:'B'}},
+  {m:76,stage:'שלב 1/16',key:'6-29',time:'20:00',h:{kind:'W',g:'C'},a:{kind:'R',g:'F'}},
+  {m:74,stage:'שלב 1/16',key:'6-29',time:'23:30',h:{kind:'W',g:'E'},a:{kind:'3',g:'A/B/C/D/F'}},
+  {m:75,stage:'שלב 1/16',key:'6-30',time:'04:00',h:{kind:'W',g:'F'},a:{kind:'R',g:'C'}},
+  {m:78,stage:'שלב 1/16',key:'6-30',time:'20:00',h:{kind:'R',g:'E'},a:{kind:'R',g:'I'}},
+  {m:77,stage:'שלב 1/16',key:'7-1', time:'00:00',h:{kind:'W',g:'I'},a:{kind:'3',g:'C/D/F/G/H'}},
+  {m:79,stage:'שלב 1/16',key:'7-1', time:'04:00',h:{kind:'W',g:'A'},a:{kind:'3',g:'C/E/F/H/I'}},
+  {m:80,stage:'שלב 1/16',key:'7-1', time:'19:00',h:{kind:'W',g:'L'},a:{kind:'3',g:'E/H/I/J/K'}},
+  {m:82,stage:'שלב 1/16',key:'7-1', time:'23:00',h:{kind:'W',g:'G'},a:{kind:'3',g:'A/E/H/I/J'}},
+  {m:81,stage:'שלב 1/16',key:'7-2', time:'03:00',h:{kind:'W',g:'D'},a:{kind:'3',g:'B/E/F/I/J'}},
+  {m:84,stage:'שלב 1/16',key:'7-2', time:'22:00',h:{kind:'W',g:'H'},a:{kind:'R',g:'J'}},
+  {m:83,stage:'שלב 1/16',key:'7-3', time:'02:00',h:{kind:'R',g:'K'},a:{kind:'R',g:'L'}},
+  {m:85,stage:'שלב 1/16',key:'7-3', time:'06:00',h:{kind:'W',g:'B'},a:{kind:'3',g:'E/F/G/I/J'}},
+  {m:88,stage:'שלב 1/16',key:'7-3', time:'21:00',h:{kind:'R',g:'D'},a:{kind:'R',g:'G'}},
+  {m:86,stage:'שלב 1/16',key:'7-4', time:'01:00',h:{kind:'W',g:'J'},a:{kind:'R',g:'H'}},
+  {m:87,stage:'שלב 1/16',key:'7-4', time:'04:30',h:{kind:'W',g:'K'},a:{kind:'3',g:'D/E/I/J/L'}},
+];
+
 // 💼 קבוצות מקצוע — לפי סדר בדיקה (הראשון שתואם מנצח)
 const PROFESSION_GROUPS = [
   { name:'כספים וכלכלה 💰',     keywords:['רו"ח','רו״ח','רואה חשבון','רואי חשבון','כלכלן','קלקלן','כספים','חשב','בנק','שוק ההון','השקעות','ביטוח','גזבר','פנסיוני','פיננס','נדל"ן','נדל״ן'] },
@@ -1353,6 +1384,45 @@ export default function Statistics() {
     return map;
   },[allQuestions]);
 
+  // 🏆 דירוג כל בית מתוך התוצאות בפועל — לשיבוץ אוטומטי של מנצחת/סגנית בנוק-אאוט.
+  // משבץ רק כשכל משחקי הבית הסתיימו (אחרת נשארת התווית "מנצחת בית X").
+  const koGroupWinners = useMemo(()=>{
+    const byGroup={};
+    allQuestions.forEach(q=>{
+      if(!q.home_team||!q.away_team||!q.stage_name) return;
+      const mg=String(q.stage_name).match(/בית\s+(\S+)/);
+      if(!mg) return;
+      const he=mg[1].replace(/['׳’]/g,'');
+      (byGroup[he]=byGroup[he]||[]).push(q);
+    });
+    const parseRes=r=>{const m=String(r||'').match(/(\d+)\s*[-:]\s*(\d+)/);return m?{h:+m[1],a:+m[2]}:null;};
+    const out={};
+    Object.entries(byGroup).forEach(([he,qs])=>{
+      const tbl={}; let complete=true;
+      qs.forEach(q=>{
+        const H=cleanTeam(q.home_team), A=cleanTeam(q.away_team);
+        tbl[H]=tbl[H]||{team:H,pts:0,gf:0,ga:0};
+        tbl[A]=tbl[A]||{team:A,pts:0,gf:0,ga:0};
+        const r=parseRes(q.actual_result);
+        if(!r){complete=false;return;}
+        tbl[H].gf+=r.h;tbl[H].ga+=r.a;tbl[A].gf+=r.a;tbl[A].ga+=r.h;
+        if(r.h>r.a)tbl[H].pts+=3;else if(r.h<r.a)tbl[A].pts+=3;else{tbl[H].pts++;tbl[A].pts++;}
+      });
+      if(!complete) return;
+      const arr=Object.values(tbl).map(t=>({...t,gd:t.gf-t.ga})).sort((a,b)=>b.pts-a.pts||b.gd-a.gd||b.gf-a.gf);
+      if(arr.length>=2) out[he]={winner:arr[0].team,runner:arr[1].team};
+    });
+    return out;
+  },[allQuestions]);
+
+  const resolveKoSlot = slot => {
+    if(slot.kind==='W'||slot.kind==='R'){
+      const gw=koGroupWinners[WC_KO_LATIN_TO_HE[slot.g]];
+      if(gw) return slot.kind==='W'?gw.winner:gw.runner;
+    }
+    return koSlotLabel(slot);
+  };
+
   const participantsByQA = useMemo(()=>{
     const idx=new Map();
     allPredictions.forEach(p=>{
@@ -1842,12 +1912,13 @@ export default function Statistics() {
     const key=selectedSection.replace('day_','');
     const [mon,day]=key.split('-').map(Number);
     const matches=matchesByDay[key]||[];
+    const koMatches=isWC?WC_KNOCKOUT.filter(k=>k.key===key):[];
     const stageName=isWC?WC_STAGE_BY_DAY[key]:null;
     return (
       <Card style={{background:'rgba(30,41,59,0.6)',border:'1px solid rgba(6,182,212,0.25)'}}>
         <CardHeader>
           <CardTitle style={{color:'#22d3ee'}}>📅 {day}/{mon}/2026{stageName?` — ${stageName}`:' — משחקי היום'}</CardTitle>
-          <p style={{fontSize:'0.78rem',color:'#94a3b8',marginTop:4}}>{matches.length>0?`${matches.length} משחקים ביום זה`:'המשחקים והקבוצות ייקבעו בהמשך הטורניר'}</p>
+          <p style={{fontSize:'0.78rem',color:'#94a3b8',marginTop:4}}>{(matches.length+koMatches.length)>0?`${matches.length+koMatches.length} משחקים ביום זה`:'המשחקים והקבוצות ייקבעו בהמשך הטורניר'}</p>
         </CardHeader>
         <CardContent>
           <div style={{display:'flex',flexDirection:'column',gap:8}}>
@@ -1896,7 +1967,35 @@ export default function Statistics() {
                 </div>
               );
             })}
-            {matches.length===0&&(
+            {koMatches.map(k=>{
+              const homeName=resolveKoSlot(k.h), awayName=resolveKoSlot(k.a);
+              const homeT=teams[normalizeTeam(homeName)], awayT=teams[normalizeTeam(awayName)];
+              return (
+                <div key={'ko-'+k.m} style={{borderRadius:10,border:'1px dashed rgba(6,182,212,0.3)',background:'rgba(6,182,212,0.04)',padding:'10px 12px'}}>
+                  <div style={{display:'flex',alignItems:'center',gap:8}}>
+                    <span style={{flex:'0 0 auto',minWidth:60,display:'inline-flex',alignItems:'center',gap:3,color:'#67e8f9',fontSize:'0.72rem',fontWeight:600,whiteSpace:'nowrap'}}>
+                      {k.time&&<><span>🕐</span><span>{k.time}</span></>}
+                    </span>
+                    <div style={{flex:'1 1 auto',minWidth:0,display:'flex',alignItems:'center',justifyContent:'center',gap:8}}>
+                      <span style={{display:'flex',alignItems:'center',gap:6,fontSize:'0.88rem',color:'#e2e8f0',justifyContent:'flex-end',minWidth:0,flex:'1 1 0'}}>
+                        <span style={{minWidth:0,wordBreak:'break-word'}}>{homeName}</span>
+                        {homeT?.logo_url&&<img src={homeT.logo_url} alt="" style={{width:22,height:22,borderRadius:'50%',flexShrink:0}}/>}
+                      </span>
+                      <span style={{textAlign:'center',fontWeight:700,color:'#64748b',fontSize:'0.8rem',minWidth:36,flexShrink:0}}>vs</span>
+                      <span style={{display:'flex',alignItems:'center',gap:6,fontSize:'0.88rem',color:'#e2e8f0',justifyContent:'flex-start',minWidth:0,flex:'1 1 0'}}>
+                        {awayT?.logo_url&&<img src={awayT.logo_url} alt="" style={{width:22,height:22,borderRadius:'50%',flexShrink:0}}/>}
+                        <span style={{minWidth:0,wordBreak:'break-word'}}>{awayName}</span>
+                      </span>
+                    </div>
+                    <span style={{flex:'0 0 auto',minWidth:60}}/>
+                  </div>
+                  <div style={{display:'flex',gap:14,marginTop:8,paddingTop:8,borderTop:'1px solid rgba(255,255,255,0.05)',fontSize:'0.72rem',color:'#64748b',flexWrap:'wrap'}}>
+                    <span>{k.stage} • משחק {k.m} • ללא הימורים</span>
+                  </div>
+                </div>
+              );
+            })}
+            {matches.length===0&&koMatches.length===0&&(
               <div style={{textAlign:'center',padding:'30px 0'}}>
                 <span style={{fontSize:'2.2rem'}}>⚔️</span>
                 <p style={{color:'#7dd3fc',fontWeight:700,marginTop:8}}>{stageName||'אין משחקים ביום זה'}</p>
