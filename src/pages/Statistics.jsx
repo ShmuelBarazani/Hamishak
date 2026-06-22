@@ -1988,7 +1988,7 @@ export default function Statistics() {
           </aside>
 
           {/* ── Content ── */}
-          <div style={{flex:1,minWidth:0}}>
+          <div style={{flex:1,minWidth:0,alignSelf:'stretch'}}>
 
             {/* ── Mobile: תפריט מתקפל קומפקטי (חוסך מקום במסך) ── */}
             <div className="stats-mobile-menu" style={{marginBottom:'12px'}}>
