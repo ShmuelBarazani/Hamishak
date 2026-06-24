@@ -1294,8 +1294,11 @@ function DuelPeek({ me, opp, gameId, startClosedQids, onClose }) {
       setLoading(true);
       try {
         const qs = await db.Question.filter({ game_id: gameId }, null, 10000);
-        const pMe = await db.Prediction.filter({ participant_name: me, game_id: gameId }, null, 10000);
-        const pOpp = await db.Prediction.filter({ participant_name: opp, game_id: gameId }, null, 10000);
+        // 🔧 נירמול שם (רווחים סביב '+') — שם הבראקט עלול להכיל רווח-ליד-+ שאינו קיים
+        //    בטבלת הניחושים, מה שגרם למשיכה ריקה ולכל השאלות להופיע אפורות ללא ניקוד.
+        const normName = (n) => (n || '').replace(/\s*\+\s*/g, '+').replace(/\s+/g, ' ').trim();
+        const pMe = await db.Prediction.filter({ participant_name: normName(me), game_id: gameId }, null, 10000);
+        const pOpp = await db.Prediction.filter({ participant_name: normName(opp), game_id: gameId }, null, 10000);
         if (!alive) return;
         setQuestions(qs || []);
         const toMap = (arr) => {
