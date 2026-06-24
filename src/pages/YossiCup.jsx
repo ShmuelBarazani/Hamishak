@@ -1380,8 +1380,9 @@ function DuelPeek({ me, opp, gameId, startClosedQids, scoreMe, scoreOpp, onClose
   const scoredQuestions = questions
     .filter(q => {
       if (isClosed(q)) return true;
-      // שאלת זוג ריקה (סגנית/שלישי שטרם נקבעו) — תוצג אם אחד המשתתפים כבר זכאי לניקוד
-      if (isPairTable(q) && earnsScore(q)) return true;
+      // שאלת זוג (סגנית/מקום שלישי) — תוצג רק כשהניקוד שלה *סופי* (כל תוצאות הבית נקבעו).
+      //   כך שאלה ללא תוצאת אמת עם ניקוד זמני (למשל סגנית שטרם הוכרעה) לא תופיע.
+      if (isPairTable(q) && earnsScore(q) && isScoreFinal(q, questions)) return true;
       return false;
     })
     .sort((a, b) => (a.table_id || '').localeCompare(b.table_id || '') || (parseInt(a.question_id, 10) || 0) - (parseInt(b.question_id, 10) || 0));
