@@ -11,6 +11,9 @@ import { supabase } from '@/api/supabaseClient';
 import * as db from '@/api/entities';
 import { useToast } from "@/components/ui/use-toast";
 import { useGame } from "@/components/contexts/GameContext";
+
+// ⚡ Cache בזיכרון לשאלות — סטטיות, נמשכות בכל לחיצה על משתתף; משיכה אחת לכל סשן
+const _lbQuestionsCache = {};
 import { calculateTotalScore, calculateQuestionScore, isScoreFinal } from "@/components/scoring/ScoreService";
 
 // 🏆 טבלת הפרסים לפי מיקום (₪)
@@ -252,6 +255,7 @@ export default function LeaderboardNew() {
   };
 
   const loadQuestionsForGame = async (gameId) => {
+    if (_lbQuestionsCache[gameId]) return _lbQuestionsCache[gameId];
     let all = [], from = 0;
     const PAGE = 1000;
     while (true) {
@@ -264,7 +268,9 @@ export default function LeaderboardNew() {
       if (data.length < PAGE) break;
       from += PAGE;
     }
-    return all.filter(q => q.table_id && q.table_id !== 'T1');
+    const filtered = all.filter(q => q.table_id && q.table_id !== 'T1');
+    if (filtered.length > 0) _lbQuestionsCache[gameId] = filtered;
+    return filtered;
   };
 
   const loadPredictionsForGame = async (gameId, participantName, allQuestions) => {
