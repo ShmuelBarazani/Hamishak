@@ -857,12 +857,12 @@ export default function YossiCup() {
                     <div className="rounded overflow-hidden" style={{ background: mine ? 'rgba(56,189,248,0.12)' : m.byeRow ? 'rgba(52,211,153,0.06)' : 'rgba(15,23,42,0.85)', border: `1px solid ${mine ? 'rgba(56,189,248,0.6)' : m.live ? 'rgba(6,182,212,0.25)' : m.byeRow ? 'rgba(52,211,153,0.25)' : m.future ? 'rgba(100,116,139,0.1)' : 'rgba(100,116,139,0.18)'}` }}>
                       {gno != null && <div className="text-[8px] text-slate-500 text-center" style={{ background: 'rgba(100,116,139,0.1)' }}>משחק {gno}</div>}
                       <Cell name={m.a} seed={m.seedA} score={m.sa} scoreClass={scoreClr(m, 'a')} crown={m.won === 'a'} dim={m.won === 'b'} bye={m.aBye} me={meA} from={m.aFrom}
-                        onName={(m.a && m.b) ? () => onPeek({ me: m.a, opp: m.b, closedQids: col.closedQids || [] }) : undefined} />
+                        onName={(m.a && m.b) ? () => onPeek({ me: m.a, opp: m.b, closedQids: col.closedQids || [], scoreMe: m.sa, scoreOpp: m.sb }) : undefined} />
                       <div className="h-px" style={{ background: 'rgba(100,116,139,0.12)' }} />
                       {m.byeRow
                         ? <div className="px-1.5 py-1 text-[9px] text-green-400">⏭️ עולה אוטומטית</div>
                         : <Cell name={m.b} seed={m.seedB} score={m.sb} scoreClass={scoreClr(m, 'b')} crown={m.won === 'b'} dim={m.won === 'a'} bye={m.bBye} me={meB} from={m.bFrom}
-                            onName={(m.a && m.b) ? () => onPeek({ me: m.b, opp: m.a, closedQids: col.closedQids || [] }) : undefined} />}
+                            onName={(m.a && m.b) ? () => onPeek({ me: m.b, opp: m.a, closedQids: col.closedQids || [], scoreMe: m.sb, scoreOpp: m.sa }) : undefined} />}
                     </div>
                     {champ && <div className="text-[10px] text-amber-300 font-bold text-center py-0.5 mt-0.5 rounded" style={{ background: 'rgba(251,191,36,0.12)' }}>🏆 {champ}</div>}
                   </div>
@@ -884,6 +884,8 @@ export default function YossiCup() {
           opp={peekPair.opp}
           gameId={currentGame?.id}
           startClosedQids={peekPair?.closedQids || []}
+          scoreMe={peekPair?.scoreMe}
+          scoreOpp={peekPair?.scoreOpp}
           onClose={() => setPeekPair(null)}
         />
       )}
@@ -1321,7 +1323,7 @@ function ParticipantSearchSelect({ participants, selected, onSelect }) {
 // ── מסך צף: ניחושי שני משתתפים בדו-קרב, אחד מול השני, לשאלות הסיבוב הנוכחי ──
 //   "שאלות הסיבוב" = שאלות שנסגרו (יש actual_result) אך לא היו ב-snapshot של תחילת הסיבוב.
 //   הניקוד לכל שאלה מחושב ע"י calculateQuestionScore — אותה לוגיקה כמו בשאר המסכים.
-function DuelPeek({ me, opp, gameId, startClosedQids, onClose }) {
+function DuelPeek({ me, opp, gameId, startClosedQids, scoreMe, scoreOpp, onClose }) {
   const [loading, setLoading] = useState(true);
   const [questions, setQuestions] = useState([]);
   const [predsMe, setPredsMe] = useState({});   // question_id(text) → text_prediction
@@ -1408,6 +1410,9 @@ function DuelPeek({ me, opp, gameId, startClosedQids, onClose }) {
     if (typeof a === 'number') sumMe += a;
     if (typeof b === 'number') sumOpp += b;
   });
+  // הניקוד הסמכותי = ניקוד-הסיבוב מהמסך הראשי (sa/sb). אם לא הועבר — נפילה לסכום המחושב.
+  const displayMe = (scoreMe != null) ? scoreMe : sumMe;
+  const displayOpp = (scoreOpp != null) ? scoreOpp : sumOpp;
 
   return createPortal(
     <div onClick={onClose} dir="rtl" style={{ position: 'fixed', inset: 0, zIndex: 100000, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '12px' }}>
@@ -1424,11 +1429,11 @@ function DuelPeek({ me, opp, gameId, startClosedQids, onClose }) {
         <div style={{ display: 'flex', borderBottom: '1px solid rgba(100,116,139,0.2)' }}>
           <div style={{ flex: 1, textAlign: 'center', padding: '10px', borderLeft: '1px solid rgba(100,116,139,0.2)' }}>
             <div style={{ color: '#22d3ee', fontWeight: 700, fontSize: '0.85rem' }}>{me}</div>
-            <div style={{ color: '#e2e8f0', fontSize: '1.1rem', fontWeight: 800 }}>{sumMe}</div>
+            <div style={{ color: '#e2e8f0', fontSize: '1.1rem', fontWeight: 800 }}>{displayMe}</div>
           </div>
           <div style={{ flex: 1, textAlign: 'center', padding: '10px' }}>
             <div style={{ color: '#fbbf24', fontWeight: 700, fontSize: '0.85rem' }}>{opp}</div>
-            <div style={{ color: '#e2e8f0', fontSize: '1.1rem', fontWeight: 800 }}>{sumOpp}</div>
+            <div style={{ color: '#e2e8f0', fontSize: '1.1rem', fontWeight: 800 }}>{displayOpp}</div>
           </div>
         </div>
 
