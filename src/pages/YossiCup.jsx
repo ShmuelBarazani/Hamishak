@@ -1377,13 +1377,15 @@ function DuelPeek({ me, opp, gameId, startClosedQids, scoreMe, scoreOpp, onClose
   };
 
   // כל השאלות שיש בהן ניקוד (סגורות, או שאלות-זוג שכבר מזכות)
+  // כלל אחיד: מוצגת כל שאלה שנספרת במסך הראשי — כלומר יש לה תוצאת אמת (סגורה),
+  //   או שהמערכת נתנה עליה ניקוד חיובי בפועל לאחד המשתתפים (ניקוד חלקי לגיטימי,
+  //   כמו "מקום 3" שכבר נקבע). מקור אחד לאמת — בדיוק כמו ספירת המסך הראשי.
   const scoredQuestions = questions
     .filter(q => {
       if (isClosed(q)) return true;
-      // שאלת זוג (סגנית/מקום שלישי) — תוצג רק כשהניקוד שלה *סופי* (כל תוצאות הבית נקבעו).
-      //   כך שאלה ללא תוצאת אמת עם ניקוד זמני (למשל סגנית שטרם הוכרעה) לא תופיע.
-      if (isPairTable(q) && earnsScore(q) && isScoreFinal(q, questions)) return true;
-      return false;
+      const a = scoreOf(q, predsMe[String(q.id)]);
+      const b = scoreOf(q, predsOpp[String(q.id)]);
+      return (typeof a === 'number' && a > 0) || (typeof b === 'number' && b > 0);
     })
     .sort((a, b) => (a.table_id || '').localeCompare(b.table_id || '') || (parseInt(a.question_id, 10) || 0) - (parseInt(b.question_id, 10) || 0));
   // שאלות הסיבוב הנוכחי = אלה שנסגרו מאז נקודת הייחוס (לא היו בצילום ההתחלה)
