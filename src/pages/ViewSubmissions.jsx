@@ -19,6 +19,28 @@ import { useGame } from "@/components/contexts/GameContext";
 // 🌍 מונדיאל 2026 — לוגיקת תצוגה ייעודית
 const WC_GAME_ID = '30032806-6216-496f-ac32-fb628e181742';
 
+// ⚡ משיכת כל ניחושי המשחק — רק 4 העמודות הנחוצות (במקום select('*')), עם Cache בזיכרון.
+//    המשחק סגור והנתונים קפואים, לכן מספיק למשוך פעם אחת לכל סשן.
+const _vsPredsCache = {};
+async function loadAllPredsVS(gameId) {
+  if (_vsPredsCache[gameId]) return _vsPredsCache[gameId];
+  let all = [], from = 0; const PAGE = 1000;
+  while (true) {
+    const { data, error } = await supabase
+      .from('predictions')
+      .select('participant_name,question_id,text_prediction,created_at')
+      .eq('game_id', gameId)
+      .order('id', { ascending: true })
+      .range(from, from + PAGE - 1);
+    if (error || !data || data.length === 0) break;
+    all = all.concat(data);
+    if (data.length < PAGE) break;
+    from += PAGE;
+  }
+  if (all.length > 0) _vsPredsCache[gameId] = all;
+  return all;
+}
+
 function ParticipantTotalScore({ participantName, gameId }) {
   const [totalScore, setTotalScore] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -463,7 +485,7 @@ export default function ViewSubmissions() {
   const loadParticipantStats = async () => {
     if (!currentGame) return;
     try {
-      const allPredictions = await Prediction.filter({ game_id: currentGame.id }, null, 10000);
+      const allPredictions = await loadAllPredsVS(currentGame.id);
       const stats = {};
       allPredictions.forEach(pred => {
         if (!stats[pred.participant_name]) stats[pred.participant_name] = 0;
@@ -544,13 +566,7 @@ export default function ViewSubmissions() {
     setLoadingMissing(true);
     setShowMissingReport(true);
     try {
-      let allPredictions = [], skip = 0;
-      while (true) {
-        const batch = await Prediction.filter({ game_id: currentGame.id }, null, 10000, skip);
-        allPredictions = [...allPredictions, ...batch];
-        if (batch.length < 10000) break;
-        skip += 10000;
-      }
+      const allPredictions = await loadAllPredsVS(currentGame.id);
       const predictionsByParticipant = {};
       allPredictions.forEach(pred => {
         if (!predictionsByParticipant[pred.participant_name]) predictionsByParticipant[pred.participant_name] = {};
@@ -602,13 +618,7 @@ export default function ViewSubmissions() {
     if (!currentGame) return;
     setExporting(true);
     try {
-      let allPredictions = [], skip = 0;
-      while (true) {
-        const batch = await Prediction.filter({ game_id: currentGame.id }, null, 10000, skip);
-        allPredictions = [...allPredictions, ...batch];
-        if (batch.length < 10000) break;
-        skip += 10000;
-      }
+      const allPredictions = await loadAllPredsVS(currentGame.id);
       const questionsMap = {};
       data.questions.forEach(q => { questionsMap[q.id] = q; });
       const participants = [...new Set(allPredictions.map(p => p.participant_name))].sort();
