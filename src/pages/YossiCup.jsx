@@ -394,8 +394,7 @@ export default function YossiCup() {
   const myMatchInfo = (() => {
     const q = (myName || '').trim();
     if (!q) return null;
-    const norm = (s) => (s || '').trim();
-    const isMe = (name) => norm(name) === q;
+    const isMe = (name) => normName(name) === normName(q);
 
     if (!cupData) {
       // לפני קיבוע — מחפשים ב-livePairs (כולל בּיי). במקדים global = match_no.
@@ -406,13 +405,13 @@ export default function YossiCup() {
       }
       return null;
     }
-    // אחרי קיבוע — מחפשים בזוגות הסיבוב הנוכחי (מספר גלובלי)
+    // אחרי קיבוע — מחפשים בזוגות הסיבוב הנוכחי (מספר גלובלי) → השחקן עדיין חי ומשחק
     for (const pair of (cupData.pairs || [])) {
       const gno = pair.global_no || pair.match_no;
       if (isMe(nameOf(pair.a))) return { match_no: gno, opponent: nameOf(pair.b), side: 'a' };
       if (isMe(nameOf(pair.b))) return { match_no: gno, opponent: nameOf(pair.a), side: 'b' };
     }
-    // בּיי בסיבוב מקדים
+    // בּיי בסיבוב מקדים פעיל
     if (cupData.is_prelim && cupData.current_round === 1) {
       const order = bracketOrder(CUP_SIZE);
       for (const seed of (cupData.bye_seeds || [])) {
@@ -420,6 +419,20 @@ export default function YossiCup() {
           const posIdx = order.indexOf(seed);
           return { match_no: posIdx >= 0 ? posIdx + 1 : null, isBye: true };
         }
+      }
+    }
+    // 🆕 השחקן קיים בבראקט אך לא בזוגות הנוכחיים → אלוף, או הודח. מאתרים מתי ומול מי.
+    const meSeedObj = (cupData.seeds || []).find(s => isMe(s.participant_name));
+    if (meSeedObj) {
+      const mySeed = meSeedObj.seed;
+      if (cupData.champion === mySeed) return { isChampion: true };
+      const aliveSet = new Set(cupData.alive || []);
+      if (!aliveSet.has(mySeed)) {
+        for (const h of (cupData.history || [])) {
+          const rec = (h.results || []).find(r => r.loser === mySeed);
+          if (rec) return { eliminated: true, eliminatedRound: roundLabel(h.round_size, !!h.is_prelim), lostTo: nameOf(rec.winner) };
+        }
+        return { eliminated: true };
       }
     }
     return null;
@@ -937,7 +950,16 @@ export default function YossiCup() {
         {myName.trim() && (
           <div className="mt-2 text-sm">
             {myMatchInfo ? (
-              myMatchInfo.isBye ? (
+              myMatchInfo.isChampion ? (
+                <p className="text-amber-300">
+                  🏆 <b>{myName.trim()}</b> — אלוף הגביע!
+                </p>
+              ) : myMatchInfo.eliminated ? (
+                <p className="text-red-300">
+                  ❌ <b>{myName.trim()}</b> — הודח{myMatchInfo.eliminatedRound ? ` ב${myMatchInfo.eliminatedRound}` : ''}
+                  {myMatchInfo.lostTo && <> · הפסיד ל-<b className="text-amber-300">{myMatchInfo.lostTo}</b></>}
+                </p>
+              ) : myMatchInfo.isBye ? (
                 <p className="text-green-300">
                   ⏭️ <b>{myName.trim()}</b> — עולה אוטומטית לסיבוב 2 (בּיי){myMatchInfo.match_no ? ` · משחק מס' ${myMatchInfo.match_no}` : ''}
                 </p>
@@ -947,7 +969,7 @@ export default function YossiCup() {
                 </p>
               )
             ) : (
-              <p className="text-slate-400">לא נמצא משתתף בשם זה בסיבוב הנוכחי.</p>
+              <p className="text-slate-400">לא נמצא משתתף בשם זה בבראקט.</p>
             )}
             {/* כפתור הצגת יריבים פוטנציאליים בחלון צף */}
             <button onClick={() => setShowPotential(true)}
@@ -1348,16 +1370,21 @@ function DuelPeek({ me, opp, gameId, startClosedQids, onClose }) {
     return typeof a === 'number' || typeof b === 'number';
   };
 
-  const roundQuestions = questions
+  // כל השאלות שיש בהן ניקוד (סגורות, או שאלות-זוג שכבר מזכות)
+  const scoredQuestions = questions
     .filter(q => {
-      if (snapSet.has(q.id)) return false;
       if (isClosed(q)) return true;
       // שאלת זוג ריקה (סגנית/שלישי שטרם נקבעו) — תוצג אם אחד המשתתפים כבר זכאי לניקוד
-      //   (הניקוד נובע מתוצאות אחרות שכבר נקבעו בבית — למשל מקסיקו עלתה כראש).
       if (isPairTable(q) && earnsScore(q)) return true;
       return false;
     })
     .sort((a, b) => (a.table_id || '').localeCompare(b.table_id || '') || (parseInt(a.question_id, 10) || 0) - (parseInt(b.question_id, 10) || 0));
+  // שאלות הסיבוב הנוכחי = אלה שנסגרו מאז נקודת הייחוס (לא היו בצילום ההתחלה)
+  const roundOnly = scoredQuestions.filter(q => !snapSet.has(q.id));
+  // אם בסיבוב הנוכחי טרם נסגרו שאלות (תחילת סיבוב / צפייה בדו-קרב מוקדם) —
+  //   מציגים את ההשוואה המצטברת המלאה, כדי שהחלון לעולם לא יהיה ריק כשיש מה להשוות.
+  const showingCumulative = roundOnly.length === 0 && scoredQuestions.length > 0;
+  const roundQuestions = showingCumulative ? scoredQuestions : roundOnly;
 
   // צבע badge לפי ניקוד: ירוק=מלא | צהוב=חלקי | אדום=0 סופי | אפור=0 לא-סופי/טרם
   const badgeFor = (score, maxNum, isFinal) => {
@@ -1408,10 +1435,15 @@ function DuelPeek({ me, opp, gameId, startClosedQids, onClose }) {
           </div>
         ) : roundQuestions.length === 0 ? (
           <div style={{ padding: '24px', textAlign: 'center', color: '#94a3b8', fontSize: '0.85rem' }}>
-            עדיין לא נסגרו שאלות בסיבוב זה (מאז שנקבעה נקודת הייחוס).
+            אין עדיין שאלות מנוקדות להשוואה בין שני המשתתפים.
           </div>
         ) : (
           <div style={{ padding: '8px' }}>
+            {showingCumulative && (
+              <div style={{ marginBottom: '8px', padding: '7px 10px', textAlign: 'center', color: '#fbbf24', fontSize: '0.74rem', background: 'rgba(251,191,36,0.08)', borderRadius: '8px', border: '1px solid rgba(251,191,36,0.2)' }}>
+                ℹ️ בסיבוב הנוכחי טרם נסגרו שאלות — מוצגת ההשוואה המצטברת המלאה.
+              </div>
+            )}
             {roundQuestions.map((q) => {
               const predMe = predsMe[String(q.id)];
               const predOpp = predsOpp[String(q.id)];
