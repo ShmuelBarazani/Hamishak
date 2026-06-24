@@ -113,9 +113,9 @@ export default function YossiCup() {
   useEffect(() => { loadRankings(); }, [loadRankings]);
 
   const isAdmin = currentUser?.role === 'admin' || currentUser?.user_metadata?.role === 'admin';
-  // 🔧 נירמול שם להשוואה — מתקן אי-התאמת שמות (רווח כפול/רווחים בקצה) בין זריעת הגביע
-  //    לבין טבלת הדירוג, שגרמה למשתתפים להופיע עם 0 נקודות למרות שצברו ניקוד.
-  const normName = (n) => (n || '').replace(/\s+/g, ' ').trim();
+  // 🔧 נירמול שם להשוואה — מתקן אי-התאמת שמות בין זריעת הגביע לטבלת הדירוג, שגרמה
+  //    למשתתפים להופיע עם 0 נקודות. מסיר רווחים סביב '+' (שמות מאוחדים) ומכווץ רווחים.
+  const normName = (n) => (n || '').replace(/\s*\+\s*/g, '+').replace(/\s+/g, ' ').trim();
   const scoreByName = useMemo(() => {
     const m = {}; rankings.forEach(r => { m[normName(r.participant_name)] = r.current_score; }); return m;
   }, [rankings]);
