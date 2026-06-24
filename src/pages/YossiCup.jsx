@@ -613,12 +613,25 @@ export default function YossiCup() {
 
       if (decided) {
         // שלב שהוכרע — מההיסטוריה
+        const matches = decided.results.map(r => ({
+          a: nameOf(r.a), b: nameOf(r.b), seedA: r.a, seedB: r.b, match_no: r.match_no, global_no: r.global_no,
+          sa: r.sa, sb: r.sb, won: r.winner === r.a ? 'a' : 'b',
+        }));
+        // 🆕 בשלב מקדים שהוכרע: מוסיפים את העולים האוטומטיים (בּיי) כשורות במקומם בעץ.
+        //    בלעדיהם חסרות 14 עמדות בעמודה, ופריסת העץ של הסיבוב הבא מתעוותת (תיבות
+        //    מתיישרות זו-לצד-זו במקום במבנה עץ, והעולים האוטומטיים "נעלמים").
+        if (decided.is_prelim) {
+          const ordP = bracketOrder(CUP_SIZE);
+          (decided.bye_seeds || []).forEach(seed => {
+            const posIdx = ordP.indexOf(seed);
+            const mn = posIdx >= 0 ? posIdx + 1 : 9999;
+            matches.push({ a: nameOf(seed), b: null, seedA: seed, seedB: null, aBye: true, match_no: mn, global_no: mn, byeRow: true });
+          });
+          matches.sort((x, y) => (x.global_no || x.match_no || 0) - (y.global_no || y.match_no || 0));
+        }
         return {
           label: roundLabel(st.size, st.isPrelim), size: st.size, isPrelim: st.isPrelim,
-          matches: decided.results.map(r => ({
-            a: nameOf(r.a), b: nameOf(r.b), seedA: r.a, seedB: r.b, match_no: r.match_no, global_no: r.global_no,
-            sa: r.sa, sb: r.sb, won: r.winner === r.a ? 'a' : 'b',
-          })),
+          matches,
         };
       }
 
