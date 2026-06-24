@@ -113,8 +113,11 @@ export default function YossiCup() {
   useEffect(() => { loadRankings(); }, [loadRankings]);
 
   const isAdmin = currentUser?.role === 'admin' || currentUser?.user_metadata?.role === 'admin';
+  // 🔧 נירמול שם להשוואה — מתקן אי-התאמת שמות (רווח כפול/רווחים בקצה) בין זריעת הגביע
+  //    לבין טבלת הדירוג, שגרמה למשתתפים להופיע עם 0 נקודות למרות שצברו ניקוד.
+  const normName = (n) => (n || '').replace(/\s+/g, ' ').trim();
   const scoreByName = useMemo(() => {
-    const m = {}; rankings.forEach(r => { m[r.participant_name] = r.current_score; }); return m;
+    const m = {}; rankings.forEach(r => { m[normName(r.participant_name)] = r.current_score; }); return m;
   }, [rankings]);
 
   // ── תצוגה חיה (לפני קיבוע) — כל המשתתפים ──
@@ -131,7 +134,7 @@ export default function YossiCup() {
         .map((s) => ({
           seed: s.seed,
           participant_name: s.participant_name,
-          entry_score: scoreByName[s.participant_name] ?? 0,
+          entry_score: scoreByName[normName(s.participant_name)] ?? 0,
         }));
     }
     return rankings.map((r, i) => ({
@@ -196,12 +199,12 @@ export default function YossiCup() {
   const roundScoreOf = (seed) => {
     if (!cupData?.round_start_set) return null;
     const s = seedInfo(seed); if (!s) return null;
-    return (scoreByName[s.participant_name] ?? 0) - (cupData.round_start_scores[seed] ?? 0);
+    return (scoreByName[normName(s.participant_name)] ?? 0) - (cupData.round_start_scores[seed] ?? 0);
   };
   // ניקוד מתחילת סיבוב 1 (לכלל ב') = current − cup_start_score
   const cupTotalOf = (seed) => {
     const s = seedInfo(seed); if (!s) return 0;
-    return (scoreByName[s.participant_name] ?? 0) - (cupData.cup_start_scores?.[seed] ?? s.entry_score);
+    return (scoreByName[normName(s.participant_name)] ?? 0) - (cupData.cup_start_scores?.[seed] ?? s.entry_score);
   };
   // הפרש ניצחון בסיבוב היסטורי מסוים (לכללים ד-ה)
   const marginInRound = (seed, roundIdx) => {
@@ -277,7 +280,7 @@ export default function YossiCup() {
     setWorking(true);
     try {
       const starts = {};
-      cupData.seeds.forEach(s => { if (cupData.alive.includes(s.seed)) starts[s.seed] = scoreByName[s.participant_name] ?? 0; });
+      cupData.seeds.forEach(s => { if (cupData.alive.includes(s.seed)) starts[s.seed] = scoreByName[normName(s.participant_name)] ?? 0; });
       // 📸 snapshot: רשימת ה-question_id של כל השאלות שכבר היו סגורות (יש actual_result) ברגע זה.
       //    "שאלות הסיבוב" = שאלות שייסגרו מעכשיו והלאה (לא היו ב-snapshot).
       let closedNow = [];
@@ -398,16 +401,16 @@ export default function YossiCup() {
       // לפני קיבוע — מחפשים ב-livePairs (כולל בּיי). במקדים global = match_no.
       for (const p of livePairs) {
         if (p.is_bye && isMe(p.a.participant_name)) return { match_no: p.match_no, isBye: true };
-        if (!p.is_bye && isMe(p.a.participant_name)) return { match_no: p.match_no, opponent: p.b.participant_name, side: 'a', mySeed: p.a.seed, oppSeed: p.b?.seed };
-        if (!p.is_bye && isMe(p.b?.participant_name)) return { match_no: p.match_no, opponent: p.a.participant_name, side: 'b', mySeed: p.b.seed, oppSeed: p.a.seed };
+        if (!p.is_bye && isMe(p.a.participant_name)) return { match_no: p.match_no, opponent: p.b.participant_name, side: 'a' };
+        if (!p.is_bye && isMe(p.b?.participant_name)) return { match_no: p.match_no, opponent: p.a.participant_name, side: 'b' };
       }
       return null;
     }
     // אחרי קיבוע — מחפשים בזוגות הסיבוב הנוכחי (מספר גלובלי)
     for (const pair of (cupData.pairs || [])) {
       const gno = pair.global_no || pair.match_no;
-      if (isMe(nameOf(pair.a))) return { match_no: gno, opponent: nameOf(pair.b), side: 'a', mySeed: pair.a, oppSeed: pair.b };
-      if (isMe(nameOf(pair.b))) return { match_no: gno, opponent: nameOf(pair.a), side: 'b', mySeed: pair.b, oppSeed: pair.a };
+      if (isMe(nameOf(pair.a))) return { match_no: gno, opponent: nameOf(pair.b), side: 'a' };
+      if (isMe(nameOf(pair.b))) return { match_no: gno, opponent: nameOf(pair.a), side: 'b' };
     }
     // בּיי בסיבוב מקדים
     if (cupData.is_prelim && cupData.current_round === 1) {
@@ -420,51 +423,6 @@ export default function YossiCup() {
       }
     }
     return null;
-  })();
-
-  // ── מסלול הגביע המלא של המשתתף: כל השלבים שעבר + תוצאות + המצב הנוכחי ──
-  //   מחזיר { rows: [...], status } או null. כל row: { label, type, opponent, mySeed,
-  //   oppSeed, myScore, oppScore, won, rule, matchNo, decided }.
-  const myCupPath = (() => {
-    const q = (myName || '').trim();
-    if (!q || !cupData) return null;
-    const norm = (s) => (s || '').trim();
-    const meEntry = (cupData.seeds || liveSeeds || []).find(s => norm(s.participant_name) === q);
-    const mySeed = meEntry?.seed;
-    if (mySeed == null) return null;
-
-    const rows = [];
-    // 1) שלבים שהוכרעו (היסטוריה) — עד להפסד (אם הפסיד, המסלול נעצר שם)
-    for (const h of (cupData.history || [])) {
-      const label = roundLabel(h.round_size, h.is_prelim);
-      if ((h.bye_seeds || []).includes(mySeed)) { rows.push({ label, type: 'bye', decided: true }); continue; }
-      const r = (h.results || []).find(x => x.a === mySeed || x.b === mySeed);
-      if (!r) break; // לא השתתף בשלב הזה → כבר הודח
-      const iAmA = r.a === mySeed;
-      const oppSeed = iAmA ? r.b : r.a;
-      rows.push({
-        label, type: 'played', decided: true,
-        opponent: nameOf(oppSeed), mySeed, oppSeed,
-        myScore: iAmA ? r.sa : r.sb, oppScore: iAmA ? r.sb : r.sa,
-        won: r.winner === mySeed, rule: r.rule, matchNo: r.global_no || r.match_no,
-      });
-      if (r.winner !== mySeed) return { rows, status: 'eliminated' }; // הפסיד → סוף המסלול
-    }
-
-    // 2) המצב הנוכחי
-    if (cupData.champion === mySeed) { rows.push({ label: '🏆 אלוף הגביע', type: 'champion', decided: true }); return { rows, status: 'champion' }; }
-    if (myMatchInfo && myMatchInfo.isBye) {
-      rows.push({ label: roundLabel(cupData.round_size, cupData.is_prelim), type: 'bye', decided: false });
-    } else if (myMatchInfo && myMatchInfo.mySeed != null) {
-      rows.push({
-        label: roundLabel(cupData.round_size, cupData.is_prelim),
-        type: 'current', decided: false,
-        opponent: myMatchInfo.opponent, mySeed: myMatchInfo.mySeed, oppSeed: myMatchInfo.oppSeed,
-        myScore: roundScoreOf(myMatchInfo.mySeed), oppScore: roundScoreOf(myMatchInfo.oppSeed),
-        matchNo: myMatchInfo.match_no,
-      });
-    }
-    return { rows, status: 'alive' };
   })();
 
   // האם שם נתון הוא "אני" (להדגשה)
@@ -965,78 +923,15 @@ export default function YossiCup() {
         </div>
         {myName.trim() && (
           <div className="mt-2 text-sm">
-            {myCupPath && myCupPath.rows.length > 0 ? (
-              <div className="flex flex-col gap-1.5">
-                <p className="text-[12px] text-slate-400">🏁 מסלול הגביע של <b className="text-cyan-300">{myName.trim()}</b>:</p>
-                {myCupPath.rows.map((row, idx) => {
-                  // שלב בּיי
-                  if (row.type === 'bye') return (
-                    <div key={idx} className="rounded-lg px-2.5 py-1.5 text-green-300 text-[13px]"
-                      style={{ background: 'rgba(52,211,153,0.08)', border: '1px solid rgba(52,211,153,0.3)' }}>
-                      ⏭️ <b>{row.label}</b> · עולה אוטומטית (בּיי)
-                    </div>
-                  );
-                  // אלוף
-                  if (row.type === 'champion') return (
-                    <div key={idx} className="rounded-lg px-2.5 py-1.5 text-amber-300 font-bold text-[13px]"
-                      style={{ background: 'rgba(251,191,36,0.12)', border: '1px solid rgba(251,191,36,0.5)' }}>
-                      🏆 אלוף הגביע!
-                    </div>
-                  );
-                  // שלב ששוחק (היסטורי או נוכחי)
-                  const live = !row.decided;
-                  const hasScore = row.myScore != null && row.oppScore != null;
-                  const lead = hasScore ? (row.myScore > row.oppScore ? 'lead' : row.myScore < row.oppScore ? 'behind' : 'tie') : null;
-                  const borderC = live ? 'rgba(6,182,212,0.5)' : (row.won ? 'rgba(52,211,153,0.4)' : 'rgba(248,113,113,0.4)');
-                  const bgC     = live ? 'rgba(6,182,212,0.1)' : (row.won ? 'rgba(52,211,153,0.07)' : 'rgba(248,113,113,0.07)');
-                  return (
-                    <button key={idx} type="button"
-                      onClick={() => row.opponent && setPeekPair({ me: myName.trim(), opp: row.opponent })}
-                      title="לחץ לפירוט הניקוד של הדו-קרב"
-                      className="text-right w-full rounded-lg px-2.5 py-2 transition-colors hover:brightness-125"
-                      style={{ background: bgC, border: `1px solid ${borderC}`, cursor: 'pointer' }}>
-                      <span className="block text-cyan-200">
-                        <b className="text-cyan-300">{row.label}</b>
-                        {row.matchNo ? <span className="text-slate-400"> · משחק מס' {row.matchNo}</span> : null}
-                        {live && <span className="font-bold" style={{ color: '#38bdf8' }}> · המשחק הנוכחי</span>}
-                      </span>
-                      <span className="block text-[13px] mt-0.5">
-                        מול <b className="text-amber-300">{row.opponent}</b>
-                        {hasScore && (
-                          <span> · <b className="text-cyan-300">{row.myScore}</b><span className="text-slate-400"> : </span><b className="text-amber-300">{row.oppScore}</b></span>
-                        )}
-                        {row.decided
-                          ? (row.won
-                              ? <span className="font-bold" style={{ color: '#34d399' }}> · ✅ ניצחת{row.rule ? ` (כלל ${row.rule})` : ''}</span>
-                              : <span className="font-bold" style={{ color: '#f87171' }}> · ❌ הפסדת</span>)
-                          : (hasScore
-                              ? (lead === 'lead'   ? <span className="font-bold" style={{ color: '#34d399' }}> · 🟢 מוביל</span>
-                               : lead === 'behind' ? <span className="font-bold" style={{ color: '#f87171' }}> · 🔴 מאחור</span>
-                               :                     <span className="font-bold" style={{ color: '#fbbf24' }}> · ⚖️ שוויון</span>)
-                              : <span className="text-slate-400"> · טרם נקבע ניקוד לסיבוב</span>)}
-                      </span>
-                      {row.opponent && <span className="block text-[11px] font-bold mt-0.5" style={{ color: '#38bdf8' }}>👁 לחץ לפירוט הניקוד של הדו-קרב</span>}
-                    </button>
-                  );
-                })}
-                {myCupPath.status === 'eliminated' && (
-                  <p className="text-[12px] text-red-300">המסלול הסתיים — המשתתף הודח מהגביע.</p>
-                )}
-              </div>
-            ) : myMatchInfo ? (
+            {myMatchInfo ? (
               myMatchInfo.isBye ? (
                 <p className="text-green-300">
-                  ⏭️ <b>{myName.trim()}</b> — עולה אוטומטית (בּיי){myMatchInfo.match_no ? ` · משחק מס' ${myMatchInfo.match_no}` : ''}
+                  ⏭️ <b>{myName.trim()}</b> — עולה אוטומטית לסיבוב 2 (בּיי){myMatchInfo.match_no ? ` · משחק מס' ${myMatchInfo.match_no}` : ''}
                 </p>
               ) : (
-                <button type="button"
-                  onClick={() => myMatchInfo.opponent && setPeekPair({ me: myName.trim(), opp: myMatchInfo.opponent })}
-                  title="לחץ לפירוט הניקוד של הדו-קרב"
-                  className="text-cyan-200 text-right w-full rounded-lg px-2.5 py-2 transition-colors hover:bg-cyan-500/10"
-                  style={{ background: 'rgba(6,182,212,0.08)', border: '1px solid rgba(6,182,212,0.3)', cursor: 'pointer' }}>
+                <p className="text-cyan-200">
                   🎯 משחק מס' <b className="text-cyan-300">{myMatchInfo.match_no}</b> · היריב שלך: <b className="text-amber-300">{myMatchInfo.opponent}</b>
-                  <span className="block text-[11px] font-bold mt-1" style={{ color: '#38bdf8' }}>👁 לחץ לפירוט הניקוד של הדו-קרב</span>
-                </button>
+                </p>
               )
             ) : (
               <p className="text-slate-400">לא נמצא משתתף בשם זה בסיבוב הנוכחי.</p>
