@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
   BarChart3, Users, Target, Loader2, PieChart, TrendingUp,
-  Award, AlertTriangle, Trophy, Brain, Zap, Star, ThumbsUp, ThumbsDown, Copy
+  Award, AlertTriangle, Trophy, Brain, Zap, Star, ThumbsUp, ThumbsDown
 } from "lucide-react";
 import {
   PieChart as RechartsPieChart, Pie, Cell, ResponsiveContainer,
@@ -13,7 +13,6 @@ import {
 import { supabase } from '@/api/supabaseClient';
 import * as db from '@/api/entities';
 import { useGame } from "@/components/contexts/GameContext";
-import { useToast } from "@/components/ui/use-toast";
 
 const COLORS = ['#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6','#ec4899','#14b8a6','#f97316','#06b6d4','#84cc16'];
 
@@ -30,64 +29,12 @@ const WC_STAGE_BY_DAY = (() => {
   add(6, 28, 30, 'שלב 1/16');
   add(7, 1, 3,  'שלב 1/16');
   add(7, 4, 7,  'שמינית הגמר');
-  add(7, 9, 12, 'רבע הגמר');
+  add(7, 9, 11, 'רבע הגמר');
   add(7, 14, 15,'חצי הגמר');
   add(7, 18, 18,'משחק על המקום השלישי');
   add(7, 19, 19,'הגמר 🏆');
   return m;
 })();
-
-// 🏆 בראקט הנוק-אאוט (מונדיאל 2026) — כל השעות בשעון ישראל (הומר מבריטניה +2 / ET +7)
-// kind: W=מנצחת בית · R=סגנית בית · 3=שלישית (מתוך סט בתים) · win=מנצח/ת משחק
-const WC_KO_HE = {A:"א'",B:"ב'",C:"ג'",D:"ד'",E:"ה'",F:"ו'",G:"ז'",H:"ח'",I:"ט'",J:"י'",K:"יא'",L:"יב'"};
-const WC_KO_LATIN_TO_HE = {A:'א',B:'ב',C:'ג',D:'ד',E:'ה',F:'ו',G:'ז',H:'ח',I:'ט',J:'י',K:'יא',L:'יב'};
-const koSlotLabel = s => {
-  if(s.kind==='W')   return `מנצחת בית ${WC_KO_HE[s.g]}`;
-  if(s.kind==='R')   return `סגנית בית ${WC_KO_HE[s.g]}`;
-  if(s.kind==='3')   return `שלישית ${s.g}`;
-  if(s.kind==='win') return `מנצח/ת משחק ${s.m}`;
-  if(s.kind==='lose')return `מפסיד/ה משחק ${s.m}`;
-  return s.label || '';
-};
-const WC_KNOCKOUT = [
-  // ── שלב 1/16 (Round of 32) ── מקור: Sky/FIFA, שעון ישראל
-  {m:73,stage:'שלב 1/16',key:'6-28',time:'22:00',h:{kind:'R',g:'A'},a:{kind:'R',g:'B'}},
-  {m:76,stage:'שלב 1/16',key:'6-29',time:'20:00',h:{kind:'W',g:'C'},a:{kind:'R',g:'F'}},
-  {m:74,stage:'שלב 1/16',key:'6-29',time:'23:30',h:{kind:'W',g:'E'},a:{kind:'3',g:'A/B/C/D/F'}},
-  {m:75,stage:'שלב 1/16',key:'6-30',time:'04:00',h:{kind:'W',g:'F'},a:{kind:'R',g:'C'}},
-  {m:78,stage:'שלב 1/16',key:'6-30',time:'20:00',h:{kind:'R',g:'E'},a:{kind:'R',g:'I'}},
-  {m:77,stage:'שלב 1/16',key:'7-1', time:'00:00',h:{kind:'W',g:'I'},a:{kind:'3',g:'C/D/F/G/H'}},
-  {m:79,stage:'שלב 1/16',key:'7-1', time:'04:00',h:{kind:'W',g:'A'},a:{kind:'3',g:'C/E/F/H/I'}},
-  {m:80,stage:'שלב 1/16',key:'7-1', time:'19:00',h:{kind:'W',g:'L'},a:{kind:'3',g:'E/H/I/J/K'}},
-  {m:82,stage:'שלב 1/16',key:'7-1', time:'23:00',h:{kind:'W',g:'G'},a:{kind:'3',g:'A/E/H/I/J'}},
-  {m:81,stage:'שלב 1/16',key:'7-2', time:'03:00',h:{kind:'W',g:'D'},a:{kind:'3',g:'B/E/F/I/J'}},
-  {m:84,stage:'שלב 1/16',key:'7-2', time:'22:00',h:{kind:'W',g:'H'},a:{kind:'R',g:'J'}},
-  {m:83,stage:'שלב 1/16',key:'7-3', time:'02:00',h:{kind:'R',g:'K'},a:{kind:'R',g:'L'}},
-  {m:85,stage:'שלב 1/16',key:'7-3', time:'06:00',h:{kind:'W',g:'B'},a:{kind:'3',g:'E/F/G/I/J'}},
-  {m:88,stage:'שלב 1/16',key:'7-3', time:'21:00',h:{kind:'R',g:'D'},a:{kind:'R',g:'G'}},
-  {m:86,stage:'שלב 1/16',key:'7-4', time:'01:00',h:{kind:'W',g:'J'},a:{kind:'R',g:'H'}},
-  {m:87,stage:'שלב 1/16',key:'7-4', time:'04:30',h:{kind:'W',g:'K'},a:{kind:'3',g:'D/E/I/J/L'}},
-  // ── שמינית הגמר (Round of 16) — 4–7/7 ── feeders לפי בראקט FIFA
-  {m:89,stage:'שמינית הגמר',key:'7-4', time:'20:00',h:{kind:'win',m:74},a:{kind:'win',m:77}},
-  {m:90,stage:'שמינית הגמר',key:'7-5', time:'00:00',h:{kind:'win',m:73},a:{kind:'win',m:75}},
-  {m:91,stage:'שמינית הגמר',key:'7-5', time:'23:00',h:{kind:'win',m:76},a:{kind:'win',m:78}},
-  {m:92,stage:'שמינית הגמר',key:'7-6', time:'03:00',h:{kind:'win',m:79},a:{kind:'win',m:80}},
-  {m:93,stage:'שמינית הגמר',key:'7-6', time:'22:00',h:{kind:'win',m:83},a:{kind:'win',m:84}},
-  {m:94,stage:'שמינית הגמר',key:'7-7', time:'00:00',h:{kind:'win',m:81},a:{kind:'win',m:82}},
-  {m:95,stage:'שמינית הגמר',key:'7-7', time:'19:00',h:{kind:'win',m:86},a:{kind:'win',m:88}},
-  {m:96,stage:'שמינית הגמר',key:'7-7', time:'23:00',h:{kind:'win',m:85},a:{kind:'win',m:87}},
-  // ── רבע הגמר — 9–12/7 ──
-  {m:97, stage:'רבע הגמר',key:'7-9', time:'23:00',h:{kind:'win',m:89},a:{kind:'win',m:90}},
-  {m:98, stage:'רבע הגמר',key:'7-10',time:'22:00',h:{kind:'win',m:93},a:{kind:'win',m:94}},
-  {m:99, stage:'רבע הגמר',key:'7-12',time:'00:00',h:{kind:'win',m:91},a:{kind:'win',m:92}},
-  {m:100,stage:'רבע הגמר',key:'7-12',time:'04:00',h:{kind:'win',m:95},a:{kind:'win',m:96}},
-  // ── חצי הגמר — 14–15/7 ──
-  {m:101,stage:'חצי הגמר',key:'7-14',time:'22:00',h:{kind:'win',m:97},a:{kind:'win',m:98}},
-  {m:102,stage:'חצי הגמר',key:'7-15',time:'22:00',h:{kind:'win',m:99},a:{kind:'win',m:100}},
-  // ── מקום שלישי + גמר — 19/7 (שעון ישראל) ──
-  {m:103,stage:'משחק על המקום השלישי',key:'7-19',time:'00:00',h:{kind:'lose',m:101},a:{kind:'lose',m:102}},
-  {m:104,stage:'הגמר 🏆',key:'7-19',time:'22:00',h:{kind:'win',m:101},a:{kind:'win',m:102}},
-];
 
 // 💼 קבוצות מקצוע — לפי סדר בדיקה (הראשון שתואם מנצח)
 const PROFESSION_GROUPS = [
@@ -120,9 +67,6 @@ const NC = new Map(), CC = new Map(), PC = new Map();
 const normalizeTeam = n => { if(!n) return n; if(NC.has(n)) return NC.get(n); const r=n.replace(/קרבאך/g,'קרבאח').replace(/קראבח/g,'קרבאח').replace(/קראבך/g,'קרבאח').trim(); NC.set(n,r); return r; };
 const cleanTeam    = n => { if(!n) return n; if(CC.has(n)) return CC.get(n); const r=n.replace(/\s*\([^)]+\)\s*$/,'').trim(); CC.set(n,r); return r; };
 const normPred     = s => s ? s.replace(/\s+/g,'').trim() : '';
-// 🆕 מסיר קידומת "בית " מתשובות בית (למשל "בית ב" → "ב") — ממזג כפילויות ומנקה את התווית.
-//    בטוח: תופס רק מחרוזת שמתחילה ב-"בית" + רווח, ולכן לא נוגע ב-"בית" (ניצחון בית) או בשמות נבחרות/תוצאות.
-const stripGroupPrefix = a => String(a == null ? '' : a).replace(/^בית\s+/, '').trim();
 const parseQId     = id => { if(!id) return 0; if(PC.has(id)) return PC.get(id); const r=parseFloat(id.replace(/[^\d.]/g,''))||0; PC.set(id,r); return r; };
 const pct          = (n,d) => d>0 ? ((n/d)*100).toFixed(1) : '0.0';
 const extractCountry = name => { const m=name?.match(/\(([^)]+)\)$/); return m?m[1]:null; };
@@ -138,7 +82,7 @@ const parseMatchDate = txt => {
   // חילוץ שעה — תומך ב-HH:MM או HH.MM, עם מפריד אופציונלי (-, –, רווח)
   let time='';
   const tm = s.match(/(\d{1,2})[:\.](\d{2})/);
-  if(tm){ const h=+tm[1], mm=tm[2]; if(h>=0&&h<=23) time=`${String(h).padStart(2,'0')}:${mm}`; }
+  if(tm){ const h=+tm[1], mm=tm[2]; if(h>=0&&h<=23) time=`${h}:${mm}`; }
   return { day, mon, time, key:`${mon}-${day}` };
 };
 
@@ -152,7 +96,10 @@ const alternateSlice = data => {
 
 // ⚡ טעינה מקבילית — count ואז כל הצ'אנקים בבת אחת (פי ~20 מהיר יותר)
 const PRED_COLS = 'id,question_id,participant_name,text_prediction,home_prediction,away_prediction,created_at';
+// ⚡ Cache בזיכרון — המשחק סגור והנתונים קפואים; משיכה אחת לכל סשן במקום בכל כניסה למסך
+const _statsPredsCache = {};
 const loadAllPreds = async gameId => {
+  if (_statsPredsCache[gameId]) return _statsPredsCache[gameId];
   try {
     const { count, error: cErr } = await supabase.from('predictions')
       .select('id', { count: 'exact', head: true }).eq('game_id', gameId);
@@ -173,11 +120,12 @@ const loadAllPreds = async gameId => {
       if (r.error) throw r.error;
       if (r.data?.length) all = all.concat(r.data);
     }
-    if (all.length > 0) return all;
+    if (all.length > 0) { _statsPredsCache[gameId] = all; return all; }
   } catch (e) { console.warn('parallel predictions fetch failed, falling back:', e.message); }
   // fallback סדרתי
   let allFb=[],off=0;const seen=new Set();let mx=80;
   while(mx-->0){const b=await db.Prediction.filter({game_id:gameId},null,1000,off);if(!b?.length)break;const n=b.filter(p=>!seen.has(p.id));if(!n.length)break;n.forEach(p=>seen.add(p.id));allFb=allFb.concat(n);if(b.length<1000)break;off+=1000;}
+  if (allFb.length > 0) _statsPredsCache[gameId] = allFb;
   return allFb;
 };
 
@@ -956,7 +904,7 @@ function InsightCard({ insight }) {
           <BarChart data={insight.chartData} layout="vertical" margin={{top:4,right:50,left:0,bottom:4}}>
             <CartesianGrid strokeDasharray="3 3" stroke="#334155" horizontal={false}/>
             <XAxis type="number" stroke="#94a3b8" tick={{fontSize:10,fill:'#94a3b8'}}/>
-            <YAxis type="category" dataKey="name" width={130} interval={0} stroke="#334155" tick={{fontSize:11,fill:'#f8fafc'}}/>
+            <YAxis type="category" dataKey="name" width={130} stroke="#334155" tick={{fontSize:11,fill:'#f8fafc'}}/>
             <Tooltip content={({payload})=>payload?.[0]?<div style={{background:'#0a0f1a',border:`1px solid ${insight.color}`,borderRadius:6,padding:'8px 12px'}}><p style={{color:insight.color,fontWeight:700}}>{payload[0].payload.name}</p><p style={{color:'#f8fafc'}}>{payload[0].value}</p></div>:null}/>
             <Bar dataKey="value" radius={[0,6,6,0]} label={{position:'right',fill:'#94a3b8',fontSize:10,formatter:v=>v}}>
               {insight.chartData.map((_,i)=><Cell key={i} fill={COLORS[i%COLORS.length]}/>)}
@@ -972,7 +920,7 @@ function InsightCard({ insight }) {
         <ResponsiveContainer width="100%" height={180}>
           <BarChart data={insight.chartData} margin={{top:10,right:20,left:0,bottom:10}}>
             <CartesianGrid strokeDasharray="3 3" stroke="#334155"/>
-            <XAxis dataKey="name" stroke="#94a3b8" interval={0} tick={{fontSize:11,fill:'#94a3b8'}}/>
+            <XAxis dataKey="name" stroke="#94a3b8" tick={{fontSize:11,fill:'#94a3b8'}}/>
             <YAxis stroke="#94a3b8" tick={{fontSize:10,fill:'#94a3b8'}}/>
             <Tooltip content={({payload})=>payload?.[0]?<div style={{background:'#0a0f1a',border:`1px solid ${insight.color}`,borderRadius:6,padding:'8px 12px'}}><p style={{color:insight.color,fontWeight:700}}>{payload[0].payload.name}</p><p style={{color:'#f8fafc'}}>{payload[0].value}</p></div>:null}/>
             <Bar dataKey="value" radius={[6,6,0,0]}>
@@ -1058,7 +1006,7 @@ function TeamListBarChart({ chartData, participantsMap, panelKey, accent, locked
             <BarChart data={chartData} layout="vertical" margin={{ top: 10, right: 56, left: 0, bottom: 10 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#334155" horizontal={false} />
               <XAxis type="number" stroke="#94a3b8" tick={{ fontSize: 10, fill: '#94a3b8' }} />
-              <YAxis type="category" dataKey="team" width={compact ? 130 : 190} interval={0} stroke="#334155" tick={{ fontSize: compact ? 11 : 12, fill: '#f8fafc', fontFamily: 'Rubik,Heebo,sans-serif' }} />
+              <YAxis type="category" dataKey="team" width={compact ? 130 : 190} stroke="#334155" tick={{ fontSize: compact ? 11 : 12, fill: '#f8fafc', fontFamily: 'Rubik,Heebo,sans-serif' }} />
               <Tooltip
                 cursor={{ fill: `${accent}14` }}
                 content={({ payload }) => payload?.[0] ? (
@@ -1255,42 +1203,6 @@ export default function Statistics() {
   const [mobileMenuOpen,   setMobileMenuOpen  ] = useState(false); // 🆕 תפריט נייד מתקפל
 
   const { currentGame } = useGame();
-  const { toast } = useToast();
-
-  // 📋 העתקת תמונה מושלמת של כרטיס גרף ללוח (עם נפילה רכה להורדה אם הדפדפן לא תומך)
-  // html2canvas נטען מ-CDN בזמן ריצה — אין צורך בהתקנת npm ואין סיכון לשבירת ה-build.
-  const loadHtml2Canvas = () => new Promise((resolve, reject) => {
-    if (window.html2canvas) return resolve(window.html2canvas);
-    const s = document.createElement('script');
-    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
-    s.onload = () => resolve(window.html2canvas);
-    s.onerror = () => reject(new Error('html2canvas load failed'));
-    document.head.appendChild(s);
-  });
-  const copyChartImage = async (cardEl, title = 'גרף') => {
-    if (!cardEl) return;
-    try {
-      const html2canvas = await loadHtml2Canvas();
-      const canvas = await html2canvas(cardEl, { backgroundColor: '#0f172a', scale: 2, useCORS: true, logging: false });
-      canvas.toBlob(async (blob) => {
-        if (!blob) { toast({ title: 'שגיאה ביצירת התמונה', variant: 'destructive', duration: 2000 }); return; }
-        try {
-          await navigator.clipboard.write([new window.ClipboardItem({ 'image/png': blob })]);
-          toast({ title: '📋 הגרף הועתק ללוח', description: 'אפשר להדביק בכל מקום', className: 'bg-green-900/30 border-green-500 text-green-200', duration: 2000 });
-        } catch {
-          // העתקה ללוח לא נתמכת בדפדפן זה → הורדה כקובץ תמונה
-          const a = document.createElement('a');
-          a.href = URL.createObjectURL(blob);
-          a.download = `${title}.png`.replace(/[\\/:*?"<>|]/g, '_');
-          a.click();
-          setTimeout(() => URL.revokeObjectURL(a.href), 4000);
-          toast({ title: '⬇️ הגרף הורד כתמונה', description: 'העתקה ישירה ללוח אינה נתמכת בדפדפן זה', duration: 2500 });
-        }
-      }, 'image/png');
-    } catch (e) {
-      toast({ title: 'שגיאה בהעתקת הגרף', variant: 'destructive', duration: 2000 });
-    }
-  };
   const isKnockout = !!(currentGame?.name?.includes('נוק-אאוט')||currentGame?.name?.includes('knock')||currentGame?.id==='9c9c1331-5184-406b-98b3-6becd9577567');
   // 🌍 דגל מונדיאל
   const isWC = currentGame?.id === WC_GAME_ID;
@@ -1414,54 +1326,6 @@ export default function Statistics() {
     return map;
   },[allQuestions]);
 
-  // 🏆 דירוג כל בית מתוך התוצאות בפועל — לשיבוץ אוטומטי של מנצחת/סגנית בנוק-אאוט.
-  // משבץ רק כשכל משחקי הבית הסתיימו (אחרת נשארת התווית "מנצחת בית X").
-  // 🏆 מקור השיבוץ לבראקט: טבלת "מובילי הבית" (T16) — qid אי-זוגי=ראש בית, זוגי=סגנית,
-  //    groupIdx=ceil(qid/2). זמין מיד כשמזינים את העולה (גם לפני שכל הבית שוחק).
-  //    גיבוי: חישוב דירוג מתוצאות משחקי הבית (אם T16 ריק אך הבית הסתיים).
-  const koGroupWinners = useMemo(()=>{
-    const byIdx={}; // 1-12 → {winner,runner} מתוך T16
-    allQuestions.forEach(q=>{
-      if(q.table_id!=='T16') return;
-      const qid=parseInt(q.question_id,10);
-      if(!Number.isInteger(qid)) return;
-      const res=q.actual_result;
-      if(!res||!String(res).trim()||res==='__CLEAR__') return;
-      const team=cleanTeam(String(res).trim());
-      if(!team||team.toLowerCase()==='null') return;
-      const idx=Math.ceil(qid/2);
-      byIdx[idx]=byIdx[idx]||{};
-      if(qid%2===1) byIdx[idx].winner=team; else byIdx[idx].runner=team;
-    });
-    // גיבוי — דירוג בית מתוצאות המשחקים (לפי אות הבית בעברית)
-    const byHe={}, grp={};
-    allQuestions.forEach(q=>{
-      if(!q.home_team||!q.away_team||!q.stage_name) return;
-      const mg=String(q.stage_name).match(/בית\s+(\S+)/); if(!mg) return;
-      const he=mg[1].replace(/['׳’]/g,''); (grp[he]=grp[he]||[]).push(q);
-    });
-    const pr=r=>{const m=String(r||'').match(/(\d+)\s*[-:]\s*(\d+)/);return m?{h:+m[1],a:+m[2]}:null;};
-    Object.entries(grp).forEach(([he,qs])=>{
-      const tbl={};let complete=true;
-      qs.forEach(q=>{const H=cleanTeam(q.home_team),A=cleanTeam(q.away_team);tbl[H]=tbl[H]||{team:H,pts:0,gf:0,ga:0};tbl[A]=tbl[A]||{team:A,pts:0,gf:0,ga:0};const r=pr(q.actual_result);if(!r){complete=false;return;}tbl[H].gf+=r.h;tbl[H].ga+=r.a;tbl[A].gf+=r.a;tbl[A].ga+=r.h;if(r.h>r.a)tbl[H].pts+=3;else if(r.h<r.a)tbl[A].pts+=3;else{tbl[H].pts++;tbl[A].pts++;}});
-      if(!complete)return;
-      const arr=Object.values(tbl).map(t=>({...t,gd:t.gf-t.ga})).sort((a,b)=>b.pts-a.pts||b.gd-a.gd||b.gf-a.gf);
-      if(arr.length>=2) byHe[he]={winner:arr[0].team,runner:arr[1].team};
-    });
-    return {byIdx,byHe};
-  },[allQuestions]);
-
-  const resolveKoSlot = slot => {
-    if(slot.kind==='W'||slot.kind==='R'){
-      const idx=slot.g.charCodeAt(0)-64;            // A=1 … L=12
-      const t16=koGroupWinners.byIdx[idx];
-      if(t16){ const t=slot.kind==='W'?t16.winner:t16.runner; if(t) return t; }
-      const st=koGroupWinners.byHe[WC_KO_LATIN_TO_HE[slot.g]];
-      if(st) return slot.kind==='W'?st.winner:st.runner;
-    }
-    return koSlotLabel(slot);
-  };
-
   const participantsByQA = useMemo(()=>{
     const idx=new Map();
     allPredictions.forEach(p=>{
@@ -1570,10 +1434,9 @@ export default function Statistics() {
           rawPreds.forEach(p=>{const ex=latestByPart[p.participant_name];if(!ex||new Date(p.created_at)>new Date(ex.created_at))latestByPart[p.participant_name]=p;});
           const preds=Object.values(latestByPart);
           const counts=preds.reduce((acc,p)=>{
-            let r=(!p.text_prediction?.trim()&&p.home_prediction!=null&&p.away_prediction!=null)
+            const r=(!p.text_prediction?.trim()&&p.home_prediction!=null&&p.away_prediction!=null)
               ?`${p.home_prediction}-${p.away_prediction}`
               :(p.text_prediction||'לא ניחש');
-            r=stripGroupPrefix(r)||'לא ניחש';
             acc[r]=(acc[r]||0)+1;return acc;
           },{});
           const total=preds.length;
@@ -1720,8 +1583,6 @@ export default function Statistics() {
                   ?`${pred.home_prediction}-${pred.away_prediction}`
                   :String(pred.text_prediction||'').trim();
                 if(!answer||answer==='__CLEAR__'||answer.toLowerCase()==='null'||answer.toLowerCase()==='undefined') return acc;
-                answer=stripGroupPrefix(answer);
-                if(!answer) return acc;
                 const isYN=['כן','לא','yes','no'].includes(answer), isNum=!isNaN(Number(answer));
                 if(!isYN&&!isNum&&(q.validation_list?.toLowerCase().includes('קבוצ')||q.validation_list?.toLowerCase().includes('נבחר'))) answer=cleanTeam(answer);
                 if(!answer.trim()) return acc;
@@ -1880,19 +1741,17 @@ export default function Statistics() {
             const key=`${M.m+1}-${d}`;
             const has=!!matchesByDay[key];
             const stage=isWC?WC_STAGE_BY_DAY[key]:null;
-            const hasKo=isWC&&WC_KNOCKOUT.some(k=>k.key===key);
-            const stageLike=!!stage||hasKo;
-            const clickable=has||stageLike;
+            const clickable=has||!!stage;
             const isToday=todayD.getFullYear()===M.y&&todayD.getMonth()===M.m&&todayD.getDate()===d;
             const sel=selectedSection===`day_${key}`;
             return (
               <span key={d}
                 onClick={clickable?()=>{toggleSection(`day_${key}`);if(afterSelect)afterSelect();}:undefined}
-                title={stage||(hasKo?'משחקי נוק-אאוט':'')}
+                title={stage||''}
                 style={{fontSize:'0.72rem',textAlign:'center',padding:'5px 0',borderRadius:6,
-                  color:sel?'#fff':has?'#cbd5e1':stageLike?'#7dd3fc':'#334155',
-                  background:sel?'#0891b2':has?'rgba(6,182,212,0.10)':stageLike?'rgba(59,130,246,0.08)':'transparent',
-                  border:sel?'1px solid #22d3ee':isToday?'1px solid #f59e0b':has?'1px solid rgba(6,182,212,0.22)':stageLike?'1px solid rgba(59,130,246,0.18)':'1px solid transparent',
+                  color:sel?'#fff':has?'#cbd5e1':stage?'#7dd3fc':'#334155',
+                  background:sel?'#0891b2':has?'rgba(6,182,212,0.10)':stage?'rgba(59,130,246,0.08)':'transparent',
+                  border:sel?'1px solid #22d3ee':isToday?'1px solid #f59e0b':has?'1px solid rgba(6,182,212,0.22)':stage?'1px solid rgba(59,130,246,0.18)':'1px solid transparent',
                   fontWeight:sel?700:isToday?700:400,
                   cursor:clickable?'pointer':'default',
                   boxShadow:sel?'0 0 8px rgba(6,182,212,0.5)':'none'}}>
@@ -1953,13 +1812,12 @@ export default function Statistics() {
     const key=selectedSection.replace('day_','');
     const [mon,day]=key.split('-').map(Number);
     const matches=matchesByDay[key]||[];
-    const koMatches=isWC?WC_KNOCKOUT.filter(k=>k.key===key):[];
     const stageName=isWC?WC_STAGE_BY_DAY[key]:null;
     return (
       <Card style={{background:'rgba(30,41,59,0.6)',border:'1px solid rgba(6,182,212,0.25)'}}>
         <CardHeader>
           <CardTitle style={{color:'#22d3ee'}}>📅 {day}/{mon}/2026{stageName?` — ${stageName}`:' — משחקי היום'}</CardTitle>
-          <p style={{fontSize:'0.78rem',color:'#94a3b8',marginTop:4}}>{(matches.length+koMatches.length)>0?`${matches.length+koMatches.length} משחקים ביום זה`:'המשחקים והקבוצות ייקבעו בהמשך הטורניר'}</p>
+          <p style={{fontSize:'0.78rem',color:'#94a3b8',marginTop:4}}>{matches.length>0?`${matches.length} משחקים ביום זה`:'המשחקים והקבוצות ייקבעו בהמשך הטורניר'}</p>
         </CardHeader>
         <CardContent>
           <div style={{display:'flex',flexDirection:'column',gap:8}}>
@@ -1968,30 +1826,27 @@ export default function Statistics() {
               const homeT=teams[normalizeTeam(q.home_team)], awayT=teams[normalizeTeam(q.away_team)];
               return (
                 <div key={q.id} style={{position:'relative',borderRadius:10,border:'1px solid rgba(6,182,212,0.15)',background:'rgba(0,0,0,0.25)',padding:'10px 12px'}}>
-                  <div style={{display:'flex',alignItems:'center',gap:8}}>
-                    {/* שעת המשחק (שעון ישראל) — עמודה קבועה בקצה ההתחלה, לא נחפפת ע"י שמות */}
-                    <span style={{flex:'0 0 auto',minWidth:60,display:'inline-flex',alignItems:'center',gap:3,color:'#67e8f9',fontSize:'0.72rem',fontWeight:600,whiteSpace:'nowrap'}}>
-                      {time&&<><span>🕐</span><span>{time}</span></>}
+                  <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:10}}>
+                    {/* שעת המשחק (שעון ישראל) — בקצה */}
+                    {time&&(
+                      <span style={{position:'absolute',insetInlineStart:22,display:'inline-flex',alignItems:'center',gap:4,color:'#67e8f9',fontSize:'0.72rem',fontWeight:600,background:'rgba(6,182,212,0.1)',border:'1px solid rgba(6,182,212,0.25)',borderRadius:6,padding:'2px 7px'}}>
+                        🕐 {time}
+                      </span>
+                    )}
+                    {/* קבוצת בית (מימין ב-RTL) — צמודה למרכז */}
+                    <span style={{display:'flex',alignItems:'center',gap:6,fontSize:'0.9rem',color:'#f8fafc',justifyContent:'flex-end',minWidth:0,flex:'0 1 auto'}}>
+                      {cleanTeam(q.home_team)}
+                      {homeT?.logo_url&&<img src={homeT.logo_url} alt="" style={{width:22,height:22,borderRadius:'50%',flexShrink:0}}/>}
                     </span>
-                    {/* המשחק — ממורכז בשטח שנותר */}
-                    <div style={{flex:'1 1 auto',minWidth:0,display:'flex',alignItems:'center',justifyContent:'center',gap:8}}>
-                      {/* קבוצת בית (מימין ב-RTL) */}
-                      <span style={{display:'flex',alignItems:'center',gap:6,fontSize:'0.9rem',color:'#f8fafc',justifyContent:'flex-end',minWidth:0,flex:'1 1 0'}}>
-                        <span style={{minWidth:0,wordBreak:'break-word'}}>{cleanTeam(q.home_team)}</span>
-                        {homeT?.logo_url&&<img src={homeT.logo_url} alt="" style={{width:22,height:22,borderRadius:'50%',flexShrink:0}}/>}
-                      </span>
-                      {/* תוצאה — במרכז */}
-                      <span style={{textAlign:'center',fontWeight:700,color:st.hasActual?'#fde68a':'#64748b',fontSize:'0.95rem',minWidth:52,flexShrink:0}}>
-                        {st.hasActual?formatResult(q.actual_result):'? - ?'}
-                      </span>
-                      {/* קבוצת חוץ (משמאל ב-RTL) */}
-                      <span style={{display:'flex',alignItems:'center',gap:6,fontSize:'0.9rem',color:'#f8fafc',justifyContent:'flex-start',minWidth:0,flex:'1 1 0'}}>
-                        {awayT?.logo_url&&<img src={awayT.logo_url} alt="" style={{width:22,height:22,borderRadius:'50%',flexShrink:0}}/>}
-                        <span style={{minWidth:0,wordBreak:'break-word'}}>{cleanTeam(q.away_team)}</span>
-                      </span>
-                    </div>
-                    {/* מרווח מאזן בקצה — שומר על מרכוז המשחק */}
-                    <span style={{flex:'0 0 auto',minWidth:60}}/>
+                    {/* תוצאה — במרכז */}
+                    <span style={{textAlign:'center',fontWeight:700,color:st.hasActual?'#fde68a':'#64748b',fontSize:'0.95rem',minWidth:56,flexShrink:0}}>
+                      {st.hasActual?formatResult(q.actual_result):'? - ?'}
+                    </span>
+                    {/* קבוצת חוץ (משמאל ב-RTL) — צמודה למרכז */}
+                    <span style={{display:'flex',alignItems:'center',gap:6,fontSize:'0.9rem',color:'#f8fafc',justifyContent:'flex-start',minWidth:0,flex:'0 1 auto'}}>
+                      {awayT?.logo_url&&<img src={awayT.logo_url} alt="" style={{width:22,height:22,borderRadius:'50%',flexShrink:0}}/>}
+                      {cleanTeam(q.away_team)}
+                    </span>
                   </div>
                   <div style={{display:'flex',gap:14,marginTop:8,paddingTop:8,borderTop:'1px solid rgba(255,255,255,0.05)',fontSize:'0.74rem',color:'#94a3b8',flexWrap:'wrap'}}>
                     <span>{q.stage_name} • {st.total} ניחושים</span>
@@ -2008,35 +1863,7 @@ export default function Statistics() {
                 </div>
               );
             })}
-            {koMatches.map(k=>{
-              const homeName=resolveKoSlot(k.h), awayName=resolveKoSlot(k.a);
-              const homeT=teams[normalizeTeam(homeName)], awayT=teams[normalizeTeam(awayName)];
-              return (
-                <div key={'ko-'+k.m} style={{borderRadius:10,border:'1px dashed rgba(6,182,212,0.3)',background:'rgba(6,182,212,0.04)',padding:'10px 12px'}}>
-                  <div style={{display:'flex',alignItems:'center',gap:8}}>
-                    <span style={{flex:'0 0 auto',minWidth:60,display:'inline-flex',alignItems:'center',gap:3,color:'#67e8f9',fontSize:'0.72rem',fontWeight:600,whiteSpace:'nowrap'}}>
-                      {k.time&&<><span>🕐</span><span>{k.time}</span></>}
-                    </span>
-                    <div style={{flex:'1 1 auto',minWidth:0,display:'flex',alignItems:'center',justifyContent:'center',gap:8}}>
-                      <span style={{display:'flex',alignItems:'center',gap:6,fontSize:'0.88rem',color:'#e2e8f0',justifyContent:'flex-end',minWidth:0,flex:'1 1 0'}}>
-                        <span style={{minWidth:0,wordBreak:'break-word'}}>{homeName}</span>
-                        {homeT?.logo_url&&<img src={homeT.logo_url} alt="" style={{width:22,height:22,borderRadius:'50%',flexShrink:0}}/>}
-                      </span>
-                      <span style={{textAlign:'center',fontWeight:700,color:'#64748b',fontSize:'0.8rem',minWidth:36,flexShrink:0}}>vs</span>
-                      <span style={{display:'flex',alignItems:'center',gap:6,fontSize:'0.88rem',color:'#e2e8f0',justifyContent:'flex-start',minWidth:0,flex:'1 1 0'}}>
-                        {awayT?.logo_url&&<img src={awayT.logo_url} alt="" style={{width:22,height:22,borderRadius:'50%',flexShrink:0}}/>}
-                        <span style={{minWidth:0,wordBreak:'break-word'}}>{awayName}</span>
-                      </span>
-                    </div>
-                    <span style={{flex:'0 0 auto',minWidth:60}}/>
-                  </div>
-                  <div style={{display:'flex',gap:14,marginTop:8,paddingTop:8,borderTop:'1px solid rgba(255,255,255,0.05)',fontSize:'0.72rem',color:'#64748b',flexWrap:'wrap'}}>
-                    <span>{k.stage} • משחק {k.m} • ללא הימורים</span>
-                  </div>
-                </div>
-              );
-            })}
-            {matches.length===0&&koMatches.length===0&&(
+            {matches.length===0&&(
               <div style={{textAlign:'center',padding:'30px 0'}}>
                 <span style={{fontSize:'2.2rem'}}>⚔️</span>
                 <p style={{color:'#7dd3fc',fontWeight:700,marginTop:8}}>{stageName||'אין משחקים ביום זה'}</p>
@@ -2128,7 +1955,7 @@ export default function Statistics() {
           </aside>
 
           {/* ── Content ── */}
-          <div style={{flex:1,minWidth:0,alignSelf:'stretch'}}>
+          <div style={{flex:1,minWidth:0}}>
 
             {/* ── Mobile: תפריט מתקפל קומפקטי (חוסך מקום במסך) ── */}
             <div className="stats-mobile-menu" style={{marginBottom:'12px'}}>
@@ -2285,7 +2112,7 @@ export default function Statistics() {
                       ))}
                     </div>
 
-                    <div className={`grid grid-cols-1 ${isDaySection?'':'md:grid-cols-2'} gap-6`}>
+                    <div className="grid md:grid-cols-2 gap-6">
                       {gameStatsArr.sort((a,b)=>parseQId(a.question.question_id)-parseQId(b.question.question_id)).map(game=>{
                         const q=game.question;
                         const homeT=teams[normalizeTeam(q.home_team)],awayT=teams[normalizeTeam(q.away_team)];
@@ -2470,30 +2297,14 @@ export default function Statistics() {
                         {ts.questions.filter(qs=>qs.question.question_id!=='11.1').sort((a,b)=>parseFloat(a.question.question_id)-parseFloat(b.question.question_id)).map(qStat=>{
                           const q=qStat.question;
                           const usePie=qStat.chartData.length<=4&&qStat.chartData.length>0;
-                          // 🆕 שאלות עם תוויות ארוכות (שמות נבחרות/שחקנים) או הרבה תשובות → עמודות אופקיות:
-                          //    כל שם מוצג במלואו בשורה משלו, במקום תוויות דחוסות ובלתי-קריאות על ציר ה-X.
-                          const longLabel=qStat.chartData.some(d=>isNaN(Number(String(d.answer).trim()))&&String(d.answer).trim().length>5);
-                          const useHorizontal=!usePie&&(qStat.chartData.length>7||longLabel);
-                          // בגרף אופקי ממיינים יורד (הפופולרי למעלה); באנכי משאירים את סדר ה-alternateSlice
-                          const chartRows=useHorizontal?[...qStat.chartData].sort((a,b)=>b.count-a.count):qStat.chartData;
-                          const chartH=useHorizontal?Math.max(240,qStat.chartData.length*26):240;
                           const hasActual=q.actual_result?.trim()&&q.actual_result!=='__CLEAR__';
                           const panelKey=`special_${q.id}`;
                           return(
-                            <Card key={q.id} data-chart-card className="bg-slate-800/40 border-slate-700 flex flex-col">
+                            <Card key={q.id} className="bg-slate-800/40 border-slate-700 flex flex-col">
                               <CardHeader className="pb-3">
                                 <div className="flex items-center justify-between mb-2">
                                   <Badge variant="outline" style={{borderColor:'rgba(6,182,212,0.5)',color:'#06b6d4',minWidth:'50px'}} className="justify-center">{q.question_id}</Badge>
-                                  <div className="flex items-center gap-1.5">
-                                    <button type="button" title="העתק תמונה של הגרף"
-                                      onClick={e=>copyChartImage(e.currentTarget.closest('[data-chart-card]'),`גרף_${q.question_id}`)}
-                                      data-html2canvas-ignore="true"
-                                      className="flex items-center justify-center w-7 h-7 rounded-md transition-colors hover:bg-cyan-500/20"
-                                      style={{border:'1px solid rgba(6,182,212,0.4)',color:'#06b6d4'}}>
-                                      <Copy size={14}/>
-                                    </button>
-                                    <Badge className="bg-gradient-to-r from-green-600 to-emerald-600 text-white text-xs">{qStat.totalAnswers} תשובות</Badge>
-                                  </div>
+                                  <Badge className="bg-gradient-to-r from-green-600 to-emerald-600 text-white text-xs">{qStat.totalAnswers} תשובות</Badge>
                                 </div>
                                 <p className="text-sm text-slate-200 leading-tight min-h-[36px]">{q.question_text}</p>
                                 <p style={{color:'#64748b',fontSize:'0.68rem',marginTop:2}}>לחץ על קטע לנעילת רשימה</p>
@@ -2507,7 +2318,7 @@ export default function Statistics() {
                                         <span style={{fontSize:'0.82rem',color:'#f8fafc',fontWeight:600}}>{formatResult(myPredByQid[q.id])}</span>
                                       </div>
                                     )}
-                                    <div style={{height:chartH+'px',display:'flex',alignItems:useHorizontal?'stretch':'flex-end',direction:useHorizontal?'ltr':'rtl'}}>
+                                    <div style={{minHeight:'240px',maxHeight:'240px',display:'flex',alignItems:'flex-end'}}>
                                       <ResponsiveContainer width="100%" height="100%">
                                         {usePie?(
                                           <RechartsPieChart>
@@ -2518,27 +2329,15 @@ export default function Statistics() {
                                             </Pie>
                                             <Tooltip cursor={false} content={({payload})=>payload?.[0]?<div style={{background:'#0a0f1a',border:'1px solid #06b6d4',borderRadius:6,padding:'8px 10px',pointerEvents:'none'}}><p style={{color:'#06b6d4',fontWeight:700,fontSize:'0.82rem'}}>{payload[0].payload.answer}</p><p style={{color:'#f8fafc',fontSize:'0.78rem'}}>{payload[0].value} ({payload[0].payload.percentage}%)</p><p style={{color:'#64748b',fontSize:'0.7rem',marginTop:2}}>לחץ לנעילה</p></div>:null}/>
                                           </RechartsPieChart>
-                                        ):useHorizontal?(
-                                          <BarChart data={chartRows} layout="vertical" margin={{top:4,right:46,left:4,bottom:4}}
-                                            onClick={data=>{if(data?.activePayload?.[0]){const e=data.activePayload[0].payload;lockPanel(panelKey,{title:e.answer,count:e.count,percentage:e.percentage,participants:getParticipants(q.id,e.answer),color:'#06b6d4'});}}}>
-                                            <CartesianGrid strokeDasharray="3 3" stroke="#334155" horizontal={false}/>
-                                            <XAxis type="number" stroke="#94a3b8" allowDecimals={false} tick={{fontSize:10,fill:'#94a3b8'}}/>
-                                            <YAxis type="category" dataKey="answer" width={145} interval={0} stroke="#334155" tick={{fontSize:10,fill:'#f8fafc',fontFamily:'Rubik,Heebo,sans-serif'}}/>
-                                            <Tooltip cursor={{fill:'rgba(6,182,212,0.08)'}} content={({payload})=>payload?.[0]?<div style={{background:'#0a0f1a',border:'1px solid #06b6d4',borderRadius:6,padding:'8px 10px',pointerEvents:'none'}}><p style={{color:'#06b6d4',fontWeight:700,fontSize:'0.82rem'}}>{payload[0].payload.answer}</p><p style={{color:'#f8fafc',fontSize:'0.78rem'}}>{payload[0].value} ({payload[0].payload.percentage}%)</p><p style={{color:'#64748b',fontSize:'0.7rem',marginTop:2}}>לחץ לנעילה</p></div>:null}/>
-                                            <Bar dataKey="count" radius={[0,5,5,0]} style={{cursor:'pointer'}}>
-                                              <LabelList dataKey="count" position="right" style={{fontSize:'9px',fill:'#94a3b8'}}/>
-                                              {chartRows.map((e,i)=><Cell key={i} fill={COLORS[i%COLORS.length]} stroke={hasActual&&e.answer===q.actual_result?'#fbbf24':'none'} strokeWidth={hasActual&&e.answer===q.actual_result?2:0}/>)}
-                                            </Bar>
-                                          </BarChart>
                                         ):(
-                                          <BarChart data={qStat.chartData} margin={{top:8,right:5,left:5,bottom:55}}
+                                          <BarChart data={qStat.chartData.slice(0,10)} margin={{top:8,right:5,left:5,bottom:55}}
                                             onClick={data=>{if(data?.activePayload?.[0]){const e=data.activePayload[0].payload;lockPanel(panelKey,{title:e.answer,count:e.count,percentage:e.percentage,participants:getParticipants(q.id,e.answer),color:'#06b6d4'});}}}>
                                             <CartesianGrid strokeDasharray="3 3" stroke="#334155"/>
                                             <XAxis dataKey="answer" stroke="#94a3b8" interval={0} height={55} tick={({x,y,payload})=>{const ws=String(payload.value).split(' ');const ls=[];let cur='';ws.forEach(w=>{const t=cur?`${cur} ${w}`:w;if(t.length<=8)cur=t;else{if(cur)ls.push(cur);cur=w;}});if(cur)ls.push(cur);return <g transform={`translate(${x},${y})`}>{ls.slice(0,3).map((l,i)=><text key={i} x={0} y={i*10+6} textAnchor="middle" fill="#94a3b8" fontSize="8px">{l}</text>)}</g>;}}/>
                                             <YAxis stroke="#94a3b8" tick={{fontSize:10,fill:'#94a3b8'}}/>
                                             <Tooltip cursor={{fill:'rgba(6,182,212,0.08)'}} content={({payload})=>payload?.[0]?<div style={{background:'#0a0f1a',border:'1px solid #06b6d4',borderRadius:6,padding:'8px 10px',pointerEvents:'none'}}><p style={{color:'#06b6d4',fontWeight:700,fontSize:'0.82rem'}}>{payload[0].payload.answer}</p><p style={{color:'#f8fafc',fontSize:'0.78rem'}}>{payload[0].value} ({payload[0].payload.percentage}%)</p><p style={{color:'#64748b',fontSize:'0.7rem',marginTop:2}}>לחץ לנעילה</p></div>:null}/>
                                             <Bar dataKey="count" radius={[5,5,0,0]} style={{cursor:'pointer'}}>
-                                              {qStat.chartData.map((_,i)=><Cell key={i} fill={COLORS[i%COLORS.length]}/>)}
+                                              {qStat.chartData.slice(0,10).map((_,i)=><Cell key={i} fill={COLORS[i%COLORS.length]}/>)}
                                             </Bar>
                                           </BarChart>
                                         )}
