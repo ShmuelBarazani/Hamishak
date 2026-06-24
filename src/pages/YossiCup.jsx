@@ -338,6 +338,7 @@ export default function YossiCup() {
       const histEntry = {
         round_size: cupData.round_size, round_index: cupData.current_round,
         is_prelim: wasPrelim, bye_seeds: byes,
+        round_start_closed_qids: (cupData.round_start_closed_qids || []),
         decided_at: new Date().toISOString(), results,
       };
       const newHistory = [...(cupData.history || []), histEntry];
@@ -644,6 +645,7 @@ export default function YossiCup() {
         }
         return {
           label: roundLabel(st.size, st.isPrelim), size: st.size, isPrelim: st.isPrelim,
+          closedQids: (decided.round_start_closed_qids || []),
           matches,
         };
       }
@@ -667,6 +669,7 @@ export default function YossiCup() {
         }
         return {
           label: roundLabel(st.size, st.isPrelim), size: st.size, isPrelim: st.isPrelim,
+          closedQids: (cupData.round_start_closed_qids || []),
           matches: liveMatches,
         };
       }
@@ -688,7 +691,7 @@ export default function YossiCup() {
             future: true,
           });
         }
-        return { label: roundLabel(st.size, false), size: st.size, isPrelim: false, matches: rows };
+        return { label: roundLabel(st.size, false), size: st.size, isPrelim: false, closedQids: [], matches: rows };
       }
 
       // שלב עתידי רגיל — תיבות עם "מנצח משחק X" (מהשלב הקודם)
@@ -696,6 +699,7 @@ export default function YossiCup() {
       const prevOffset = globalOffset(prevSize, false);
       return {
         label: roundLabel(st.size, st.isPrelim), size: st.size, isPrelim: st.isPrelim,
+        closedQids: [],
         matches: Array.from({ length: numMatches }, (_, k) => ({
           a: null, b: null, future: true,
           aFrom: prevOffset + (2 * k + 1),   // מנצח המשחק הגלובלי הזה
@@ -853,12 +857,12 @@ export default function YossiCup() {
                     <div className="rounded overflow-hidden" style={{ background: mine ? 'rgba(56,189,248,0.12)' : m.byeRow ? 'rgba(52,211,153,0.06)' : 'rgba(15,23,42,0.85)', border: `1px solid ${mine ? 'rgba(56,189,248,0.6)' : m.live ? 'rgba(6,182,212,0.25)' : m.byeRow ? 'rgba(52,211,153,0.25)' : m.future ? 'rgba(100,116,139,0.1)' : 'rgba(100,116,139,0.18)'}` }}>
                       {gno != null && <div className="text-[8px] text-slate-500 text-center" style={{ background: 'rgba(100,116,139,0.1)' }}>משחק {gno}</div>}
                       <Cell name={m.a} seed={m.seedA} score={m.sa} scoreClass={scoreClr(m, 'a')} crown={m.won === 'a'} dim={m.won === 'b'} bye={m.aBye} me={meA} from={m.aFrom}
-                        onName={(m.a && m.b) ? () => onPeek({ me: m.a, opp: m.b }) : undefined} />
+                        onName={(m.a && m.b) ? () => onPeek({ me: m.a, opp: m.b, closedQids: col.closedQids || [] }) : undefined} />
                       <div className="h-px" style={{ background: 'rgba(100,116,139,0.12)' }} />
                       {m.byeRow
                         ? <div className="px-1.5 py-1 text-[9px] text-green-400">⏭️ עולה אוטומטית</div>
                         : <Cell name={m.b} seed={m.seedB} score={m.sb} scoreClass={scoreClr(m, 'b')} crown={m.won === 'b'} dim={m.won === 'a'} bye={m.bBye} me={meB} from={m.bFrom}
-                            onName={(m.a && m.b) ? () => onPeek({ me: m.b, opp: m.a }) : undefined} />}
+                            onName={(m.a && m.b) ? () => onPeek({ me: m.b, opp: m.a, closedQids: col.closedQids || [] }) : undefined} />}
                     </div>
                     {champ && <div className="text-[10px] text-amber-300 font-bold text-center py-0.5 mt-0.5 rounded" style={{ background: 'rgba(251,191,36,0.12)' }}>🏆 {champ}</div>}
                   </div>
@@ -879,7 +883,7 @@ export default function YossiCup() {
           me={peekPair.me}
           opp={peekPair.opp}
           gameId={currentGame?.id}
-          startClosedQids={cupData?.round_start_closed_qids || []}
+          startClosedQids={peekPair?.closedQids || []}
           onClose={() => setPeekPair(null)}
         />
       )}
@@ -1435,15 +1439,10 @@ function DuelPeek({ me, opp, gameId, startClosedQids, onClose }) {
           </div>
         ) : roundQuestions.length === 0 ? (
           <div style={{ padding: '24px', textAlign: 'center', color: '#94a3b8', fontSize: '0.85rem' }}>
-            אין עדיין שאלות מנוקדות להשוואה בין שני המשתתפים.
+            עדיין לא נסגרו שאלות בסיבוב זה (מאז שנקבעה נקודת הייחוס).
           </div>
         ) : (
           <div style={{ padding: '8px' }}>
-            {showingCumulative && (
-              <div style={{ marginBottom: '8px', padding: '7px 10px', textAlign: 'center', color: '#fbbf24', fontSize: '0.74rem', background: 'rgba(251,191,36,0.08)', borderRadius: '8px', border: '1px solid rgba(251,191,36,0.2)' }}>
-                ℹ️ בסיבוב הנוכחי טרם נסגרו שאלות — מוצגת ההשוואה המצטברת המלאה.
-              </div>
-            )}
             {roundQuestions.map((q) => {
               const predMe = predsMe[String(q.id)];
               const predOpp = predsOpp[String(q.id)];
