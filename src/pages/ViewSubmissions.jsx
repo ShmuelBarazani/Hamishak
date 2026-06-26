@@ -831,58 +831,52 @@ export default function ViewSubmissions() {
           const isT17Sub = isT17 && String(question.question_id).includes('.');
 
           if (isT17) {
-            // 🌍 האם הניקוד של הניחוש הזה כבר "נעול" (לא ישתנה יותר)?
-            //   נקבע לפי המיקום בפועל של הקבוצה שניחש המשתתף:
-            //   • הקבוצה סיימה ראש/סגנית בפועל → +7 נעול (אין עוד מה להשתנות).
-            //   • הקבוצה היא השלישית בפועל → 14/10, נעול רק כשגם ההעפלה (".1") ידועה.
-            //   • אחרת → נעול רק כשכל 4 התוצאות של הבית הוכרעו (אז גם 4/0 סופי).
-            //   כל עוד לא נעול → אפור עם אפשרויות הניקוד (כמו קודם).
-            const t17Locked = (mainQ, predText) => {
-              const g = parseInt(mainQ.question_id, 10);
-              if (!Number.isInteger(g)) return false;
-              const Q = data.questions;
-              const act = (tbl, qid) => {
-                const q = Q.find(x => x.table_id === tbl && x.question_id === qid);
-                return (q && q.actual_result && q.actual_result !== '__CLEAR__' && String(q.actual_result).trim() !== '')
-                  ? stripParens(q.actual_result).trim().toLowerCase() : null;
-              };
-              const hasAdvRes = !!Q.find(x => x.table_id === 'T17' && x.question_id === `${g}.1`
-                && x.actual_result && x.actual_result !== '__CLEAR__' && String(x.actual_result).trim() !== '');
-              const headAct   = act('T16', String(2 * g - 1));
-              const runnerAct = act('T16', String(2 * g));
-              const thirdAct  = act('T17', String(g));
-              const predC = stripParens(predText || '').trim().toLowerCase();
-              if (!predC) return isScoreFinal(mainQ, data.questions);
-              if (headAct && predC === headAct)     return true;   // הקבוצה ראש בפועל → +7 נעול
-              if (runnerAct && predC === runnerAct)  return true;   // הקבוצה סגנית בפועל → +7 נעול
-              if (thirdAct && predC === thirdAct)    return hasAdvRes; // שלישי בפועל → צריך גם העפלה
-              return !!(headAct && runnerAct && thirdAct && hasAdvRes); // אחרת — הכל חייב להיות מוכרע
-            };
+            // 🎨 תצוגה בלבד (דרך א') — אפס נגיעה בחישוב. ScoreService נשאר מקור האמת.
+            //   מפצלים את הניקוד הכולל לשני באדג'ים: רכיב D (מקום שלישי) על השאלה
+            //   הראשית, ורכיב E (4 על העפלה נכונה) על תת-שאלת ".1". סכום הבאדג'ים =
+            //   הניקוד הכולל מ-ScoreService (אין כפל-ספירה; הסכום הרשמי לא משתנה).
+            const GREEN = 'bg-green-700 text-green-100';
+            const RED   = 'bg-red-700 text-red-100';
+            const BLUE  = 'bg-blue-700 text-blue-100';
+            const norm  = (s) => stripParens(s || '').trim().toLowerCase();
+            const g     = parseInt(question.question_id, 10);
+            const Q     = data.questions;
+            const findQ = (tbl, qid) => Q.find(x => x.table_id === tbl && x.question_id === qid);
+            const actOf = (q) => (q && q.actual_result && q.actual_result !== '__CLEAR__' && String(q.actual_result).trim() !== '') ? q.actual_result : null;
 
-            // ── תת-שאלה ".1" (כן/לא) ──
+            const thirdAct  = actOf(findQ('T17', String(g)));
+            const headAct   = actOf(findQ('T16', String(2 * g - 1)));
+            const runnerAct = actOf(findQ('T16', String(2 * g)));
+            const advQ      = findQ('T17', `${g}.1`);
+            const advAct    = actOf(advQ);
+            const advKnown  = !!advAct;
+
+            // רכיב E (4) — נגזר לתצוגה: הניחוש להעפלה מול התוצאה בפועל
+            const advPred  = advQ ? (participantPredictions[advQ.id] || '') : '';
+            const eCorrect = advKnown && advPred && norm(advPred) === norm(advAct);
+            const eComp    = eCorrect ? 4 : 0;
+
+            // ── תת-שאלה ".1" (העפלה) — מציגה את רכיב E ──
             if (isT17Sub) {
-              const mainQid   = String(parseInt(question.question_id, 10));
-              const mainQ     = data.questions.find(q => q.table_id === 'T17' && q.question_id === mainQid);
-              const mainPred  = mainQ ? (participantPredictions[mainQ.id] || '') : '';
-              const mainScore = mainQ
-                ? calculateQuestionScore(mainQ, mainPred, data.questions.filter(q => q.table_id === 'T17'), {}, data.questions)
-                : null;
-              const mainLocked = mainQ ? t17Locked(mainQ, mainPred) : false;
-
-              // אם התת-שאלה עצמה קיבלה ניקוד נפרד → צבע לפי הכללים הרגילים
-              if (score !== null) return badge(colorFor(score, maxNum), `${score}/${maxScore}`);
-              // לא נעול → אפור עם אפשרויות הניקוד (כמו קודם): ?/4
-              if (!mainLocked) return badge(GRAY, `?/${maxScore}`, false);
-              // נעול → מקף, צבוע בצבע הניקוד של השאלה הראשית (הניקוד מרוכז שם)
-              return badge(colorFor(mainScore, 14), '—');
+              if (!advKnown) return badge(GRAY, '?/4', false);     // העפלה טרם נקבעה → אפור
+              return eCorrect ? badge(GREEN, 4) : badge(RED, 0);   // נקבעה → 4 ירוק / 0 אדום
             }
 
-            // ── שאלת המקום השלישי הראשית ──
-            const locked = t17Locked(question, originalValue);
-            // לא נעול → אפור עם אפשרויות הניקוד (כמו קודם): ?/10/7
-            if (!locked) return badge(GRAY, `?/${maxScore}`, false);
-            // נעול → רק הניקוד בפועל, צבוע (מקס אמיתי = 14 לפי נוסחת האקסל)
-            return badge(colorFor(score, 14), score === null ? '?' : score);
+            // ── שאלת המקום השלישי הראשית — מציגה את רכיב D ──
+            if (!thirdAct) return badge(GRAY, '?/10/7', false);    // השלישי טרם נקבע → אפור
+            const predD = norm(originalValue);
+            const dComp = (score == null ? 0 : score) - eComp;     // היתרה אחרי רכיב E (הסכום = ScoreService)
+
+            if (predD && predD === norm(thirdAct)) {
+              // D נכון → 10. ירוק כשההעפלה ידועה (נעול); אחרת כחול (יכול להפוך ל-14).
+              return advKnown ? badge(GREEN, dComp) : badge(BLUE, dComp);
+            }
+            if (predD && ((headAct && predD === norm(headAct)) || (runnerAct && predD === norm(runnerAct)))) {
+              // הנבחרת שניחשת כשלישית סיימה בפועל ראש/סגנית → +7 (נעול)
+              return badge(BLUE, dComp);
+            }
+            // D שגוי — השלישי נקבע, הניחוש אינו הוא ואינו ראש/סגנית → 0 אדום
+            return badge(RED, 0);
           }
 
           // כל שאר השאלות — ניקוד/מקס כרגיל
