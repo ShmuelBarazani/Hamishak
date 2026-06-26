@@ -865,15 +865,14 @@ export default function ViewSubmissions() {
             // ── שאלת המקום השלישי הראשית — מציגה את רכיב D ──
             if (!thirdAct) return badge(GRAY, '?/10/7', false);    // השלישי טרם נקבע → אפור
             const predD = norm(originalValue);
-            const dComp = (score == null ? 0 : score) - eComp;     // היתרה אחרי רכיב E (הסכום = ScoreService)
 
             if (predD && predD === norm(thirdAct)) {
-              // D נכון → 10. ירוק כשההעפלה ידועה (נעול); אחרת כחול (יכול להפוך ל-14).
-              return advKnown ? badge(GREEN, dComp) : badge(BLUE, dComp);
+              // D נכון → 10 (קבוע). ירוק כשההעפלה ידועה (נעול); אחרת כחול (יכול להפוך ל-14 עם E=4).
+              return advKnown ? badge(GREEN, 10) : badge(BLUE, 10);
             }
             if (predD && ((headAct && predD === norm(headAct)) || (runnerAct && predD === norm(runnerAct)))) {
               // הנבחרת שניחשת כשלישית סיימה בפועל ראש/סגנית → +7 (נעול)
-              return badge(BLUE, dComp);
+              return badge(BLUE, 7);
             }
             // D שגוי — השלישי נקבע, הניחוש אינו הוא ואינו ראש/סגנית → 0 אדום
             return badge(RED, 0);
