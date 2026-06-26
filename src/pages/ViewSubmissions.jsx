@@ -1167,6 +1167,20 @@ export default function ViewSubmissions() {
         {/* ✅ ניחושים לפי זהות — 2 עמודות */}
         <div className="grid grid-cols-2 gap-2">
           {allPreds.map((pred, i) => {
+            const qSlot = slots[i];
+            // ✏️ מצב עריכה: תיבת בחירה (dropdown) במקום badge read-only — כמו במסך תוצאות אמת
+            if (isEditMode && isAdmin && qSlot) {
+              return (
+                <div key={i} style={{ display:'flex', alignItems:'center', gap:8, padding:'6px 8px', borderRadius:8, background:'rgba(15,23,42,0.4)', border:'1px solid rgba(71,85,105,0.30)' }}>
+                  <span style={{ fontSize:'0.76rem', color:'#94a3b8', minWidth:'64px', flexShrink:0, textAlign:'right', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                    {(qSlot.question_text || '').replace(/\s*\([^)]+\)\s*$/, '').trim() || `#${i + 1}`}
+                  </span>
+                  <div style={{ flex:1, display:'flex', justifyContent:'flex-start' }}>
+                    {renderReadOnlySelect(qSlot, pred)}
+                  </div>
+                </div>
+              );
+            }
             const norm = normTeam(pred);
             const isAdv  = pred && advancingSet.has(norm);
             const isElim = pred && !isAdv && eliminatedSet.has(norm);
