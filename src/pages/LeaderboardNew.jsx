@@ -998,7 +998,9 @@ export default function LeaderboardNew() {
                             // T16/T17 — ניקוד מדויק מ-ScoreService (15/10/7 או 14/10/4/7/7)
                             if (p.useScoreService) {
                               const hasScore = typeof p.exactScore === 'number';
-                              const full    = hasScore && p.pts > 0 && p.exactScore === p.pts;
+                              // המקסימום האמיתי: T17=14 (D+E נכונים), אחרת possible_points (T16=15 וכו').
+                              const realMax = sec.tableId === 'T17' ? 14 : (p.pts || 0);
+                              const full    = hasScore && realMax > 0 && p.exactScore >= realMax;
                               const partial = hasScore && p.exactScore > 0 && !full;   // ניקוד חלקי — צהוב
                               const zeroFinal = hasScore && p.exactScore === 0 && p.exactFinal;   // 0 סופי — אדום
                               // 0 לא-סופי / טרם נוקד → אפור
