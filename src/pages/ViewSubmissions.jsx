@@ -99,6 +99,26 @@ function GroupStandingsVS({ table, teams, predictions }) {
     b.Pts-a.Pts || (b.GF-b.GA)-(a.GF-a.GA) || b.GF-a.GF || a.name.localeCompare(b.name,'he')
   );
   const cleanName = n => String(n).replace(/\s*\([^)]+\)\s*$/, '').trim();
+
+  // ── 🏆 בונוס בית (תצוגה בלבד): כיוון נכון (1/X/2) בכל 6 משחקי הבית → +6 ──
+  //    תואם ל-ScoreService (allHaveResults → allScored). אפס נגיעה בחישוב; הסכום הרשמי כבר כולל זאת.
+  const isWCGroup  = matches[0]?.game_id === WC_GAME_ID;
+  const isScoreFmt = s => s && s !== '__CLEAR__' && /^\s*\d+\s*-\s*\d+\s*$/.test(String(s));
+  const dirOf = s => {
+    if (!isScoreFmt(s)) return null;
+    const [h, a] = String(s).split('-').map(x => parseInt(x.trim(), 10));
+    if (isNaN(h) || isNaN(a)) return null;
+    return h > a ? '1' : h < a ? '2' : 'X';
+  };
+  const allHaveResults = isWCGroup && matches.length > 0 && matches.every(q => isScoreFmt(q.actual_result));
+  const allHit = allHaveResults && matches.every(q => {
+    const pd = dirOf(predictions?.[q.id]);
+    const ad = dirOf(q.actual_result);
+    return pd && ad && pd === ad;
+  });
+  // null=לא בית מונדיאל | 'pending'=אפור (אין כל התוצאות) | 'miss'=אדום 0 | 'hit'=ירוק 6
+  const bonusState = !isWCGroup ? null : (!allHaveResults ? 'pending' : (allHit ? 'hit' : 'miss'));
+
   return (
     <div style={{ background:'rgba(13,18,30,0.6)', border:'1px solid rgba(6,182,212,0.2)', borderRadius:12, padding:'12px 14px' }}>
       <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:10 }}>
@@ -144,6 +164,24 @@ function GroupStandingsVS({ table, teams, predictions }) {
         </tbody>
       </table>
       {playedAny && <p style={{ fontSize:'0.68rem', color:'#475569', marginTop:8 }}>🟢 2 הראשונות מעפילות אוטומטית (ראש בית + סגנית)</p>}
+      {bonusState && (
+        <div style={{
+          marginTop:10, display:'flex', alignItems:'center', justifyContent:'space-between',
+          padding:'8px 12px', borderRadius:10,
+          background: bonusState==='hit' ? 'rgba(16,185,129,0.12)' : bonusState==='miss' ? 'rgba(239,68,68,0.12)' : 'rgba(100,116,139,0.10)',
+          border: `1px solid ${bonusState==='hit' ? 'rgba(16,185,129,0.4)' : bonusState==='miss' ? 'rgba(239,68,68,0.4)' : 'rgba(100,116,139,0.3)'}`
+        }}>
+          <span style={{ fontSize:'0.82rem', fontWeight:700, color: bonusState==='hit' ? '#34d399' : bonusState==='miss' ? '#f87171' : '#94a3b8' }}>
+            🏆 בונוס בית — פגיעה (כיוון) בכל 6 המשחקים
+          </span>
+          <span style={{
+            fontSize:'0.85rem', fontWeight:800, minWidth:30, textAlign:'center', padding:'2px 12px', borderRadius:8, color:'#fff',
+            background: bonusState==='hit' ? '#16a34a' : bonusState==='miss' ? '#dc2626' : '#475569'
+          }}>
+            {bonusState==='hit' ? '6' : bonusState==='miss' ? '0' : '?'}
+          </span>
+        </div>
+      )}
     </div>
   );
 }
