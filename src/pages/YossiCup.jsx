@@ -1387,7 +1387,7 @@ function DuelPeek({ me, opp, gameId, startClosedQids, scoreMe, scoreOpp, onClose
       const b = scoreOf(q, predsOpp[String(q.id)]);
       return (typeof a === 'number' && a > 0) || (typeof b === 'number' && b > 0);
     })
-    .sort((a, b) => (a.table_id || '').localeCompare(b.table_id || '') || (parseInt(a.question_id, 10) || 0) - (parseInt(b.question_id, 10) || 0));
+    .sort((a, b) => (a.table_id || '').localeCompare(b.table_id || '') || (parseFloat(a.question_id) || 0) - (parseFloat(b.question_id) || 0));
   // שאלות הסיבוב הנוכחי = אלה שנסגרו מאז נקודת הייחוס (לא היו בצילום ההתחלה)
   const roundOnly = scoredQuestions.filter(q => !snapSet.has(q.id));
   // אם בסיבוב הנוכחי טרם נסגרו שאלות (תחילת סיבוב / צפייה בדו-קרב מוקדם) —
@@ -1447,8 +1447,8 @@ function DuelPeek({ me, opp, gameId, startClosedQids, scoreMe, scoreOpp, onClose
     if (!thirdAct) return { ...T17_BG.GRAY, text: '?/10' };            // השלישי טרם נקבע → אפור
     const predD = normT17(pred || '');
     if (predD && predD === normT17(thirdAct)) {
-      // D נכון → 10. ירוק כשההעפלה ידועה (נעול); אחרת כחול (יכול להפוך ל-14 עם E)
-      return advKnown ? { ...T17_BG.GREEN, text: '10/10' } : { ...T17_BG.BLUE, text: '10/10' };
+      // D נכון → 10 ירוק. ה-10 נעול ברגע שהשלישי ידוע (רכיב E של 4 הוא שורה נפרדת).
+      return { ...T17_BG.GREEN, text: '10/10' };
     }
     if (predD && ((headAct && predD === normT17(headAct)) || (runnerAct && predD === normT17(runnerAct)))) {
       return { ...T17_BG.BLUE, text: '7/10' };                         // ניחש שלישית אך סיים ראש/סגנית → +7
