@@ -1826,26 +1826,26 @@ export default function Statistics() {
               const homeT=teams[normalizeTeam(q.home_team)], awayT=teams[normalizeTeam(q.away_team)];
               return (
                 <div key={q.id} style={{position:'relative',borderRadius:10,border:'1px solid rgba(6,182,212,0.15)',background:'rgba(0,0,0,0.25)',padding:'10px 12px'}}>
-                  <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:10}}>
-                    {/* שעת המשחק (שעון ישראל) — בקצה */}
+                  <div style={{display:'flex',alignItems:'center',gap:8,width:'100%'}}>
+                    {/* שעת המשחק (שעון ישראל) — flex item שמור לעצמו מקום (לא absolute → אין חפיפה) */}
                     {time&&(
-                      <span style={{position:'absolute',insetInlineStart:22,display:'inline-flex',alignItems:'center',gap:4,color:'#67e8f9',fontSize:'0.72rem',fontWeight:600,background:'rgba(6,182,212,0.1)',border:'1px solid rgba(6,182,212,0.25)',borderRadius:6,padding:'2px 7px'}}>
+                      <span style={{flexShrink:0,display:'inline-flex',alignItems:'center',gap:4,color:'#67e8f9',fontSize:'0.72rem',fontWeight:600,background:'rgba(6,182,212,0.1)',border:'1px solid rgba(6,182,212,0.25)',borderRadius:6,padding:'2px 7px',whiteSpace:'nowrap'}}>
                         🕐 {time}
                       </span>
                     )}
-                    {/* קבוצת בית (מימין ב-RTL) — צמודה למרכז */}
-                    <span style={{display:'flex',alignItems:'center',gap:6,fontSize:'0.9rem',color:'#f8fafc',justifyContent:'flex-end',minWidth:0,flex:'0 1 auto'}}>
-                      {cleanTeam(q.home_team)}
+                    {/* קבוצת בית (מימין ב-RTL) — תופסת חצי מהרוחב הפנוי */}
+                    <span style={{display:'flex',alignItems:'center',gap:6,fontSize:'0.9rem',color:'#f8fafc',justifyContent:'flex-end',minWidth:0,flex:'1 1 0'}}>
+                      <span style={{whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',minWidth:0}}>{cleanTeam(q.home_team)}</span>
                       {homeT?.logo_url&&<img src={homeT.logo_url} alt="" style={{width:22,height:22,borderRadius:'50%',flexShrink:0}}/>}
                     </span>
-                    {/* תוצאה — במרכז */}
-                    <span style={{textAlign:'center',fontWeight:700,color:st.hasActual?'#fde68a':'#64748b',fontSize:'0.95rem',minWidth:56,flexShrink:0}}>
+                    {/* תוצאה — במרכז, רוחב קבוע */}
+                    <span style={{textAlign:'center',fontWeight:700,color:st.hasActual?'#fde68a':'#64748b',fontSize:'0.95rem',width:56,flexShrink:0}}>
                       {st.hasActual?formatResult(q.actual_result):'? - ?'}
                     </span>
-                    {/* קבוצת חוץ (משמאל ב-RTL) — צמודה למרכז */}
-                    <span style={{display:'flex',alignItems:'center',gap:6,fontSize:'0.9rem',color:'#f8fafc',justifyContent:'flex-start',minWidth:0,flex:'0 1 auto'}}>
+                    {/* קבוצת חוץ (משמאל ב-RTL) — תופסת חצי מהרוחב הפנוי */}
+                    <span style={{display:'flex',alignItems:'center',gap:6,fontSize:'0.9rem',color:'#f8fafc',justifyContent:'flex-start',minWidth:0,flex:'1 1 0'}}>
                       {awayT?.logo_url&&<img src={awayT.logo_url} alt="" style={{width:22,height:22,borderRadius:'50%',flexShrink:0}}/>}
-                      {cleanTeam(q.away_team)}
+                      <span style={{whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',minWidth:0}}>{cleanTeam(q.away_team)}</span>
                     </span>
                   </div>
                   <div style={{display:'flex',gap:14,marginTop:8,paddingTop:8,borderTop:'1px solid rgba(255,255,255,0.05)',fontSize:'0.74rem',color:'#94a3b8',flexWrap:'wrap'}}>
