@@ -449,85 +449,57 @@ export default function YossiCup() {
   //   עמדת הבסיס = האינדקס (0-127) של הזרע של המשתתף ב-bracketOrder(128).
   //   בשלב שגודלו 'size' משתתפים (=2^k), כל בלוק של (128*2/size) עמדות-בסיס מתמזג למשחק אחד.
   //   היריבים הפוטנציאליים של המשתתף בשלב הזה = העמדות בבלוק שלו, חוץ מהתת-בלוק שכבר "שלו".
-  const myBasePos = (() => {
-    const q = (myName || '').trim();
-    if (!q || !cupData) return null;
-    const ord = bracketOrder(CUP_SIZE);
-    const comp = 2 * CUP_SIZE + 1; // 257
-    // מצא את הזרע של המשתתף
-    const sEntry = (cupData.seeds || []).find(s => (s.participant_name || '').trim() === q);
-    if (!sEntry) return null;
-    const seed = sEntry.seed;
-    // עמדת הבסיס בעץ: bracketOrder מכיל זרעים 1-128. אם הזרע > 128, הוא היריב של
-    // זרע נמוך (comp - seed), והוא תופס את העמדה שצמודה לזרע הנמוך.
-    let idx = ord.indexOf(seed);
-    if (idx < 0) {
-      // זרע גבוה (>128): הוא היריב של זרע נמוך באותו משחק מקדים — חולקים אותה עמדת-בסיס.
-      const lowSeed = comp - seed;             // היריב הנמוך
-      idx = ord.indexOf(lowSeed);              // אותה עמדה בדיוק (לא השכן!)
-    }
-    return idx >= 0 ? idx : null;
-  })();
-
-  // לעמדת בסיס p ולשלב בגודל 'size' (מספר משתתפים בסיבוב): טווח העמדות [from,to) של
-  // היריבים הפוטנציאליים — אלה שימוזגו עם תת-העץ של p בדיוק בשלב הזה (לא קודם).
-  const potentialRangeForStage = (p, size) => {
-    if (p == null) return null;
-    // block = כמה עמדות-בסיס מתמזגות עד סוף השלב הזה. בשלב עם 'size' משתתפים,
-    // כל משחק מאחד 256/size עמדות... כאן הבסיס הוא 128, אז block = 128/(size/2) = 256/size.
-    const block = (2 * CUP_SIZE) / size;          // עמדות-בסיס לכל משחק בשלב
-    const half = block / 2;
-    const blockStart = Math.floor(p / block) * block;
-    const myHalfStart = Math.floor(p / half) * half;
-    // היריבים = החצי השני של הבלוק (זה שאינו מכיל את p)
-    const oppHalfStart = (myHalfStart === blockStart) ? blockStart + half : blockStart;
-    return { from: oppHalfStart, to: oppHalfStart + half };
-  };
-
-  // ── יריבים פוטנציאליים מסודרים לפי שלבים (4 שלבים קדימה מהשלב הנוכחי) ──
-  //   לכל שלב: שם השלב + רשימת השמות שיכולים לפגוש את המשתתף בו (לפי עמדות העץ).
+  // ── יריבים פוטנציאליים מסודרים לפי שלבים (4 שלבים קדימה מהסיבוב הנוכחי) ──
+  //   מחושב מהבראקט החי (cupData.pairs) — רק משתתפים שעדיין משחקים (לא מודחים).
+  //   מבנה: בסיבוב הנוכחי כל זוג עוקב (0↔1, 2↔3, …) מתמזג בסיבוב הבא. לכן:
+  //     שלב +1 = משחק-האח (2 אפשריים), +2 = 4, +3 = 8, +4 = 16.
   const potentialByStage = (() => {
-    if (myBasePos == null || !cupData) return [];
-    const ord = bracketOrder(CUP_SIZE);
-    const comp = 2 * CUP_SIZE + 1; // 257
-    const total = (cupData.seeds || []).length;
-    // לכל עמדת בסיס (0-127): שני המתמודדים במשחק המקדים (זרע נמוך + היריב), או בּיי אחד.
-    //   מחזיר {name, seed} כדי שנוכל להציג את הדירוג.
-    const namesAtBase = (pos) => {
-      const lowSeed = ord[pos];
-      if (lowSeed == null) return [];
-      const oppSeed = comp - lowSeed;
+    if (!cupData || cupData.champion) return [];
+    const pairs = cupData.pairs || [];
+    if (pairs.length === 0) return [];
+    // מסדרים את משחקי הסיבוב לפי מספר המשחק (סדר עץ)
+    const ordered = [...pairs].sort((x, y) => (x.match_no || 0) - (y.match_no || 0));
+    const meTrim = normName(myName || '');
+    // אינדקס המשחק של המשתתף בסיבוב הנוכחי
+    let mi = -1;
+    for (let i = 0; i < ordered.length; i++) {
+      if (normName(nameOf(ordered[i].a)) === meTrim || normName(nameOf(ordered[i].b)) === meTrim) { mi = i; break; }
+    }
+    if (mi < 0) return [];
+    const numMatches = ordered.length;
+    const roundSize = cupData.round_size; // מספר המשתתפים בסיבוב הנוכחי
+    // שני השחקנים (החיים) של משחק לפי אינדקס
+    const playersOfMatch = (idx) => {
+      const m = ordered[idx];
+      if (!m) return [];
       const out = [];
-      const nLow = nameOf(lowSeed);
-      if (nLow && !nLow.startsWith('#')) out.push({ name: nLow, seed: lowSeed });
-      if (oppSeed <= total) {  // ליריב יש שם (לא בּיי)
-        const nOpp = nameOf(oppSeed);
-        if (nOpp && !nOpp.startsWith('#')) out.push({ name: nOpp, seed: oppSeed });
-      }
+      [m.a, m.b].forEach(sd => {
+        const nm = nameOf(sd);
+        if (nm && !String(nm).startsWith('#')) out.push({ name: nm, seed: sd });
+      });
       return out;
     };
-    // נקודת ההתחלה: גודל הסיבוב הנוכחי (אם מקדים — מתחילים מ-128/סיבוב2)
-    let startSize = cupData.champion ? 2 : cupData.round_size;
-    if (cupData.is_prelim) startSize = CUP_SIZE; // מהמקדים, השלב הבא של דו-קרבות אמיתיות הוא 128
     const stages = [];
-    let s = startSize;
-    while (s >= 2 && stages.length < 4) {
-      const rng = potentialRangeForStage(myBasePos, s);
-      if (rng) {
-        const meTrim = (myName || '').trim();
-        const names = [];
-        const seen = new Set();
-        for (let pos = rng.from; pos < rng.to; pos++) {
-          for (const item of namesAtBase(pos)) {
-            if (item.name.trim() !== meTrim && !seen.has(item.name)) { // לא לכלול את עצמי ולא כפילויות
-              seen.add(item.name);
-              names.push(item);
-            }
+    for (let k = 1; k <= 4; k++) {
+      const blockSize = Math.pow(2, k);        // מספר משחקים בבלוק של שלב k
+      if (blockSize > numMatches) break;        // אין מספיק משחקים → השלב לא קיים
+      const halfSize = blockSize / 2;
+      const blockStart = Math.floor(mi / blockSize) * blockSize;
+      const myHalfStart = Math.floor(mi / halfSize) * halfSize;
+      // החצי השני של הבלוק (זה שאינו מכיל את המשתתף) = היריבים האפשריים בשלב הזה
+      const oppHalfStart = (myHalfStart === blockStart) ? blockStart + halfSize : blockStart;
+      const names = [];
+      const seen = new Set();
+      for (let idx = oppHalfStart; idx < oppHalfStart + halfSize; idx++) {
+        for (const item of playersOfMatch(idx)) {
+          if (normName(item.name) !== meTrim && !seen.has(item.name)) {
+            seen.add(item.name);
+            names.push(item);
           }
         }
-        stages.push({ size: s, label: roundLabel(s, false), count: names.length, names });
       }
-      s = Math.floor(s / 2);
+      const stageSize = Math.floor(roundSize / Math.pow(2, k)); // גודל הסיבוב שבו נפגשים
+      stages.push({ size: stageSize, label: roundLabel(stageSize, false), count: names.length, names });
     }
     return stages;
   })();
