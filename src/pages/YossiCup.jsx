@@ -1387,7 +1387,7 @@ function DuelPeek({ me, opp, gameId, startClosedQids, scoreMe, scoreOpp, onClose
       const b = scoreOf(q, predsOpp[String(q.id)]);
       return (typeof a === 'number' && a > 0) || (typeof b === 'number' && b > 0);
     })
-    .sort((a, b) => (a.table_id || '').localeCompare(b.table_id || '') || (parseFloat(a.question_id) || 0) - (parseFloat(b.question_id) || 0));
+    .sort((a, b) => (a.table_id || '').localeCompare(b.table_id || '') || (parseInt(a.question_id, 10) || 0) - (parseInt(b.question_id, 10) || 0));
   // שאלות הסיבוב הנוכחי = אלה שנסגרו מאז נקודת הייחוס (לא היו בצילום ההתחלה)
   const roundOnly = scoredQuestions.filter(q => !snapSet.has(q.id));
   // אם בסיבוב הנוכחי טרם נסגרו שאלות (תחילת סיבוב / צפייה בדו-קרב מוקדם) —
@@ -1413,6 +1413,49 @@ function DuelPeek({ me, opp, gameId, startClosedQids, scoreMe, scoreOpp, onClose
     const n = parseInt(String(qid), 10); // החלק השלם: "2.1" → 2
     return (n >= 1 && n <= 12) ? `בית ${GROUP_LETTERS[n - 1]}'` : '';
   };
+
+  // 🎨 פיצול תצוגה ל-T17 (מקום שלישי) — זהה ל-ViewSubmissions (דרך א'): אפס נגיעה בחישוב.
+  //   ScoreService נשאר מקור האמת; כאן רק מציגים באדג' תצוגתי כך שתת-שאלת ההעפלה תיצבע
+  //   (4 ירוק / 0 אדום / אפור), והשאלה הראשית תציג את רכיב D (10/7). הסכום הרשמי לא משתנה.
+  const T17_BG = {
+    GREEN: { bg: '#15803d', fg: '#dcfce7' },
+    RED:   { bg: '#b91c1c', fg: '#fee2e2' },
+    BLUE:  { bg: '#1d4ed8', fg: '#dbeafe' },
+    GRAY:  { bg: 'rgba(100,116,139,0.4)', fg: '#cbd5e1' },
+  };
+  const stripParensT17 = (s) => (s || '').replace(/\s*\([^)]*\)/g, '').replace(/\s+/g, ' ').trim();
+  const normT17 = (s) => stripParensT17(s).toLowerCase();
+  const actOfT17 = (qq) => (qq && qq.actual_result && qq.actual_result !== '__CLEAR__' && String(qq.actual_result).trim() !== '') ? qq.actual_result : null;
+  const findQT17 = (tbl, qid) => questions.find(x => x.table_id === tbl && x.question_id === qid);
+  // מחזיר {bg, fg, text} לשאלת T17 (ראשית או תת-שאלה) לפי הניחוש הנתון
+  const t17Display = (q, pred) => {
+    const g = parseInt(q.question_id, 10);
+    const isSub = String(q.question_id).includes('.');
+    const advQ = findQT17('T17', `${g}.1`);
+    const advAct = actOfT17(advQ);
+    const advKnown = !!advAct;
+    if (isSub) {
+      // ── תת-שאלת ההעפלה (E) ──
+      if (!advKnown) return { ...T17_BG.GRAY, text: '?/4' };           // טרם נקבע → אפור
+      const eCorrect = pred && normT17(pred) === normT17(advAct);
+      return eCorrect ? { ...T17_BG.GREEN, text: '4/4' } : { ...T17_BG.RED, text: '0/4' };
+    }
+    // ── השאלה הראשית (D = הנבחרת השלישית) ──
+    const thirdAct  = actOfT17(findQT17('T17', String(g)));
+    const headAct   = actOfT17(findQT17('T16', String(2 * g - 1)));
+    const runnerAct = actOfT17(findQT17('T16', String(2 * g)));
+    if (!thirdAct) return { ...T17_BG.GRAY, text: '?/10' };            // השלישי טרם נקבע → אפור
+    const predD = normT17(pred || '');
+    if (predD && predD === normT17(thirdAct)) {
+      // D נכון → 10. ירוק כשההעפלה ידועה (נעול); אחרת כחול (יכול להפוך ל-14 עם E)
+      return advKnown ? { ...T17_BG.GREEN, text: '10/10' } : { ...T17_BG.BLUE, text: '10/10' };
+    }
+    if (predD && ((headAct && predD === normT17(headAct)) || (runnerAct && predD === normT17(runnerAct)))) {
+      return { ...T17_BG.BLUE, text: '7/10' };                         // ניחש שלישית אך סיים ראש/סגנית → +7
+    }
+    return { ...T17_BG.RED, text: '0/10' };                            // D שגוי → 0 אדום
+  };
+  const isT17Q = (q) => q.table_id === 'T17';
 
   let sumMe = 0, sumOpp = 0;
   roundQuestions.forEach(q => {
@@ -1465,17 +1508,22 @@ function DuelPeek({ me, opp, gameId, startClosedQids, scoreMe, scoreOpp, onClose
               const mx = maxOf(q);
               const isFinal = isScoreFinal(q, questions);
               const bMe = badgeFor(sMe, mx, isFinal), bOpp = badgeFor(sOpp, mx, isFinal);
+              // 🎨 T17: פיצול תצוגה (D על הראשית, E על ההעפלה) — אחרת ניקוד/מקס כרגיל
+              const dispMe = isT17Q(q)
+                ? t17Display(q, predMe)
+                : { bg: bMe.bg, fg: bMe.fg, text: (sMe == null ? `?/${mx}` : (sMe === 0 && !isFinal) ? `?/${mx}` : `${sMe}/${mx}`) };
+              const dispOpp = isT17Q(q)
+                ? t17Display(q, predOpp)
+                : { bg: bOpp.bg, fg: bOpp.fg, text: (sOpp == null ? `?/${mx}` : (sOpp === 0 && !isFinal) ? `?/${mx}` : `${sOpp}/${mx}`) };
               let label = q.question_text || q.table_description || `${q.table_id} · ${q.question_id}`;
               // 🏆 T17 (מקום שלישי): מציגים "מקום שלישי · בית X · <שאלה>" בשתי השאלות —
               //    הראשית (question_text = שם הבית) והעפלה (question_text = "האם תעפיל ?").
               if (q.table_id === 'T17') {
                 const isSub = String(q.question_id).includes('.');
                 if (isSub) {
-                  // תת-שאלת העפלה: שם הבית נגזר ממספר השאלה (7.1 → בית ז')
                   const gname = groupNameFromQid(q.question_id);
                   label = ['מקום שלישי', gname, q.question_text].filter(Boolean).join(' · ');
                 } else {
-                  // השאלה הראשית: question_text הוא כבר שם הבית ("בית ז'")
                   label = ['מקום שלישי', q.question_text].filter(Boolean).join(' · ');
                 }
               }
@@ -1488,12 +1536,12 @@ function DuelPeek({ me, opp, gameId, startClosedQids, scoreMe, scoreOpp, onClose
                     {/* שלי */}
                     <div style={{ flex: 1, padding: '7px 10px', borderLeft: '1px solid rgba(100,116,139,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px' }}>
                       <span style={{ color: '#e2e8f0', fontSize: '0.82rem' }}>{predMe || <span style={{ color: '#64748b' }}>—</span>}</span>
-                      <span style={{ background: bMe.bg, color: bMe.fg, fontSize: '0.72rem', fontWeight: 700, padding: '2px 7px', borderRadius: '5px', minWidth: '38px', textAlign: 'center', flexShrink: 0 }}>{sMe == null ? `?/${mx}` : (sMe === 0 && !isFinal) ? `?/${mx}` : `${sMe}/${mx}`}</span>
+                      <span style={{ background: dispMe.bg, color: dispMe.fg, fontSize: '0.72rem', fontWeight: 700, padding: '2px 7px', borderRadius: '5px', minWidth: '38px', textAlign: 'center', flexShrink: 0 }}>{dispMe.text}</span>
                     </div>
                     {/* היריב */}
                     <div style={{ flex: 1, padding: '7px 10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px' }}>
                       <span style={{ color: '#e2e8f0', fontSize: '0.82rem' }}>{predOpp || <span style={{ color: '#64748b' }}>—</span>}</span>
-                      <span style={{ background: bOpp.bg, color: bOpp.fg, fontSize: '0.72rem', fontWeight: 700, padding: '2px 7px', borderRadius: '5px', minWidth: '38px', textAlign: 'center', flexShrink: 0 }}>{sOpp == null ? `?/${mx}` : (sOpp === 0 && !isFinal) ? `?/${mx}` : `${sOpp}/${mx}`}</span>
+                      <span style={{ background: dispOpp.bg, color: dispOpp.fg, fontSize: '0.72rem', fontWeight: 700, padding: '2px 7px', borderRadius: '5px', minWidth: '38px', textAlign: 'center', flexShrink: 0 }}>{dispOpp.text}</span>
                     </div>
                   </div>
                 </div>
