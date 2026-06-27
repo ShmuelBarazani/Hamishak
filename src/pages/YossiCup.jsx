@@ -1387,7 +1387,7 @@ function DuelPeek({ me, opp, gameId, startClosedQids, scoreMe, scoreOpp, onClose
       const b = scoreOf(q, predsOpp[String(q.id)]);
       return (typeof a === 'number' && a > 0) || (typeof b === 'number' && b > 0);
     })
-    .sort((a, b) => (a.table_id || '').localeCompare(b.table_id || '') || (parseInt(a.question_id, 10) || 0) - (parseInt(b.question_id, 10) || 0));
+    .sort((a, b) => (a.table_id || '').localeCompare(b.table_id || '') || (parseFloat(a.question_id) || 0) - (parseFloat(b.question_id) || 0));
   // שאלות הסיבוב הנוכחי = אלה שנסגרו מאז נקודת הייחוס (לא היו בצילום ההתחלה)
   const roundOnly = scoredQuestions.filter(q => !snapSet.has(q.id));
   // אם בסיבוב הנוכחי טרם נסגרו שאלות (תחילת סיבוב / צפייה בדו-קרב מוקדם) —
@@ -1466,12 +1466,18 @@ function DuelPeek({ me, opp, gameId, startClosedQids, scoreMe, scoreOpp, onClose
               const isFinal = isScoreFinal(q, questions);
               const bMe = badgeFor(sMe, mx, isFinal), bOpp = badgeFor(sOpp, mx, isFinal);
               let label = q.question_text || q.table_description || `${q.table_id} · ${q.question_id}`;
-              // 🏆 T17 תת-שאלת העפלה: ה-question_text הוא "האם תעפיל ?" בלבד.
-              //    נציג שם השלב (רשימת הנבחרות…) + שם הבית + השאלה — כדי שלא תיעלם השאלה.
-              if (q.table_id === 'T17' && String(q.question_id).includes('.')) {
-                const gname = groupNameFromQid(q.question_id);
-                const stage = q.stage_name || q.table_description || '';
-                label = [stage, gname, q.question_text].filter(Boolean).join(' · ');
+              // 🏆 T17 (מקום שלישי): מציגים "מקום שלישי · בית X · <שאלה>" בשתי השאלות —
+              //    הראשית (question_text = שם הבית) והעפלה (question_text = "האם תעפיל ?").
+              if (q.table_id === 'T17') {
+                const isSub = String(q.question_id).includes('.');
+                if (isSub) {
+                  // תת-שאלת העפלה: שם הבית נגזר ממספר השאלה (7.1 → בית ז')
+                  const gname = groupNameFromQid(q.question_id);
+                  label = ['מקום שלישי', gname, q.question_text].filter(Boolean).join(' · ');
+                } else {
+                  // השאלה הראשית: question_text הוא כבר שם הבית ("בית ז'")
+                  label = ['מקום שלישי', q.question_text].filter(Boolean).join(' · ');
+                }
               }
               return (
                 <div key={q.id} style={{ marginBottom: '6px', borderRadius: '8px', overflow: 'hidden', border: '1px solid rgba(100,116,139,0.18)' }}>
