@@ -113,8 +113,11 @@ export default function YossiCup() {
   useEffect(() => { loadRankings(); }, [loadRankings]);
 
   const isAdmin = currentUser?.role === 'admin' || currentUser?.user_metadata?.role === 'admin';
+  // 🔧 נירמול שם להשוואה — מתקן אי-התאמת שמות בין זריעת הגביע לטבלת הדירוג, שגרמה
+  //    למשתתפים להופיע עם 0 נקודות. מסיר רווחים סביב '+' (שמות מאוחדים) ומכווץ רווחים.
+  const normName = (n) => (n || '').replace(/\s*\+\s*/g, '+').replace(/\s+/g, ' ').trim();
   const scoreByName = useMemo(() => {
-    const m = {}; rankings.forEach(r => { m[r.participant_name] = r.current_score; }); return m;
+    const m = {}; rankings.forEach(r => { m[normName(r.participant_name)] = r.current_score; }); return m;
   }, [rankings]);
 
   // ── תצוגה חיה (לפני קיבוע) — כל המשתתפים ──
@@ -131,7 +134,7 @@ export default function YossiCup() {
         .map((s) => ({
           seed: s.seed,
           participant_name: s.participant_name,
-          entry_score: scoreByName[s.participant_name] ?? 0,
+          entry_score: scoreByName[normName(s.participant_name)] ?? 0,
         }));
     }
     return rankings.map((r, i) => ({
@@ -196,12 +199,12 @@ export default function YossiCup() {
   const roundScoreOf = (seed) => {
     if (!cupData?.round_start_set) return null;
     const s = seedInfo(seed); if (!s) return null;
-    return (scoreByName[s.participant_name] ?? 0) - (cupData.round_start_scores[seed] ?? 0);
+    return (scoreByName[normName(s.participant_name)] ?? 0) - (cupData.round_start_scores[seed] ?? 0);
   };
   // ניקוד מתחילת סיבוב 1 (לכלל ב') = current − cup_start_score
   const cupTotalOf = (seed) => {
     const s = seedInfo(seed); if (!s) return 0;
-    return (scoreByName[s.participant_name] ?? 0) - (cupData.cup_start_scores?.[seed] ?? s.entry_score);
+    return (scoreByName[normName(s.participant_name)] ?? 0) - (cupData.cup_start_scores?.[seed] ?? s.entry_score);
   };
   // הפרש ניצחון בסיבוב היסטורי מסוים (לכללים ד-ה)
   const marginInRound = (seed, roundIdx) => {
@@ -277,7 +280,7 @@ export default function YossiCup() {
     setWorking(true);
     try {
       const starts = {};
-      cupData.seeds.forEach(s => { if (cupData.alive.includes(s.seed)) starts[s.seed] = scoreByName[s.participant_name] ?? 0; });
+      cupData.seeds.forEach(s => { if (cupData.alive.includes(s.seed)) starts[s.seed] = scoreByName[normName(s.participant_name)] ?? 0; });
       // 📸 snapshot: רשימת ה-question_id של כל השאלות שכבר היו סגורות (יש actual_result) ברגע זה.
       //    "שאלות הסיבוב" = שאלות שייסגרו מעכשיו והלאה (לא היו ב-snapshot).
       let closedNow = [];
@@ -335,6 +338,7 @@ export default function YossiCup() {
       const histEntry = {
         round_size: cupData.round_size, round_index: cupData.current_round,
         is_prelim: wasPrelim, bye_seeds: byes,
+        round_start_closed_qids: (cupData.round_start_closed_qids || []),
         decided_at: new Date().toISOString(), results,
       };
       const newHistory = [...(cupData.history || []), histEntry];
@@ -391,8 +395,7 @@ export default function YossiCup() {
   const myMatchInfo = (() => {
     const q = (myName || '').trim();
     if (!q) return null;
-    const norm = (s) => (s || '').trim();
-    const isMe = (name) => norm(name) === q;
+    const isMe = (name) => normName(name) === normName(q);
 
     if (!cupData) {
       // לפני קיבוע — מחפשים ב-livePairs (כולל בּיי). במקדים global = match_no.
@@ -403,13 +406,13 @@ export default function YossiCup() {
       }
       return null;
     }
-    // אחרי קיבוע — מחפשים בזוגות הסיבוב הנוכחי (מספר גלובלי)
+    // אחרי קיבוע — מחפשים בזוגות הסיבוב הנוכחי (מספר גלובלי) → השחקן עדיין חי ומשחק
     for (const pair of (cupData.pairs || [])) {
       const gno = pair.global_no || pair.match_no;
       if (isMe(nameOf(pair.a))) return { match_no: gno, opponent: nameOf(pair.b), side: 'a' };
       if (isMe(nameOf(pair.b))) return { match_no: gno, opponent: nameOf(pair.a), side: 'b' };
     }
-    // בּיי בסיבוב מקדים
+    // בּיי בסיבוב מקדים פעיל
     if (cupData.is_prelim && cupData.current_round === 1) {
       const order = bracketOrder(CUP_SIZE);
       for (const seed of (cupData.bye_seeds || [])) {
@@ -417,6 +420,20 @@ export default function YossiCup() {
           const posIdx = order.indexOf(seed);
           return { match_no: posIdx >= 0 ? posIdx + 1 : null, isBye: true };
         }
+      }
+    }
+    // 🆕 השחקן קיים בבראקט אך לא בזוגות הנוכחיים → אלוף, או הודח. מאתרים מתי ומול מי.
+    const meSeedObj = (cupData.seeds || []).find(s => isMe(s.participant_name));
+    if (meSeedObj) {
+      const mySeed = meSeedObj.seed;
+      if (cupData.champion === mySeed) return { isChampion: true };
+      const aliveSet = new Set(cupData.alive || []);
+      if (!aliveSet.has(mySeed)) {
+        for (const h of (cupData.history || [])) {
+          const rec = (h.results || []).find(r => r.loser === mySeed);
+          if (rec) return { eliminated: true, eliminatedRound: roundLabel(h.round_size, !!h.is_prelim), lostTo: nameOf(rec.winner) };
+        }
+        return { eliminated: true };
       }
     }
     return null;
@@ -610,12 +627,26 @@ export default function YossiCup() {
 
       if (decided) {
         // שלב שהוכרע — מההיסטוריה
+        const matches = decided.results.map(r => ({
+          a: nameOf(r.a), b: nameOf(r.b), seedA: r.a, seedB: r.b, match_no: r.match_no, global_no: r.global_no,
+          sa: r.sa, sb: r.sb, won: r.winner === r.a ? 'a' : 'b',
+        }));
+        // 🆕 בשלב מקדים שהוכרע: מוסיפים את העולים האוטומטיים (בּיי) כשורות במקומם בעץ.
+        //    בלעדיהם חסרות 14 עמדות בעמודה, ופריסת העץ של הסיבוב הבא מתעוותת (תיבות
+        //    מתיישרות זו-לצד-זו במקום במבנה עץ, והעולים האוטומטיים "נעלמים").
+        if (decided.is_prelim) {
+          const ordP = bracketOrder(CUP_SIZE);
+          (decided.bye_seeds || []).forEach(seed => {
+            const posIdx = ordP.indexOf(seed);
+            const mn = posIdx >= 0 ? posIdx + 1 : 9999;
+            matches.push({ a: nameOf(seed), b: null, seedA: seed, seedB: null, aBye: true, match_no: mn, global_no: mn, byeRow: true });
+          });
+          matches.sort((x, y) => (x.global_no || x.match_no || 0) - (y.global_no || y.match_no || 0));
+        }
         return {
           label: roundLabel(st.size, st.isPrelim), size: st.size, isPrelim: st.isPrelim,
-          matches: decided.results.map(r => ({
-            a: nameOf(r.a), b: nameOf(r.b), seedA: r.a, seedB: r.b, match_no: r.match_no, global_no: r.global_no,
-            sa: r.sa, sb: r.sb, won: r.winner === r.a ? 'a' : 'b',
-          })),
+          closedQids: (decided.round_start_closed_qids || []),
+          matches,
         };
       }
 
@@ -638,6 +669,7 @@ export default function YossiCup() {
         }
         return {
           label: roundLabel(st.size, st.isPrelim), size: st.size, isPrelim: st.isPrelim,
+          closedQids: (cupData.round_start_closed_qids || []),
           matches: liveMatches,
         };
       }
@@ -659,7 +691,7 @@ export default function YossiCup() {
             future: true,
           });
         }
-        return { label: roundLabel(st.size, false), size: st.size, isPrelim: false, matches: rows };
+        return { label: roundLabel(st.size, false), size: st.size, isPrelim: false, closedQids: [], matches: rows };
       }
 
       // שלב עתידי רגיל — תיבות עם "מנצח משחק X" (מהשלב הקודם)
@@ -667,6 +699,7 @@ export default function YossiCup() {
       const prevOffset = globalOffset(prevSize, false);
       return {
         label: roundLabel(st.size, st.isPrelim), size: st.size, isPrelim: st.isPrelim,
+        closedQids: [],
         matches: Array.from({ length: numMatches }, (_, k) => ({
           a: null, b: null, future: true,
           aFrom: prevOffset + (2 * k + 1),   // מנצח המשחק הגלובלי הזה
@@ -824,12 +857,12 @@ export default function YossiCup() {
                     <div className="rounded overflow-hidden" style={{ background: mine ? 'rgba(56,189,248,0.12)' : m.byeRow ? 'rgba(52,211,153,0.06)' : 'rgba(15,23,42,0.85)', border: `1px solid ${mine ? 'rgba(56,189,248,0.6)' : m.live ? 'rgba(6,182,212,0.25)' : m.byeRow ? 'rgba(52,211,153,0.25)' : m.future ? 'rgba(100,116,139,0.1)' : 'rgba(100,116,139,0.18)'}` }}>
                       {gno != null && <div className="text-[8px] text-slate-500 text-center" style={{ background: 'rgba(100,116,139,0.1)' }}>משחק {gno}</div>}
                       <Cell name={m.a} seed={m.seedA} score={m.sa} scoreClass={scoreClr(m, 'a')} crown={m.won === 'a'} dim={m.won === 'b'} bye={m.aBye} me={meA} from={m.aFrom}
-                        onName={(m.a && m.b) ? () => onPeek({ me: m.a, opp: m.b }) : undefined} />
+                        onName={(m.a && m.b) ? () => onPeek({ me: m.a, opp: m.b, closedQids: col.closedQids || [], scoreMe: m.sa, scoreOpp: m.sb }) : undefined} />
                       <div className="h-px" style={{ background: 'rgba(100,116,139,0.12)' }} />
                       {m.byeRow
                         ? <div className="px-1.5 py-1 text-[9px] text-green-400">⏭️ עולה אוטומטית</div>
                         : <Cell name={m.b} seed={m.seedB} score={m.sb} scoreClass={scoreClr(m, 'b')} crown={m.won === 'b'} dim={m.won === 'a'} bye={m.bBye} me={meB} from={m.bFrom}
-                            onName={(m.a && m.b) ? () => onPeek({ me: m.b, opp: m.a }) : undefined} />}
+                            onName={(m.a && m.b) ? () => onPeek({ me: m.b, opp: m.a, closedQids: col.closedQids || [], scoreMe: m.sb, scoreOpp: m.sa }) : undefined} />}
                     </div>
                     {champ && <div className="text-[10px] text-amber-300 font-bold text-center py-0.5 mt-0.5 rounded" style={{ background: 'rgba(251,191,36,0.12)' }}>🏆 {champ}</div>}
                   </div>
@@ -850,7 +883,9 @@ export default function YossiCup() {
           me={peekPair.me}
           opp={peekPair.opp}
           gameId={currentGame?.id}
-          startClosedQids={cupData?.round_start_closed_qids || []}
+          startClosedQids={peekPair?.closedQids || []}
+          scoreMe={peekPair?.scoreMe}
+          scoreOpp={peekPair?.scoreOpp}
           onClose={() => setPeekPair(null)}
         />
       )}
@@ -875,7 +910,7 @@ export default function YossiCup() {
                   </div>
                   <div style={{ padding: '8px 10px', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                     {st.names.length === 0
-                      ? <span style={{ color: '#64748b', fontSize: '0.8rem' }}>טרم ידוע</span>
+                      ? <span style={{ color: '#64748b', fontSize: '0.8rem' }}>טרם ידוע</span>
                       : st.names.map((item, j) => (
                           <span key={j} style={{ fontSize: '0.78rem', color: '#e2e8f0', background: 'rgba(255,255,255,0.05)', padding: '3px 8px', borderRadius: '5px', display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
                             <span>{item.name}</span>
@@ -921,7 +956,16 @@ export default function YossiCup() {
         {myName.trim() && (
           <div className="mt-2 text-sm">
             {myMatchInfo ? (
-              myMatchInfo.isBye ? (
+              myMatchInfo.isChampion ? (
+                <p className="text-amber-300">
+                  🏆 <b>{myName.trim()}</b> — אלוף הגביע!
+                </p>
+              ) : myMatchInfo.eliminated ? (
+                <p className="text-red-300">
+                  ❌ <b>{myName.trim()}</b> — הודח{myMatchInfo.eliminatedRound ? ` ב${myMatchInfo.eliminatedRound}` : ''}
+                  {myMatchInfo.lostTo && <> · הפסיד ל-<b className="text-amber-300">{myMatchInfo.lostTo}</b></>}
+                </p>
+              ) : myMatchInfo.isBye ? (
                 <p className="text-green-300">
                   ⏭️ <b>{myName.trim()}</b> — עולה אוטומטית לסיבוב 2 (בּיי){myMatchInfo.match_no ? ` · משחק מס' ${myMatchInfo.match_no}` : ''}
                 </p>
@@ -931,7 +975,7 @@ export default function YossiCup() {
                 </p>
               )
             ) : (
-              <p className="text-slate-400">לא נמצא משתתף בשם זה בסיבוב הנוכחי.</p>
+              <p className="text-slate-400">לא נמצא משתתף בשם זה בבראקט.</p>
             )}
             {/* כפתור הצגת יריבים פוטנציאליים בחלון צף */}
             <button onClick={() => setShowPotential(true)}
@@ -1279,7 +1323,7 @@ function ParticipantSearchSelect({ participants, selected, onSelect }) {
 // ── מסך צף: ניחושי שני משתתפים בדו-קרב, אחד מול השני, לשאלות הסיבוב הנוכחי ──
 //   "שאלות הסיבוב" = שאלות שנסגרו (יש actual_result) אך לא היו ב-snapshot של תחילת הסיבוב.
 //   הניקוד לכל שאלה מחושב ע"י calculateQuestionScore — אותה לוגיקה כמו בשאר המסכים.
-function DuelPeek({ me, opp, gameId, startClosedQids, onClose }) {
+function DuelPeek({ me, opp, gameId, startClosedQids, scoreMe, scoreOpp, onClose }) {
   const [loading, setLoading] = useState(true);
   const [questions, setQuestions] = useState([]);
   const [predsMe, setPredsMe] = useState({});   // question_id(text) → text_prediction
@@ -1291,8 +1335,11 @@ function DuelPeek({ me, opp, gameId, startClosedQids, onClose }) {
       setLoading(true);
       try {
         const qs = await db.Question.filter({ game_id: gameId }, null, 10000);
-        const pMe = await db.Prediction.filter({ participant_name: me, game_id: gameId }, null, 10000);
-        const pOpp = await db.Prediction.filter({ participant_name: opp, game_id: gameId }, null, 10000);
+        // 🔧 נירמול שם (רווחים סביב '+') — שם הבראקט עלול להכיל רווח-ליד-+ שאינו קיים
+        //    בטבלת הניחושים, מה שגרם למשיכה ריקה ולכל השאלות להופיע אפורות ללא ניקוד.
+        const normName = (n) => (n || '').replace(/\s*\+\s*/g, '+').replace(/\s+/g, ' ').trim();
+        const pMe = await db.Prediction.filter({ participant_name: normName(me), game_id: gameId }, null, 10000);
+        const pOpp = await db.Prediction.filter({ participant_name: normName(opp), game_id: gameId }, null, 10000);
         if (!alive) return;
         setQuestions(qs || []);
         const toMap = (arr) => {
@@ -1329,16 +1376,24 @@ function DuelPeek({ me, opp, gameId, startClosedQids, onClose }) {
     return typeof a === 'number' || typeof b === 'number';
   };
 
-  const roundQuestions = questions
+  // כל השאלות שיש בהן ניקוד (סגורות, או שאלות-זוג שכבר מזכות)
+  // כלל אחיד: מוצגת כל שאלה שנספרת במסך הראשי — כלומר יש לה תוצאת אמת (סגורה),
+  //   או שהמערכת נתנה עליה ניקוד חיובי בפועל לאחד המשתתפים (ניקוד חלקי לגיטימי,
+  //   כמו "מקום 3" שכבר נקבע). מקור אחד לאמת — בדיוק כמו ספירת המסך הראשי.
+  const scoredQuestions = questions
     .filter(q => {
-      if (snapSet.has(q.id)) return false;
       if (isClosed(q)) return true;
-      // שאלת זוג ריקה (סגנית/שלישי שטרם נקבעו) — תוצג אם אחד המשתתפים כבר זכאי לניקוד
-      //   (הניקוד נובע מתוצאות אחרות שכבר נקבעו בבית — למשל מקסיקו עלתה כראש).
-      if (isPairTable(q) && earnsScore(q)) return true;
-      return false;
+      const a = scoreOf(q, predsMe[String(q.id)]);
+      const b = scoreOf(q, predsOpp[String(q.id)]);
+      return (typeof a === 'number' && a > 0) || (typeof b === 'number' && b > 0);
     })
     .sort((a, b) => (a.table_id || '').localeCompare(b.table_id || '') || (parseInt(a.question_id, 10) || 0) - (parseInt(b.question_id, 10) || 0));
+  // שאלות הסיבוב הנוכחי = אלה שנסגרו מאז נקודת הייחוס (לא היו בצילום ההתחלה)
+  const roundOnly = scoredQuestions.filter(q => !snapSet.has(q.id));
+  // אם בסיבוב הנוכחי טרם נסגרו שאלות (תחילת סיבוב / צפייה בדו-קרב מוקדם) —
+  //   מציגים את ההשוואה המצטברת המלאה, כדי שהחלון לעולם לא יהיה ריק כשיש מה להשוות.
+  const showingCumulative = roundOnly.length === 0 && scoredQuestions.length > 0;
+  const roundQuestions = showingCumulative ? scoredQuestions : roundOnly;
 
   // צבע badge לפי ניקוד: ירוק=מלא | צהוב=חלקי | אדום=0 סופי | אפור=0 לא-סופי/טרם
   const badgeFor = (score, maxNum, isFinal) => {
@@ -1365,6 +1420,9 @@ function DuelPeek({ me, opp, gameId, startClosedQids, onClose }) {
     if (typeof a === 'number') sumMe += a;
     if (typeof b === 'number') sumOpp += b;
   });
+  // הניקוד הסמכותי = ניקוד-הסיבוב מהמסך הראשי (sa/sb). אם לא הועבר — נפילה לסכום המחושב.
+  const displayMe = (scoreMe != null) ? scoreMe : sumMe;
+  const displayOpp = (scoreOpp != null) ? scoreOpp : sumOpp;
 
   return createPortal(
     <div onClick={onClose} dir="rtl" style={{ position: 'fixed', inset: 0, zIndex: 100000, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '12px' }}>
@@ -1381,11 +1439,11 @@ function DuelPeek({ me, opp, gameId, startClosedQids, onClose }) {
         <div style={{ display: 'flex', borderBottom: '1px solid rgba(100,116,139,0.2)' }}>
           <div style={{ flex: 1, textAlign: 'center', padding: '10px', borderLeft: '1px solid rgba(100,116,139,0.2)' }}>
             <div style={{ color: '#22d3ee', fontWeight: 700, fontSize: '0.85rem' }}>{me}</div>
-            <div style={{ color: '#e2e8f0', fontSize: '1.1rem', fontWeight: 800 }}>{sumMe}</div>
+            <div style={{ color: '#e2e8f0', fontSize: '1.1rem', fontWeight: 800 }}>{displayMe}</div>
           </div>
           <div style={{ flex: 1, textAlign: 'center', padding: '10px' }}>
             <div style={{ color: '#fbbf24', fontWeight: 700, fontSize: '0.85rem' }}>{opp}</div>
-            <div style={{ color: '#e2e8f0', fontSize: '1.1rem', fontWeight: 800 }}>{sumOpp}</div>
+            <div style={{ color: '#e2e8f0', fontSize: '1.1rem', fontWeight: 800 }}>{displayOpp}</div>
           </div>
         </div>
 
@@ -1408,10 +1466,12 @@ function DuelPeek({ me, opp, gameId, startClosedQids, onClose }) {
               const isFinal = isScoreFinal(q, questions);
               const bMe = badgeFor(sMe, mx, isFinal), bOpp = badgeFor(sOpp, mx, isFinal);
               let label = q.question_text || q.table_description || `${q.table_id} · ${q.question_id}`;
-              // 🏆 T17 תת-שאלת העפלה: ה-question_text הוא "האם תעפיל ?" בלבד — נוסיף את שם הבית
+              // 🏆 T17 תת-שאלת העפלה: ה-question_text הוא "האם תעפיל ?" בלבד.
+              //    נציג שם השלב (רשימת הנבחרות…) + שם הבית + השאלה — כדי שלא תיעלם השאלה.
               if (q.table_id === 'T17' && String(q.question_id).includes('.')) {
                 const gname = groupNameFromQid(q.question_id);
-                if (gname) label = `${gname} — ${label}`;
+                const stage = q.stage_name || q.table_description || '';
+                label = [stage, gname, q.question_text].filter(Boolean).join(' · ');
               }
               return (
                 <div key={q.id} style={{ marginBottom: '6px', borderRadius: '8px', overflow: 'hidden', border: '1px solid rgba(100,116,139,0.18)' }}>
