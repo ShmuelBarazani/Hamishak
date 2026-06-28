@@ -877,22 +877,25 @@ function InsightCard({ insight, me }) {
       const max = Math.max(...insight.professionData.map(d=>d.value),1);
       return (
         <div style={{display:'flex',flexDirection:'column',gap:5,marginTop:8}}>
-          {insight.professionData.map((d,i)=>(
+          {insight.professionData.map((d,i)=>{
+            const isMine = me && d.members.some(m=>m.name===me);
+            return (
             <div key={i}>
-              <div onClick={()=>setProfOpen(profOpen===d.name?null:d.name)} style={{display:'grid',gridTemplateColumns:'minmax(150px,42%) 1fr 34px',gap:8,alignItems:'center',cursor:'pointer',padding:'3px 4px',borderRadius:6,background:profOpen===d.name?'rgba(14,165,233,0.12)':'transparent'}}>
-                <span style={{fontSize:'0.8rem',color:'#f8fafc',fontWeight:profOpen===d.name?700:400}}>{d.name}</span>
+              <div onClick={()=>setProfOpen(profOpen===d.name?null:d.name)} style={{display:'grid',gridTemplateColumns:'minmax(150px,42%) 1fr 34px',gap:8,alignItems:'center',cursor:'pointer',padding:'3px 4px',borderRadius:6,background:profOpen===d.name?'rgba(14,165,233,0.12)':(isMine?'rgba(251,191,36,0.1)':'transparent')}}>
+                <span style={{fontSize:'0.8rem',color:isMine?'#fbbf24':'#f8fafc',fontWeight:(profOpen===d.name||isMine)?700:400}}>{isMine?'🙋 ':''}{d.name}</span>
                 <div style={{height:14,borderRadius:4,overflow:'hidden',background:'rgba(255,255,255,0.04)'}}>
-                  <div style={{width:`${(d.value/max)*100}%`,height:'100%',background:COLORS[i%COLORS.length],borderRadius:4}}></div>
+                  <div style={{width:`${(d.value/max)*100}%`,height:'100%',background:isMine?'#fbbf24':COLORS[i%COLORS.length],borderRadius:4}}></div>
                 </div>
-                <span style={{fontSize:'0.74rem',color:'#94a3b8',textAlign:'left',fontWeight:700}}>{d.value}</span>
+                <span style={{fontSize:'0.74rem',color:isMine?'#fbbf24':'#94a3b8',textAlign:'left',fontWeight:700}}>{d.value}</span>
               </div>
               {profOpen===d.name&&(
                 <div style={{display:'flex',flexWrap:'wrap',gap:4,padding:'6px 8px',background:'rgba(10,15,26,0.6)',borderRadius:6,margin:'3px 0 5px',border:'1px solid rgba(14,165,233,0.25)'}}>
-                  {d.members.map((m,k)=><span key={k} title={m.raw} style={{background:'#1e293b',color:'#f8fafc',padding:'3px 8px',borderRadius:4,fontSize:'0.72rem'}}>{m.name} <span style={{color:'#64748b'}}>({m.raw})</span></span>)}
+                  {d.members.map((m,k)=><span key={k} title={m.raw} style={{background:m.name===me?'#fbbf24':'#1e293b',color:m.name===me?'#0a0f1a':'#f8fafc',fontWeight:m.name===me?800:400,padding:'3px 8px',borderRadius:4,fontSize:'0.72rem'}}>{m.name===me?'🙋 ':''}{m.name} <span style={{color:m.name===me?'#78350f':'#64748b'}}>({m.raw})</span></span>)}
                 </div>
               )}
             </div>
-          ))}
+            );
+          })}
           <p style={{color:'#475569',fontSize:'0.68rem',marginTop:2}}>לחץ על קבוצה לרשימת המשתתפים</p>
         </div>
       );
@@ -904,18 +907,21 @@ function InsightCard({ insight, me }) {
       return (
         <div style={{marginTop:8}}>
           <div dir="ltr" style={{display:'flex',alignItems:'flex-end',gap:6,height:170,padding:'0 4px'}}>
-            {insight.ageData.map((d,i)=>(
+            {insight.ageData.map((d,i)=>{
+              const isMine = me && d.members.some(m=>m.name===me);
+              return (
               <div key={i} onClick={()=>setProfOpen(profOpen===d.name?null:d.name)} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',cursor:'pointer'}}>
-                <span style={{fontSize:'0.72rem',color:'#f8fafc',fontWeight:700,marginBottom:3}}>{d.value}</span>
-                <div style={{width:'100%',height:`${(d.value/max)*120}px`,minHeight:d.value>0?4:0,background:profOpen===d.name?'#f472b6':COLORS[i%COLORS.length],borderRadius:'5px 5px 0 0',transition:'all 0.15s'}}></div>
-                <span style={{fontSize:'0.62rem',color:'#94a3b8',marginTop:4,direction:'rtl'}}>{d.name}</span>
+                <span style={{fontSize:'0.72rem',color:isMine?'#fbbf24':'#f8fafc',fontWeight:700,marginBottom:3}}>{isMine?'🙋':''}{d.value}</span>
+                <div style={{width:'100%',height:`${(d.value/max)*120}px`,minHeight:d.value>0?4:0,background:profOpen===d.name?'#f472b6':(isMine?'#fbbf24':COLORS[i%COLORS.length]),borderRadius:'5px 5px 0 0',boxShadow:isMine?'0 0 0 2px #fbbf24':'none',transition:'all 0.15s'}}></div>
+                <span style={{fontSize:'0.62rem',color:isMine?'#fbbf24':'#94a3b8',marginTop:4,direction:'rtl',fontWeight:isMine?800:400}}>{d.name}</span>
               </div>
-            ))}
+              );
+            })}
           </div>
           {profOpen&&insight.ageData.find(d=>d.name===profOpen)&&(
             <div style={{display:'flex',flexWrap:'wrap',gap:4,padding:'8px 8px 2px',marginTop:8,borderTop:'1px solid #1e293b'}}>
               {insight.ageData.find(d=>d.name===profOpen).members.map((m,k)=>(
-                <span key={k} style={{background:'#1e293b',color:'#f8fafc',padding:'3px 8px',borderRadius:4,fontSize:'0.72rem'}}>{m.name} <span style={{color:'#64748b'}}>({m.age})</span></span>
+                <span key={k} style={{background:m.name===me?'#fbbf24':'#1e293b',color:m.name===me?'#0a0f1a':'#f8fafc',fontWeight:m.name===me?800:400,padding:'3px 8px',borderRadius:4,fontSize:'0.72rem'}}>{m.name===me?'🙋 ':''}{m.name} <span style={{color:m.name===me?'#78350f':'#64748b'}}>({m.age})</span></span>
               ))}
             </div>
           )}
@@ -1027,7 +1033,7 @@ function InsightCard({ insight, me }) {
               <p style={{color:'#94a3b8',fontSize:'0.74rem',marginTop:3}}>תוצאה: <b style={{color:'#fde68a'}}>{d.actual}</b> • צדקו {d.correct}/{d.total}</p>
               {d.heroes.length>0&&(
                 <div style={{display:'flex',flexWrap:'wrap',gap:4,marginTop:5}}>
-                  {d.heroes.map((h,k)=><span key={k} style={{background:'rgba(16,185,129,0.15)',color:'#6ee7b7',padding:'2px 7px',borderRadius:4,fontSize:'0.7rem'}}>🌟 {h}</span>)}
+                  {d.heroes.map((h,k)=><span key={k} style={{background:h===me?'#fbbf24':'rgba(16,185,129,0.15)',color:h===me?'#0a0f1a':'#6ee7b7',fontWeight:h===me?800:400,padding:'2px 7px',borderRadius:4,fontSize:'0.7rem'}}>{h===me?'🙋':'🌟'} {h}</span>)}
                 </div>
               )}
             </div>
@@ -1046,8 +1052,8 @@ function InsightCard({ insight, me }) {
             <span><span style={{display:'inline-block',width:10,height:10,background:'#3b82f6',borderRadius:2,marginLeft:4,verticalAlign:'middle'}}></span>כיוונים (5)</span>
           </div>
           {insight.stackedData.map((d,i)=>(
-            <div key={i} style={{display:'grid',gridTemplateColumns:'110px 1fr 60px',gap:6,alignItems:'center'}}>
-              <span style={{fontSize:'0.76rem',color:'#f8fafc',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{d.name}</span>
+            <div key={i} style={{display:'grid',gridTemplateColumns:'110px 1fr 60px',gap:6,alignItems:'center',background:d.name===me?'rgba(251,191,36,0.12)':'transparent',borderRadius:5,padding:'1px 3px'}}>
+              <span style={{fontSize:'0.76rem',color:d.name===me?'#fbbf24':'#f8fafc',fontWeight:d.name===me?800:400,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{d.name===me?'🙋 ':''}{d.name}</span>
               <div style={{display:'flex',height:16,borderRadius:4,overflow:'hidden',background:'rgba(255,255,255,0.04)'}}>
                 <div style={{width:`${(d.bull*10/max)*100}%`,background:'#84cc16'}} title={`${d.bull} בולים`}></div>
                 <div style={{width:`${(d.dir*5/max)*100}%`,background:'#3b82f6'}} title={`${d.dir} כיוונים`}></div>
@@ -1065,17 +1071,20 @@ function InsightCard({ insight, me }) {
         <div style={{display:'flex',flexDirection:'column',gap:8,marginTop:8}}>
           <div>
             <p style={{color:'#fb923c',fontWeight:700,fontSize:'0.8rem',marginBottom:5}}>👥 הזוגות הכי דומים:</p>
-            {insight.twinsData?.map((d,i)=>(
-              <div key={i} style={{display:'flex',justifyContent:'space-between',alignItems:'center',background:'rgba(249,115,22,0.07)',border:'1px solid rgba(249,115,22,0.22)',borderRadius:6,padding:'5px 9px',marginBottom:3}}>
-                <span style={{color:'#f8fafc',fontSize:'0.78rem'}}>{d.pair}</span>
+            {insight.twinsData?.map((d,i)=>{
+              const isMine = me && (d.pair===me || d.pair.split(' + ').includes(me));
+              return (
+              <div key={i} style={{display:'flex',justifyContent:'space-between',alignItems:'center',background:isMine?'rgba(251,191,36,0.12)':'rgba(249,115,22,0.07)',border:`1px solid ${isMine?'#fbbf24':'rgba(249,115,22,0.22)'}`,borderRadius:6,padding:'5px 9px',marginBottom:3}}>
+                <span style={{color:isMine?'#fbbf24':'#f8fafc',fontWeight:isMine?700:400,fontSize:'0.78rem'}}>{isMine?'🙋 ':''}{d.pair}</span>
                 <Badge style={{background:'#ea580c',color:'#fff',fontSize:'0.7rem'}}>{d.simPct}% זהים</Badge>
               </div>
-            ))}
+              );
+            })}
           </div>
           <div>
             <p style={{color:'#94a3b8',fontWeight:700,fontSize:'0.8rem',marginBottom:5}}>🐺 הזאבים הבודדים:</p>
             <div style={{display:'flex',flexWrap:'wrap',gap:4}}>
-              {insight.lonersData?.map((d,i)=><span key={i} style={{background:'rgba(100,116,139,0.15)',color:'#cbd5e1',padding:'3px 8px',borderRadius:4,fontSize:'0.74rem'}}>{d.name} ({d.simPct}%)</span>)}
+              {insight.lonersData?.map((d,i)=><span key={i} style={{background:d.name===me?'#fbbf24':'rgba(100,116,139,0.15)',color:d.name===me?'#0a0f1a':'#cbd5e1',fontWeight:d.name===me?800:400,padding:'3px 8px',borderRadius:4,fontSize:'0.74rem'}}>{d.name===me?'🙋 ':''}{d.name} ({d.simPct}%)</span>)}
             </div>
           </div>
         </div>
@@ -1157,7 +1166,7 @@ function InsightCard({ insight, me }) {
             <YAxis type="category" dataKey="name" width={130} stroke="#334155" tick={{fontSize:11,fill:'#f8fafc'}}/>
             <Tooltip content={({payload})=>payload?.[0]?<div style={{background:'#0a0f1a',border:`1px solid ${insight.color}`,borderRadius:6,padding:'8px 12px'}}><p style={{color:insight.color,fontWeight:700}}>{payload[0].payload.name}</p><p style={{color:'#f8fafc'}}>{payload[0].value}</p></div>:null}/>
             <Bar dataKey="value" radius={[0,6,6,0]} label={{position:'right',fill:'#94a3b8',fontSize:10,formatter:v=>v}}>
-              {insight.chartData.map((_,i)=><Cell key={i} fill={COLORS[i%COLORS.length]}/>)}
+              {insight.chartData.map((d,i)=><Cell key={i} fill={d.name===me?'#fbbf24':COLORS[i%COLORS.length]}/>)}
             </Bar>
           </BarChart>
         </ResponsiveContainer>
