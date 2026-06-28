@@ -865,7 +865,7 @@ function computeInsights(allQuestions, allPredictions, teams, myPredByQid = {}) 
 }
 
 // ─── Insight Card ─────────────────────────────────────────────────────────────
-function InsightCard({ insight }) {
+function InsightCard({ insight, me }) {
   const [expanded, setExpanded] = useState(false);
 
   const [profOpen, setProfOpen] = useState(null);
@@ -946,23 +946,29 @@ function InsightCard({ insight }) {
             ))}
           </div>
           {cur.summary&&<p style={{color:insight.color,fontSize:'0.82rem',fontWeight:700,margin:'0 0 6px'}}>{cur.summary}</p>}
+          {me&&cur.available&&(()=>{const mb=(cur.distData||[]).find(d=>d.members.some(m=>m.name===me));return mb
+            ? <p style={{color:'#fbbf24',fontSize:'0.8rem',fontWeight:700,margin:'0 0 6px'}}>🙋 {me} — אתה בקטגוריה {mb.name} ({insight.id==='advancers_potential'?'עולות אפשריות':'עולות נכונות'})</p>
+            : <p style={{color:'#64748b',fontSize:'0.74rem',margin:'0 0 6px'}}>🙋 {me} — אין נתון לשלב זה</p>;})()}
           {cur.available?(
             <>
               <div dir="ltr" style={{display:'flex',alignItems:'flex-end',gap:5,height:148,padding:'0 4px',overflowX:'auto'}}>
-                {data.map((d,i)=>(
+                {data.map((d,i)=>{
+                  const isMine = me && d.members.some(m=>m.name===me);
+                  return (
                   <div key={i} onClick={()=>setProfOpen(profOpen===d.name?null:d.name)} style={{flex:`1 0 ${data.length>14?'34px':'auto'}`,minWidth:28,display:'flex',flexDirection:'column',alignItems:'center',cursor:'pointer'}}>
-                    <span style={{fontSize:'0.72rem',color:'#f8fafc',fontWeight:700,marginBottom:3}}>{d.value}</span>
-                    <div style={{width:'100%',height:`${(d.value/max)*108}px`,minHeight:4,background:profOpen===d.name?insight.color:COLORS[i%COLORS.length],borderRadius:'5px 5px 0 0',transition:'all 0.15s'}}></div>
-                    <span style={{fontSize:'0.66rem',color:'#94a3b8',marginTop:4,fontWeight:600}}>{d.name}</span>
+                    <span style={{fontSize:'0.72rem',color:isMine?'#fbbf24':'#f8fafc',fontWeight:700,marginBottom:3}}>{isMine?'🙋':''}{d.value}</span>
+                    <div style={{width:'100%',height:`${(d.value/max)*108}px`,minHeight:4,background:profOpen===d.name?insight.color:(isMine?'#fbbf24':COLORS[i%COLORS.length]),borderRadius:'5px 5px 0 0',boxShadow:isMine?'0 0 0 2px #fbbf24':'none',transition:'all 0.15s'}}></div>
+                    <span style={{fontSize:'0.66rem',color:isMine?'#fbbf24':'#94a3b8',marginTop:4,fontWeight:isMine?800:600}}>{d.name}</span>
                   </div>
-                ))}
+                  );
+                })}
               </div>
               <p style={{color:'#64748b',fontSize:'0.66rem',marginTop:2,textAlign:'center'}}>{cur.hint||'מספר עולות'} →</p>
               {open?(
                 <div style={{marginTop:8,borderTop:'1px solid #1e293b',paddingTop:8}}>
                   <p style={{color:insight.color,fontSize:'0.78rem',fontWeight:700,marginBottom:6}}>{open.value} משתתפים — {open.name}:</p>
                   <div style={{display:'flex',flexWrap:'wrap',gap:4}}>
-                    {open.members.map((m,k)=><span key={k} style={{background:'#1e293b',color:'#f8fafc',padding:'3px 8px',borderRadius:4,fontSize:'0.72rem'}}>{m.name}</span>)}
+                    {open.members.map((m,k)=><span key={k} style={{background:m.name===me?'#fbbf24':'#1e293b',color:m.name===me?'#0a0f1a':'#f8fafc',fontWeight:m.name===me?800:400,padding:'3px 8px',borderRadius:4,fontSize:'0.72rem'}}>{m.name===me?'🙋 ':''}{m.name}</span>)}
                   </div>
                 </div>
               ):(
@@ -2366,7 +2372,7 @@ export default function Statistics() {
                   </Card>
                 ):aiInsights&&aiInsights.length>0?(
                   <div className="grid md:grid-cols-2 gap-4">
-                    {aiInsights.map(ins=><InsightCard key={ins.id} insight={ins}/>)}
+                    {aiInsights.map(ins=><InsightCard key={ins.id} insight={ins} me={statsParticipant}/>)}
                   </div>
                 ):(
                   <Card style={{background:'rgba(30,41,59,0.6)',border:'1px solid rgba(139,92,246,0.3)'}}>
