@@ -722,25 +722,34 @@ function computeInsights(allQuestions, allPredictions, teams, myPredByQid = {}) 
     const normT = s => normalizeTeam((s||'').trim());
     const isClosed = a => { const t=(a||'').trim(); return t && t!=='__CLEAR__'; };
 
-    // בונה תובנת דירוג משלב: actualSet = העולות בפועל, predByPart = ניחושי כל משתתף
+    // בונה תובנת התפלגות משלב: actualSet = העולות בפועל, predByPart = ניחושי כל משתתף
     const pushAdvancerInsight = (id, stageName, actualSet, predByPart) => {
       if (actualSet.size === 0) return; // עדיין אין תוצאות לשלב הזה
-      const scored = participants.map(name=>{
+      const N = actualSet.size;
+      const names = Object.keys(predByPart);       // רק מי שניחש בשלב הזה
+      if (names.length === 0) return;
+      // לכל משתתף — מספר הפגיעות (עולות שניחש נכון)
+      const hitsByPart = names.map(name=>{
         const s = predByPart[name] || new Set();
         let hit = 0; s.forEach(t=>{ if(actualSet.has(t)) hit++; });
         return { name, hit };
-      }).filter(x=>x.hit>0).sort((a,b)=>b.hit-a.hit);
-      if (scored.length === 0) return;
-      const top = scored.slice(0,15);
-      const avg = scored.reduce((s,x)=>s+x.hit,0)/scored.length;
-      const perfect = scored.filter(x=>x.hit===actualSet.size).length;
+      });
+      // התפלגות: דלי לכל כמות פגיעות 0..N, ערך = כמה משתתפים, ושמותיהם
+      const buckets = [];
+      for (let k=0; k<=N; k++) {
+        const members = hitsByPart.filter(x=>x.hit===k).map(x=>({ name:x.name }));
+        if (members.length>0) buckets.push({ name:String(k), value:members.length, members });
+      }
+      const best = [...hitsByPart].sort((a,b)=>b.hit-a.hit)[0];
+      const avg  = hitsByPart.reduce((s,x)=>s+x.hit,0)/hitsByPart.length;
+      const perfect = hitsByPart.filter(x=>x.hit===N).length;
       insights.push({
-        id, icon:'🎯', title:`מצטייני ניחוש העולות — ${stageName}`,
+        id, icon:'🎯', title:`ניחושי העולות — ${stageName}`,
         category:'נוק-אאוט', color:'#10b981',
-        summary:`${top[0].name} הכי מדייק: ${top[0].hit} מתוך ${actualSet.size} עולות`,
-        chartData: top.map(x=>({ name:x.name, value:x.hit })),
-        chartType:'bar_h',
-        detail:`מתוך ${actualSet.size} נבחרות שעלו ל${stageName}: ממוצע פגיעות ${avg.toFixed(1)}, ${perfect} משתתפים פגעו בכולן. הדירוג מציג את 15 המדייקים ביותר.`,
+        summary:`הכי מדייק: ${best.name} (${best.hit}/${N}) • ממוצע ${avg.toFixed(1)} • ${perfect} פגעו בכולן`,
+        distData: buckets,
+        chartType:'advdist',
+        detail:`התפלגות: כמה משתתפים פגעו בכל כמות עולות, מתוך ${N} נבחרות שעלו ל${stageName}. לחץ על עמודה לרשימת המשתתפים.`,
       });
     };
 
@@ -858,6 +867,38 @@ function InsightCard({ insight }) {
             </div>
           )}
           <p style={{color:'#475569',fontSize:'0.68rem',marginTop:6}}>לחץ על עמודה לרשימת המשתתפים</p>
+        </div>
+      );
+    }
+
+    // 🎯 advancers distribution — היסטוגרמה לחיצה (כמות עולות → מס' משתתפים → שמות)
+    if (insight.chartType === 'advdist') {
+      const data = insight.distData || [];
+      const max = Math.max(...data.map(d=>d.value),1);
+      const open = data.find(d=>d.name===profOpen);
+      return (
+        <div style={{marginTop:8}}>
+          <div dir="ltr" style={{display:'flex',alignItems:'flex-end',gap:5,height:170,padding:'0 4px',overflowX:'auto'}}>
+            {data.map((d,i)=>(
+              <div key={i} onClick={()=>setProfOpen(profOpen===d.name?null:d.name)} style={{flex:`1 0 ${data.length>14?'34px':'auto'}`,minWidth:28,display:'flex',flexDirection:'column',alignItems:'center',cursor:'pointer'}}>
+                <span style={{fontSize:'0.72rem',color:'#f8fafc',fontWeight:700,marginBottom:3}}>{d.value}</span>
+                <div style={{width:'100%',height:`${(d.value/max)*120}px`,minHeight:4,background:profOpen===d.name?'#34d399':COLORS[i%COLORS.length],borderRadius:'5px 5px 0 0',transition:'all 0.15s'}}></div>
+                <span style={{fontSize:'0.66rem',color:'#94a3b8',marginTop:4,fontWeight:600}}>{d.name}</span>
+              </div>
+            ))}
+          </div>
+          <p style={{color:'#64748b',fontSize:'0.66rem',marginTop:2,textAlign:'center'}}>מספר עולות שניחש נכון →</p>
+          {open&&(
+            <div style={{marginTop:8,borderTop:'1px solid #1e293b',paddingTop:8}}>
+              <p style={{color:'#34d399',fontSize:'0.78rem',fontWeight:700,marginBottom:6}}>{open.value} משתתפים פגעו ב-{open.name} עולות:</p>
+              <div style={{display:'flex',flexWrap:'wrap',gap:4}}>
+                {open.members.map((m,k)=>(
+                  <span key={k} style={{background:'#1e293b',color:'#f8fafc',padding:'3px 8px',borderRadius:4,fontSize:'0.72rem'}}>{m.name}</span>
+                ))}
+              </div>
+            </div>
+          )}
+          {!open&&<p style={{color:'#475569',fontSize:'0.68rem',marginTop:6,textAlign:'center'}}>לחץ על עמודה לרשימת המשתתפים</p>}
         </div>
       );
     }
