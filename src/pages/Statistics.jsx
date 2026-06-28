@@ -185,6 +185,11 @@ const loadAllRankings = async gameId => {
   } catch (e) { console.warn('rankings fetch failed:', e.message); return []; }
 };
 
+// 🗄️ מטמון ברמת המודול — שורד מעבר בין דפים (לא נמחק ב-unmount של הקומפוננטה).
+//    מאפשר הצגה מיידית של הסטטיסטיקות בחזרה לדף, עם רענון שקט ברקע.
+const STATS_DATA_CACHE = {};            // gameId -> { ts, questions, predictions }
+const STATS_CACHE_FRESH_MS = 30 * 1000; // מתחת ל-30 שנ' — דילוג על רענון רשת מיותר
+
 // ─── Participant Panel (click-to-lock) ────────────────────────────────────────
 function ParticipantPanel({ title, subtitle, count, percentage, participants, color, onClose }) {
   return (
@@ -1472,21 +1477,24 @@ export default function Statistics() {
   useEffect(()=>{ setAiInsights(null); },[statsParticipant]);
   const closePanel = key => setLockedPanel(prev=>({...prev,[key]:null}));
 
+  const prevGameRef = useRef(null);
   useEffect(()=>{
-    setAiInsights(null);
-    setInsightsLoading(false);
-    setMoversData(null);
-    setSelectedSection(null);
+    const gid = currentGame?.id || null;
+    // איפוס תצוגה רק במעבר משחק אמיתי (לא בחזרה לדף עם אותו משחק)
+    const gameChanged = prevGameRef.current !== null && prevGameRef.current !== gid;
+    prevGameRef.current = gid;
+    if(gameChanged){
+      setAiInsights(null);
+      setInsightsLoading(false);
+      setMoversData(null);
+      setSelectedSection(null);
+      restoredSectionRef.current = true; // לא לשחזר סקשן ישן ממשחק אחר
+    }
     loadAllData();
   },[currentGame]);
 
-  const loadAllData = async () => {
-    if(!currentGame){setLoading(false);return;}
-    const wcGame = currentGame.id === WC_GAME_ID;
-    setLoading(true);
-    try {
-      const questions = await db.Question.filter({game_id:currentGame.id},null,5000);
-      const predictions = await loadAllPreds(currentGame.id);
+  // עיבוד הנתונים → state (סינכרוני, מהיר). משמש גם להצגה מיידית מהמטמון.
+  const applyData = (questions, predictions, wcGame) => {
       setAllQuestions(questions);
       setAllPredictions(predictions);
 
@@ -1547,6 +1555,28 @@ export default function Statistics() {
         QUAL_DESC_PATTERNS.some(p => (t.description||'').includes(p));
       setQualifierTables(allSpecial.filter(t => isQualTable(t)));
       setSpecialTables(allSpecial.filter(t => !isQualTable(t)));
+  };
+
+  const loadAllData = async (force=false) => {
+    if(!currentGame){setLoading(false);return;}
+    const wcGame = currentGame.id === WC_GAME_ID;
+    const cached = STATS_DATA_CACHE[currentGame.id];
+    const age = cached ? Date.now()-cached.ts : Infinity;
+    try {
+      if(cached){
+        // 🗄️ הצגה מיידית מהמטמון — הגרפים לא נעלמים בחזרה לדף
+        applyData(cached.questions, cached.predictions, wcGame);
+        setLoading(false);
+      } else {
+        setLoading(true);
+      }
+      // רענון מהרשת: רק אם אין מטמון, או שהוא ישן (>30 שנ'), או רענון כפוי
+      if(!cached || age>STATS_CACHE_FRESH_MS || force){
+        const questions = await db.Question.filter({game_id:currentGame.id},null,5000);
+        const predictions = await loadAllPreds(currentGame.id);
+        STATS_DATA_CACHE[currentGame.id] = { ts:Date.now(), questions, predictions };
+        applyData(questions, predictions, wcGame);
+      }
     } catch(e){console.error(e);}
     setLoading(false);
   };
