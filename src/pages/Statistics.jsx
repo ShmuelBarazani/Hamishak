@@ -36,6 +36,28 @@ const WC_STAGE_BY_DAY = (() => {
   return m;
 })();
 
+// 🆕 משחקי שלב הנוק-אאוט — אין להם שאלות-משחק במערכת (השיבוץ לא היה ידוע מראש),
+//    לכן הם מוזרקים לתצוגת היום לפי התאריך. תאריכים ושעות בשעון ישראל (ET+7).
+//    שלב 1/16 — לפי לוח המונדיאל הרשמי 2026. שלבים מאוחרים ייווספו ככל שייקבעו העולים.
+const WC_KO_FIXTURES = [
+  { mon:6, day:28, time:'22:00', home:'דרום אפריקה', away:'קנדה',      stage:'שלב 1/16' },
+  { mon:6, day:29, time:'20:00', home:'ברזיל',        away:'יפן',       stage:'שלב 1/16' },
+  { mon:6, day:29, time:'23:30', home:'גרמניה',       away:'פרגוואי',   stage:'שלב 1/16' },
+  { mon:6, day:30, time:'04:00', home:'הולנד',        away:'מרוקו',     stage:'שלב 1/16' },
+  { mon:6, day:30, time:'20:00', home:'חוף השנהב',    away:'נורווגיה',  stage:'שלב 1/16' },
+  { mon:7, day:1,  time:'00:00', home:'צרפת',         away:'שבדיה',     stage:'שלב 1/16' },
+  { mon:7, day:1,  time:'04:00', home:'מקסיקו',       away:'אקוואדור',  stage:'שלב 1/16' },
+  { mon:7, day:1,  time:'19:00', home:'אנגליה',       away:'קונגו',     stage:'שלב 1/16' },
+  { mon:7, day:1,  time:'23:00', home:'בלגיה',        away:'סנגל',      stage:'שלב 1/16' },
+  { mon:7, day:2,  time:'03:00', home:'ארה"ב',        away:'בוסניה',    stage:'שלב 1/16' },
+  { mon:7, day:2,  time:'22:00', home:'ספרד',         away:'אוסטריה',   stage:'שלב 1/16' },
+  { mon:7, day:3,  time:'02:00', home:'פורטוגל',      away:'קרואטיה',   stage:'שלב 1/16' },
+  { mon:7, day:3,  time:'06:00', home:'שווייץ',       away:"אלג'יריה",  stage:'שלב 1/16' },
+  { mon:7, day:3,  time:'21:00', home:'אוסטרליה',     away:'מצרים',     stage:'שלב 1/16' },
+  { mon:7, day:4,  time:'01:00', home:'ארגנטינה',     away:'קייפ ורדה', stage:'שלב 1/16' },
+  { mon:7, day:4,  time:'04:30', home:'קולומביה',     away:'גאנה',      stage:'שלב 1/16' },
+];
+
 // 💼 קבוצות מקצוע — לפי סדר בדיקה (הראשון שתואם מנצח)
 const PROFESSION_GROUPS = [
   { name:'כספים וכלכלה 💰',     keywords:['רו"ח','רו״ח','רואה חשבון','רואי חשבון','כלכלן','קלקלן','כספים','חשב','בנק','שוק ההון','השקעות','ביטוח','גזבר','פנסיוני','פיננס','נדל"ן','נדל״ן'] },
@@ -1321,10 +1343,21 @@ export default function Statistics() {
       if(!map[d.key]) map[d.key]=[];
       map[d.key].push({q,time:d.time,day:d.day,mon:d.mon});
     });
+    // 🆕 הזרקת משחקי הנוק-אאוט (אין להם שאלות-משחק) — רק במונדיאל
+    if(isWC){
+      WC_KO_FIXTURES.forEach((f,i)=>{
+        const key=`${f.mon}-${f.day}`;
+        if(!map[key]) map[key]=[];
+        map[key].push({
+          q:{ id:`ko_${i}`, home_team:f.home, away_team:f.away, stage_name:f.stage, actual_result:'', table_id:'KO', isKnockout:true },
+          time:f.time, day:f.day, mon:f.mon
+        });
+      });
+    }
     const toMin=t=>{const m=String(t||'').match(/(\d{1,2}):(\d{2})/);return m?(+m[1])*60+(+m[2]):99999;};
     Object.values(map).forEach(arr=>arr.sort((a,b)=>toMin(a.time)-toMin(b.time)));
     return map;
-  },[allQuestions]);
+  },[allQuestions,isWC]);
 
   const participantsByQA = useMemo(()=>{
     const idx=new Map();
@@ -1849,6 +1882,9 @@ export default function Statistics() {
                     </span>
                   </div>
                   <div style={{display:'flex',gap:14,marginTop:8,paddingTop:8,borderTop:'1px solid rgba(255,255,255,0.05)',fontSize:'0.74rem',color:'#94a3b8',flexWrap:'wrap'}}>
+                    {q.isKnockout?(
+                      <span>🏆 {q.stage_name} • הניחושים נעולים ב-📋 רשימות העולות</span>
+                    ):(<>
                     <span>{q.stage_name} • {st.total} ניחושים</span>
                     {st.hasActual?(
                       <>
@@ -1859,6 +1895,7 @@ export default function Statistics() {
                     ):(
                       <span>הניחוש הנפוץ: <b style={{color:'#22d3ee'}}>{formatResult(st.top)}</b> ({st.topCount} בחרו)</span>
                     )}
+                    </>)}
                   </div>
                 </div>
               );
