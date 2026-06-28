@@ -801,19 +801,35 @@ function computeInsights(allQuestions, allPredictions, teams, myPredByQid = {}) 
     // ===== סט B: פוטנציאל לפי הבראקט הקבוע — בכמה עולות יכול כל משתתף עוד לפגוע =====
     //   קיבוץ צמדי 1/16 לפי עץ הבראקט: שמינית=צמד בודד(2 קב'), רבע=2 צמדים(4), חצי=4(8), גמר=8(16).
     const bracket = (typeof WC_BRACKET_ORDER!=='undefined') ? WC_BRACKET_ORDER.map(([h,a])=>[normT(h),normT(a)]) : [];
+    // ☠️ קבוצות שהודחו — נגזר מהעולים שהוזנו בפועל (גם מילוי חלקי של עולה אחת).
+    //    קבוצה שהודחה יורדת מחישוב הפוטנציאל, והגרף מתעדכן בהתאם.
+    const chunkTeams=(start,size)=>{ const t=new Set(); for(let j=start;j<start+size&&j<bracket.length;j++) bracket[j].forEach(x=>t.add(x)); return t; };
+    const advR16=actualOf('T19'), advQF=actualOf('T21'), advSF=actualOf('T23'), advF=actualOf('T25');
+    const eliminated=new Set();
+    const elimStep=(adv,prevAdv,size)=>{
+      if(adv.size===0) return;
+      for(let i=0;i<bracket.length;i+=size){
+        const teams=chunkTeams(i,size);
+        const contenders=[...teams].filter(t=>prevAdv?prevAdv.has(t):true); // מי שעוד היה במרוץ לכיסא
+        const advanced=[...teams].filter(t=>adv.has(t));                    // מי שעלה לכיסא הזה
+        if(advanced.length>0) contenders.forEach(t=>{ if(!adv.has(t)) eliminated.add(t); }); // השאר הודחו
+      }
+    };
+    elimStep(advR16, null,   1); // 1/16 → שמינית: בכל צמד, המפסיד הודח
+    elimStep(advQF,  advR16, 2); // שמינית → רבע
+    elimStep(advSF,  advQF,  4); // רבע → חצי
+    elimStep(advF,   advSF,  8); // חצי → גמר
+
     const potentialByChunk = (predBy, matchesPerSlot) => {
       const names=Object.keys(predBy);
       if(names.length===0||bracket.length===0) return null;
       const chunks=[];
-      for(let i=0;i<bracket.length;i+=matchesPerSlot){
-        const teams=new Set();
-        for(let j=i;j<i+matchesPerSlot && j<bracket.length;j++) bracket[j].forEach(t=>teams.add(t));
-        chunks.push(teams);
-      }
+      for(let i=0;i<bracket.length;i+=matchesPerSlot) chunks.push(chunkTeams(i,matchesPerSlot));
       const counts=names.map(name=>{
         const s=predBy[name]||new Set();
         let pot=0;
-        chunks.forEach(ch=>{ for(const t of s){ if(ch.has(t)){ pot++; break; } } });
+        // כיסא נספר אם למשתתף יש בו לפחות קבוצה אחת שעדיין חיה (לא הודחה)
+        chunks.forEach(ch=>{ for(const t of s){ if(ch.has(t) && !eliminated.has(t)){ pot++; break; } } });
         return {name,hit:pot};
       });
       return buildDist(counts, chunks.length, 'אפשריות');
