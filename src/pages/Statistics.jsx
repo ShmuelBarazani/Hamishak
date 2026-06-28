@@ -1489,7 +1489,15 @@ export default function Statistics() {
 
   const lockPanel  = (key,data) => setLockedPanel(prev=>prev[key]?.title===data?.title?{...prev,[key]:null}:{...prev,[key]:data});
   // 🆕 כשמשנים את המשתתף הנבחר — חשב מחדש את התובנות (לעדכון "ההימור שלי")
-  useEffect(()=>{ setAiInsights(null); },[statsParticipant]);
+  // בעת שינוי המשתתף הנבחר — חישוב מחדש *ברקע* (לעדכון הסימון וההימור שלי).
+  // לא מרוקנים את aiInsights — הגרפים הקיימים נשארים עד שהחדשים מוכנים (אין "אין נתונים").
+  useEffect(()=>{
+    if(selectedSection!=='insights'||loading||!allQuestions.length) return;
+    const t=setTimeout(()=>{
+      setAiInsights(computeInsights(allQuestions,allPredictions,teams,myPredByQid));
+    },50);
+    return ()=>clearTimeout(t);
+  },[statsParticipant]); // eslint-disable-line react-hooks/exhaustive-deps
   const closePanel = key => setLockedPanel(prev=>({...prev,[key]:null}));
 
   const prevGameRef = useRef(null);
