@@ -58,6 +58,20 @@ const WC_KO_FIXTURES = [
   { mon:7, day:4,  time:'04:30', home:'קולומביה',     away:'גאנה',      stage:'שלב 1/16' },
 ];
 
+// 🌳 סדר עץ הבראקט הקבוע (לפי התמונה): חצי שמאל (8 צמדים) ואז חצי ימין (8 צמדים).
+//    משמש לחישוב פוטנציאל העולות לשלבים הבאים — קיבוץ צמדים סמוכים:
+//    שמינית = צמד בודד (2 קבוצות), רבע = 2 צמדים (4), חצי = 4 (8), גמר = 8 (16).
+const WC_BRACKET_ORDER = [
+  ['גרמניה','פרגוואי'],   ['צרפת','שבדיה'],
+  ['דרום אפריקה','קנדה'], ['הולנד','מרוקו'],
+  ['פורטוגל','קרואטיה'],  ['ספרד','אוסטריה'],
+  ['ארה"ב','בוסניה'],     ['בלגיה','סנגל'],
+  ['ברזיל','יפן'],        ['חוף השנהב','נורווגיה'],
+  ['מקסיקו','אקוואדור'],  ['אנגליה','קונגו'],
+  ['ארגנטינה','קייפ ורדה'],['אוסטרליה','מצרים'],
+  ['שווייץ',"אלג'יריה"],  ['קולומביה','גאנה'],
+];
+
 // 💼 קבוצות מקצוע — לפי סדר בדיקה (הראשון שתואם מנצח)
 const PROFESSION_GROUPS = [
   { name:'כספים וכלכלה 💰',     keywords:['רו"ח','רו״ח','רואה חשבון','רואי חשבון','כלכלן','קלקלן','כספים','חשב','בנק','שוק ההון','השקעות','ביטוח','גזבר','פנסיוני','פיננס','נדל"ן','נדל״ן'] },
@@ -727,7 +741,7 @@ function computeInsights(allQuestions, allPredictions, teams, myPredByQid = {}) 
       if(counts.length===0) return null;
       const buckets=[];
       for(let k=0;k<=N;k++){
-        const members=counts.filter(x=>x.hit===k).map(x=>({name:x.name}));
+        const members=counts.filter(x=>x.hit===k).map(x=>({name:x.name})).sort((a,b)=>a.name.localeCompare(b.name,'he'));
         if(members.length>0) buckets.push({name:String(k),value:members.length,members});
       }
       if(buckets.length===0) return null;
@@ -781,26 +795,40 @@ function computeInsights(allQuestions, allPredictions, teams, myPredByQid = {}) 
       return {key:s.key,label:s.label,available:!!d,distData:d?.distData||[],summary:d?.summary||'',hint:'מספר עולות שניחש נכון',emptyMsg:`התוצאות של ${s.label} עדיין לא הוזנו — הגרף יופיע אוטומטית כשתסמן את העולים.`};
     });
     if(stagesA.some(s=>s.available)){
-      insights.push({id:'advancers_actual',icon:'🎯',title:'ניחושי העולות — פגיעות בפועל',category:'נוק-אאוט',color:'#10b981',chartType:'advmulti',stages:stagesA,defaultStage:Math.max(0,stagesA.findIndex(s=>s.available)),summary:'כמה נבחרות שעלו בפועל ניחש כל משתתף נכון — בחר שלב.',detail:'לחץ על שלב למעלה, ואז על עמודה לרשימת המשתתפים. שלבים נעולים 🔒 יתווספו אוטומטית כשתסמן את העולים.'});
+      insights.push({id:'advancers_actual',icon:'🎯',title:'ניחושי העולות — פגיעות בפועל',category:'נוק-אאוט',color:'#10b981',chartType:'advmulti',stages:stagesA,defaultStage:Math.max(0,stagesA.findIndex(s=>s.available)),summary:'לכל שלב — כמה מהנבחרות שעלו בפועל ניחש כל משתתף נכון.',detail:'בחר שלב למעלה. ציר X = מספר העולות שהמשתתף פגע בהן, גובה העמודה = כמה משתתפים. לחץ על עמודה לרשימת השמות (א׳–ב׳). שלבים נעולים 🔒 ייפתחו אוטומטית כשתסמן את העולים שלהם.'});
     }
 
-    // ===== סט B: פוטנציאל לפי השיבוץ — מי יכול לפגוע בהכי הרבה עולות =====
-    const potentialDist = (fixtures, predBy, N, unit) => {
+    // ===== סט B: פוטנציאל לפי הבראקט הקבוע — בכמה עולות יכול כל משתתף עוד לפגוע =====
+    //   קיבוץ צמדי 1/16 לפי עץ הבראקט: שמינית=צמד בודד(2 קב'), רבע=2 צמדים(4), חצי=4(8), גמר=8(16).
+    const bracket = (typeof WC_BRACKET_ORDER!=='undefined') ? WC_BRACKET_ORDER.map(([h,a])=>[normT(h),normT(a)]) : [];
+    const potentialByChunk = (predBy, matchesPerSlot) => {
       const names=Object.keys(predBy);
-      if(names.length===0||!fixtures||fixtures.length===0) return null;
-      const fx=fixtures.map(f=>[normT(f.home),normT(f.away)]);
-      const counts=names.map(name=>{const s=predBy[name]||new Set();let pot=0;fx.forEach(([h,a])=>{if(s.has(h)||s.has(a))pot++;});return {name,hit:pot};});
-      return buildDist(counts, N, unit);
+      if(names.length===0||bracket.length===0) return null;
+      const chunks=[];
+      for(let i=0;i<bracket.length;i+=matchesPerSlot){
+        const teams=new Set();
+        for(let j=i;j<i+matchesPerSlot && j<bracket.length;j++) bracket[j].forEach(t=>teams.add(t));
+        chunks.push(teams);
+      }
+      const counts=names.map(name=>{
+        const s=predBy[name]||new Set();
+        let pot=0;
+        chunks.forEach(ch=>{ for(const t of s){ if(ch.has(t)){ pot++; break; } } });
+        return {name,hit:pot};
+      });
+      return buildDist(counts, chunks.length, 'אפשריות');
     };
-    const potR32 = (typeof WC_KO_FIXTURES!=='undefined') ? potentialDist(WC_KO_FIXTURES, predOf('T19'), 16, 'אפשריות') : null;
     const stagesB=[
-      {key:'r32',label:'שמינית (לפי 1/16)',available:!!potR32,distData:potR32?.distData||[],summary:potR32?.summary||'',hint:'עולות-לשמינית אפשריות',emptyMsg:'אין עדיין שיבוץ/ניחושים.'},
-      {key:'t19',label:'רבע (לפי שמינית)',available:false,distData:[],summary:'',hint:'',emptyMsg:'יתווסף כשייקבע שיבוץ השמינית.'},
-      {key:'t21',label:'חצי (לפי רבע)',available:false,distData:[],summary:'',hint:'',emptyMsg:'יתווסף כשייקבע שיבוץ הרבע.'},
-      {key:'t23',label:'גמר (לפי חצי)',available:false,distData:[],summary:'',hint:'',emptyMsg:'יתווסף כשייקבע שיבוץ החצי.'},
-    ];
+      {key:'t19',label:'שמינית',tbl:'T19',per:1},
+      {key:'t21',label:'רבע',  tbl:'T21',per:2},
+      {key:'t23',label:'חצי',  tbl:'T23',per:4},
+      {key:'t25',label:'גמר',  tbl:'T25',per:8},
+    ].map(d=>{
+      const pot=potentialByChunk(predOf(d.tbl), d.per);
+      return {key:d.key,label:d.label,available:!!pot,distData:pot?.distData||[],summary:pot?.summary||'',hint:`עולות אפשריות ל${d.label}`,emptyMsg:`אין עדיין ניחושים ל${d.label}.`};
+    });
     if(stagesB.some(s=>s.available)){
-      insights.push({id:'advancers_potential',icon:'🔮',title:'פוטנציאל העולות — לפי השיבוץ',category:'נוק-אאוט',color:'#8b5cf6',chartType:'advmulti',stages:stagesB,defaultStage:0,summary:'בהינתן הצמדים — בכמה עולות יכול כל משתתף לכל היותר לפגוע.',detail:'הפוטנציאל = מספר הצמדים שבהם ניחשת לפחות אחת משתי הקבוצות לעלות. לחץ על עמודה לרשימת המשתתפים.'});
+      insights.push({id:'advancers_potential',icon:'🔮',title:'פוטנציאל העולות — לפי הבראקט',category:'נוק-אאוט',color:'#8b5cf6',chartType:'advmulti',stages:stagesB,defaultStage:Math.max(0,stagesB.findIndex(s=>s.available)),summary:'בהינתן הבראקט הקבוע — בכמה עולות יכול כל משתתף עוד לפגוע, לכל שלב.',detail:'התקרה לכל משתתף: בכמה "כיסאות" בשלב הזה ניחש לפחות קבוצה אחת מאלו שעדיין יכולות להגיע אליו (לפי עץ הבראקט). אם כל הקבוצות החיות שלו יעלו — זו כמות הפגיעות המקסימלית האפשרית. ציר X = מספר עולות אפשריות, גובה העמודה = כמה משתתפים. לחץ על עמודה לרשימת השמות (א׳–ב׳).'});
     }
   }
 
