@@ -2402,8 +2402,12 @@ export default function Statistics() {
               </div>
             )}
 
-            {/* ⚽ משחקים — שלבים וגם ימים מהלוח */}
-            {(isRoundsSection||(isDaySection&&(matchesByDay[selectedSection.replace('day_','')]||[]).length>0))&&(
+            {/* ⚽ משחקים — שלבים וגם ימים מהלוח. בימי נוק-אאוט (משחקים סינתטיים בלבד) — בלי גרפי ניחושים ריקים */}
+            {(()=>{
+              const _dayMs = isDaySection ? (matchesByDay[selectedSection.replace('day_','')]||[]) : [];
+              const _koOnly = isDaySection && _dayMs.length>0 && _dayMs.every(m=>m.q?.isKnockout);
+              return (isRoundsSection||(isDaySection&&_dayMs.length>0&&!_koOnly));
+            })()&&(
               <div className="space-y-6" style={isDaySection?{marginTop:'16px'}:undefined}>
                 {gameStats!==null?(
                   <>
