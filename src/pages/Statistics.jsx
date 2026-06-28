@@ -716,8 +716,84 @@ function computeInsights(allQuestions, allPredictions, teams, myPredByQid = {}) 
     }
   }
 
+  // ── 🎯 מצטייני ניחוש העולות ────────────────────────────────────────────
+  //   לכל שלב נוק-אאוט: כמה נבחרות שעלו בפועל ניחש כל משתתף נכון (חיתוך קבוצות).
+  {
+    const normT = s => normalizeTeam((s||'').trim());
+    const isClosed = a => { const t=(a||'').trim(); return t && t!=='__CLEAR__'; };
+
+    // בונה תובנת דירוג משלב: actualSet = העולות בפועל, predByPart = ניחושי כל משתתף
+    const pushAdvancerInsight = (id, stageName, actualSet, predByPart) => {
+      if (actualSet.size === 0) return; // עדיין אין תוצאות לשלב הזה
+      const scored = participants.map(name=>{
+        const s = predByPart[name] || new Set();
+        let hit = 0; s.forEach(t=>{ if(actualSet.has(t)) hit++; });
+        return { name, hit };
+      }).filter(x=>x.hit>0).sort((a,b)=>b.hit-a.hit);
+      if (scored.length === 0) return;
+      const top = scored.slice(0,15);
+      const avg = scored.reduce((s,x)=>s+x.hit,0)/scored.length;
+      const perfect = scored.filter(x=>x.hit===actualSet.size).length;
+      insights.push({
+        id, icon:'🎯', title:`מצטייני ניחוש העולות — ${stageName}`,
+        category:'נוק-אאוט', color:'#10b981',
+        summary:`${top[0].name} הכי מדייק: ${top[0].hit} מתוך ${actualSet.size} עולות`,
+        chartData: top.map(x=>({ name:x.name, value:x.hit })),
+        chartType:'bar_h',
+        detail:`מתוך ${actualSet.size} נבחרות שעלו ל${stageName}: ממוצע פגיעות ${avg.toFixed(1)}, ${perfect} משתתפים פגעו בכולן. הדירוג מציג את 15 המדייקים ביותר.`,
+      });
+    };
+
+    // ── שלב 1/16: העולות מהבתים = ראשי/סגניות (T16) + שלישיות שהעפילו (T17 .1=כן) ──
+    const t16 = allQuestions.filter(q=>q.table_id==='T16' && !String(q.question_id).includes('.'));
+    const actualR32 = new Set();
+    t16.forEach(q=>{ if(isClosed(q.actual_result)) normT(q.actual_result).split('|||').forEach(t=>actualR32.add(normT(t))); });
+    // T17: מיפוי בית→שאלת שלישית ושאלת העפלה
+    const t17main={}, t17adv={};
+    allQuestions.filter(q=>q.table_id==='T17').forEach(q=>{
+      const qid=String(q.question_id);
+      if(qid.includes('.')) t17adv[qid.split('.')[0]]=q; else t17main[qid]=q;
+    });
+    Object.keys(t17main).forEach(g=>{
+      const third=t17main[g].actual_result, adv=t17adv[g]?.actual_result;
+      if(isClosed(third) && (adv||'').trim()==='כן') actualR32.add(normT(third));
+    });
+
+    if(actualR32.size>0){
+      const t16ids=new Set(t16.map(q=>q.id));
+      const t17mainById={}, t17advById={};
+      Object.entries(t17main).forEach(([g,q])=>t17mainById[q.id]=g);
+      Object.entries(t17adv).forEach(([g,q])=>t17advById[q.id]=g);
+      const predR32={}, partThird={}, partAdv={};
+      preds.forEach(p=>{
+        const v=p.text_prediction?.trim(); if(!v) return;
+        if(t16ids.has(p.question_id)) (predR32[p.participant_name]??=new Set()).add(normT(v));
+        if(t17mainById[p.question_id]!=null) (partThird[p.participant_name]??={})[t17mainById[p.question_id]]=normT(v);
+        if(t17advById[p.question_id]!=null) (partAdv[p.participant_name]??={})[t17advById[p.question_id]]=v;
+      });
+      Object.keys(partThird).forEach(name=>{
+        Object.keys(partThird[name]).forEach(g=>{
+          if(partAdv[name]?.[g]==='כן') (predR32[name]??=new Set()).add(partThird[name][g]);
+        });
+      });
+      pushAdvancerInsight('advancers_r32','שלב 1/16', actualR32, predR32);
+    }
+
+    // ── שלבים הבאים: טבלאות "נבחרת עולה" ייעודיות (יופיעו אוטומטית כשייקבעו העולות) ──
+    [{tbl:'T19',name:'שמינית הגמר'},{tbl:'T21',name:'רבע הגמר'},{tbl:'T23',name:'חצי הגמר'},{tbl:'T25',name:'הגמר'}].forEach(({tbl,name})=>{
+      const qs=allQuestions.filter(q=>q.table_id===tbl);
+      const actual=new Set();
+      qs.forEach(q=>{ if(isClosed(q.actual_result)) actual.add(normT(q.actual_result)); });
+      if(actual.size===0) return;
+      const ids=new Set(qs.map(q=>q.id));
+      const predBy={};
+      preds.forEach(p=>{ const v=p.text_prediction?.trim(); if(v&&ids.has(p.question_id)) (predBy[p.participant_name]??=new Set()).add(normT(v)); });
+      pushAdvancerInsight(`advancers_${tbl}`, name, actual, predBy);
+    });
+  }
+
   // 🔝 פילוחי המשתתפים (גיל + מקצוע) לראש הרשימה
-  const TOP_ORDER = ['ages','professions'];
+  const TOP_ORDER = ['advancers_r32','advancers_T19','advancers_T21','advancers_T23','advancers_T25','ages','professions'];
   insights.sort((a,b)=>{
     const ai=TOP_ORDER.indexOf(a.id), bi=TOP_ORDER.indexOf(b.id);
     if(ai!==-1||bi!==-1) return (ai===-1?99:ai)-(bi===-1?99:bi);
