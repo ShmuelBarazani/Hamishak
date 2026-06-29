@@ -72,6 +72,53 @@ const WC_BRACKET_ORDER = [
   ['שווייץ',"אלג'יריה"],  ['קולומביה','גאנה'],
 ];
 
+// 🗓️ שלבי הנוק-אאוט מעבר ל-1/16 — לפי הבראקט הרשמי של FIFA. תאריכים/שעות בשעון ישראל.
+//    lvl: 1=שמינית, 2=רבע, 3=חצי, 4=גמר. הבלוק בעץ הבראקט נגזר אוטומטית מ-lvl+idx.
+//    (תאריכי השמינית משוערים בטווח 4-7/7 — מומלץ לאמת.)
+const WC_KO_ROUNDS = [
+  { lvl:1, idx:0, mon:7, day:4,  time:'23:00', stage:'שמינית הגמר' },
+  { lvl:1, idx:1, mon:7, day:4,  time:'20:00', stage:'שמינית הגמר' },
+  { lvl:1, idx:4, mon:7, day:5,  time:'23:00', stage:'שמינית הגמר' },
+  { lvl:1, idx:5, mon:7, day:5,  time:'03:00', stage:'שמינית הגמר' },
+  { lvl:1, idx:2, mon:7, day:6,  time:'22:00', stage:'שמינית הגמר' },
+  { lvl:1, idx:3, mon:7, day:6,  time:'03:00', stage:'שמינית הגמר' },
+  { lvl:1, idx:6, mon:7, day:7,  time:'23:00', stage:'שמינית הגמר' },
+  { lvl:1, idx:7, mon:7, day:7,  time:'04:00', stage:'שמינית הגמר' },
+  { lvl:2, idx:0, mon:7, day:9,  time:'23:00', stage:'רבע הגמר' },
+  { lvl:2, idx:1, mon:7, day:10, time:'22:00', stage:'רבע הגמר' },
+  { lvl:2, idx:2, mon:7, day:12, time:'00:00', stage:'רבע הגמר' },
+  { lvl:2, idx:3, mon:7, day:12, time:'04:00', stage:'רבע הגמר' },
+  { lvl:3, idx:0, mon:7, day:14, time:'22:00', stage:'חצי הגמר' },
+  { lvl:3, idx:1, mon:7, day:15, time:'22:00', stage:'חצי הגמר' },
+  { lvl:4, idx:0, mon:7, day:19, time:'22:00', stage:'הגמר 🏆' },
+];
+
+// הבלוק בעץ הבראקט (טווח משחקי 1/16) עבור צד מסוים של משחק נוק-אאוט
+const koSlotBlock = (lvl, idx, side) => {
+  const blockSize = 1 << lvl, half = blockSize >> 1;
+  return [ idx*blockSize + (side==='away'?half:0), half ];
+};
+// קבוצות שהודחו — נגזר מתוצאות הנוק-אאוט שהוזנו (המפסידה בכל משחק)
+const koEliminatedSet = (koResults) => {
+  const el = new Set();
+  Object.entries(koResults||{}).forEach(([key,val])=>{
+    const m = String(val).match(/(\d+)\s*-\s*(\d+)/); if(!m) return;
+    const parts = key.split(' - '); if(parts.length<2) return;
+    const home = parts[0], away = parts.slice(1).join(' - ');
+    const hs=+m[1], as=+m[2];
+    if(hs>as) el.add(normalizeTeam(away));
+    else if(as>hs) el.add(normalizeTeam(home));
+  });
+  return el;
+};
+// הקבוצות שעדיין יכולות למלא צד מסוים (לפי הבלוק, פחות המודחות)
+const koAliveInBlock = (start, len, el) => {
+  const out=[];
+  for(let i=start;i<start+len && i<WC_BRACKET_ORDER.length;i++)
+    WC_BRACKET_ORDER[i].forEach(t=>{ if(!el.has(normalizeTeam(t))) out.push(t); });
+  return out;
+};
+
 // 💼 קבוצות מקצוע — לפי סדר בדיקה (הראשון שתואם מנצח)
 const PROFESSION_GROUPS = [
   { name:'כספים וכלכלה 💰',     keywords:['רו"ח','רו״ח','רואה חשבון','רואי חשבון','כלכלן','קלקלן','כספים','חשב','בנק','שוק ההון','השקעות','ביטוח','גזבר','פנסיוני','פיננס','נדל"ן','נדל״ן'] },
@@ -1658,19 +1705,36 @@ export default function Statistics() {
     });
     // 🆕 הזרקת משחקי הנוק-אאוט (אין להם שאלות-משחק) — רק במונדיאל
     if(isWC){
+      const el = koEliminatedSet(koResults);
+      // שלב 1/16 — קבוצות ידועות
       WC_KO_FIXTURES.forEach((f,i)=>{
         const key=`${f.mon}-${f.day}`;
         if(!map[key]) map[key]=[];
         map[key].push({
-          q:{ id:`ko_${i}`, home_team:f.home, away_team:f.away, stage_name:f.stage, actual_result:'', table_id:'KO', isKnockout:true },
+          q:{ id:`ko_${i}`, home_team:f.home, away_team:f.away, homeTeams:[f.home], awayTeams:[f.away], stage_name:f.stage, actual_result:'', table_id:'KO', isKnockout:true },
           time:f.time, day:f.day, mon:f.mon
+        });
+      });
+      // שמינית → גמר — קבוצות אפשריות לפי הבראקט (מצטמצמות עם הזנת תוצאות)
+      WC_KO_ROUNDS.forEach(r=>{
+        const [hStart,hLen]=koSlotBlock(r.lvl,r.idx,'home');
+        const [aStart,aLen]=koSlotBlock(r.lvl,r.idx,'away');
+        const homeTeams=koAliveInBlock(hStart,hLen,el);
+        const awayTeams=koAliveInBlock(aStart,aLen,el);
+        const key=`${r.mon}-${r.day}`;
+        if(!map[key]) map[key]=[];
+        map[key].push({
+          q:{ id:`ko_${r.lvl}_${r.idx}`, isKnockout:true, isMulti:true, stage_name:r.stage,
+              homeTeams, awayTeams, home_team:homeTeams[0]||'', away_team:awayTeams[0]||'',
+              actual_result:'', table_id:'KO' },
+          time:r.time, day:r.day, mon:r.mon
         });
       });
     }
     const toMin=t=>{const m=String(t||'').match(/(\d{1,2}):(\d{2})/);return m?(+m[1])*60+(+m[2]):99999;};
     Object.values(map).forEach(arr=>arr.sort((a,b)=>toMin(a.time)-toMin(b.time)));
     return map;
-  },[allQuestions,isWC]);
+  },[allQuestions,isWC,koResults]);
 
   const participantsByQA = useMemo(()=>{
     const idx=new Map();
@@ -2170,13 +2234,33 @@ export default function Statistics() {
             {matches.map(({q,time})=>{
               const st=dayMatchStats(q);
               const homeT=teams[normalizeTeam(q.home_team)], awayT=teams[normalizeTeam(q.away_team)];
-              const koKey=q.isKnockout?`${q.home_team} - ${q.away_team}`:null;
+              const hTeams=q.homeTeams||(q.home_team?[q.home_team]:[]);
+              const aTeams=q.awayTeams||(q.away_team?[q.away_team]:[]);
+              const koResolved=q.isKnockout&&hTeams.length===1&&aTeams.length===1;
+              const koKey=koResolved?`${hTeams[0]} - ${aTeams[0]}`:null;
               const koRes=koKey?(koResults[koKey]||''):'';
               const koSc=koRes?koRes.match(/(\d+)\s*-\s*(\d+)/):null;
               const koWin=koSc?(+koSc[1]>+koSc[2]?'home':(+koSc[1]<+koSc[2]?'away':null)):null;
               const draft=koKey?koDraft[koKey]:null;
               const selH=draft?.h ?? (koSc?koSc[1]:'');
               const selA=draft?.a ?? (koSc?koSc[2]:'');
+              const koStack=(list,side,win)=>{
+                const CAP=8, shown=list.slice(0,CAP), extra=list.length-shown.length, single=list.length===1;
+                return (
+                  <span style={{display:'flex',flexDirection:'column',gap:3,alignItems:side==='home'?'flex-end':'flex-start',justifyContent:'center',minWidth:0,flex:'1 1 0'}}>
+                    {list.length===0?<span style={{color:'#64748b',fontSize:'0.8rem'}}>—</span>:shown.map((t,ti)=>{
+                      const tt=teams[normalizeTeam(t)];
+                      return (
+                        <span key={ti} style={{display:'flex',alignItems:'center',gap:5,flexDirection:side==='home'?'row':'row-reverse',maxWidth:'100%'}}>
+                          <span style={{whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',fontSize:single?'0.9rem':'0.76rem',fontWeight:(single&&win)?800:(single?400:500),color:(single&&win)?'#fde68a':(single?'#f8fafc':'#94a3b8')}}>{single&&win?'🏆 ':''}{cleanTeam(t)}</span>
+                          {tt?.logo_url&&<img src={tt.logo_url} alt="" style={{width:single?22:15,height:single?22:15,borderRadius:'50%',flexShrink:0,opacity:single?1:0.8}}/>}
+                        </span>
+                      );
+                    })}
+                    {extra>0&&<span style={{fontSize:'0.68rem',color:'#64748b'}}>+{extra} נוספות</span>}
+                  </span>
+                );
+              };
               return (
                 <div key={q.id} style={{position:'relative',borderRadius:10,border:'1px solid rgba(6,182,212,0.15)',background:'rgba(0,0,0,0.25)',padding:'10px 12px'}}>
                   <div style={{display:'flex',alignItems:'center',gap:8,width:'100%'}}>
@@ -2186,26 +2270,32 @@ export default function Statistics() {
                         🕐 {time}
                       </span>
                     )}
-                    {/* קבוצת בית (מימין ב-RTL) — תופסת חצי מהרוחב הפנוי */}
-                    <span style={{display:'flex',alignItems:'center',gap:6,fontSize:'0.9rem',color:'#f8fafc',justifyContent:'flex-end',minWidth:0,flex:'1 1 0'}}>
-                      <span style={{whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',minWidth:0,fontWeight:koWin==='home'?800:400,color:koWin==='home'?'#fde68a':'#f8fafc'}}>{koWin==='home'?'🏆 ':''}{cleanTeam(q.home_team)}</span>
-                      {homeT?.logo_url&&<img src={homeT.logo_url} alt="" style={{width:22,height:22,borderRadius:'50%',flexShrink:0}}/>}
-                    </span>
-                    {/* תוצאה — במרכז, רוחב קבוע */}
+                    {/* קבוצת/ות בית (מימין ב-RTL) */}
+                    {q.isKnockout?koStack(hTeams,'home',koWin==='home'):(
+                      <span style={{display:'flex',alignItems:'center',gap:6,fontSize:'0.9rem',color:'#f8fafc',justifyContent:'flex-end',minWidth:0,flex:'1 1 0'}}>
+                        <span style={{whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',minWidth:0}}>{cleanTeam(q.home_team)}</span>
+                        {homeT?.logo_url&&<img src={homeT.logo_url} alt="" style={{width:22,height:22,borderRadius:'50%',flexShrink:0}}/>}
+                      </span>
+                    )}
+                    {/* תוצאה / 🆚 — במרכז, רוחב קבוע */}
                     <span style={{textAlign:'center',fontWeight:700,color:(q.isKnockout?(koSc?'#fde68a':'#64748b'):(st.hasActual?'#fde68a':'#64748b')),fontSize:'0.95rem',width:56,flexShrink:0}}>
-                      {q.isKnockout?(koSc?`${koSc[1]} - ${koSc[2]}`:'? - ?'):(st.hasActual?formatResult(q.actual_result):'? - ?')}
+                      {q.isKnockout?(koResolved?(koSc?`${koSc[1]} - ${koSc[2]}`:'? - ?'):'🆚'):(st.hasActual?formatResult(q.actual_result):'? - ?')}
                     </span>
-                    {/* קבוצת חוץ (משמאל ב-RTL) — תופסת חצי מהרוחב הפנוי */}
-                    <span style={{display:'flex',alignItems:'center',gap:6,fontSize:'0.9rem',color:'#f8fafc',justifyContent:'flex-start',minWidth:0,flex:'1 1 0'}}>
-                      {awayT?.logo_url&&<img src={awayT.logo_url} alt="" style={{width:22,height:22,borderRadius:'50%',flexShrink:0}}/>}
-                      <span style={{whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',minWidth:0,fontWeight:koWin==='away'?800:400,color:koWin==='away'?'#fde68a':'#f8fafc'}}>{cleanTeam(q.away_team)}{koWin==='away'?' 🏆':''}</span>
-                    </span>
+                    {/* קבוצת/ות חוץ (משמאל ב-RTL) */}
+                    {q.isKnockout?koStack(aTeams,'away',koWin==='away'):(
+                      <span style={{display:'flex',alignItems:'center',gap:6,fontSize:'0.9rem',color:'#f8fafc',justifyContent:'flex-start',minWidth:0,flex:'1 1 0'}}>
+                        {awayT?.logo_url&&<img src={awayT.logo_url} alt="" style={{width:22,height:22,borderRadius:'50%',flexShrink:0}}/>}
+                        <span style={{whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',minWidth:0}}>{cleanTeam(q.away_team)}</span>
+                      </span>
+                    )}
                   </div>
                   <div style={{display:'flex',gap:14,marginTop:8,paddingTop:8,borderTop:'1px solid rgba(255,255,255,0.05)',fontSize:'0.74rem',color:'#94a3b8',flexWrap:'wrap'}}>
                     {q.isKnockout?(
-                      koRes
-                        ? <span>🏁 תוצאה: <b style={{color:'#fde68a'}}>{koRes}</b> • {q.stage_name}</span>
-                        : <span>🏆 {q.stage_name} • טרם שוחק • הניחושים נעולים ב-📋 רשימות העולות</span>
+                      koResolved
+                        ? (koRes
+                            ? <span>🏁 תוצאה: <b style={{color:'#fde68a'}}>{koRes}</b> • {q.stage_name}</span>
+                            : <span>🏆 {q.stage_name} • טרם שוחק</span>)
+                        : <span>🏆 {q.stage_name} • טרם נקבעו הקבוצות • {hTeams.length}×{aTeams.length} אפשרויות</span>
                     ):(<>
                     <span>{q.stage_name} • {st.total} ניחושים</span>
                     {st.hasActual?(
@@ -2219,7 +2309,7 @@ export default function Statistics() {
                     )}
                     </>)}
                   </div>
-                  {isAdmin&&q.isKnockout&&(
+                  {isAdmin&&q.isKnockout&&koResolved&&(
                     <div style={{display:'flex',alignItems:'center',gap:6,marginTop:6,paddingTop:6,borderTop:'1px dashed rgba(251,191,36,0.25)',flexWrap:'wrap'}}>
                       <span style={{fontSize:'0.7rem',color:'#fbbf24',fontWeight:700}}>👑 עדכון תוצאה:</span>
                       <span style={{fontSize:'0.72rem',color:'#cbd5e1',maxWidth:90,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{cleanTeam(q.home_team)}</span>
