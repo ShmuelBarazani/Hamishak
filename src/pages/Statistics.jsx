@@ -1474,7 +1474,19 @@ export default function Statistics() {
   // 🏁 תוצאות משחקי הנוק-אאוט — נשמרות ב-DB (games.ko_results) ומוצגות לכולם
   const [koResults, setKoResults] = useState({});
   const [koDraft, setKoDraft] = useState({});
-  useEffect(()=>{ setKoResults(currentGame?.ko_results||{}); setKoDraft({}); },[currentGame]);
+  useEffect(()=>{
+    setKoDraft({});
+    if(!currentGame?.id){ setKoResults({}); return; }
+    setKoResults(currentGame?.ko_results||{}); // התחלה מיידית אם קיים בהקשר
+    let cancelled=false;
+    (async()=>{
+      try {
+        const { data, error } = await supabase.from('games').select('ko_results').eq('id', currentGame.id).single();
+        if(!cancelled && !error && data) setKoResults(data.ko_results||{});
+      } catch(e){ /* ייתכן שהעמודה ko_results לא קיימת — יש להריץ ALTER TABLE */ }
+    })();
+    return ()=>{ cancelled=true; };
+  },[currentGame?.id]);
   const saveKoResult = async (key,h,a) => {
     if(h===''||a===''||h==null||a==null||!currentGame||!isAdmin) return;
     const next = { ...koResults, [key]:`${h}-${a}` };
