@@ -1487,13 +1487,26 @@ export default function Statistics() {
     })();
     return ()=>{ cancelled=true; };
   },[currentGame?.id]);
+  const [koMsg, setKoMsg] = useState(null); // {key, type:'ok'|'err'|'saving', text}
   const saveKoResult = async (key,h,a) => {
     if(h===''||a===''||h==null||a==null||!currentGame||!isAdmin) return;
-    const next = { ...koResults, [key]:`${h}-${a}` };
+    const val = `${h}-${a}`;
+    const next = { ...koResults, [key]:val };
     setKoResults(next);                                   // עדכון מיידי בתצוגה
     setKoDraft(d=>{ const c={...d}; delete c[key]; return c; });
-    try { await db.Game.update(currentGame.id, { ko_results: next }); }
-    catch(e){ console.error('שמירת תוצאת נוק-אאוט נכשלה:', e); }
+    setKoMsg({key, type:'saving'});
+    try {
+      try { await db.Game.update(currentGame.id, { ko_results: next }); }
+      catch(uErr){ console.warn('Game.update threw (בודק אם בכל זאת נשמר):', uErr?.message||uErr); }
+      // ✅ אימות אמיתי — קריאה חזרה מה-DB
+      const { data, error } = await supabase.from('games').select('ko_results').eq('id', currentGame.id).single();
+      if(error) throw error;
+      if(data?.ko_results && data.ko_results[key]===val){ setKoMsg({key, type:'ok'}); }
+      else { setKoMsg({key, type:'err', text:'לא נשמר ב-DB — ודא שהרצת ALTER TABLE לעמודת ko_results, ושיש הרשאת עדכון (RLS) ל-games'}); }
+    } catch(e){
+      setKoMsg({key, type:'err', text:(e?.message||String(e))});
+      console.error('שמירת תוצאת נוק-אאוט נכשלה:', e);
+    }
   };
 
   // 💾 שמירת הבחירה האחרונה — כדי שלא תתאפס במעבר אפליקציה/לשונית
@@ -2222,6 +2235,11 @@ export default function Statistics() {
                       <span style={{fontSize:'0.72rem',color:'#cbd5e1',maxWidth:90,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{cleanTeam(q.away_team)}</span>
                       <button onClick={()=>saveKoResult(koKey,selH,selA)} disabled={selH===''||selA===''}
                         style={{background:(selH===''||selA==='')?'#334155':'#fbbf24',color:(selH===''||selA==='')?'#64748b':'#0a0f1a',border:'none',borderRadius:6,padding:'3px 12px',fontSize:'0.74rem',fontWeight:700,cursor:(selH===''||selA==='')?'not-allowed':'pointer'}}>שמור</button>
+                      {koMsg&&koMsg.key===koKey&&(
+                        <span style={{fontSize:'0.72rem',fontWeight:700,color:koMsg.type==='ok'?'#34d399':(koMsg.type==='saving'?'#94a3b8':'#f87171'),width:'100%',marginTop:2}}>
+                          {koMsg.type==='ok'?'✓ נשמר במערכת':koMsg.type==='saving'?'שומר…':'✗ '+(koMsg.text||'שגיאה')}
+                        </span>
+                      )}
                     </div>
                   )}
                 </div>
