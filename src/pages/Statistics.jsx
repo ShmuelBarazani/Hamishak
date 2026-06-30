@@ -2028,6 +2028,11 @@ export default function Statistics() {
         {key:'insights',description:'תובנות AI ומחקרים'},
         {key:'movers',description:'🔥 מצעד התנודות'},
       ]});
+    // 🌳 בראקט הגביע — מונדיאל בלבד
+    if(isWC){
+      groups.push({key:'wcbracket',label:'🌳 בראקט',color:'#f59e0b',activeBg:'#d97706',
+        buttons:[{key:'bracket',description:'עץ הבראקט המלא'}]});
+    }
     // 🏠 שלב הבתים (גריד) / משחקים
     const houseTables=roundTables.filter(t=>String(t.id).startsWith('בית'));
     const otherRounds=roundTables.filter(t=>!String(t.id).startsWith('בית'));
@@ -2051,7 +2056,7 @@ export default function Statistics() {
     ];
     if(qualBtns.length>0) groups.push({key:'qual',label:'📋 רשימות עולות',color:'#f97316',activeBg:'#ea580c',buttons:qualBtns});
     return groups;
-  },[roundTables,specialTables,qualifierTables,locationTables,israeliTable,isKnockout]);
+  },[roundTables,specialTables,qualifierTables,locationTables,israeliTable,isKnockout,isWC]);
 
   const CAL_MONTHS = [ {name:'יוני 2026',y:2026,m:5}, {name:'יולי 2026',y:2026,m:6} ];
   const hasDates = Object.keys(matchesByDay).length>0;
@@ -2091,6 +2096,7 @@ export default function Statistics() {
 
   useEffect(()=>{
     if(!selectedSection||loading||!allQuestions.length) return;
+    if(selectedSection==='bracket') return; // עץ הבראקט — אין צורך בטעינת סטטיסטיקה
     if(selectedSection==='insights'){
       if(!aiInsights){
         setInsightsLoading(true);
@@ -2133,7 +2139,7 @@ export default function Statistics() {
   const isRoundsSection  = selectedSection?.startsWith('round_');
   const isQualSection    = selectedSection?.startsWith('qual_');
   const isDaySection     = selectedSection?.startsWith('day_');
-  const isSpecialSection = selectedSection&&!isRoundsSection&&!isQualSection&&!isDaySection&&selectedSection!=='insights'&&selectedSection!=='movers';
+  const isSpecialSection = selectedSection&&!isRoundsSection&&!isQualSection&&!isDaySection&&selectedSection!=='insights'&&selectedSection!=='movers'&&selectedSection!=='bracket';
 
   // ── 📅 calendar render ──
   const renderCalendar = (afterSelect) => {
@@ -2226,6 +2232,124 @@ export default function Statistics() {
   };
 
   // ── 📅 day view ──
+  // 🌳 עץ הבראקט המלא (מ-1/16 ועד הגמר) — דו-צדדי
+  const renderBracket = () => {
+    const el = koEliminatedSet(koResults);
+    const nodeTeams = (round, idx) => {
+      if(round===0) return WC_BRACKET_ORDER[idx];
+      const [hs,hl]=koSlotBlock(round,idx,'home');
+      const [as,al]=koSlotBlock(round,idx,'away');
+      const h=koAliveInBlock(hs,hl,el), a=koAliveInBlock(as,al,el);
+      return [h.length===1?h[0]:null, a.length===1?a[0]:null];
+    };
+    const resultOf = (home,away) => {
+      if(!home||!away) return {sc:null,win:null};
+      const res=koResults[`${home} - ${away}`]||'';
+      const m=res?res.match(/(\d+)\s*-\s*(\d+)/):null;
+      const adv=res.includes('|')?res.split('|')[1].trim():'';
+      const win=m?(+m[1]>+m[2]?'h':(+m[1]<+m[2]?'a':(adv?(normalizeTeam(adv)===normalizeTeam(home)?'h':'a'):null))):null;
+      return {sc:m,win};
+    };
+    const teamCell = (name,isWin,isLoser) => (
+      <div style={{display:'flex',alignItems:'center',gap:5,padding:'4px 7px',opacity:isLoser?0.35:1,minHeight:26}}>
+        {name?<>
+          {teams[normalizeTeam(name)]?.logo_url&&<img src={teams[normalizeTeam(name)].logo_url} alt="" style={{width:18,height:18,borderRadius:'50%',flexShrink:0}}/>}
+          <span style={{fontSize:'0.8rem',fontWeight:isWin?800:500,color:isWin?'#fde68a':'#e2e8f0',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{cleanTeam(name)}</span>
+          {isWin&&<span style={{fontSize:'0.7rem'}}>🏆</span>}
+        </>:<span style={{fontSize:'0.78rem',color:'#475569'}}>—</span>}
+      </div>
+    );
+    const node = (round,idx) => {
+      const [home,away]=nodeTeams(round,idx);
+      const {sc,win}=resultOf(home,away);
+      return (
+        <div style={{border:'1px solid rgba(6,182,212,0.22)',borderRadius:8,background:'rgba(0,0,0,0.3)',minWidth:128,overflow:'hidden'}}>
+          {teamCell(home,win==='h',win==='a')}
+          <div style={{height:1,background:'rgba(255,255,255,0.06)',position:'relative'}}>{sc&&<span style={{position:'absolute',right:6,top:-8,fontSize:'0.64rem',fontWeight:700,color:'#fbbf24',background:'rgba(0,0,0,0.6)',borderRadius:4,padding:'0 4px'}}>{sc[1]}-{sc[2]}</span>}</div>
+          {teamCell(away,win==='a',win==='h')}
+        </div>
+      );
+    };
+    const LINE='rgba(6,182,212,0.45)';
+    // תא משחק + קו אופקי לכיוון השלב הבא
+    const cell = (round,idx,dir) => (
+      <div style={{flex:1,display:'flex',alignItems:'center',flexDirection:dir==='right'?'row':'row-reverse',minHeight:0}}>
+        {node(round,idx)}
+        <div style={{flex:1,height:2,background:LINE,minWidth:14}}/>
+      </div>
+    );
+    // עוטף זוג: שני תאים + קו אנכי מחבר + קו יציאה לשלב הבא
+    const pairW = (round,iA,iB,dir) => (
+      <div style={{flex:1,display:'flex',flexDirection:'column',position:'relative'}}>
+        {cell(round,iA,dir)}
+        {cell(round,iB,dir)}
+        <div style={{position:'absolute',[dir==='right'?'right':'left']:0,top:'25%',height:'50%',width:2,background:LINE}}/>
+        <div style={{position:'absolute',[dir==='right'?'right':'left']:-16,top:'50%',width:16,height:2,background:LINE}}/>
+      </div>
+    );
+    // עוטף בודד (חצי גמר) — תא יחיד ממורכז + קו יציאה לגמר
+    const singleW = (round,idx,dir) => (
+      <div style={{flex:1,display:'flex',flexDirection:'column',justifyContent:'center',position:'relative'}}>
+        {cell(round,idx,dir)}
+        <div style={{position:'absolute',[dir==='right'?'right':'left']:-16,top:'50%',width:16,height:2,background:LINE}}/>
+      </div>
+    );
+    // עמודה: כותרת שלב + תוכן
+    const col = (title,color,children) => (
+      <div style={{display:'flex',flexDirection:'column',width:148,flexShrink:0}}>
+        <div style={{textAlign:'center',fontSize:'0.7rem',fontWeight:700,color,marginBottom:6}}>{title}</div>
+        <div style={{display:'flex',flexDirection:'column',flex:1}}>{children}</div>
+      </div>
+    );
+    const [fh,fa]=nodeTeams(4,0); const fr=resultOf(fh,fa);
+    const champ = fr.win==='h'?fh:(fr.win==='a'?fa:null);
+    return (
+      <Card style={{background:'rgba(30,41,59,0.6)',border:'1px solid rgba(6,182,212,0.25)'}}>
+        <CardContent style={{padding:'16px 8px'}}>
+          <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:14,padding:'0 8px'}}>
+            <span style={{fontSize:'1.6rem'}}>🌳</span>
+            <div>
+              <h2 style={{color:'#f8fafc',fontSize:'1.3rem',fontWeight:800,margin:0}}>עץ הבראקט המלא</h2>
+              <p style={{color:'#94a3b8',fontSize:'0.8rem',margin:0}}>מ-1/16 ועד הגמר • מתעדכן אוטומטית לפי התוצאות שהוזנו</p>
+            </div>
+          </div>
+          <div style={{direction:'ltr',overflowX:'auto',paddingBottom:8}}>
+            <div style={{display:'flex',gap:16,minHeight:540,alignItems:'stretch',minWidth:'max-content'}}>
+              {/* חצי שמאל — זורם ימינה */}
+              {col('1/16','#67e8f9',[pairW(0,0,1,'right'),pairW(0,2,3,'right'),pairW(0,4,5,'right'),pairW(0,6,7,'right')])}
+              {col('שמינית','#67e8f9',[pairW(1,0,1,'right'),pairW(1,2,3,'right')])}
+              {col('רבע','#67e8f9',[pairW(2,0,1,'right')])}
+              {col('חצי','#67e8f9',[singleW(3,0,'right')])}
+              {/* גמר במרכז */}
+              <div style={{display:'flex',flexDirection:'column',width:172,flexShrink:0}}>
+                <div style={{textAlign:'center',fontSize:'0.75rem',fontWeight:800,color:'#fbbf24',marginBottom:6}}>🏆 הגמר</div>
+                <div style={{flex:1,display:'flex',flexDirection:'column',justifyContent:'center'}}>
+                  <div style={{display:'flex',alignItems:'center'}}>
+                    <div style={{flex:1,height:2,background:LINE}}/>
+                    {node(4,0)}
+                    <div style={{flex:1,height:2,background:LINE}}/>
+                  </div>
+                  {champ&&(
+                    <div style={{marginTop:12,alignSelf:'center',textAlign:'center',padding:'8px 14px',borderRadius:10,background:'rgba(251,191,36,0.15)',border:'1px solid #fbbf24'}}>
+                      <div style={{fontSize:'0.64rem',color:'#fbbf24',fontWeight:700}}>אלופת העולם</div>
+                      <div style={{fontSize:'0.95rem',fontWeight:800,color:'#fde68a',marginTop:2}}>🏆 {cleanTeam(champ)}</div>
+                    </div>
+                  )}
+                </div>
+              </div>
+              {/* חצי ימין — זורם שמאלה */}
+              {col('חצי','#67e8f9',[singleW(3,1,'left')])}
+              {col('רבע','#67e8f9',[pairW(2,2,3,'left')])}
+              {col('שמינית','#67e8f9',[pairW(1,4,5,'left'),pairW(1,6,7,'left')])}
+              {col('1/16','#67e8f9',[pairW(0,8,9,'left'),pairW(0,10,11,'left'),pairW(0,12,13,'left'),pairW(0,14,15,'left')])}
+            </div>
+          </div>
+          <p style={{color:'#64748b',fontSize:'0.72rem',textAlign:'center',marginTop:10}}>← ניתן לגלול לצדדים לצפייה בכל העץ →</p>
+        </CardContent>
+      </Card>
+    );
+  };
+
   const renderDayView = () => {
     const key=selectedSection.replace('day_','');
     const [mon,day]=key.split('-').map(Number);
@@ -2556,9 +2680,15 @@ export default function Statistics() {
 
             {/* 📅 Day view — סיכום + סטטיסטיקות מלאות לכל משחקי היום */}
             {isDaySection&&renderDayView()}
+            {isDaySection&&isWC&&(matchesByDay[selectedSection.replace('day_','')]||[]).some(m=>m.q?.isKnockout)&&(
+              <div style={{marginTop:16}}>{renderBracket()}</div>
+            )}
 
             {/* 🔥 Movers */}
             {selectedSection==='movers'&&renderMovers()}
+
+            {/* 🌳 עץ הבראקט המלא */}
+            {selectedSection==='bracket'&&renderBracket()}
 
             {/* 🤖 AI Insights */}
             {selectedSection==='insights'&&(
