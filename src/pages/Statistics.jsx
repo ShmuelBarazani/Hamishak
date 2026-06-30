@@ -102,12 +102,18 @@ const koSlotBlock = (lvl, idx, side) => {
 const koEliminatedSet = (koResults) => {
   const el = new Set();
   Object.entries(koResults||{}).forEach(([key,val])=>{
-    const m = String(val).match(/(\d+)\s*-\s*(\d+)/); if(!m) return;
+    const s = String(val);
+    const m = s.match(/(\d+)\s*-\s*(\d+)/); if(!m) return;
     const parts = key.split(' - '); if(parts.length<2) return;
     const home = parts[0], away = parts.slice(1).join(' - ');
     const hs=+m[1], as=+m[2];
     if(hs>as) el.add(normalizeTeam(away));
     else if(as>hs) el.add(normalizeTeam(home));
+    else {
+      // תיקו → המנצח נקבע לפי הקבוצה שנבחרה (אחרי "|"), המפסידה מודחת
+      const adv = s.includes('|') ? s.split('|')[1].trim() : '';
+      if(adv) el.add(normalizeTeam(normalizeTeam(adv)===normalizeTeam(home)?away:home));
+    }
   });
   return el;
 };
@@ -1535,9 +1541,11 @@ export default function Statistics() {
     return ()=>{ cancelled=true; };
   },[currentGame?.id]);
   const [koMsg, setKoMsg] = useState(null); // {key, type:'ok'|'err'|'saving', text}
-  const saveKoResult = async (key,h,a) => {
+  const saveKoResult = async (key,h,a,adv) => {
     if(h===''||a===''||h==null||a==null||!currentGame||!isAdmin) return;
-    const val = `${h}-${a}`;
+    const tie = (+h===+a);
+    if(tie && !adv){ setKoMsg({key, type:'err', text:'תיקו — יש לבחור מי עלתה'}); return; }
+    const val = tie ? `${h}-${a}|${adv}` : `${h}-${a}`;
     const next = { ...koResults, [key]:val };
     setKoResults(next);                                   // עדכון מיידי בתצוגה
     setKoDraft(d=>{ const c={...d}; delete c[key]; return c; });
@@ -2240,24 +2248,28 @@ export default function Statistics() {
               const koKey=koResolved?`${hTeams[0]} - ${aTeams[0]}`:null;
               const koRes=koKey?(koResults[koKey]||''):'';
               const koSc=koRes?koRes.match(/(\d+)\s*-\s*(\d+)/):null;
-              const koWin=koSc?(+koSc[1]>+koSc[2]?'home':(+koSc[1]<+koSc[2]?'away':null)):null;
+              const koAdv=koRes.includes('|')?koRes.split('|')[1].trim():'';
+              const koTie=koSc&&(+koSc[1]===+koSc[2]);
+              const koWin=koSc?(+koSc[1]>+koSc[2]?'home':(+koSc[1]<+koSc[2]?'away':(koAdv?(normalizeTeam(koAdv)===normalizeTeam(hTeams[0])?'home':'away'):null))):null;
+              const koResDisp=koTie?(koAdv?`${koSc[1]}-${koSc[2]} (פנדלים: ${cleanTeam(koAdv)})`:`${koSc[1]}-${koSc[2]}`):(koSc?`${koSc[1]}-${koSc[2]}`:koRes);
               const draft=koKey?koDraft[koKey]:null;
               const selH=draft?.h ?? (koSc?koSc[1]:'');
               const selA=draft?.a ?? (koSc?koSc[2]:'');
+              const selAdv=draft?.adv ?? koAdv ?? '';
               const koStack=(list,side,win)=>{
                 const CAP=8, shown=list.slice(0,CAP), extra=list.length-shown.length, single=list.length===1;
                 return (
-                  <span style={{display:'flex',flexDirection:'column',gap:3,alignItems:side==='home'?'flex-end':'flex-start',justifyContent:'center',minWidth:0,flex:'1 1 0'}}>
-                    {list.length===0?<span style={{color:'#64748b',fontSize:'0.8rem'}}>—</span>:shown.map((t,ti)=>{
+                  <span style={{display:'flex',flexDirection:'column',gap:4,alignItems:side==='home'?'flex-end':'flex-start',justifyContent:'center',minWidth:0,flex:'1 1 0'}}>
+                    {list.length===0?<span style={{color:'#64748b',fontSize:'0.85rem'}}>—</span>:shown.map((t,ti)=>{
                       const tt=teams[normalizeTeam(t)];
                       return (
-                        <span key={ti} style={{display:'flex',alignItems:'center',gap:5,flexDirection:side==='home'?'row':'row-reverse',maxWidth:'100%'}}>
-                          <span style={{whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',fontSize:single?'0.9rem':'0.76rem',fontWeight:(single&&win)?800:(single?400:500),color:(single&&win)?'#fde68a':(single?'#f8fafc':'#94a3b8')}}>{single&&win?'🏆 ':''}{cleanTeam(t)}</span>
-                          {tt?.logo_url&&<img src={tt.logo_url} alt="" style={{width:single?22:15,height:single?22:15,borderRadius:'50%',flexShrink:0,opacity:single?1:0.8}}/>}
+                        <span key={ti} style={{display:'flex',alignItems:'center',gap:6,flexDirection:side==='home'?'row':'row-reverse',maxWidth:'100%'}}>
+                          <span style={{whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',fontSize:single?'1.05rem':'0.9rem',fontWeight:(single&&win)?800:(single?600:500),color:(single&&win)?'#fde68a':(single?'#f8fafc':'#cbd5e1')}}>{single&&win?'🏆 ':''}{cleanTeam(t)}</span>
+                          {tt?.logo_url&&<img src={tt.logo_url} alt="" style={{width:single?28:20,height:single?28:20,borderRadius:'50%',flexShrink:0,opacity:single?1:0.85}}/>}
                         </span>
                       );
                     })}
-                    {extra>0&&<span style={{fontSize:'0.68rem',color:'#64748b'}}>+{extra} נוספות</span>}
+                    {extra>0&&<span style={{fontSize:'0.72rem',color:'#64748b'}}>+{extra} נוספות</span>}
                   </span>
                 );
               };
@@ -2272,9 +2284,9 @@ export default function Statistics() {
                     )}
                     {/* קבוצת/ות בית (מימין ב-RTL) */}
                     {q.isKnockout?koStack(hTeams,'home',koWin==='home'):(
-                      <span style={{display:'flex',alignItems:'center',gap:6,fontSize:'0.9rem',color:'#f8fafc',justifyContent:'flex-end',minWidth:0,flex:'1 1 0'}}>
-                        <span style={{whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',minWidth:0}}>{cleanTeam(q.home_team)}</span>
-                        {homeT?.logo_url&&<img src={homeT.logo_url} alt="" style={{width:22,height:22,borderRadius:'50%',flexShrink:0}}/>}
+                      <span style={{display:'flex',alignItems:'center',gap:6,fontSize:'1.05rem',color:'#f8fafc',justifyContent:'flex-end',minWidth:0,flex:'1 1 0'}}>
+                        <span style={{whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',minWidth:0,fontWeight:600}}>{cleanTeam(q.home_team)}</span>
+                        {homeT?.logo_url&&<img src={homeT.logo_url} alt="" style={{width:28,height:28,borderRadius:'50%',flexShrink:0}}/>}
                       </span>
                     )}
                     {/* תוצאה / 🆚 — במרכז, רוחב קבוע */}
@@ -2283,9 +2295,9 @@ export default function Statistics() {
                     </span>
                     {/* קבוצת/ות חוץ (משמאל ב-RTL) */}
                     {q.isKnockout?koStack(aTeams,'away',koWin==='away'):(
-                      <span style={{display:'flex',alignItems:'center',gap:6,fontSize:'0.9rem',color:'#f8fafc',justifyContent:'flex-start',minWidth:0,flex:'1 1 0'}}>
-                        {awayT?.logo_url&&<img src={awayT.logo_url} alt="" style={{width:22,height:22,borderRadius:'50%',flexShrink:0}}/>}
-                        <span style={{whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',minWidth:0}}>{cleanTeam(q.away_team)}</span>
+                      <span style={{display:'flex',alignItems:'center',gap:6,fontSize:'1.05rem',color:'#f8fafc',justifyContent:'flex-start',minWidth:0,flex:'1 1 0'}}>
+                        {awayT?.logo_url&&<img src={awayT.logo_url} alt="" style={{width:28,height:28,borderRadius:'50%',flexShrink:0}}/>}
+                        <span style={{whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',minWidth:0,fontWeight:600}}>{cleanTeam(q.away_team)}</span>
                       </span>
                     )}
                   </div>
@@ -2293,7 +2305,7 @@ export default function Statistics() {
                     {q.isKnockout?(
                       koResolved
                         ? (koRes
-                            ? <span>🏁 תוצאה: <b style={{color:'#fde68a'}}>{koRes}</b> • {q.stage_name}</span>
+                            ? <span>🏁 תוצאה: <b style={{color:'#fde68a'}}>{koResDisp}</b> • {q.stage_name}</span>
                             : <span>🏆 {q.stage_name} • טרם שוחק</span>)
                         : <span>🏆 {q.stage_name} • טרם נקבעו הקבוצות • {hTeams.length}×{aTeams.length} אפשרויות</span>
                     ):(<>
@@ -2313,18 +2325,31 @@ export default function Statistics() {
                     <div style={{display:'flex',alignItems:'center',gap:6,marginTop:6,paddingTop:6,borderTop:'1px dashed rgba(251,191,36,0.25)',flexWrap:'wrap'}}>
                       <span style={{fontSize:'0.7rem',color:'#fbbf24',fontWeight:700}}>👑 עדכון תוצאה:</span>
                       <span style={{fontSize:'0.72rem',color:'#cbd5e1',maxWidth:90,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{cleanTeam(q.home_team)}</span>
-                      <select value={selH} onChange={e=>setKoDraft(d=>({...d,[koKey]:{h:e.target.value,a:(d[koKey]?.a ?? (koSc?koSc[2]:''))}}))}
+                      <select value={selH} onChange={e=>setKoDraft(d=>({...d,[koKey]:{h:e.target.value,a:(d[koKey]?.a ?? (koSc?koSc[2]:'')),adv:(d[koKey]?.adv ?? koAdv)}}))}
                         style={{background:'#0f172a',color:'#f8fafc',border:'1px solid #334155',borderRadius:5,padding:'2px 4px',fontSize:'0.78rem'}}>
                         <option value="">-</option>{[0,1,2,3,4,5,6,7,8,9].map(n=><option key={n} value={n}>{n}</option>)}
                       </select>
                       <span style={{color:'#64748b'}}>:</span>
-                      <select value={selA} onChange={e=>setKoDraft(d=>({...d,[koKey]:{a:e.target.value,h:(d[koKey]?.h ?? (koSc?koSc[1]:''))}}))}
+                      <select value={selA} onChange={e=>setKoDraft(d=>({...d,[koKey]:{a:e.target.value,h:(d[koKey]?.h ?? (koSc?koSc[1]:'')),adv:(d[koKey]?.adv ?? koAdv)}}))}
                         style={{background:'#0f172a',color:'#f8fafc',border:'1px solid #334155',borderRadius:5,padding:'2px 4px',fontSize:'0.78rem'}}>
                         <option value="">-</option>{[0,1,2,3,4,5,6,7,8,9].map(n=><option key={n} value={n}>{n}</option>)}
                       </select>
                       <span style={{fontSize:'0.72rem',color:'#cbd5e1',maxWidth:90,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{cleanTeam(q.away_team)}</span>
-                      <button onClick={()=>saveKoResult(koKey,selH,selA)} disabled={selH===''||selA===''}
-                        style={{background:(selH===''||selA==='')?'#334155':'#fbbf24',color:(selH===''||selA==='')?'#64748b':'#0a0f1a',border:'none',borderRadius:6,padding:'3px 12px',fontSize:'0.74rem',fontWeight:700,cursor:(selH===''||selA==='')?'not-allowed':'pointer'}}>שמור</button>
+                      {selH!==''&&selA!==''&&(+selH===+selA)&&(
+                        <span style={{display:'inline-flex',alignItems:'center',gap:5,marginInlineStart:6}}>
+                          <span style={{fontSize:'0.7rem',color:'#fbbf24',fontWeight:700}}>⚽ מי עלתה?</span>
+                          <select value={selAdv} onChange={e=>setKoDraft(d=>({...d,[koKey]:{h:(d[koKey]?.h ?? (koSc?koSc[1]:'')),a:(d[koKey]?.a ?? (koSc?koSc[2]:'')),adv:e.target.value}}))}
+                            style={{background:'#0f172a',color:'#fde68a',border:'1px solid #fbbf24',borderRadius:5,padding:'2px 4px',fontSize:'0.76rem'}}>
+                            <option value="">בחר…</option>
+                            <option value={hTeams[0]}>{cleanTeam(hTeams[0])}</option>
+                            <option value={aTeams[0]}>{cleanTeam(aTeams[0])}</option>
+                          </select>
+                        </span>
+                      )}
+                      {(()=>{const tie=selH!==''&&selA!==''&&(+selH===+selA);const disabled=selH===''||selA===''||(tie&&!selAdv);return (
+                      <button onClick={()=>saveKoResult(koKey,selH,selA,selAdv)} disabled={disabled}
+                        style={{background:disabled?'#334155':'#fbbf24',color:disabled?'#64748b':'#0a0f1a',border:'none',borderRadius:6,padding:'3px 12px',fontSize:'0.74rem',fontWeight:700,cursor:disabled?'not-allowed':'pointer'}}>שמור</button>
+                      );})()}
                       {koMsg&&koMsg.key===koKey&&(
                         <span style={{fontSize:'0.72rem',fontWeight:700,color:koMsg.type==='ok'?'#34d399':(koMsg.type==='saving'?'#94a3b8':'#f87171'),width:'100%',marginTop:2}}>
                           {koMsg.type==='ok'?'✓ נשמר במערכת':koMsg.type==='saving'?'שומר…':'✗ '+(koMsg.text||'שגיאה')}
