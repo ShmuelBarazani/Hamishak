@@ -2278,8 +2278,27 @@ export default function Statistics() {
 
   // ── 📅 day view ──
   // 🌳 עץ הבראקט המלא (מ-1/16 ועד הגמר) — דו-צדדי
-  // ref יציב: מתחיל את הבראקט מהחצי השמאלי (פעם אחת בעלייה, לא בכל רינדור)
-  const bracketScrollRef = (el)=>{ if(el && !el.dataset.inited){ el.scrollLeft=0; el.dataset.inited='1'; } };
+  // ref חסין לנייד: מקבע את רוחב המכולה הגוללת לרוחב הזמין בפועל (עד קצה המסך),
+  // כדי שהתוכן הרחב באמת יגלוש ויהיה ניתן לגלילה. מתחיל מהחצי השמאלי.
+  const bracketScrollRef = (el)=>{
+    if(!el) return;
+    const fit = ()=>{
+      const vw = document.documentElement.clientWidth || window.innerWidth || 360;
+      const left = el.getBoundingClientRect().left;
+      const avail = Math.max(220, Math.min((el.parentElement?.clientWidth || vw), vw - left - 6));
+      el.style.width = avail + 'px';
+      el.style.maxWidth = avail + 'px';
+      el.scrollLeft = 0;
+    };
+    fit();
+    requestAnimationFrame(fit);
+    setTimeout(fit, 80);
+    if(!el.dataset.roInit && typeof ResizeObserver !== 'undefined'){
+      el.dataset.roInit = '1';
+      const ro = new ResizeObserver(()=>{ const l = el.scrollLeft; const vw = document.documentElement.clientWidth || window.innerWidth || 360; const left = el.getBoundingClientRect().left; const avail = Math.max(220, Math.min((el.parentElement?.clientWidth || vw), vw - left - 6)); el.style.width = avail+'px'; el.style.maxWidth = avail+'px'; el.scrollLeft = l; });
+      ro.observe(document.documentElement);
+    }
+  };
   const renderBracket = () => {
     const el = koEliminatedSet(koResults);
     const nodeTeams = (round, idx) => {
@@ -2360,7 +2379,7 @@ export default function Statistics() {
               <p style={{color:'#94a3b8',fontSize:'0.8rem',margin:0}}>מ-1/16 ועד הגמר • מתעדכן אוטומטית לפי התוצאות שהוזנו</p>
             </div>
           </div>
-          <div ref={bracketScrollRef} style={{direction:'ltr',overflowX:'auto',overflowY:'hidden',width:'100%',maxWidth:'100%',WebkitOverflowScrolling:'touch',paddingBottom:8}}>
+          <div ref={bracketScrollRef} style={{direction:'ltr',overflowX:'auto',overflowY:'hidden',WebkitOverflowScrolling:'touch',paddingBottom:8}}>
             <div style={{display:'flex',gap:16,minHeight:540,alignItems:'stretch',minWidth:'max-content'}}>
               {/* חצי שמאל — זורם ימינה */}
               {col('1/16','#67e8f9',[pairW(0,0,1,'right'),pairW(0,2,3,'right'),pairW(0,4,5,'right'),pairW(0,6,7,'right')])}
