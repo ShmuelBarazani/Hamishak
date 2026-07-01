@@ -1808,6 +1808,13 @@ export default function Statistics() {
 
   const uniquePartCount = useMemo(()=>new Set(allPredictions.map(p=>p.participant_name)).size,[allPredictions]);
   const allParticipantNames = useMemo(()=>[...new Set(allPredictions.map(p=>p.participant_name))].sort((a,b)=>a.localeCompare(b,'he')),[allPredictions]);
+
+  // ⚡ אינדקס ניחושים לפי question_id — נבנה פעם אחת, למניעת allPredictions.filter חוזר בכל משחק/רינדור
+  const predsByQid = useMemo(()=>{
+    const m=new Map();
+    allPredictions.forEach(p=>{ if(!m.has(p.question_id)) m.set(p.question_id,[]); m.get(p.question_id).push(p); });
+    return m;
+  },[allPredictions]);
   // מפת הניחושים של המשתתף הנבחר: question_id → text_prediction (האחרון לפי זמן)
   const myPredByQid = useMemo(()=>{
     if(!statsParticipant) return {};
@@ -1827,7 +1834,7 @@ export default function Statistics() {
 
   // ── יומי: סטטיסטיקות למשחק בודד ──
   const dayMatchStats = useCallback((q)=>{
-    const raw=allPredictions.filter(p=>p.question_id===q.id);
+    const raw=predsByQid.get(q.id)||[];
     const latest={};
     raw.forEach(p=>{const ex=latest[p.participant_name];if(!ex||new Date(p.created_at)>new Date(ex.created_at))latest[p.participant_name]=p;});
     const preds=Object.values(latest).map(p=>{
