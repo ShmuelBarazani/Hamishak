@@ -1065,9 +1065,10 @@ export default function LeaderboardNew() {
                             // T16/T17 — ניקוד מדויק מ-ScoreService (15/10/7 או 14/10/4/7/7)
                             if (p.useScoreService) {
                               const hasScore = typeof p.exactScore === 'number';
-                              // ירוק = ניקוד סופי וחיובי (נכון — בין אם 10 ובין אם 14). צהוב = חלקי שעדיין לא סופי (ממתין להעפלה .1). אדום = 0 סופי.
-                              const full    = hasScore && p.exactFinal && p.exactScore > 0;
-                              const partial = hasScore && !p.exactFinal && p.exactScore > 0;   // ניקוד חלקי לא-סופי — צהוב
+                              // ירוק = ניקוד מלא (T17: 14 = שלישי+העפלה נכונים / 15 ל-T16). צהוב = ניקוד חלקי (10/4/7/11...). אדום = 0 סופי. אפור = טרם נוקד.
+                              const realMax = sec.tableId === 'T17' ? 14 : (p.pts || 0);
+                              const full    = hasScore && realMax > 0 && p.exactScore >= realMax;
+                              const partial = hasScore && p.exactScore > 0 && !full;   // ניקוד חלקי — צהוב
                               const zeroFinal = hasScore && p.exactScore === 0 && p.exactFinal;   // 0 סופי — אדום
                               // 0 לא-סופי / טרם נוקד → אפור
                               const icon  = !p.pred ? '—' : full ? '✅' : partial ? '🟡' : zeroFinal ? '❌' : '❓';
