@@ -607,14 +607,29 @@ export default function LeaderboardNew() {
         //   שאר טבלאות העולות (עולה/לא-עולה) — לוגיקת isAdv/isElim כמקודם.
         const useScoreService = (tableId === 'T16' || tableId === 'T17');
 
+        // 🌍 מאגר ה"חיות" מהשלב הקודם — לזיהוי הדחה אמיתית בלבד (אחרת: אפור = טרם שיחקה)
+        //    במונדיאל: T16(ראש/סגנית) ו-T17(שלישי) מקבילים → מאוחדים; שלבי הנוק-אאוט רציפים.
+        let prevAlive = null;
+        if (isWC) {
+          if (tableId === 'T19') {
+            const groups = ['T16','T17'].map(t => tableMetaMap[t]).filter(m => m && m.allResultsIn && m.advSet.size > 0);
+            if (groups.length) { prevAlive = new Set(); groups.forEach(m => m.advSet.forEach(t => prevAlive.add(t))); }
+          } else {
+            for (let j = idx - 1; j >= 0; j--) {
+              const tid = sortedTableIds[j]; const m = tableMetaMap[tid];
+              if (tid !== 'T16' && tid !== 'T17' && m && m.allResultsIn && m.advSet.size > 0) { prevAlive = m.advSet; break; }
+            }
+          }
+        }
+
         const preds = tSlots.map(q => {
           const disp = getPredDisplay(q.id);
           const norm = normT(disp);
           const isAdv = disp && advSet.has(norm);
-          const isElim = disp && !isAdv && (
-            allResultsIn ||
-            prevCompleteTables.some(prevMeta => !prevMeta.advSet.has(norm))
-          );
+          const elimByPrev = isWC
+            ? (prevAlive ? !prevAlive.has(norm) : false)   // הודחה רק אם ידוע המאגר והיא אינה בו; אחרת אפור
+            : prevCompleteTables.some(prevMeta => !prevMeta.advSet.has(norm));
+          const isElim = disp && !isAdv && (allResultsIn || elimByPrev);
           // ניקוד מדויק:
           let exactScore = null;
           let exactFinal = false;
@@ -1020,10 +1035,9 @@ export default function LeaderboardNew() {
                             // T16/T17 — ניקוד מדויק מ-ScoreService (15/10/7 או 14/10/4/7/7)
                             if (p.useScoreService) {
                               const hasScore = typeof p.exactScore === 'number';
-                              // המקסימום האמיתי: T17=14 (D+E נכונים), אחרת possible_points (T16=15 וכו').
-                              const realMax = sec.tableId === 'T17' ? 14 : (p.pts || 0);
-                              const full    = hasScore && realMax > 0 && p.exactScore >= realMax;
-                              const partial = hasScore && p.exactScore > 0 && !full;   // ניקוד חלקי — צהוב
+                              // ירוק = ניקוד סופי וחיובי (נכון — בין אם 10 ובין אם 14). צהוב = חלקי שעדיין לא סופי (ממתין להעפלה .1). אדום = 0 סופי.
+                              const full    = hasScore && p.exactFinal && p.exactScore > 0;
+                              const partial = hasScore && !p.exactFinal && p.exactScore > 0;   // ניקוד חלקי לא-סופי — צהוב
                               const zeroFinal = hasScore && p.exactScore === 0 && p.exactFinal;   // 0 סופי — אדום
                               // 0 לא-סופי / טרם נוקד → אפור
                               const icon  = !p.pred ? '—' : full ? '✅' : partial ? '🟡' : zeroFinal ? '❌' : '❓';
