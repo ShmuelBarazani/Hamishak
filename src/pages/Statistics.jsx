@@ -1606,18 +1606,8 @@ export default function Statistics() {
     } catch (e) { /* ignore */ }
   }, [selectedSection, sectionStorageKey]);
 
-  // 📍 בחירת היום הנוכחי אוטומטית בפתיחה (אם יש לו משחקים/שלב)
+  // 📍 בחירת היום הנוכחי אוטומטית — ה-ref כאן, האפקט עצמו אחרי הגדרת matchesByDay (למניעת TDZ)
   const autoTodayRef = useRef(false);
-  useEffect(()=>{
-    if(autoTodayRef.current||!currentGame?.id) return;
-    if(Object.keys(matchesByDay).length===0 && !isWC) return; // נחכה שהנתונים יהיו מוכנים
-    const n=new Date(), tk=`${n.getMonth()+1}-${n.getDate()}`;
-    const hasToday=!!matchesByDay[tk]||(isWC&&!!WC_STAGE_BY_DAY[tk]);
-    autoTodayRef.current=true;
-    if(hasToday){
-      setSelectedSection(prev=>(!prev||prev.startsWith('day_'))?`day_${tk}`:prev);
-    }
-  },[matchesByDay,currentGame,isWC]);
 
   const formatResult = useCallback(r=>{ if(!r||r==='__CLEAR__') return ''; return r.includes('-')?r.split('-').map(x=>x.trim()).join(' - '):r; },[]);
 
@@ -1779,6 +1769,18 @@ export default function Statistics() {
     Object.values(map).forEach(arr=>arr.sort((a,b)=>toMin(a.time)-toMin(b.time)));
     return map;
   },[allQuestions,isWC,koResults]);
+
+  // 📍 בחירת היום הנוכחי אוטומטית בפתיחה (אחרי matchesByDay — למניעת TDZ)
+  useEffect(()=>{
+    if(autoTodayRef.current||!currentGame?.id) return;
+    if(Object.keys(matchesByDay).length===0 && !isWC) return; // נחכה שהנתונים יהיו מוכנים
+    const n=new Date(), tk=`${n.getMonth()+1}-${n.getDate()}`;
+    const hasToday=!!matchesByDay[tk]||(isWC&&!!WC_STAGE_BY_DAY[tk]);
+    autoTodayRef.current=true;
+    if(hasToday){
+      setSelectedSection(prev=>(!prev||prev.startsWith('day_'))?`day_${tk}`:prev);
+    }
+  },[matchesByDay,currentGame,isWC]);
 
   const participantsByQA = useMemo(()=>{
     const idx=new Map();
