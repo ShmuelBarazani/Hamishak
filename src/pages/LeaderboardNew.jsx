@@ -404,6 +404,13 @@ export default function LeaderboardNew() {
       const allQuestions   = await loadQuestionsForGame(currentGame.id);
       const allPredictions = await loadPredictionsForGame(currentGame.id, participantName, allQuestions);
 
+      // 🏁 תוצאות הנוק-אאוט (למפסידות 1/16) — ישירות מה-DB (ה-GameContext אולי לא טוען את העמודה)
+      let koResultsData = {};
+      try {
+        const { data: koRow } = await supabase.from('games').select('ko_results').eq('id', currentGame.id).single();
+        koResultsData = koRow?.ko_results || {};
+      } catch { koResultsData = currentGame?.ko_results || {}; }
+
       const teamsMap = (currentGame.teams_data || [])
         .reduce((acc, t) => { acc[t.name] = t; return acc; }, {});
 
@@ -451,6 +458,14 @@ export default function LeaderboardNew() {
           return formatScore(`${p.home_prediction}-${p.away_prediction}`);
         return formatScore(p.text_prediction || '');
       };
+
+      // 🗺️ מפת ניחושים (UUID→טקסט) ל-ScoreService — נדרשת כדי לחשב את רכיב ההעפלה (E) ב-T17 (ניקוד 14/4)
+      const predsForScore = {};
+      Object.entries(latestPred).forEach(([qid, p]) => {
+        predsForScore[qid] = (p.home_prediction != null && p.away_prediction != null)
+          ? `${p.home_prediction}-${p.away_prediction}`
+          : (p.text_prediction || '');
+      });
 
       const locationSums     = {};
       const regularBreakdown = [];
@@ -527,6 +542,21 @@ export default function LeaderboardNew() {
         .replace(/\s+/g, ' ')
         .trim()
         .toLowerCase();
+
+      // 🏁 קבוצות שהודחו בנוק-אאוט (מ-ko_results) — לזיהוי מפסידות 1/16 ואילך
+      const eliminatedKO = (() => {
+        const el = new Set();
+        Object.entries(koResultsData || {}).forEach(([key, val]) => {
+          const s = String(val); const m = s.match(/(\d+)\s*-\s*(\d+)/); if (!m) return;
+          const parts = key.split(' - '); if (parts.length < 2) return;
+          const home = parts[0], away = parts.slice(1).join(' - ');
+          const hs = +m[1], as = +m[2];
+          if (hs > as) el.add(normT(away));
+          else if (as > hs) el.add(normT(home));
+          else { const adv = s.includes('|') ? s.split('|')[1].trim() : ''; if (adv) el.add(normT(normT(adv) === normT(home) ? away : home)); }
+        });
+        return el;
+      })();
 
       // finality פר-ניחוש ל-T16/T17 (זהה ל-ViewSubmissions, מכבד את כללי האקסל):
       //   g = הבית. סופי רק כששלוש המשבצות (ראש/סגנית/שלישי) הוכרעו.
@@ -629,13 +659,13 @@ export default function LeaderboardNew() {
           const elimByPrev = isWC
             ? (prevAlive ? !prevAlive.has(norm) : false)   // הודחה רק אם ידוע המאגר והיא אינה בו; אחרת אפור
             : prevCompleteTables.some(prevMeta => !prevMeta.advSet.has(norm));
-          const isElim = disp && !isAdv && (allResultsIn || elimByPrev);
+          const isElim = disp && !isAdv && (allResultsIn || elimByPrev || eliminatedKO.has(norm));
           // ניקוד מדויק:
           let exactScore = null;
           let exactFinal = false;
           if (useScoreService) {
             // אותה לוגיקה כמו כל המסכים — מתייחס לזוג ראש/סגנית ולמקום השלישי יחד
-            exactScore = calculateQuestionScore(q, disp, tSlots, {}, allQuestions);
+            exactScore = calculateQuestionScore(q, disp, tSlots, predsForScore, allQuestions);
             // finality פר-ניחוש (זהה ל-ViewSubmissions, מכבד את כללי האקסל):
             //   • הבית טרם הוכרע (ראש/סגנית/שלישי) → לא סופי (אפור).
             //   • הנבחרת שניחשת היא השלישית בפועל → סופי רק כשידועה ההעפלה (.1) — עד אז אפור (יכולה לזכות +7).
