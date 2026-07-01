@@ -1549,6 +1549,14 @@ export default function Statistics() {
 
   // 🏁 תוצאות משחקי הנוק-אאוט — נשמרות ב-DB (games.ko_results) ומוצגות לכולם
   const [koResults, setKoResults] = useState({});
+
+  // 📱 זיהוי מסך צר — לבחירת פריסת בראקט (אנכית בנייד, עץ אופקי במחשב)
+  const [isNarrowScreen, setIsNarrowScreen] = useState(()=>{ try{ return window.innerWidth<=768; }catch{ return false; } });
+  useEffect(()=>{
+    const onR=()=>{ try{ setIsNarrowScreen(window.innerWidth<=768); }catch{} };
+    window.addEventListener('resize',onR);
+    return ()=>window.removeEventListener('resize',onR);
+  },[]);
   const [koDraft, setKoDraft] = useState({});
   useEffect(()=>{
     setKoDraft({});
@@ -2329,7 +2337,7 @@ export default function Statistics() {
       const [home,away]=nodeTeams(round,idx);
       const {sc,win}=resultOf(home,away);
       return (
-        <div style={{border:'1px solid rgba(6,182,212,0.22)',borderRadius:8,background:'rgba(0,0,0,0.3)',minWidth:128,overflow:'hidden'}}>
+        <div style={{border:'1px solid rgba(6,182,212,0.22)',borderRadius:8,background:'rgba(0,0,0,0.3)',minWidth:isNarrowScreen?0:128,overflow:'hidden'}}>
           {teamCell(home,win==='h',win==='a')}
           <div style={{height:1,background:'rgba(255,255,255,0.06)',position:'relative'}}>{sc&&<span style={{position:'absolute',right:6,top:-8,fontSize:'0.64rem',fontWeight:700,color:'#fbbf24',background:'rgba(0,0,0,0.6)',borderRadius:4,padding:'0 4px'}}>{sc[1]}-{sc[2]}</span>}</div>
           {teamCell(away,win==='a',win==='h')}
@@ -2369,6 +2377,51 @@ export default function Statistics() {
     );
     const [fh,fa]=nodeTeams(4,0); const fr=resultOf(fh,fa);
     const champ = fr.win==='h'?fh:(fr.win==='a'?fa:null);
+
+    // 📱 נייד: פריסה אנכית — כל שלב בשורה משלו, שני משחקים בשורה. אין גלילה אופקית בכלל.
+    if(isNarrowScreen){
+      const rounds=[
+        {lvl:0,name:'1/16',icons:'⚔️',count:16},
+        {lvl:1,name:'שמינית הגמר',icons:'🎯',count:8},
+        {lvl:2,name:'רבע הגמר',icons:'🔥',count:4},
+        {lvl:3,name:'חצי הגמר',icons:'⭐',count:2},
+        {lvl:4,name:'הגמר',icons:'🏆',count:1},
+      ];
+      return (
+        <Card style={{background:'rgba(30,41,59,0.6)',border:'1px solid rgba(6,182,212,0.25)'}}>
+          <CardContent style={{padding:'16px 10px'}}>
+            <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:14}}>
+              <span style={{fontSize:'1.6rem'}}>🌳</span>
+              <div>
+                <h2 style={{color:'#f8fafc',fontSize:'1.2rem',fontWeight:800,margin:0}}>עץ הבראקט המלא</h2>
+                <p style={{color:'#94a3b8',fontSize:'0.76rem',margin:0}}>מ-1/16 ועד הגמר • מתעדכן אוטומטית לפי התוצאות</p>
+              </div>
+            </div>
+            {rounds.map(r=>(
+              <div key={r.lvl} style={{marginBottom:16}}>
+                <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:8}}>
+                  <span style={{fontSize:'0.95rem'}}>{r.icons}</span>
+                  <span style={{fontSize:'0.85rem',fontWeight:800,color:'#67e8f9'}}>{r.name}</span>
+                  <div style={{flex:1,height:1,background:'rgba(6,182,212,0.2)'}}/>
+                </div>
+                <div style={{display:'grid',gridTemplateColumns:r.count===1?'1fr':'repeat(2,minmax(0,1fr))',gap:8,direction:'ltr'}}>
+                  {Array.from({length:r.count},(_,i)=>(
+                    <div key={i} style={{minWidth:0}}>{node(r.lvl,i)}</div>
+                  ))}
+                </div>
+              </div>
+            ))}
+            {champ&&(
+              <div style={{marginTop:4,textAlign:'center',padding:'10px 14px',borderRadius:10,background:'rgba(251,191,36,0.15)',border:'1px solid #fbbf24'}}>
+                <div style={{fontSize:'0.68rem',color:'#fbbf24',fontWeight:700}}>אלופת העולם</div>
+                <div style={{fontSize:'1.05rem',fontWeight:800,color:'#fde68a',marginTop:2}}>🏆 {cleanTeam(champ)}</div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      );
+    }
+
     return (
       <Card style={{background:'rgba(30,41,59,0.6)',border:'1px solid rgba(6,182,212,0.25)'}}>
         <CardContent style={{padding:'16px 8px'}}>
