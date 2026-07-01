@@ -98,6 +98,23 @@ const koSlotBlock = (lvl, idx, side) => {
   const blockSize = 1 << lvl, half = blockSize >> 1;
   return [ idx*blockSize + (side==='away'?half:0), half ];
 };
+// אינדקס שלב הנוק-אאוט הנוכחי לפי התאריך (0=1/16, 1=שמינית, 2=רבע, 3=חצי, 4=גמר)
+const koCurrentStageIdx = () => {
+  const n=new Date(), md=(n.getMonth()+1)*100+n.getDate();
+  if(md<=703) return 0;   // 1/16 — עד 3/7
+  if(md<=708) return 1;   // שמינית — 4-8/7
+  if(md<=713) return 2;   // רבע — 9-13/7
+  if(md<=718) return 3;   // חצי — 14-18/7
+  return 4;               // גמר — 19/7+
+};
+// ברירת מחדל חכמה: השלב הנוכחי אם זמין, אחרת הזמין המתקדם ביותר מתחתיו
+const koBestDefaultStage = (stages, targetIdx) => {
+  const clamped=Math.max(0,Math.min(targetIdx,stages.length-1));
+  if(stages[clamped]?.available) return clamped;
+  for(let i=clamped;i>=0;i--) if(stages[i]?.available) return i;
+  const f=stages.findIndex(s=>s.available); return f>=0?f:0;
+};
+
 // קבוצות שהודחו — נגזר מתוצאות הנוק-אאוט שהוזנו (המפסידה בכל משחק)
 const koEliminatedSet = (koResults) => {
   const el = new Set();
@@ -853,7 +870,7 @@ function computeInsights(allQuestions, allPredictions, teams, myPredByQid = {}) 
       return {key:s.key,label:s.label,available:!!d,distData:d?.distData||[],summary:d?.summary||'',hint:'מספר עולות שניחש נכון',emptyMsg:`התוצאות של ${s.label} עדיין לא הוזנו — הגרף יופיע אוטומטית כשתסמן את העולים.`};
     });
     if(stagesA.some(s=>s.available)){
-      insights.push({id:'advancers_actual',icon:'🎯',title:'ניחושי העולות — פגיעות בפועל',category:'נוק-אאוט',color:'#10b981',chartType:'advmulti',stages:stagesA,defaultStage:Math.max(0,stagesA.findIndex(s=>s.available)),summary:'לכל שלב — כמה מהנבחרות שעלו בפועל ניחש כל משתתף נכון.',detail:'בחר שלב למעלה. ציר X = מספר העולות שהמשתתף פגע בהן, גובה העמודה = כמה משתתפים. לחץ על עמודה לרשימת השמות (א׳–ב׳). שלבים נעולים 🔒 ייפתחו אוטומטית כשתסמן את העולים שלהם.'});
+      insights.push({id:'advancers_actual',icon:'🎯',title:'ניחושי העולות — פגיעות בפועל',category:'נוק-אאוט',color:'#10b981',chartType:'advmulti',stages:stagesA,defaultStage:koBestDefaultStage(stagesA,koCurrentStageIdx()),summary:'לכל שלב — כמה מהנבחרות שעלו בפועל ניחש כל משתתף נכון.',detail:'בחר שלב למעלה. ציר X = מספר העולות שהמשתתף פגע בהן, גובה העמודה = כמה משתתפים. לחץ על עמודה לרשימת השמות (א׳–ב׳). שלבים נעולים 🔒 ייפתחו אוטומטית כשתסמן את העולים שלהם.'});
     }
 
     // ===== סט B: פוטנציאל לפי הבראקט הקבוע — בכמה עולות יכול כל משתתף עוד לפגוע =====
@@ -902,7 +919,7 @@ function computeInsights(allQuestions, allPredictions, teams, myPredByQid = {}) 
       return {key:d.key,label:d.label,available:!!pot,distData:pot?.distData||[],summary:pot?.summary||'',hint:`עולות אפשריות ל${d.label}`,emptyMsg:`אין עדיין ניחושים ל${d.label}.`};
     });
     if(stagesB.some(s=>s.available)){
-      insights.push({id:'advancers_potential',icon:'🔮',title:'פוטנציאל העולות — לפי הבראקט',category:'נוק-אאוט',color:'#8b5cf6',chartType:'advmulti',stages:stagesB,defaultStage:Math.max(0,stagesB.findIndex(s=>s.available)),summary:'בהינתן הבראקט הקבוע — בכמה עולות יכול כל משתתף עוד לפגוע, לכל שלב.',detail:'התקרה לכל משתתף: בכמה "כיסאות" בשלב הזה ניחש לפחות קבוצה אחת מאלו שעדיין יכולות להגיע אליו (לפי עץ הבראקט). אם כל הקבוצות החיות שלו יעלו — זו כמות הפגיעות המקסימלית האפשרית. ציר X = מספר עולות אפשריות, גובה העמודה = כמה משתתפים. לחץ על עמודה לרשימת השמות (א׳–ב׳).'});
+      insights.push({id:'advancers_potential',icon:'🔮',title:'פוטנציאל העולות — לפי הבראקט',category:'נוק-אאוט',color:'#8b5cf6',chartType:'advmulti',stages:stagesB,defaultStage:koBestDefaultStage(stagesB,koCurrentStageIdx()-1),summary:'בהינתן הבראקט הקבוע — בכמה עולות יכול כל משתתף עוד לפגוע, לכל שלב.',detail:'התקרה לכל משתתף: בכמה "כיסאות" בשלב הזה ניחש לפחות קבוצה אחת מאלו שעדיין יכולות להגיע אליו (לפי עץ הבראקט). אם כל הקבוצות החיות שלו יעלו — זו כמות הפגיעות המקסימלית האפשרית. ציר X = מספר עולות אפשריות, גובה העמודה = כמה משתתפים. לחץ על עמודה לרשימת השמות (א׳–ב׳).'});
     }
   }
 
@@ -1509,7 +1526,13 @@ export default function Statistics() {
   const [insightsLoading,  setInsightsLoading ] = useState(false);
   // 🆕 תפריט חדש
   const [openGroups,       setOpenGroups      ] = useState({ houses:true, ko:true, ai:true, special:false, qual:false });
-  const [calMonthIdx,      setCalMonthIdx     ] = useState(0);
+  const [calMonthIdx,      setCalMonthIdx     ] = useState(()=>{
+    const now=new Date(), months=[[2026,5],[2026,6]]; // יוני, יולי
+    const exact=months.findIndex(([y,m])=>y===now.getFullYear()&&m===now.getMonth());
+    if(exact>=0) return exact;
+    const t=now.getFullYear()*12+now.getMonth();
+    return t>(2026*12+6)?months.length-1:0; // אחרי הטווח → אחרון; לפני → ראשון
+  });
   const [moversData,       setMoversData      ] = useState(null);
   const [statsParticipant, setStatsParticipant ] = useState(null);  // 🆕 "ההימור שלי"
   const [mobileMenuOpen,   setMobileMenuOpen  ] = useState(false); // 🆕 תפריט נייד מתקפל
@@ -1582,6 +1605,19 @@ export default function Statistics() {
       else localStorage.removeItem(sectionStorageKey);
     } catch (e) { /* ignore */ }
   }, [selectedSection, sectionStorageKey]);
+
+  // 📍 בחירת היום הנוכחי אוטומטית בפתיחה (אם יש לו משחקים/שלב)
+  const autoTodayRef = useRef(false);
+  useEffect(()=>{
+    if(autoTodayRef.current||!currentGame?.id) return;
+    if(Object.keys(matchesByDay).length===0 && !isWC) return; // נחכה שהנתונים יהיו מוכנים
+    const n=new Date(), tk=`${n.getMonth()+1}-${n.getDate()}`;
+    const hasToday=!!matchesByDay[tk]||(isWC&&!!WC_STAGE_BY_DAY[tk]);
+    autoTodayRef.current=true;
+    if(hasToday){
+      setSelectedSection(prev=>(!prev||prev.startsWith('day_'))?`day_${tk}`:prev);
+    }
+  },[matchesByDay,currentGame,isWC]);
 
   const formatResult = useCallback(r=>{ if(!r||r==='__CLEAR__') return ''; return r.includes('-')?r.split('-').map(x=>x.trim()).join(' - '):r; },[]);
 
@@ -2233,6 +2269,8 @@ export default function Statistics() {
 
   // ── 📅 day view ──
   // 🌳 עץ הבראקט המלא (מ-1/16 ועד הגמר) — דו-צדדי
+  // ref יציב: מתחיל את הבראקט מהחצי השמאלי (פעם אחת בעלייה, לא בכל רינדור)
+  const bracketScrollRef = (el)=>{ if(el && !el.dataset.inited){ el.scrollLeft=0; el.dataset.inited='1'; } };
   const renderBracket = () => {
     const el = koEliminatedSet(koResults);
     const nodeTeams = (round, idx) => {
@@ -2313,7 +2351,7 @@ export default function Statistics() {
               <p style={{color:'#94a3b8',fontSize:'0.8rem',margin:0}}>מ-1/16 ועד הגמר • מתעדכן אוטומטית לפי התוצאות שהוזנו</p>
             </div>
           </div>
-          <div style={{direction:'ltr',overflowX:'auto',paddingBottom:8}}>
+          <div ref={bracketScrollRef} style={{direction:'ltr',overflowX:'auto',overflowY:'hidden',width:'100%',maxWidth:'100%',WebkitOverflowScrolling:'touch',paddingBottom:8}}>
             <div style={{display:'flex',gap:16,minHeight:540,alignItems:'stretch',minWidth:'max-content'}}>
               {/* חצי שמאל — זורם ימינה */}
               {col('1/16','#67e8f9',[pairW(0,0,1,'right'),pairW(0,2,3,'right'),pairW(0,4,5,'right'),pairW(0,6,7,'right')])}
@@ -2448,7 +2486,7 @@ export default function Statistics() {
                   {isAdmin&&q.isKnockout&&koResolved&&(
                     <div style={{display:'flex',alignItems:'center',gap:6,marginTop:6,paddingTop:6,borderTop:'1px dashed rgba(251,191,36,0.25)',flexWrap:'wrap'}}>
                       <span style={{fontSize:'0.7rem',color:'#fbbf24',fontWeight:700}}>👑 עדכון תוצאה:</span>
-                      <span style={{fontSize:'0.72rem',color:'#cbd5e1',maxWidth:90,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{cleanTeam(q.home_team)}</span>
+                      <span style={{fontSize:'0.72rem',color:'#cbd5e1',maxWidth:110,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',display:'inline-flex',alignItems:'center',gap:4}}>{teams[normalizeTeam(q.home_team)]?.logo_url&&<img src={teams[normalizeTeam(q.home_team)].logo_url} alt="" style={{width:16,height:16,borderRadius:'50%',flexShrink:0}}/>}{cleanTeam(q.home_team)}</span>
                       <select value={selH} onChange={e=>setKoDraft(d=>({...d,[koKey]:{h:e.target.value,a:(d[koKey]?.a ?? (koSc?koSc[2]:'')),adv:(d[koKey]?.adv ?? koAdv)}}))}
                         style={{background:'#0f172a',color:'#f8fafc',border:'1px solid #334155',borderRadius:5,padding:'2px 4px',fontSize:'0.78rem'}}>
                         <option value="">-</option>{[0,1,2,3,4,5,6,7,8,9].map(n=><option key={n} value={n}>{n}</option>)}
@@ -2458,7 +2496,7 @@ export default function Statistics() {
                         style={{background:'#0f172a',color:'#f8fafc',border:'1px solid #334155',borderRadius:5,padding:'2px 4px',fontSize:'0.78rem'}}>
                         <option value="">-</option>{[0,1,2,3,4,5,6,7,8,9].map(n=><option key={n} value={n}>{n}</option>)}
                       </select>
-                      <span style={{fontSize:'0.72rem',color:'#cbd5e1',maxWidth:90,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{cleanTeam(q.away_team)}</span>
+                      <span style={{fontSize:'0.72rem',color:'#cbd5e1',maxWidth:110,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',display:'inline-flex',alignItems:'center',gap:4}}>{teams[normalizeTeam(q.away_team)]?.logo_url&&<img src={teams[normalizeTeam(q.away_team)].logo_url} alt="" style={{width:16,height:16,borderRadius:'50%',flexShrink:0}}/>}{cleanTeam(q.away_team)}</span>
                       {selH!==''&&selA!==''&&(+selH===+selA)&&(
                         <span style={{display:'inline-flex',alignItems:'center',gap:5,marginInlineStart:6}}>
                           <span style={{fontSize:'0.7rem',color:'#fbbf24',fontWeight:700}}>⚽ מי עלתה?</span>
