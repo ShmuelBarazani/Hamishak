@@ -1606,18 +1606,6 @@ export default function Statistics() {
   const [specialStats,     setSpecialStats    ] = useState(null);
   const [lockedPanel,      setLockedPanel     ] = useState({});
   const [aiInsights,       setAiInsights      ] = useState(null);
-  // 🏆 מפת ניקוד (שם משתתף → ניקוד נוכחי) — לתובנות גיל/מקצוע מול ניקוד. נטענת פעם אחת.
-  const scoresMapRef = useRef(null);
-  const ensureScoresMap = useCallback(async ()=>{
-    if(scoresMapRef.current) return scoresMapRef.current;
-    try{
-      const rows = await loadAllRankings(currentGame.id);
-      const m={};
-      rows.forEach(r=>{ if(r.participant_name!=null) m[r.participant_name]=Number(r.current_score)||0; });
-      scoresMapRef.current=m;
-      return m;
-    }catch{ return {}; }
-  },[currentGame?.id]);
   const [insightsLoading,  setInsightsLoading ] = useState(false);
   // 🆕 תפריט חדש
   const [openGroups,       setOpenGroups      ] = useState({ houses:true, ko:true, ai:true, special:false, qual:false });
@@ -1633,6 +1621,20 @@ export default function Statistics() {
   const [mobileMenuOpen,   setMobileMenuOpen  ] = useState(false); // 🆕 תפריט נייד מתקפל
 
   const { currentGame } = useGame();
+
+  // 🏆 מפת ניקוד (שם משתתף → ניקוד נוכחי) — לתובנות גיל/מקצוע מול ניקוד. נטענת פעם אחת.
+  // מוגדרת כאן, אחרי useGame — כדי ש-currentGame יהיה מאותחל (מניעת TDZ).
+  const scoresMapRef = useRef(null);
+  const ensureScoresMap = useCallback(async ()=>{
+    if(scoresMapRef.current) return scoresMapRef.current;
+    try{
+      const rows = await loadAllRankings(currentGame.id);
+      const m={};
+      rows.forEach(r=>{ if(r.participant_name!=null) m[r.participant_name]=Number(r.current_score)||0; });
+      scoresMapRef.current=m;
+      return m;
+    }catch{ return {}; }
+  },[currentGame?.id]);
   const isKnockout = !!(currentGame?.name?.includes('נוק-אאוט')||currentGame?.name?.includes('knock')||currentGame?.id==='9c9c1331-5184-406b-98b3-6becd9577567');
   // 🌍 דגל מונדיאל
   const isWC = currentGame?.id === WC_GAME_ID;
