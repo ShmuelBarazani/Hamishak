@@ -191,6 +191,7 @@ export default function ViewSubmissions() {
   const [loading, setLoading] = useState(true);
   const [loadingPredictions, setLoadingPredictions] = useState(false);
   const [data, setData] = useState({ predictions: [], questions: [], teams: [], validationLists: [], locationPredsByTableQ: {}, locationActualsByTableQ: {} });
+  const [koResultsVS, setKoResultsVS] = useState({});
   const [selectedParticipant, setSelectedParticipant] = useState(null);
   const [openSections, setOpenSections] = useState({});
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false); // 🆕 תפריט נייד מתקפל
@@ -410,6 +411,12 @@ export default function ViewSubmissions() {
         setQualifiersTables(allQualifiersTables);
 
         setData(prev => ({ ...prev, questions, teams: teamsMap, validationLists: listsMap }));
+
+        // 🏁 תוצאות הנוק-אאוט (games.ko_results) — לצביעת מפסידות 1/16 ואילך באדום
+        try {
+          const { data: koRow } = await supabase.from('games').select('ko_results').eq('id', currentGame.id).single();
+          setKoResultsVS(koRow?.ko_results || {});
+        } catch { setKoResultsVS(currentGame?.ko_results || {}); }
       } catch (error) {
         console.error("Error loading data:", error);
       }
@@ -1050,6 +1057,7 @@ export default function ViewSubmissions() {
     );
     // מודחות — הצד שלא עלה מכל זוג ב-T3 (נוקאאוט בלבד; במונדיאל T3 הוא בית ב')
     const eliminatedSet = new Set();
+    let prevAlive = null; // 🌍 מונדיאל: מאגר ה"חיות" מהשלב הקודם — מי שלא בו הודחה
     if (!isWC) {
       const t3Qs = data.questions.filter(q => q.table_id === 'T3' && q.home_team && q.away_team);
       advancingSet.forEach(adv => {
@@ -1059,8 +1067,33 @@ export default function ViewSubmissions() {
           if (a === adv && !advancingSet.has(h)) eliminatedSet.add(h);
         });
       });
+    } else {
+      // 🌍 1) הודחו בשלב הבתים: T16 (ראש/סגנית) ו-T17 (שלישי) מקבילים → האיחוד שלהם הוא
+      //    רשימת העולות ל-1/16. תקף רק כששתי הטבלאות הוזנו במלואן (אחרת אפור = טרם ידוע).
+      const tblActuals = tid => {
+        const qs = data.questions.filter(q => q.table_id === tid);
+        const filledQs = qs.filter(q => q.actual_result && q.actual_result !== '__CLEAR__');
+        return { done: qs.length > 0 && filledQs.length === qs.length, set: new Set(filledQs.map(q => normTeam(q.actual_result))) };
+      };
+      if (tableId === 'T19') {
+        const a = tblActuals('T16'), b = tblActuals('T17');
+        if (a.done && b.done && (a.set.size + b.set.size) > 0) prevAlive = new Set([...a.set, ...b.set]);
+      } else {
+        const prevTid = { T21: 'T19', T23: 'T21', T25: 'T23' }[tableId];
+        if (prevTid) { const p = tblActuals(prevTid); if (p.done && p.set.size > 0) prevAlive = p.set; }
+      }
+      // 🌍 2) מפסידות הנוק-אאוט (games.ko_results): המפסידה בכל משחק, כולל הכרעת פנדלים ("h-a|עולה")
+      Object.entries(koResultsVS || {}).forEach(([key, val]) => {
+        const s = String(val); const mm = s.match(/(\d+)\s*-\s*(\d+)/); if (!mm) return;
+        const parts = key.split(' - '); if (parts.length < 2) return;
+        const home = parts[0], away = parts.slice(1).join(' - ');
+        const hs = +mm[1], as = +mm[2];
+        if (hs > as) eliminatedSet.add(normTeam(away));
+        else if (as > hs) eliminatedSet.add(normTeam(home));
+        else { const adv = s.includes('|') ? s.split('|')[1].trim() : ''; if (adv) eliminatedSet.add(normTeam(normTeam(adv) === normTeam(home) ? away : home)); }
+      });
     }
-    return { advancingSet, eliminatedSet };
+    return { advancingSet, eliminatedSet, prevAlive };
   };
 
   // 🌍 מונדיאל: ראש בית וסגנית — שורה אחת לכל בית
@@ -1115,7 +1148,7 @@ export default function ViewSubmissions() {
       })
       .sort((a, b) => parseFloat(a.question_id) - parseFloat(b.question_id));
 
-    const { advancingSet, eliminatedSet } = buildAdvancingAndEliminated(slots, table.id);
+    const { advancingSet, eliminatedSet, prevAlive } = buildAdvancingAndEliminated(slots, table.id);
     const hasAnyResult = advancingSet.size > 0;
     const allResultsIn = slots.length > 0 && slots.every(q => q.actual_result && q.actual_result !== '__CLEAR__');
     const pointsPerSlot = slots[0]?.possible_points || 0;
@@ -1183,7 +1216,7 @@ export default function ViewSubmissions() {
             }
             const norm = normTeam(pred);
             const isAdv  = pred && advancingSet.has(norm);
-            const isElim = pred && !isAdv && eliminatedSet.has(norm);
+            const isElim = pred && !isAdv && (eliminatedSet.has(norm) || (prevAlive && !prevAlive.has(norm)));
             const isGray = !pred || (!isAdv && !isElim);
 
             const bg     = isAdv ? 'rgba(16,185,129,0.12)' : isElim ? 'rgba(239,68,68,0.10)' : 'rgba(15,23,42,0.4)';
