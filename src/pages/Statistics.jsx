@@ -845,6 +845,7 @@ function computeInsights(allQuestions, allPredictions, teams, myPredByQid = {}, 
           color:'#f472b6',
           summary:`הדור המוביל: ${best.name} עם ממוצע ${best.value} נק' (${best.count} משתתפים) • המקום האחרון: ${worst.name} (${worst.value} נק')`,
           chartType:'agebars',
+          baseline:true,
           ageData:chartData,
           detail:'ממוצע הניקוד הנוכחי בדירוג לכל קבוצת גיל (קבוצות עם 2+ משתתפים שמילאו גיל). המספר מעל כל עמודה = ממוצע הנקודות. לחץ על עמודה לרשימת המשתתפים עם הגיל והניקוד, ממוינים מהגבוה לנמוך.',
         });
@@ -882,6 +883,7 @@ function computeInsights(allQuestions, allPredictions, teams, myPredByQid = {}, 
           color:'#22d3ee',
           summary:`התחום המוביל: ${arr[0].name} — ממוצע ${arr[0].value} נק' (${arr[0].count} משתתפים)`,
           chartType:'profession',
+          baseline:true,
           professionData:arr,
           detail:'ממוצע הניקוד הנוכחי בדירוג לכל קבוצת מקצוע (קבוצות עם 3+ משתתפים). המספר מימין = ממוצע הנקודות. לחץ על קבוצה לרשימת המשתתפים והניקוד שלהם, ממוינים מהגבוה לנמוך.',
         });
@@ -1027,7 +1029,10 @@ function InsightCard({ insight, me }) {
   const renderChart = () => {
     // 💼 professions — ברים לחיצים עם רשימת חברים
     if (insight.chartType === 'profession') {
-      const max = Math.max(...insight.professionData.map(d=>d.value),1);
+      const vals = insight.professionData.map(d=>d.value);
+      const max = Math.max(...vals,1);
+      // 📏 בסיס דינמי (לגרפי ממוצע ניקוד): הסרגל מתחיל קצת מתחת למינימום — כדי להבליט את ההבדלים
+      const base = insight.baseline ? (()=>{ const min=Math.min(...vals); const span=Math.max(max-min,1); return Math.max(0, Math.floor((min - span*0.35)/10)*10); })() : 0;
       return (
         <div style={{display:'flex',flexDirection:'column',gap:5,marginTop:8}}>
           {insight.professionData.map((d,i)=>{
@@ -1037,7 +1042,7 @@ function InsightCard({ insight, me }) {
               <div onClick={()=>setProfOpen(profOpen===d.name?null:d.name)} style={{display:'grid',gridTemplateColumns:'minmax(150px,42%) 1fr 34px',gap:8,alignItems:'center',cursor:'pointer',padding:'3px 4px',borderRadius:6,background:profOpen===d.name?'rgba(14,165,233,0.12)':(isMine?'rgba(251,191,36,0.1)':'transparent')}}>
                 <span style={{fontSize:'0.8rem',color:isMine?'#fbbf24':'#f8fafc',fontWeight:(profOpen===d.name||isMine)?700:400}}>{isMine?'🙋 ':''}{d.name}</span>
                 <div style={{height:14,borderRadius:4,overflow:'hidden',background:'rgba(255,255,255,0.04)'}}>
-                  <div style={{width:`${(d.value/max)*100}%`,height:'100%',background:isMine?'#fbbf24':COLORS[i%COLORS.length],borderRadius:4}}></div>
+                  <div style={{width:`${Math.max(3,((d.value-base)/((max-base)||1))*100)}%`,height:'100%',background:isMine?'#fbbf24':COLORS[i%COLORS.length],borderRadius:4}}></div>
                 </div>
                 <span style={{fontSize:'0.74rem',color:isMine?'#fbbf24':'#94a3b8',textAlign:'left',fontWeight:700}}>{d.value}</span>
               </div>
@@ -1049,14 +1054,17 @@ function InsightCard({ insight, me }) {
             </div>
             );
           })}
-          <p style={{color:'#475569',fontSize:'0.68rem',marginTop:2}}>לחץ על קבוצה לרשימת המשתתפים</p>
+          <p style={{color:'#475569',fontSize:'0.68rem',marginTop:2}}>לחץ על קבוצה לרשימת המשתתפים{insight.baseline?` • 📏 הסרגל מתחיל מ-${(()=>{const vals=insight.professionData.map(d=>d.value);const max=Math.max(...vals,1);const min=Math.min(...vals);const span=Math.max(max-min,1);return Math.max(0,Math.floor((min-span*0.35)/10)*10);})()} נק' להבלטת ההבדלים`:''}</p>
         </div>
       );
     }
 
     // 🎂 age bars — 7 עמודות גיל, לחיצות
     if (insight.chartType === 'agebars') {
-      const max = Math.max(...insight.ageData.map(d=>d.value),1);
+      const vals = insight.ageData.map(d=>d.value);
+      const max = Math.max(...vals,1);
+      // 📏 בסיס דינמי (לגרפי ממוצע ניקוד): העמודות נמדדות מקצת מתחת למינימום — להבלטת ההבדלים
+      const base = insight.baseline ? (()=>{ const min=Math.min(...vals); const span=Math.max(max-min,1); return Math.max(0, Math.floor((min - span*0.35)/10)*10); })() : 0;
       return (
         <div style={{marginTop:8}}>
           <div dir="ltr" style={{display:'flex',alignItems:'flex-end',gap:6,height:170,padding:'0 4px'}}>
@@ -1065,12 +1073,13 @@ function InsightCard({ insight, me }) {
               return (
               <div key={i} onClick={()=>setProfOpen(profOpen===d.name?null:d.name)} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',cursor:'pointer'}}>
                 <span style={{fontSize:'0.72rem',color:isMine?'#fbbf24':'#f8fafc',fontWeight:700,marginBottom:3}}>{isMine?'🙋':''}{d.value}</span>
-                <div style={{width:'100%',height:`${(d.value/max)*120}px`,minHeight:d.value>0?4:0,background:profOpen===d.name?'#f472b6':(isMine?'#fbbf24':COLORS[i%COLORS.length]),borderRadius:'5px 5px 0 0',boxShadow:isMine?'0 0 0 2px #fbbf24':'none',transition:'all 0.15s'}}></div>
+                <div style={{width:'100%',height:`${Math.max(d.value>0?6:0,((d.value-base)/((max-base)||1))*120)}px`,minHeight:d.value>0?4:0,background:profOpen===d.name?'#f472b6':(isMine?'#fbbf24':COLORS[i%COLORS.length]),borderRadius:'5px 5px 0 0',boxShadow:isMine?'0 0 0 2px #fbbf24':'none',transition:'all 0.15s'}}></div>
                 <span style={{fontSize:'0.62rem',color:isMine?'#fbbf24':'#94a3b8',marginTop:4,direction:'rtl',fontWeight:isMine?800:400}}>{d.name}</span>
               </div>
               );
             })}
           </div>
+          {insight.baseline&&<p style={{color:'#475569',fontSize:'0.66rem',marginTop:4,textAlign:'center'}}>📏 העמודות נמדדות מ-{base} נק' — להבלטת ההבדלים בין הקבוצות</p>}
           {profOpen&&insight.ageData.find(d=>d.name===profOpen)&&(
             <div style={{display:'flex',flexWrap:'wrap',gap:4,padding:'8px 8px 2px',marginTop:8,borderTop:'1px solid #1e293b'}}>
               {insight.ageData.find(d=>d.name===profOpen).members.map((m,k)=>(
