@@ -454,6 +454,8 @@ export default function LeaderboardNew() {
 
       // 🌍 במונדיאל אין טבלאות מיקומים — T14/T15/T19 הן שאלות רגילות/עולות
       const isWC = currentGame?.id === '30032806-6216-496f-ac32-fb628e181742';
+      // טבלאות שמטופלות במקטעי המשבצות (ראש/סגנית, שלישי, עולות) — לצורך ספירת "מאז הקיבוע"
+      const SECTION_TIDS_NEW = new Set(isWC ? ['T16','T17','T19','T21','T23','T25'] : []);
       const LOCATION_TABLE_IDS = isWC ? [] : ['T14', 'T15', 'T16', 'T17', 'T19'];
       const LOCATION_DEFAULTS  = {
         T14: 'מקומות 1-8 — שלב הבתים',
@@ -536,7 +538,9 @@ export default function LeaderboardNew() {
               ? (teamsMap[q.away_team]?.logo_url || teamsMap[q.away_team.replace(/\s*\([^)]+\)\s*$/, '').trim()]?.logo_url)
               : null,
             isLocationSummary: false, isStageBonusRow: false,
-            isNew: newSinceBaseline.has(q.id),
+            // 🆕 טבלאות המשבצות (ראש/סגנית/שלישי/עולות) נספרות ב"מאז הקיבוע" דרך המשבצות בלבד
+            //    (שם הייחוס לפי הקבוצה שנוספה) — תיוג גם כאן היה גורם לכפל ולייחוס שגוי לפי מיקום.
+            isNew: !SECTION_TIDS_NEW.has(q.table_id) && newSinceBaseline.has(q.id),
           });
         }
       });
