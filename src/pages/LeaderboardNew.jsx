@@ -144,6 +144,8 @@ export default function LeaderboardNew() {
   const [loading,             setLoading            ] = useState(true);
   const [settingBaseline,     setSettingBaseline    ] = useState(false);
   const [selectedParticipant, setSelectedParticipant] = useState(null);
+  // 🆕 מצב "ניקוד חדש" — לחיצה על עמודת השינוי פותחת חלון ממוקד של הנצבר מאז הקיבוע
+  const [changeMode, setChangeMode] = useState(false);
   const [participantDetails,  setParticipantDetails ] = useState(null);
   const [loadingDetails,      setLoadingDetails     ] = useState(false);
   const [currentUser,         setCurrentUser        ] = useState(null);
@@ -973,7 +975,7 @@ export default function LeaderboardNew() {
                       <td
                         className="font-semibold text-[10px] md:text-sm cursor-pointer hover:underline text-right px-1.5 py-1 md:px-3 md:py-1.5"
                         style={{ color: '#f1f5f9' }}
-                        onClick={() => loadParticipantDetails(rank.participant_name)}
+                        onClick={() => { setChangeMode(false); loadParticipantDetails(rank.participant_name); }}
                       >
                         {rank.participant_name}
                       </td>
@@ -985,8 +987,8 @@ export default function LeaderboardNew() {
                       </td>
                       <td className="hidden md:table-cell text-center px-3 py-1.5 text-xs" style={{ color: '#64748b' }}>{rank.previous_position || '-'}</td>
                       <td className="hidden md:table-cell text-center px-3 py-1.5 text-xs" style={{ color: '#64748b' }}>{rank.previous_score || '0'}</td>
-                      <td className="text-center px-1.5 py-1 md:px-3 md:py-1.5">
-                        {rank.score_change > 0  && <span className="text-[9px] md:text-xs font-bold" style={{ color: '#34d399' }}>+{rank.score_change}</span>}
+                      <td className="text-center px-1.5 py-1 md:px-3 md:py-1.5" onClick={() => { if (rank.score_change > 0) { setChangeMode(true); loadParticipantDetails(rank.participant_name); } }} style={{ cursor: rank.score_change > 0 ? 'pointer' : 'default' }} title={rank.score_change > 0 ? 'לחץ לפירוט הניקוד החדש שנצבר' : undefined}>
+                        {rank.score_change > 0  && <span className="text-[9px] md:text-xs font-bold" style={{ color: '#34d399', textDecoration: 'underline', textDecorationStyle: 'dotted', textUnderlineOffset: 3 }}>+{rank.score_change}</span>}
                         {rank.score_change < 0  && <span className="text-[9px] md:text-xs font-bold" style={{ color: '#f87171' }}>{rank.score_change}</span>}
                         {(!rank.score_change || rank.score_change === 0) && <span className="text-[9px] md:text-xs" style={{ color: '#475569' }}>—</span>}
                       </td>
@@ -1024,8 +1026,8 @@ export default function LeaderboardNew() {
       </div>
 
       <Dialog
-        open={selectedParticipant !== null}
-        onOpenChange={() => { setSelectedParticipant(null); setParticipantDetails(null); }}
+        open={selectedParticipant !== null && !changeMode}
+        onOpenChange={() => { setSelectedParticipant(null); setParticipantDetails(null); setChangeMode(false); }}
       >
         <DialogContent
           dir="rtl"
@@ -1261,6 +1263,78 @@ export default function LeaderboardNew() {
       </Dialog>
 
       {/* 🎁 חלון צף — תיאור מלא של פרס לא-כספי */}
+      {/* 🆕 חלון צף: פירוט הניקוד החדש שנצבר מאז הקיבוע (נפתח בלחיצה על עמודת השינוי) */}
+      <Dialog
+        open={selectedParticipant !== null && changeMode}
+        onOpenChange={() => { setSelectedParticipant(null); setParticipantDetails(null); setChangeMode(false); }}
+      >
+        <DialogContent
+          dir="rtl"
+          className="[&>button]:left-4 [&>button]:right-auto [&>button]:top-4"
+          style={{
+            maxWidth: 'min(480px, 94vw)', width: 'min(480px, 94vw)',
+            maxHeight: '78vh',
+            display: 'flex', flexDirection: 'column',
+            background: 'linear-gradient(135deg, var(--bg1) 0%, var(--bg3) 100%)',
+            border: '1px solid rgba(16,185,129,0.35)',
+            boxShadow: '0 0 26px rgba(16,185,129,0.18)',
+            borderRadius: '14px', padding: 0, overflow: 'hidden',
+          }}
+        >
+          <DialogHeader style={{ padding: '14px 20px 12px', borderBottom: '1px solid rgba(16,185,129,0.25)', flexShrink: 0 }}>
+            <DialogTitle style={{ fontSize: '1.1rem', fontWeight: 800, color: '#f8fafc', textAlign: 'right' }}>
+              🆕 ניקוד חדש שנצבר — {selectedParticipant}
+            </DialogTitle>
+          </DialogHeader>
+          <div style={{ padding: '14px 20px', overflowY: 'auto', flex: 1 }}>
+            {loadingDetails ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center', padding: '24px 0' }}>
+                <Loader2 className="animate-spin" style={{ width: 18, height: 18, color: '#34d399' }} />
+                <span style={{ fontSize: '0.9rem', color: '#94a3b8' }}>מחשב...</span>
+              </div>
+            ) : !participantDetails?.sinceBaseline ? (
+              <p style={{ fontSize: '0.88rem', color: '#94a3b8', lineHeight: 1.7, textAlign: 'right' }}>
+                אין עדיין צילום קיבוע במערכת. לאחר הלחיצה הבאה על "📌 קיבוע ניקוד", כל שאלה שתנוקד תופיע כאן עם הנקודות שנצברו.
+              </p>
+            ) : (() => {
+              const newRows  = (participantDetails.scores || []).filter(s => s.isNew);
+              const newSlots = (participantDetails.qualifyingSections || []).flatMap(sec =>
+                sec.preds.filter(p => p.isNew && typeof p.exactScore === 'number' && p.exactScore > 0)
+                  .map(p => ({ desc: sec.tableDesc, pred: p.pred, score: p.exactScore })));
+              const items = [
+                ...newRows.map(s => ({ desc: s.question_text, pred: s.prediction, score: s.score })),
+                ...newSlots,
+              ].sort((a, b) => b.score - a.score);
+              if (items.length === 0) return (
+                <p style={{ fontSize: '0.88rem', color: '#94a3b8', textAlign: 'right' }}>
+                  לא נצבר ניקוד חדש מאז הקיבוע האחרון.
+                </p>
+              );
+              return (
+                <>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {items.map((it, i) => (
+                      <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, background: 'rgba(16,185,129,0.07)', border: '1px solid rgba(16,185,129,0.18)', borderRadius: 8, padding: '7px 10px' }}>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: '0.84rem', color: '#f1f5f9', fontWeight: 600 }}>{it.desc}</div>
+                          {it.pred && <div style={{ fontSize: '0.76rem', color: '#94a3b8', marginTop: 1 }}>הניחוש: {it.pred}</div>}
+                        </div>
+                        <span style={{ flexShrink: 0, background: '#059669', color: 'white', fontSize: '0.84rem', fontWeight: 700, padding: '3px 10px', borderRadius: 999 }}>+{it.score}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid rgba(16,185,129,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span style={{ fontSize: '0.92rem', fontWeight: 800, color: '#6ee7b7' }}>סה"כ חדש: +{participantDetails.sinceBaseline.sum} נק' ({items.length} שאלות)</span>
+                    <button onClick={() => setChangeMode(false)} style={{ background: 'transparent', border: '1px solid rgba(148,163,184,0.4)', color: '#cbd5e1', borderRadius: 8, padding: '5px 12px', fontSize: '0.8rem', cursor: 'pointer' }}>לפאנל המלא</button>
+                  </div>
+                  <p style={{ fontSize: '0.7rem', color: '#64748b', marginTop: 8, textAlign: 'right' }}>* לא כולל בונוסי-שלב; לכן ייתכן הפרש קטן מול עמודת השינוי בטבלה.</p>
+                </>
+              );
+            })()}
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={!!prizeView} onOpenChange={(o) => { if (!o) setPrizeView(null); }}>
         <DialogContent className="[&>button]:left-4 [&>button]:right-auto [&>button]:top-4" style={{ background: '#0b1220', border: `1px solid ${prizeView?.color || '#334155'}66`, maxWidth: 400 }} dir="rtl">
           <DialogHeader>
