@@ -285,7 +285,7 @@ function ParticipantPanel({ title, subtitle, count, percentage, participants, co
 }
 
 // ─── AI Insights engine ───────────────────────────────────────────────────────
-function computeInsights(allQuestions, allPredictions, teams, myPredByQid = {}) {
+function computeInsights(allQuestions, allPredictions, teams, myPredByQid = {}, scoreByName = {}) {
   const insights = [];
   if (!allPredictions.length || !allQuestions.length) return insights;
 
@@ -806,6 +806,89 @@ function computeInsights(allQuestions, allPredictions, teams, myPredByQid = {}) 
     }
   }
 
+  // ── 🆕 17. גיל מול ניקוד 🏆 — ממוצע הניקוד לכל קבוצת גיל ─────────────────
+  {
+    const hasScores = scoreByName && Object.keys(scoreByName).length > 0;
+    const ageQ = allQuestions.find(q=>q.table_id==='T1'&&(q.question_text||'').includes('גיל'));
+    if(ageQ && hasScores){
+      const buckets=[
+        {label:'עד 24',min:0,max:24},
+        {label:'25–29',min:25,max:29},
+        {label:'30–34',min:30,max:34},
+        {label:'35–39',min:35,max:39},
+        {label:'40–44',min:40,max:44},
+        {label:'45–49',min:45,max:49},
+        {label:'50+',min:50,max:200},
+      ];
+      const members=buckets.map(()=>[]);
+      preds.filter(p=>p.question_id===ageQ.id&&p.text_prediction?.trim()).forEach(p=>{
+        const age=parseInt(String(p.text_prediction).replace(/[^\d]/g,''));
+        if(isNaN(age)||age<5||age>120) return;
+        const sc=Number(scoreByName[p.participant_name]);
+        if(!isFinite(sc)) return;
+        const bi=buckets.findIndex(b=>age>=b.min&&age<=b.max);
+        if(bi>=0) members[bi].push({name:p.participant_name,age,score:sc});
+      });
+      const chartData=buckets.map((b,i)=>{
+        const ms=members[i];
+        if(ms.length<2) return null; // קבוצה של בודד — לא מדד הוגן
+        const avg=Math.round(ms.reduce((s,m)=>s+m.score,0)/ms.length);
+        return {name:b.label,value:avg,count:ms.length,
+          members:ms.sort((a,b)=>b.score-a.score).map(m=>({name:m.name,age:`גיל ${m.age} · ${m.score} נק'`}))};
+      }).filter(Boolean);
+      if(chartData.length>=3){
+        const best=chartData.reduce((a,b)=>b.value>a.value?b:a);
+        const worst=chartData.reduce((a,b)=>b.value<a.value?b:a);
+        insights.push({
+          id:'age_score', icon:'🏆', title:'גיל מול ניקוד — איזה דור מנצח?',
+          category:'ניתוח משתתפים',
+          color:'#f472b6',
+          summary:`הדור המוביל: ${best.name} עם ממוצע ${best.value} נק' (${best.count} משתתפים) • המקום האחרון: ${worst.name} (${worst.value} נק')`,
+          chartType:'agebars',
+          ageData:chartData,
+          detail:'ממוצע הניקוד הנוכחי בדירוג לכל קבוצת גיל (קבוצות עם 2+ משתתפים שמילאו גיל). המספר מעל כל עמודה = ממוצע הנקודות. לחץ על עמודה לרשימת המשתתפים עם הגיל והניקוד, ממוינים מהגבוה לנמוך.',
+        });
+      }
+    }
+  }
+
+  // ── 🆕 18. מקצוע מול הישגים 💼🏆 — ממוצע הניקוד לכל קבוצת מקצוע ──────────
+  {
+    const hasScores = scoreByName && Object.keys(scoreByName).length > 0;
+    const profQ = allQuestions.find(q=>q.table_id==='T1'&&(q.question_text||'').includes('מקצוע'));
+    if(profQ && hasScores){
+      const groups={};
+      preds.filter(p=>p.question_id===profQ.id&&p.text_prediction?.trim()).forEach(p=>{
+        const g=classifyProfession(p.text_prediction);
+        if(!g) return;
+        const sc=Number(scoreByName[p.participant_name]);
+        if(!isFinite(sc)) return;
+        if(!groups[g]) groups[g]=[];
+        groups[g].push({name:p.participant_name,score:sc});
+      });
+      const arr=Object.entries(groups)
+        .filter(([,ms])=>ms.length>=3) // קבוצות קטנות מדי — לא מדד הוגן
+        .map(([name,ms])=>({
+          name,
+          value:Math.round(ms.reduce((s,m)=>s+m.score,0)/ms.length),
+          count:ms.length,
+          members:ms.sort((a,b)=>b.score-a.score).map(m=>({name:m.name,raw:`${m.score} נק'`})),
+        }))
+        .sort((a,b)=>b.value-a.value);
+      if(arr.length>=2){
+        insights.push({
+          id:'prof_score', icon:'🥇', title:'מקצוע מול הישגים — איזה תחום שולט בטבלה?',
+          category:'ניתוח משתתפים',
+          color:'#22d3ee',
+          summary:`התחום המוביל: ${arr[0].name} — ממוצע ${arr[0].value} נק' (${arr[0].count} משתתפים)`,
+          chartType:'profession',
+          professionData:arr,
+          detail:'ממוצע הניקוד הנוכחי בדירוג לכל קבוצת מקצוע (קבוצות עם 3+ משתתפים). המספר מימין = ממוצע הנקודות. לחץ על קבוצה לרשימת המשתתפים והניקוד שלהם, ממוינים מהגבוה לנמוך.',
+        });
+      }
+    }
+  }
+
   // ── 🎯 ניחושי העולות — סט A (פגיעות בפועל) + סט B (פוטנציאל לפי שיבוץ) ──────
   {
     const normT = s => normalizeTeam((s||'').trim());
@@ -924,7 +1007,7 @@ function computeInsights(allQuestions, allPredictions, teams, myPredByQid = {}) 
   }
 
   // 🔝 פילוחי המשתתפים (גיל + מקצוע) לראש הרשימה
-  const TOP_ORDER = ['advancers_actual','advancers_potential','ages','professions'];
+  const TOP_ORDER = ['advancers_actual','advancers_potential','age_score','prof_score','ages','professions'];
   insights.sort((a,b)=>{
     const ai=TOP_ORDER.indexOf(a.id), bi=TOP_ORDER.indexOf(b.id);
     if(ai!==-1||bi!==-1) return (ai===-1?99:ai)-(bi===-1?99:bi);
@@ -1523,6 +1606,18 @@ export default function Statistics() {
   const [specialStats,     setSpecialStats    ] = useState(null);
   const [lockedPanel,      setLockedPanel     ] = useState({});
   const [aiInsights,       setAiInsights      ] = useState(null);
+  // 🏆 מפת ניקוד (שם משתתף → ניקוד נוכחי) — לתובנות גיל/מקצוע מול ניקוד. נטענת פעם אחת.
+  const scoresMapRef = useRef(null);
+  const ensureScoresMap = useCallback(async ()=>{
+    if(scoresMapRef.current) return scoresMapRef.current;
+    try{
+      const rows = await loadAllRankings(currentGame.id);
+      const m={};
+      rows.forEach(r=>{ if(r.participant_name!=null) m[r.participant_name]=Number(r.current_score)||0; });
+      scoresMapRef.current=m;
+      return m;
+    }catch{ return {}; }
+  },[currentGame?.id]);
   const [insightsLoading,  setInsightsLoading ] = useState(false);
   // 🆕 תפריט חדש
   const [openGroups,       setOpenGroups      ] = useState({ houses:true, ko:true, ai:true, special:false, qual:false });
@@ -1625,8 +1720,9 @@ export default function Statistics() {
   // לא מרוקנים את aiInsights — הגרפים הקיימים נשארים עד שהחדשים מוכנים (אין "אין נתונים").
   useEffect(()=>{
     if(selectedSection!=='insights'||loading||!allQuestions.length) return;
-    const t=setTimeout(()=>{
-      setAiInsights(computeInsights(allQuestions,allPredictions,teams,myPredByQid));
+    const t=setTimeout(async()=>{
+      const sm = await ensureScoresMap();
+      setAiInsights(computeInsights(allQuestions,allPredictions,teams,myPredByQid,sm));
     },50);
     return ()=>clearTimeout(t);
   },[statsParticipant]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -1640,6 +1736,7 @@ export default function Statistics() {
     prevGameRef.current = gid;
     if(gameChanged){
       setAiInsights(null);
+      scoresMapRef.current=null;
       setInsightsLoading(false);
       setMoversData(null);
       setSelectedSection(null);
@@ -2153,8 +2250,9 @@ export default function Statistics() {
     if(selectedSection==='insights'){
       if(!aiInsights){
         setInsightsLoading(true);
-        setTimeout(()=>{
-          const insights=computeInsights(allQuestions,allPredictions,teams,myPredByQid);
+        setTimeout(async()=>{
+          const sm = await ensureScoresMap();
+          const insights=computeInsights(allQuestions,allPredictions,teams,myPredByQid,sm);
           setAiInsights(insights);
           setInsightsLoading(false);
         },100);
