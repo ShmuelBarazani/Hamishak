@@ -381,6 +381,19 @@ export default function LeaderboardNew() {
           ));
         }
       }
+      // 📸 צילום מצב השאלות שכבר נוקדו — מאפשר להציג "מה חדש מאז הקיבוע" בפאנל המשתתף.
+      //    נשמר ב-games.baseline_results_snapshot (JSONB). כישלון כאן לא מפיל את הקיבוע.
+      try {
+        const qs = await loadQuestionsForGame(currentGame.id);
+        const resMap = {};
+        qs.forEach(q => {
+          const ar = String(q.actual_result ?? '').trim();
+          if (ar !== '') resMap[q.id] = ar;
+        });
+        await db.Game.update(currentGame.id, { baseline_results_snapshot: { ts: now, results: resMap } });
+      } catch (snapErr) {
+        console.warn('שמירת צילום הקיבוע נכשלה (הקיבוע עצמו הצליח):', snapErr);
+      }
       toast({
         title: "נקודת ייחוס נקבעה!",
         description: `${allRankings.length} משתתפים עודכנו`,
@@ -404,12 +417,22 @@ export default function LeaderboardNew() {
       const allQuestions   = await loadQuestionsForGame(currentGame.id);
       const allPredictions = await loadPredictionsForGame(currentGame.id, participantName, allQuestions);
 
-      // 🏁 תוצאות הנוק-אאוט (למפסידות 1/16) — ישירות מה-DB (ה-GameContext אולי לא טוען את העמודה)
-      let koResultsData = {};
+      // 🏁 תוצאות הנוק-אאוט (למפסידות 1/16) + 📸 צילום הקיבוע — בשאילתה אחת
+      let koResultsData = {}; let baselineSnap = null;
       try {
-        const { data: koRow } = await supabase.from('games').select('ko_results').eq('id', currentGame.id).single();
+        const { data: koRow } = await supabase.from('games').select('ko_results, baseline_results_snapshot').eq('id', currentGame.id).single();
         koResultsData = koRow?.ko_results || {};
+        baselineSnap = koRow?.baseline_results_snapshot || null;
       } catch { koResultsData = currentGame?.ko_results || {}; }
+
+      // 🆕 שאלות שנוקדו מאז הקיבוע: יש להן תוצאה עכשיו, ובצילום היא לא הייתה (או הייתה שונה)
+      const newSinceBaseline = new Set();
+      if (baselineSnap?.results) {
+        allQuestions.forEach(q => {
+          const ar = String(q.actual_result ?? '').trim();
+          if (ar !== '' && String(baselineSnap.results[q.id] ?? '') !== ar) newSinceBaseline.add(q.id);
+        });
+      }
 
       const teamsMap = (currentGame.teams_data || [])
         .reduce((acc, t) => { acc[t.name] = t; return acc; }, {});
@@ -511,6 +534,7 @@ export default function LeaderboardNew() {
               ? (teamsMap[q.away_team]?.logo_url || teamsMap[q.away_team.replace(/\s*\([^)]+\)\s*$/, '').trim()]?.logo_url)
               : null,
             isLocationSummary: false, isStageBonusRow: false,
+            isNew: newSinceBaseline.has(q.id),
           });
         }
       });
@@ -672,7 +696,7 @@ export default function LeaderboardNew() {
             //   • אחרת (רביעית / כבר ראש/סגנית) → סופי → 0 נצבע אדום.
             exactFinal = predScoreFinal(q, disp, allQuestions);
           }
-          return { pred: disp, isAdv, isElim, pts: q.possible_points || 0, exactScore, exactFinal, useScoreService };
+          return { pred: disp, isAdv, isElim, pts: q.possible_points || 0, exactScore, exactFinal, useScoreService, isNew: newSinceBaseline.has(q.id) };
         });
 
         const guessedSet = new Set(preds.map(p => normT(p.pred)).filter(Boolean));
@@ -690,7 +714,19 @@ export default function LeaderboardNew() {
         };
       });
 
-      setParticipantDetails({ name: participantName, scores: enriched, totalScore, qualifyingSections });
+      // 🆕 סיכום "מאז הקיבוע": שאלות רגילות שנוקדו + משבצות טבלאות עם ניקוד (לא כולל בונוסים)
+      let sinceBaseline = null;
+      if (baselineSnap?.results) {
+        const newRows  = regularBreakdown.filter(r => r.isNew);
+        const newSlots = qualifyingSections.flatMap(sec => sec.preds.filter(p => p.isNew && typeof p.exactScore === 'number' && p.exactScore > 0));
+        sinceBaseline = {
+          sum:   newRows.reduce((s, r) => s + (r.score || 0), 0) + newSlots.reduce((s, p) => s + p.exactScore, 0),
+          count: newRows.length + newSlots.length,
+          ts:    baselineSnap.ts || null,
+        };
+      }
+
+      setParticipantDetails({ name: participantName, scores: enriched, totalScore, qualifyingSections, sinceBaseline });
     } catch (error) {
       console.error("Error loading participant details:", error);
       toast({ title: "שגיאה", description: "טעינת הפרטים נכשלה", variant: "destructive" });
@@ -1022,6 +1058,11 @@ export default function LeaderboardNew() {
                   <span style={{ fontSize: '0.85rem', color: '#94a3b8' }}>
                     {participantDetails?.scores?.length || 0} שאלות עם ניקוד
                   </span>
+                  {participantDetails?.sinceBaseline && participantDetails.sinceBaseline.count > 0 && (
+                    <Badge title="שאלות שקיבלו תוצאה אחרי הקיבוע האחרון (לא כולל בונוסים)" style={{ background: 'rgba(16,185,129,0.18)', border: '1px solid #10b981', color: '#6ee7b7', fontSize: '0.82rem', fontWeight: 700, padding: '4px 12px', borderRadius: '999px' }}>
+                      🆕 מאז הקיבוע: +{participantDetails.sinceBaseline.sum} נק' ({participantDetails.sinceBaseline.count} שאלות)
+                    </Badge>
+                  )}
                 </>
               )}
             </div>
@@ -1084,7 +1125,7 @@ export default function LeaderboardNew() {
                                     : `?/${p.pts}`;
                               return (
                                 <div key={i} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'5px 8px', borderRadius:'6px', background: bg, border:`1px solid ${brd}` }}>
-                                  <span style={{ fontSize:'0.82rem', color, fontWeight: full ? 700 : 400 }}>{icon} {p.pred || <span style={{color:'#475569'}}>—</span>}</span>
+                                  <span style={{ fontSize:'0.82rem', color, fontWeight: full ? 700 : 400 }}>{p.isNew && <span title="נוקדה מאז הקיבוע האחרון" style={{ marginLeft: 3 }}>🆕</span>}{icon} {p.pred || <span style={{color:'#475569'}}>—</span>}</span>
                                   <span style={{ fontSize:'0.72rem', fontWeight:700, color, marginRight:'6px' }}>{scoreTxt}</span>
                                 </div>
                               );
@@ -1104,7 +1145,7 @@ export default function LeaderboardNew() {
 
                             return (
                               <div key={i} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'5px 8px', borderRadius:'6px', background: bg, border:`1px solid ${p.isAdv ? 'rgba(16,185,129,0.25)' : p.isElim ? 'rgba(239,68,68,0.20)' : 'rgba(71,85,105,0.3)'}` }}>
-                                <span style={{ fontSize:'0.82rem', color, fontWeight: p.isAdv ? 700 : 400 }}>{icon} {p.pred || <span style={{color:'#475569'}}>—</span>}</span>
+                                <span style={{ fontSize:'0.82rem', color, fontWeight: p.isAdv ? 700 : 400 }}>{p.isNew && <span title="נוקדה מאז הקיבוע האחרון" style={{ marginLeft: 3 }}>🆕</span>}{icon} {p.pred || <span style={{color:'#475569'}}>—</span>}</span>
                                 <span style={{ fontSize:'0.72rem', fontWeight:700, color: p.isAdv ? '#34d399' : p.isElim ? '#f87171' : '#64748b', marginRight:'6px' }}>{score}</span>
                               </div>
                             );
@@ -1198,7 +1239,7 @@ export default function LeaderboardNew() {
                               <span>{s.away_team_display || s.away_team}</span>
                             </div>
                           ) : (
-                            <span style={{ fontSize: '0.88rem', color: '#f1f5f9' }}>{s.question_text}</span>
+                            <span style={{ fontSize: '0.88rem', color: '#f1f5f9' }}>{s.isNew && <span title="נוקדה מאז הקיבוע האחרון" style={{ marginLeft: 5 }}>🆕</span>}{s.question_text}</span>
                           )}
                         </td>
                         <td style={{ padding: '8px 6px', textAlign: 'center', fontSize: '0.88rem', color: '#94a3b8' }}>{s.prediction || '—'}</td>
