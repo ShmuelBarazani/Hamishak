@@ -6,16 +6,14 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Loader2, Wand2, Trophy, TrendingUp, TrendingDown, ShieldAlert, Lock, RotateCcw } from 'lucide-react';
 
 /* ═══════════════════════════════════════════════════════════════════
-   🎮 סימולטור "מה אם" — שלב א' (גרסה 2)
-   • סימולציה בלבד: הכול בדפדפן, על עותק. אפס כתיבה למסד, אפס שינוי
-     בניקוד האמיתי. ScoreService מיובא בלבד — לא משתנה.
-   • שיטת ההפרשים: ניקוד מדומה = הניקוד הרשמי + (מנוע[תרחיש] − מנוע[עכשיו]).
-   • עץ בראקט אינטראקטיבי: תוצאות אמת נעולות; כל הכרעה פתוחה ניתנת
-     להקלקה — ברירת המחדל היא "הטוב ביותר עבורי".
+   🎮 סימולטור "מה אם" — גרסה 3
+   • סימולציה בלבד: בדפדפן, על עותק. אפס כתיבה למסד. ScoreService מיובא בלבד.
+   • שיטת ההפרשים: מדומה = רשמי + (מנוע[תרחיש] − מנוע[עכשיו]). כולל את כל
+     בונוסי המונדיאל (בית/T16/T17/עולות) — הם חלק מהמנוע הרשמי.
+   • מטמון: IndexedDB (ללא מגבלת 5MB) עם נסיגה ל-localStorage.
    ═══════════════════════════════════════════════════════════════════ */
 
 const WC_GAME_ID = '30032806-6216-496f-ac32-fb628e181742';
-
 const WC_BRACKET_ORDER = [
   ['גרמניה','פרגוואי'],   ['צרפת','שבדיה'],
   ['דרום אפריקה','קנדה'], ['הולנד','מרוקו'],
@@ -29,31 +27,42 @@ const WC_BRACKET_ORDER = [
 const STAGE_TIDS  = ['T19','T21','T23','T25'];
 const LEVEL_NAMES = ['1/16','שמינית הגמר','רבע הגמר','חצי הגמר','הגמר'];
 const LEVEL_ICONS = ['⚔️','🎯','🔥','⭐','🏆'];
+const NEXT_STAGE_OF_LEVEL = ['T19','T21','T23','T25','CHAMP']; // המנצחת בשלב L נכנסת לרשימה הזו
 
 const normT = s => String(s ?? '')
   .replace(/\s*\([^)]*\)\s*/g,' ')
   .replace(/["'׳"]/g,'')
   .replace(/\s+/g,' ')
   .trim().toLowerCase();
+const isEmpty = v => v == null || String(v).trim() === '' || v === '__CLEAR__';
 
-/* ── 💾 מטמון הניחושים — אותו פורמט של מסך הסטטיסטיקות (משותף, ללא הורדה כפולה) ── */
-const PRED_COLS = 'id,question_id,participant_name,text_prediction,home_prediction,away_prediction,created_at';
-const PREDS_LS_KEY = gid => `tlt_preds_v3_${gid}`;
+/* ── 💾 מטמון: IndexedDB (ראשי) + localStorage (נסיגה). מפתח משותף עם מסך הסטטיסטיקות ── */
+const PRED_COLS = 'question_id,participant_name,text_prediction,home_prediction,away_prediction';
+const PREDS_KEY = gid => `tlt_preds_v4_${gid}`;
 const PREDS_TTL_MS = 12 * 60 * 60 * 1000;
-// מקור הנתונים: latest_predictions (View — רק הניחוש האחרון לכל משתתף+שאלה, ~63% פחות תעבורה).
-// אם ה-View לא קיים עדיין — נסיגה אוטומטית לטבלה המלאה.
-async function resolvePredsSource(gameId) {
+const idbGet = key => new Promise(res => {
   try {
-    const { count, error } = await supabase.from('latest_predictions')
-      .select('id', { count: 'exact', head: true }).eq('game_id', gameId);
-    if (error || count == null) throw error || new Error('no view');
-    return { src: 'latest_predictions', count };
-  } catch {
-    const { count } = await supabase.from('predictions')
-      .select('id', { count: 'exact', head: true }).eq('game_id', gameId);
-    return { src: 'predictions', count: count || 0 };
-  }
-}
+    const rq = indexedDB.open('tlt_cache', 1);
+    rq.onupgradeneeded = () => rq.result.createObjectStore('kv');
+    rq.onsuccess = () => { try {
+      const g = rq.result.transaction('kv','readonly').objectStore('kv').get(key);
+      g.onsuccess = () => res(g.result ?? null); g.onerror = () => res(null);
+    } catch { res(null); } };
+    rq.onerror = () => res(null);
+  } catch { res(null); }
+});
+const idbSet = (key, val) => new Promise(res => {
+  try {
+    const rq = indexedDB.open('tlt_cache', 1);
+    rq.onupgradeneeded = () => rq.result.createObjectStore('kv');
+    rq.onsuccess = () => { try {
+      const tx = rq.result.transaction('kv','readwrite');
+      tx.objectStore('kv').put(val, key);
+      tx.oncomplete = () => res(true); tx.onerror = () => res(false);
+    } catch { res(false); } };
+    rq.onerror = () => res(false);
+  } catch { res(false); }
+});
 const decodePreds = c => c.r.map((row, i) => {
   const val = row[2];
   const m = typeof val === 'string' ? val.match(/^(\d+)-(\d+)$/) : null;
@@ -76,37 +85,47 @@ const encodePreds = (all, count) => {
   });
   return { v: 1, ts: Date.now(), count, q, n, r };
 };
-
-const _simPredsMem = {};
+async function resolvePredsSource(gameId) {
+  try {
+    const { count, error } = await supabase.from('latest_predictions')
+      .select('question_id', { count: 'exact', head: true }).eq('game_id', gameId);
+    if (error || count == null) throw error || new Error('no view');
+    return { src: 'latest_predictions', count };
+  } catch {
+    const { count } = await supabase.from('predictions')
+      .select('id', { count: 'exact', head: true }).eq('game_id', gameId);
+    return { src: 'predictions', count: count || 0 };
+  }
+}
+const _memPreds = {};
 async function loadAllPredictions(gameId, onStage) {
-  if (_simPredsMem[gameId]) { onStage?.('מטמון ✓'); return _simPredsMem[gameId]; }
+  if (_memPreds[gameId]) { onStage?.('מטמון ✓'); return _memPreds[gameId]; }
   const { src, count } = await resolvePredsSource(gameId);
   if (!count) return [];
-  try {
-    const raw = localStorage.getItem(PREDS_LS_KEY(gameId));
-    if (raw) {
-      const c = JSON.parse(raw);
-      if (c?.v === 1 && c.src === src && c.count === count && Date.now() - (c.ts || 0) <= PREDS_TTL_MS) {
-        const dec = decodePreds(c);
-        if (dec.length === count) { onStage?.('מטמון ✓'); _simPredsMem[gameId] = dec; return dec; }
-      }
-    }
-  } catch { /* טעינה מלאה */ }
-  onStage?.(`מוריד ${count.toLocaleString()} ניחושים (פעם ראשונה בלבד — בהמשך מהמטמון)...`);
-  const all = []; const PAGE = 1000;
-  for (let from = 0; from < count; from += PAGE) {
-    const { data, error } = await supabase.from(src).select(PRED_COLS)
-      .eq('game_id', gameId).order('id', { ascending: true }).range(from, Math.min(from + PAGE - 1, count - 1));
-    if (error) throw error;
-    all.push(...(data || []));
-    onStage?.(`מוריד ניחושים... ${Math.min(from + PAGE, count).toLocaleString()}/${count.toLocaleString()}`);
+  const validate = c => (c && c.v === 1 && c.src === src && c.count === count && Date.now() - (c.ts || 0) <= PREDS_TTL_MS) ? c : null;
+  // IndexedDB → localStorage → רשת
+  let cachedObj = validate(await idbGet(PREDS_KEY(gameId)));
+  if (!cachedObj) { try { const raw = localStorage.getItem(PREDS_KEY(gameId)); if (raw) cachedObj = validate(JSON.parse(raw)); } catch { /* — */ } }
+  if (cachedObj) {
+    const dec = decodePreds(cachedObj);
+    if (dec.length === count) { onStage?.('מטמון ✓'); _memPreds[gameId] = dec; return dec; }
   }
-  try {
-    const enc = encodePreds(all, count); enc.src = src;
-    localStorage.setItem(PREDS_LS_KEY(gameId), JSON.stringify(enc));
-    ['v1','v2'].forEach(v=>{ try{ localStorage.removeItem(`tlt_preds_${v}_${gameId}`);}catch{} });
-  } catch { try { localStorage.removeItem(PREDS_LS_KEY(gameId)); } catch { /* — */ } }
-  _simPredsMem[gameId] = all;
+  onStage?.(`מוריד ${count.toLocaleString()} ניחושים (פעם ראשונה בלבד)...`);
+  const PAGE = 1000; const jobs = [];
+  for (let from = 0; from < count; from += PAGE) {
+    jobs.push(supabase.from(src).select(PRED_COLS).eq('game_id', gameId)
+      .order('question_id', { ascending: true }).order('participant_name', { ascending: true })
+      .range(from, Math.min(from + PAGE - 1, count - 1)));
+  }
+  const results = await Promise.all(jobs);
+  let all = [];
+  for (const r of results) { if (r.error) throw r.error; if (r.data?.length) all = all.concat(r.data); }
+  all.forEach((p, i) => { if (p.id == null) p.id = `n${i}`; });
+  const enc = encodePreds(all, count); enc.src = src;
+  const ok = await idbSet(PREDS_KEY(gameId), enc);
+  if (!ok) { try { localStorage.setItem(PREDS_KEY(gameId), JSON.stringify(enc)); } catch { /* — */ } }
+  ['v1','v2','v3'].forEach(v => { try { localStorage.removeItem(`tlt_preds_${v}_${gameId}`); } catch { /* — */ } });
+  _memPreds[gameId] = all;
   return all;
 }
 async function loadAllQuestions(gameId) {
@@ -121,8 +140,6 @@ async function loadAllQuestions(gameId) {
   return all;
 }
 
-const isEmpty = v => v == null || String(v).trim() === '' || v === '__CLEAR__';
-
 export default function Simulator() {
   const { currentGame } = useGame();
   const isWC = currentGame?.id === WC_GAME_ID;
@@ -136,12 +153,19 @@ export default function Simulator() {
   const [koResults, setKoResults] = useState({});
   const [me, setMe]               = useState('');
   const [includeSpecials, setIncludeSpecials] = useState(true);
-  const [overrides, setOverrides] = useState({});   // "lvl:idx" -> שם קבוצה
+  const [overrides, setOverrides] = useState({});
   const [simulating, setSimulating] = useState(false);
   const [result, setResult]       = useState(null);
   const [specOpen, setSpecOpen]   = useState(false);
   const [auditOpen, setAuditOpen] = useState(false);
-  const baseAllRef = useRef(null); // מנוע["עכשיו"] — מחושב פעם אחת
+  const [isNarrow, setIsNarrow]   = useState(() => { try { return window.innerWidth <= 980; } catch { return false; } });
+  const baseAllRef = useRef(null);
+
+  useEffect(() => {
+    const onR = () => { try { setIsNarrow(window.innerWidth <= 980); } catch { /* — */ } };
+    window.addEventListener('resize', onR);
+    return () => window.removeEventListener('resize', onR);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -149,15 +173,15 @@ export default function Simulator() {
       if (!currentGame?.id) return;
       setLoading(true); setLoadErr(''); setResult(null); setMe(''); setOverrides({}); baseAllRef.current = null;
       try {
-        setLoadStage('טוען שאלות ודירוג...');
-        const [qs, rk, ko] = await Promise.all([
+        setLoadStage('טוען נתונים...');
+        const [qs, rk, ko, ps] = await Promise.all([
           loadAllQuestions(currentGame.id),
           supabase.from('rankings').select('participant_name,current_score').eq('game_id', currentGame.id).limit(100000).then(r => r.data || []),
           supabase.from('games').select('ko_results').eq('id', currentGame.id).single().then(r => r.data?.ko_results || {}).catch(() => ({})),
+          loadAllPredictions(currentGame.id, s => !cancelled && setLoadStage(s)),
         ]);
-        const ps = await loadAllPredictions(currentGame.id, s => !cancelled && setLoadStage(s));
         if (cancelled) return;
-        setQuestions(qs); setPreds(ps); setRankRows(rk); setKoResults(ko);
+        setQuestions(qs); setRankRows(rk); setKoResults(ko); setPreds(ps);
       } catch (e) {
         if (!cancelled) setLoadErr('טעינת הנתונים נכשלה — נסה לרענן. ' + (e?.message || ''));
       }
@@ -166,19 +190,17 @@ export default function Simulator() {
     return () => { cancelled = true; };
   }, [currentGame?.id]);
 
-  /* נגזרות חד-פעמיות */
   const { engineRows, latestByPart } = useMemo(() => {
     const latest = {};
     preds.forEach(p => {
       const t = (p.home_prediction != null && p.away_prediction != null)
         ? `${p.home_prediction}-${p.away_prediction}` : (p.text_prediction ?? '');
       if (!latest[p.participant_name]) latest[p.participant_name] = {};
-      const ex = latest[p.participant_name][p.question_id];
-      if (!ex || new Date(p.created_at || 0) > new Date(ex.at || 0)) latest[p.participant_name][p.question_id] = { t, at: p.created_at };
+      latest[p.participant_name][p.question_id] = t;
     });
     const rows = [];
     Object.entries(latest).forEach(([name, m]) =>
-      Object.entries(m).forEach(([qid, v]) => rows.push({ participant_name: name, question_id: qid, text_prediction: v.t })));
+      Object.entries(m).forEach(([qid, t]) => rows.push({ participant_name: name, question_id: qid, text_prediction: t })));
     return { engineRows: rows, latestByPart: latest };
   }, [preds]);
 
@@ -194,22 +216,33 @@ export default function Simulator() {
 
   const totalOf = r => (r && typeof r === 'object' && 'total' in r) ? (Number(r.total) || 0) : (Number(r) || 0);
 
-  /* ── בניית תרחיש והרצה ── */
   const compute = (who, ovr, withSpecials) => {
-    const myPred = {}; Object.entries(latestByPart[who] || {}).forEach(([qid, v]) => { myPred[qid] = v.t; });
+    const myPred = latestByPart[who] || {};
 
-    // עדיפות: עומק הניחוש שלי
     const mySets = {}; STAGE_TIDS.forEach(t => { mySets[t] = new Set(); });
-    questions.forEach(q => { if (STAGE_TIDS.includes(q.table_id) && myPred[q.id]) mySets[q.table_id].add(normT(myPred[q.id])); });
+    const slotPts = {}; // נקודות למשבצת בכל שלב
+    questions.forEach(q => {
+      if (STAGE_TIDS.includes(q.table_id)) {
+        if (myPred[q.id]) mySets[q.table_id].add(normT(myPred[q.id]));
+        if (!slotPts[q.table_id] && q.possible_points) slotPts[q.table_id] = q.possible_points;
+      }
+    });
     const champQ  = questions.find(q => /זוכה|אלופ/.test(q.question_text || '') && !/סגנ/.test(q.question_text || '') && q.stage_type !== 'qualifiers');
     const runnerQ = questions.find(q => /סגנית/.test(q.question_text || '') && q.stage_type !== 'qualifiers');
     const myChamp = champQ ? normT(myPred[champQ.id] || '') : '';
+    slotPts.CHAMP = champQ?.possible_points || 0;
     const prio = t => { const n = normT(t);
       if (n && n === myChamp) return 6;
       if (mySets.T25.has(n)) return 5; if (mySets.T23.has(n)) return 4;
       if (mySets.T21.has(n)) return 3; if (mySets.T19.has(n)) return 2; return 0; };
+    // כמה שווה לי שהקבוצה הזו תעלה בשלב הבא (לתג בעץ)
+    const gainOf = (team, lvl) => {
+      const tid = NEXT_STAGE_OF_LEVEL[lvl]; const n = normT(team);
+      if (tid === 'CHAMP') return (n && n === myChamp) ? (slotPts.CHAMP || 0) : 0;
+      return mySets[tid]?.has(n) ? (slotPts[tid] || 0) : 0;
+    };
 
-    // 🔒 מפת תוצאות אמת — דו-כיוונית ומנורמלת (התוצאות הוזנו לעיתים בסדר לוח-המשחקים, לא בסדר הבראקט)
+    // 🔒 תוצאות אמת — דו-כיווני ומנורמל
     const koMap = {};
     Object.entries(koResults || {}).forEach(([key, val]) => {
       const s = String(val); const m = s.match(/(\d+)\s*-\s*(\d+)/); if (!m) return;
@@ -242,7 +275,7 @@ export default function Simulator() {
       if (real) { w = real; src = 'real'; }
       else if (ovr[key] && (normT(ovr[key]) === normT(h) || normT(ovr[key]) === normT(a))) { w = normT(ovr[key]) === normT(h) ? h : a; src = 'override'; }
       else { w = prio(a) > prio(h) ? a : h; src = 'auto'; }
-      matches.push({ key, lvl, idx, home: h, away: a, winner: w, src });
+      matches.push({ key, lvl, idx, home: h, away: a, winner: w, src, myGain: gainOf(w, lvl) });
       return (memo[key] = w);
     };
     const champion  = W(4, 0);
@@ -252,31 +285,32 @@ export default function Simulator() {
     const r16       = WC_BRACKET_ORDER.map((_, i) => W(0, i)).filter(Boolean);
     const runnerUp  = finalists.find(t => normT(t) !== normT(champion || '')) || null;
 
-    // עותק שאלות
     const stageTeams = { T19: r16, T21: quarters, T23: semis, T25: finalists };
-    const simQ = questions.map(q => ({ ...q }));
-    STAGE_TIDS.forEach(tid => {
-      const slots = simQ.filter(q => q.table_id === tid); if (!slots.length) return;
-      const existing = new Set(slots.filter(q => !isEmpty(q.actual_result)).map(q => normT(q.actual_result)));
-      const toAssign = (stageTeams[tid] || []).filter(t => !existing.has(normT(t)));
-      slots.filter(q => isEmpty(q.actual_result)).forEach((q, i) => { if (toAssign[i]) q.actual_result = toAssign[i]; });
-    });
-    if (champQ && champion) { const q = simQ.find(x => x.id === champQ.id); if (q && isEmpty(q.actual_result)) q.actual_result = champion; }
-    if (runnerQ && runnerUp) { const q = simQ.find(x => x.id === runnerQ.id); if (q && isEmpty(q.actual_result)) q.actual_result = runnerUp; }
+    const buildSim = (fillSpecials) => {
+      const simQ = questions.map(q => ({ ...q }));
+      STAGE_TIDS.forEach(tid => {
+        const slots = simQ.filter(q => q.table_id === tid); if (!slots.length) return;
+        const existing = new Set(slots.filter(q => !isEmpty(q.actual_result)).map(q => normT(q.actual_result)));
+        const toAssign = (stageTeams[tid] || []).filter(t => !existing.has(normT(t)));
+        slots.filter(q => isEmpty(q.actual_result)).forEach((q, i) => { if (toAssign[i]) q.actual_result = toAssign[i]; });
+      });
+      if (champQ && champion) { const q = simQ.find(x => x.id === champQ.id); if (q && isEmpty(q.actual_result)) q.actual_result = champion; }
+      if (runnerQ && runnerUp) { const q = simQ.find(x => x.id === runnerQ.id); if (q && isEmpty(q.actual_result)) q.actual_result = runnerUp; }
+      const specials = [];
+      simQ.forEach(q => {
+        if (q.table_id === 'T1' || STAGE_TIDS.includes(q.table_id)) return;
+        if (!isEmpty(q.actual_result)) return;
+        if ((champQ && q.id === champQ.id) || (runnerQ && q.id === runnerQ.id)) return;
+        const mine = myPred[q.id];
+        if (mine && String(mine).trim() !== '') {
+          specials.push({ id: q.id, text: q.question_text, answer: mine, pts: q.possible_points || 0 });
+          if (fillSpecials) q.actual_result = mine;
+        }
+      });
+      return { simQ, specials };
+    };
+    const { simQ, specials: specialsList } = buildSim(withSpecials);
 
-    const specialsList = [];
-    simQ.forEach(q => {
-      if (q.table_id === 'T1' || STAGE_TIDS.includes(q.table_id)) return;
-      if (!isEmpty(q.actual_result)) return;
-      if ((champQ && q.id === champQ.id) || (runnerQ && q.id === runnerQ.id)) return;
-      const mine = myPred[q.id];
-      if (mine && String(mine).trim() !== '') {
-        specialsList.push({ id: q.id, text: q.question_text, answer: mine });
-        if (withSpecials) q.actual_result = mine;
-      }
-    });
-
-    // מנוע: בסיס (פעם אחת) + תרחיש
     if (!baseAllRef.current) baseAllRef.current = calculateAllParticipantsScores(questions, engineRows);
     const baseAll = baseAllRef.current;
     const simAll  = calculateAllParticipantsScores(simQ, engineRows);
@@ -290,49 +324,39 @@ export default function Simulator() {
     table.sort((a, b) => b.simScore - a.simScore || a.name.localeCompare(b.name, 'he'));
     table.forEach((r, i) => { r.simPos = i + 1; r.offPos = officialPos[r.name] || null; });
 
-    // פירוק הדלתא שלי: בראקט מול שאלות פתוחות (מנוע פר-משתתף — זול)
-    let myBracketDelta = null;
-    // 🔍 פירוק ביקורת: התוספת שלי בתרחיש, שאלה-שאלה — ישירות מה-breakdown של המנוע הרשמי
-    const qMeta = {}; questions.forEach(q => { qMeta[q.id] = { text: q.question_text, tid: q.table_id }; });
-    const myMapAudit = {}; Object.entries(latestByPart[who] || {}).forEach(([qid, v]) => { myMapAudit[qid] = v.t; });
-    const sumBy = res => { const m = {}; ((res && res.breakdown) || []).forEach(b => { m[b.question_id] = (m[b.question_id] || 0) + (Number(b.score) || 0); }); return m; };
-    const myBaseRes = calculateTotalScore(questions, myMapAudit);
-    const mySimRes  = calculateTotalScore(simQ, myMapAudit);
-    const bBy = sumBy(myBaseRes), sBy = sumBy(mySimRes);
+    // 🔍 פירוק ביקורת שלי — מה-breakdown הרשמי (כולל שורות בונוס עם תיאור)
+    const myBaseRes = calculateTotalScore(questions, myPred);
+    const mySimRes  = calculateTotalScore(simQ, myPred);
+    const collect = res => { const m = {}; ((res && res.breakdown) || []).forEach(b => {
+      const k = b.question_id;
+      if (!m[k]) m[k] = { score: 0, label: b.question_id_text, isBonus: !!b.isBonus, tid: b.table_id };
+      m[k].score += Number(b.score) || 0;
+    }); return m; };
+    const bBy = collect(myBaseRes), sBy = collect(mySimRes);
+    const qMeta = {}; questions.forEach(q => { qMeta[q.id] = q.question_text; });
     const audit = [];
-    new Set([...Object.keys(bBy), ...Object.keys(sBy)]).forEach(qid => {
-      const d = (sBy[qid] || 0) - (bBy[qid] || 0);
+    new Set([...Object.keys(bBy), ...Object.keys(sBy)]).forEach(k => {
+      const d = (sBy[k]?.score || 0) - (bBy[k]?.score || 0);
       if (Math.abs(d) < 0.001) return;
-      const meta = qMeta[qid];
-      audit.push({
-        qid, d,
-        text: meta ? meta.text : `בונוס (${String(qid).replace(/_.*/, '')})`,
-        tid: meta ? meta.tid : String(qid).replace(/_.*/, ''),
-        answer: myMapAudit[qid] || '',
-        isBonus: !meta,
-      });
+      const info = sBy[k] || bBy[k];
+      audit.push({ d, isBonus: info.isBonus, text: qMeta[k] || info.label || k, answer: info.isBonus ? '' : (myPred[k] || '') });
     });
     audit.sort((a, b) => b.d - a.d);
     const auditSum = audit.reduce((s, a) => s + a.d, 0);
-    if (withSpecials && specialsList.length) {
-      const simNoSpec = questions.map(q => ({ ...q }));
-      STAGE_TIDS.forEach(tid => {
-        const slots = simNoSpec.filter(q => q.table_id === tid); if (!slots.length) return;
-        const existing = new Set(slots.filter(q => !isEmpty(q.actual_result)).map(q => normT(q.actual_result)));
-        const toAssign = (stageTeams[tid] || []).filter(t => !existing.has(normT(t)));
-        slots.filter(q => isEmpty(q.actual_result)).forEach((q, i) => { if (toAssign[i]) q.actual_result = toAssign[i]; });
-      });
-      if (champQ && champion) { const q = simNoSpec.find(x => x.id === champQ.id); if (q && isEmpty(q.actual_result)) q.actual_result = champion; }
-      if (runnerQ && runnerUp) { const q = simNoSpec.find(x => x.id === runnerQ.id); if (q && isEmpty(q.actual_result)) q.actual_result = runnerUp; }
-      const myMap = {}; Object.entries(latestByPart[who] || {}).forEach(([qid, v]) => { myMap[qid] = v.t; });
-      myBracketDelta = totalOf(calculateTotalScore(simNoSpec, myMap)) - totalOf(calculateTotalScore(questions, myMap));
-    }
+    const bonusDelta = audit.filter(a => a.isBonus).reduce((s, a) => s + a.d, 0);
+    const auditByQ = {}; audit.forEach(a => { /* מפת נקודות לשאלות פתוחות */ });
+    // נקודות לכל שאלה פתוחה (מהביקורת): לפי טקסט לא אמין — נשתמש במפה לפי qid
+    const gainByQid = {};
+    new Set([...Object.keys(bBy), ...Object.keys(sBy)]).forEach(k => {
+      const d = (sBy[k]?.score || 0) - (bBy[k]?.score || 0);
+      if (Math.abs(d) > 0.001) gainByQid[k] = d;
+    });
+    specialsList.forEach(sp => { sp.gain = withSpecials ? (gainByQid[sp.id] ?? 0) : null; });
 
     let engineDiffs = 0;
     table.forEach(r => { if (Math.abs(totalOf(baseAll[r.name]) - r.official) > 0.001) engineDiffs++; });
-
     const meRow = table.find(r => r.name === who) || null;
-    return { table, meRow, matches, champion, runnerUp, specialsList, withSpecials, myBracketDelta, engineDiffs, audit, auditSum };
+    return { table, meRow, matches, champion, runnerUp, specialsList, withSpecials, engineDiffs, audit, auditSum, bonusDelta };
   };
 
   const run = (ovr = overrides, withSpecials = includeSpecials) => {
@@ -344,7 +368,6 @@ export default function Simulator() {
       setSimulating(false);
     }, 40);
   };
-
   const clickWinner = (match, team) => {
     if (match.src === 'real' || simulating) return;
     const next = { ...overrides, [match.key]: team };
@@ -353,9 +376,8 @@ export default function Simulator() {
   const resetOverrides = () => { setOverrides({}); run({}, includeSpecials); };
   const toggleSpecials = () => { const v = !includeSpecials; setIncludeSpecials(v); if (result && !result.error) run(overrides, v); };
 
-  /* ── תצוגה ── */
   const S = {
-    page: { direction: 'rtl', padding: '16px', maxWidth: 1100, margin: '0 auto' },
+    page: { direction: 'rtl', padding: '16px', maxWidth: 1280, margin: '0 auto' },
     card: { background: 'rgba(30,41,59,0.6)', border: '1px solid rgba(168,85,247,0.3)', borderRadius: 14 },
     btn: { background: 'linear-gradient(135deg,#7c3aed,#a855f7)', color: 'white', border: 'none', borderRadius: 10, padding: '10px 22px', fontSize: '1rem', fontWeight: 800, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 8 },
   };
@@ -438,12 +460,11 @@ export default function Simulator() {
                             <span style={{ color: '#94a3b8', fontSize: '0.95rem', marginRight: 8 }}>(היום: {result.meRow.offPos})</span>
                           )}
                         </div>
-                        {result.withSpecials && result.myBracketDelta != null && (
-                          <div style={{ marginTop: 5, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                            <span style={{ background: 'rgba(168,85,247,0.15)', border: '1px solid rgba(168,85,247,0.4)', color: '#d8b4fe', borderRadius: 999, padding: '2px 10px', fontSize: '0.74rem', fontWeight: 700 }}>🌳 מהבראקט: +{result.myBracketDelta}</span>
-                            <span style={{ background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.35)', color: '#6ee7b7', borderRadius: 999, padding: '2px 10px', fontSize: '0.74rem', fontWeight: 700 }}>✨ מהשאלות הפתוחות: +{result.meRow.delta - result.myBracketDelta}</span>
-                          </div>
-                        )}
+                        <div style={{ marginTop: 5, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                          {result.bonusDelta > 0 && (
+                            <span style={{ background: 'rgba(251,191,36,0.12)', border: '1px solid rgba(251,191,36,0.4)', color: '#fde68a', borderRadius: 999, padding: '2px 10px', fontSize: '0.74rem', fontWeight: 700 }}>🎁 מזה בונוסים: +{result.bonusDelta}</span>
+                          )}
+                        </div>
                       </div>
                       <div style={{ marginRight: 'auto', textAlign: 'left' }}>
                         <div style={{ color: '#94a3b8', fontSize: '0.78rem' }}>ניקוד מדומה</div>
@@ -455,62 +476,87 @@ export default function Simulator() {
                 </Card>
               )}
 
-              {/* 🌳 עץ הבראקט האינטראקטיבי */}
-              <Card style={{ ...S.card, marginBottom: 14 }}>
-                <CardContent style={{ padding: 18 }}>
-                  <h3 style={{ color: '#d8b4fe', fontSize: '0.95rem', fontWeight: 800, margin: '0 0 4px' }}>🌳 עץ התרחיש — לחץ על קבוצה כדי לשנות הכרעה</h3>
-                  <p style={{ color: '#64748b', fontSize: '0.72rem', margin: '0 0 12px' }}>🔒 = תוצאת אמת (נעולה) • סגול = הבחירה שלך • ירוק = ברירת המחדל הטובה ביותר עבורך</p>
-                  {[0,1,2,3,4].map(lvl => {
-                    const ms = result.matches.filter(m => m.lvl === lvl).sort((a, b) => a.idx - b.idx);
-                    if (!ms.length) return null;
-                    return (
-                      <div key={lvl} style={{ marginBottom: 12 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 7 }}>
-                          <span style={{ fontSize: '0.9rem' }}>{LEVEL_ICONS[lvl]}</span>
-                          <span style={{ fontSize: '0.82rem', fontWeight: 800, color: '#67e8f9' }}>{LEVEL_NAMES[lvl]}</span>
-                          <div style={{ flex: 1, height: 1, background: 'rgba(6,182,212,0.2)' }} />
-                        </div>
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(210px,1fr))', gap: 7 }}>
-                          {ms.map(m => (
-                            <div key={m.key} style={{ background: 'rgba(0,0,0,0.28)', border: `1px solid ${m.src === 'override' ? 'rgba(168,85,247,0.55)' : 'rgba(71,85,105,0.35)'}`, borderRadius: 9, padding: 6 }}>
-                              <div style={{ display: 'flex', gap: 5 }}>
-                                {[m.home, m.away].map(team => {
-                                  const won = normT(team) === normT(m.winner);
-                                  const locked = m.src === 'real';
-                                  const wonColor = m.src === 'override' ? '#a855f7' : '#10b981';
-                                  return (
-                                    <button key={team} onClick={() => clickWinner(m, team)} disabled={locked || simulating}
-                                      style={{
-                                        flex: 1, borderRadius: 7, padding: '6px 4px', fontSize: '0.76rem', fontWeight: won ? 800 : 400,
-                                        cursor: locked ? 'default' : 'pointer',
-                                        background: won ? (locked ? 'rgba(16,185,129,0.15)' : (m.src === 'override' ? 'rgba(168,85,247,0.2)' : 'rgba(16,185,129,0.15)')) : 'transparent',
-                                        border: `1.5px solid ${won ? wonColor : 'rgba(71,85,105,0.4)'}`,
-                                        color: won ? (m.src === 'override' ? '#d8b4fe' : '#6ee7b7') : '#94a3b8',
-                                        fontFamily: 'inherit', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                                      }}>
-                                      {team}
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                              <div style={{ textAlign: 'center', marginTop: 3, fontSize: '0.62rem', color: '#64748b' }}>
-                                {m.src === 'real' ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}><Lock style={{ width: 9, height: 9 }} /> תוצאת אמת</span>
-                                  : m.src === 'override' ? 'הבחירה שלך' : 'אוטומטי (הטוב עבורך)'}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    );
-                  })}
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, color: '#cbd5e1', fontSize: '0.84rem', marginTop: 4 }}>
-                    {result.champion && <span>🏆 אלופה בתרחיש: <b style={{ color: '#fbbf24' }}>{result.champion}</b></span>}
-                    {result.runnerUp && <span>🥈 סגנית: <b>{result.runnerUp}</b></span>}
-                  </div>
-                </CardContent>
-              </Card>
+              {/* 🖥️ פריסת מחשב: ימין = הדירוג המדומה, שמאל = עץ התרחיש */}
+              <div style={{ display: 'grid', gridTemplateColumns: isNarrow ? '1fr' : 'minmax(340px,420px) 1fr', gap: 14, alignItems: 'start', marginBottom: 14 }}>
+                <div style={isNarrow ? {} : { position: 'sticky', top: 12 }}>
+                  <Card style={S.card}>
+                    <CardContent style={{ padding: 16 }}>
+                      <h3 style={{ color: '#d8b4fe', fontSize: '0.95rem', fontWeight: 800, margin: '0 0 10px' }}>🏁 הדירוג בתרחיש הזה</h3>
+                      <SimTable table={result.table} me={me} />
+                      {result.engineDiffs > 0 && (
+                        <p style={{ color: '#64748b', fontSize: '0.68rem', marginTop: 8, display: 'flex', alignItems: 'center', gap: 5 }}>
+                          <ShieldAlert style={{ width: 12, height: 12 }} />
+                          מחושב כהפרש מעל הניקוד הרשמי — מדויק גם בסטיות מנוע ({result.engineDiffs}).
+                        </p>
+                      )}
+                    </CardContent>
+                  </Card>
+                </div>
 
-              {/* ✨ השאלות הפתוחות */}
+                <Card style={S.card}>
+                  <CardContent style={{ padding: 16 }}>
+                    <h3 style={{ color: '#d8b4fe', fontSize: '0.95rem', fontWeight: 800, margin: '0 0 4px' }}>🌳 עץ התרחיש — לחץ על קבוצה כדי לשנות הכרעה</h3>
+                    <p style={{ color: '#64748b', fontSize: '0.72rem', margin: '0 0 12px' }}>
+                      <span style={{ color: '#fbbf24' }}>🔒 צהוב = תוצאת אמת</span> • <span style={{ color: '#d8b4fe' }}>סגול = הבחירה שלך</span> • <span style={{ color: '#6ee7b7' }}>ירוק = אוטומטי (הטוב עבורך)</span> • התג הזהוב = כמה זה שווה לך
+                    </p>
+                    {[0,1,2,3,4].map(lvl => {
+                      const ms = result.matches.filter(m => m.lvl === lvl).sort((a, b) => a.idx - b.idx);
+                      if (!ms.length) return null;
+                      return (
+                        <div key={lvl} style={{ marginBottom: 12 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 7 }}>
+                            <span style={{ fontSize: '0.9rem' }}>{LEVEL_ICONS[lvl]}</span>
+                            <span style={{ fontSize: '0.82rem', fontWeight: 800, color: '#67e8f9' }}>{LEVEL_NAMES[lvl]}</span>
+                            <div style={{ flex: 1, height: 1, background: 'rgba(6,182,212,0.2)' }} />
+                          </div>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(205px,1fr))', gap: 7 }}>
+                            {ms.map(m => (
+                              <div key={m.key} style={{ background: 'rgba(0,0,0,0.28)', border: `1px solid ${m.src === 'real' ? 'rgba(251,191,36,0.4)' : m.src === 'override' ? 'rgba(168,85,247,0.55)' : 'rgba(71,85,105,0.35)'}`, borderRadius: 9, padding: 6 }}>
+                                <div style={{ display: 'flex', gap: 5 }}>
+                                  {[m.home, m.away].map(team => {
+                                    const won = normT(team) === normT(m.winner);
+                                    const locked = m.src === 'real';
+                                    const cWin = locked ? '#fbbf24' : (m.src === 'override' ? '#a855f7' : '#10b981');
+                                    const tWin = locked ? '#fde68a' : (m.src === 'override' ? '#d8b4fe' : '#6ee7b7');
+                                    return (
+                                      <button key={team} onClick={() => clickWinner(m, team)} disabled={locked || simulating}
+                                        style={{
+                                          flex: 1, borderRadius: 7, padding: '6px 4px', fontSize: '0.76rem', fontWeight: won ? 800 : 400,
+                                          cursor: locked ? 'default' : 'pointer',
+                                          background: won ? (locked ? 'rgba(251,191,36,0.12)' : (m.src === 'override' ? 'rgba(168,85,247,0.2)' : 'rgba(16,185,129,0.15)')) : 'transparent',
+                                          border: `1.5px solid ${won ? cWin : 'rgba(71,85,105,0.4)'}`,
+                                          color: won ? tWin : '#94a3b8',
+                                          fontFamily: 'inherit', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                                        }}>
+                                        {team}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 3 }}>
+                                  <span style={{ fontSize: '0.62rem', color: m.src === 'real' ? '#fbbf24' : m.src === 'override' ? '#c084fc' : '#34d399', fontWeight: 700 }}>
+                                    {m.src === 'real' ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}><Lock style={{ width: 9, height: 9 }} /> תוצאת אמת</span>
+                                      : m.src === 'override' ? 'הבחירה שלך' : 'אוטומטי (הטוב עבורך)'}
+                                  </span>
+                                  {m.myGain > 0 && (
+                                    <span style={{ fontSize: '0.64rem', fontWeight: 800, color: '#fde68a', background: 'rgba(251,191,36,0.12)', border: '1px solid rgba(251,191,36,0.35)', borderRadius: 999, padding: '1px 7px' }}>+{m.myGain} לך</span>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, color: '#cbd5e1', fontSize: '0.84rem', marginTop: 4 }}>
+                      {result.champion && <span>🏆 אלופה בתרחיש: <b style={{ color: '#fbbf24' }}>{result.champion}</b></span>}
+                      {result.runnerUp && <span>🥈 סגנית: <b>{result.runnerUp}</b></span>}
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* ✨ השאלות הפתוחות — עם הנקודות של כל אחת */}
               <Card style={{ ...S.card, marginBottom: 14 }}>
                 <CardContent style={{ padding: 18 }}>
                   <div onClick={() => setSpecOpen(o => !o)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}>
@@ -520,11 +566,16 @@ export default function Simulator() {
                     <span style={{ color: '#64748b', fontSize: '0.8rem' }}>{specOpen ? '▲ סגור' : '▼ פתח'}</span>
                   </div>
                   {specOpen && (
-                    <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 5, maxHeight: 320, overflowY: 'auto' }}>
+                    <div style={{ marginTop: 10, display: 'grid', gridTemplateColumns: isNarrow ? '1fr' : '1fr 1fr', gap: 5, maxHeight: 360, overflowY: 'auto' }}>
                       {result.specialsList.map(sp => (
-                        <div key={sp.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.15)', borderRadius: 8, padding: '6px 10px' }}>
-                          <span style={{ fontSize: '0.8rem', color: '#e2e8f0', minWidth: 0 }}>{sp.text}</span>
-                          <span style={{ fontSize: '0.8rem', color: '#6ee7b7', fontWeight: 700, flexShrink: 0 }}>{sp.answer}</span>
+                        <div key={sp.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.15)', borderRadius: 8, padding: '6px 10px' }}>
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontSize: '0.79rem', color: '#e2e8f0' }}>{sp.text}</div>
+                            <div style={{ fontSize: '0.74rem', color: '#94a3b8' }}>הניחוש: <b style={{ color: '#6ee7b7' }}>{sp.answer}</b></div>
+                          </div>
+                          <span style={{ flexShrink: 0, fontSize: '0.8rem', fontWeight: 800, color: '#34d399', background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.3)', borderRadius: 999, padding: '2px 9px' }}>
+                            {sp.gain != null ? `+${sp.gain}` : `עד +${sp.pts}`}
+                          </span>
                         </div>
                       ))}
                     </div>
@@ -532,7 +583,7 @@ export default function Simulator() {
                 </CardContent>
               </Card>
 
-              {/* 🔍 פירוק ביקורת — מאיפה הגיעה כל נקודה בתוספת שלי */}
+              {/* 🔍 פירוק ביקורת */}
               {result.meRow && result.audit && (
                 <Card style={{ ...S.card, marginBottom: 14, border: '1px solid rgba(251,191,36,0.35)' }}>
                   <CardContent style={{ padding: 18 }}>
@@ -548,7 +599,7 @@ export default function Simulator() {
                           {result.audit.map((a, i) => (
                             <div key={i} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, background: a.isBonus ? 'rgba(251,191,36,0.07)' : 'rgba(0,0,0,0.22)', border: '1px solid rgba(71,85,105,0.3)', borderRadius: 8, padding: '6px 10px' }}>
                               <div style={{ minWidth: 0 }}>
-                                <span style={{ fontSize: '0.8rem', color: '#e2e8f0' }}>{a.isBonus ? '🎁 ' : ''}{a.text}</span>
+                                <span style={{ fontSize: '0.8rem', color: a.isBonus ? '#fde68a' : '#e2e8f0' }}>{a.text}</span>
                                 {a.answer && <span style={{ fontSize: '0.74rem', color: '#94a3b8', marginRight: 6 }}>· הניחוש: {a.answer}</span>}
                               </div>
                               <span style={{ flexShrink: 0, fontSize: '0.82rem', fontWeight: 800, color: a.d > 0 ? '#34d399' : '#f87171' }}>{a.d > 0 ? '+' : ''}{a.d}</span>
@@ -556,27 +607,13 @@ export default function Simulator() {
                           ))}
                         </div>
                         <p style={{ color: '#64748b', fontSize: '0.7rem', marginTop: 8 }}>
-                          הפירוק מגיע ישירות מהמנוע הרשמי (ScoreService). הסכום {result.auditSum >= 0 ? '+' : ''}{result.auditSum} = בדיוק התוספת שלך בטבלה{result.meRow ? ` (+${result.meRow.delta})` : ''}. אם שורה כלשהי נראית לך שגויה — זו הכתובת לבדיקה.
+                          הפירוק מגיע ישירות מהמנוע הרשמי (ScoreService), כולל שורות הבונוס (מסומנות בזהוב). הסכום = בדיוק התוספת שלך בטבלה.
                         </p>
                       </>
                     )}
                   </CardContent>
                 </Card>
               )}
-
-              {/* 🏁 הדירוג המדומה */}
-              <Card style={S.card}>
-                <CardContent style={{ padding: 18 }}>
-                  <h3 style={{ color: '#d8b4fe', fontSize: '0.95rem', fontWeight: 800, margin: '0 0 10px' }}>🏁 הדירוג בתרחיש הזה</h3>
-                  <SimTable table={result.table} me={me} />
-                  {result.engineDiffs > 0 && (
-                    <p style={{ color: '#64748b', fontSize: '0.7rem', marginTop: 10, display: 'flex', alignItems: 'center', gap: 5 }}>
-                      <ShieldAlert style={{ width: 13, height: 13 }} />
-                      הניקוד מחושב כהפרש מעל הניקוד הרשמי, ולכן מדויק גם כשמנוע התצוגה סוטה קלות ({result.engineDiffs} משתתפים).
-                    </p>
-                  )}
-                </CardContent>
-              </Card>
             </>
           )}
         </>
@@ -603,22 +640,22 @@ function SimTable({ table, me }) {
         <div key={r.key} style={{ textAlign: 'center', color: '#475569', fontSize: '0.8rem' }}>⋮</div>
       ) : (
         <div key={r.key} style={{
-          display: 'grid', gridTemplateColumns: '44px 1fr 90px 90px 80px', gap: 8, alignItems: 'center',
+          display: 'grid', gridTemplateColumns: '36px 1fr 62px 58px 52px', gap: 6, alignItems: 'center',
           background: r.name === me ? 'rgba(251,191,36,0.12)' : 'rgba(0,0,0,0.22)',
           border: `1px solid ${r.name === me ? '#fbbf24' : 'rgba(71,85,105,0.3)'}`,
-          borderRadius: 8, padding: '6px 10px',
+          borderRadius: 8, padding: '5px 8px',
         }}>
-          <span style={{ color: r.simPos <= 3 ? '#fbbf24' : '#94a3b8', fontWeight: 800, fontSize: '0.88rem' }}>{r.simPos}</span>
-          <span style={{ color: r.name === me ? '#fde68a' : '#f1f5f9', fontWeight: r.name === me ? 800 : 500, fontSize: '0.86rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <span style={{ color: r.simPos <= 3 ? '#fbbf24' : '#94a3b8', fontWeight: 800, fontSize: '0.84rem' }}>{r.simPos}</span>
+          <span style={{ color: r.name === me ? '#fde68a' : '#f1f5f9', fontWeight: r.name === me ? 800 : 500, fontSize: '0.82rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {r.name === me ? '🙋 ' : ''}{r.name}
           </span>
-          <span style={{ color: '#e2e8f0', fontWeight: 700, fontSize: '0.84rem' }}>{r.simScore}</span>
-          <span style={{ color: r.delta > 0 ? '#34d399' : '#64748b', fontSize: '0.78rem', fontWeight: 700 }}>{r.delta > 0 ? `+${r.delta}` : '—'}</span>
+          <span style={{ color: '#e2e8f0', fontWeight: 700, fontSize: '0.8rem' }}>{r.simScore}</span>
+          <span style={{ color: r.delta > 0 ? '#34d399' : '#64748b', fontSize: '0.74rem', fontWeight: 700 }}>{r.delta > 0 ? `+${r.delta}` : '—'}</span>
           {r.offPos && r.offPos !== r.simPos ? (
             r.simPos < r.offPos
-              ? <span style={{ color: '#34d399', fontSize: '0.76rem', display: 'inline-flex', alignItems: 'center', gap: 3 }}><TrendingUp style={{ width: 12, height: 12 }} />{r.offPos - r.simPos}</span>
-              : <span style={{ color: '#f87171', fontSize: '0.76rem', display: 'inline-flex', alignItems: 'center', gap: 3 }}><TrendingDown style={{ width: 12, height: 12 }} />{r.simPos - r.offPos}</span>
-          ) : <span style={{ color: '#475569', fontSize: '0.76rem' }}>—</span>}
+              ? <span style={{ color: '#34d399', fontSize: '0.72rem', display: 'inline-flex', alignItems: 'center', gap: 2 }}><TrendingUp style={{ width: 11, height: 11 }} />{r.offPos - r.simPos}</span>
+              : <span style={{ color: '#f87171', fontSize: '0.72rem', display: 'inline-flex', alignItems: 'center', gap: 2 }}><TrendingDown style={{ width: 11, height: 11 }} />{r.simPos - r.offPos}</span>
+          ) : <span style={{ color: '#475569', fontSize: '0.72rem' }}>—</span>}
         </div>
       ))}
     </div>
