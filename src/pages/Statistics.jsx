@@ -208,8 +208,22 @@ const _statsPredsCache = {};
 // 💾 מטמון מתמיד (localStorage) — חוסך את הורדת כל הניחושים בכל כניסה (Egress).
 //    אימות: שאילתת count בלבד (בייטים בודדים). אם המספר זהה והמטמון בן פחות מ-12 שעות — משתמשים בו.
 //    קידוד קומפקטי (מילון question_id/שמות) כדי להיכנס למכסת ה-localStorage.
-const PREDS_LS_KEY = gid => `tlt_preds_v1_${gid}`;
+const PREDS_LS_KEY = gid => `tlt_preds_v2_${gid}`;
 const PREDS_TTL_MS = 12 * 60 * 60 * 1000;
+// מקור הנתונים: latest_predictions (View — רק הניחוש האחרון לכל משתתף+שאלה, ~63% פחות תעבורה).
+// אם ה-View לא קיים עדיין — נסיגה אוטומטית לטבלה המלאה.
+const resolvePredsSource = async (gameId) => {
+  try {
+    const { count, error } = await supabase.from('latest_predictions')
+      .select('id', { count: 'exact', head: true }).eq('game_id', gameId);
+    if (error || count == null) throw error || new Error('no view');
+    return { src: 'latest_predictions', count };
+  } catch {
+    const { count } = await supabase.from('predictions')
+      .select('id', { count: 'exact', head: true }).eq('game_id', gameId);
+    return { src: 'predictions', count: count || 0 };
+  }
+};
 const encodePreds = (all, count) => {
   const q=[], qm={}, n=[], nm={};
   const r = all.map(p => {
@@ -224,36 +238,38 @@ const decodePreds = c => c.r.map((row, i) => ({
   text_prediction: row[2], home_prediction: row[3], away_prediction: row[4],
   created_at: row[5] ? new Date(row[5]).toISOString() : null,
 }));
-const readPredsLS = (gid, count) => {
+const readPredsLS = (gid, count, src) => {
   try {
     const raw = localStorage.getItem(PREDS_LS_KEY(gid));
     if (!raw) return null;
     const c = JSON.parse(raw);
-    if (c?.v !== 1 || c.count !== count) return null;
+    if (c?.v !== 1 || c.count !== count || c.src !== src) return null;
     if (Date.now() - (c.ts || 0) > PREDS_TTL_MS) return null;
     return decodePreds(c);
   } catch { return null; }
 };
-const writePredsLS = (gid, all, count) => {
-  try { localStorage.setItem(PREDS_LS_KEY(gid), JSON.stringify(encodePreds(all, count))); }
+const writePredsLS = (gid, all, count, src) => {
+  try {
+    const enc = encodePreds(all, count); enc.src = src;
+    localStorage.setItem(PREDS_LS_KEY(gid), JSON.stringify(enc));
+    localStorage.removeItem(`tlt_preds_v1_${gid}`);
+  }
   catch { try { localStorage.removeItem(PREDS_LS_KEY(gid)); } catch {} }
 };
 
 const loadAllPreds = async gameId => {
   if (_statsPredsCache[gameId]) return _statsPredsCache[gameId];
   try {
-    const { count, error: cErr } = await supabase.from('predictions')
-      .select('id', { count: 'exact', head: true }).eq('game_id', gameId);
-    if (cErr) throw cErr;
+    const { src, count } = await resolvePredsSource(gameId);
     if (!count) return [];
     // 💾 ניסיון מהמטמון המתמיד — אם תקף, אפס הורדה
-    const cached = readPredsLS(gameId, count);
+    const cached = readPredsLS(gameId, count, src);
     if (cached && cached.length === count) { _statsPredsCache[gameId] = cached; return cached; }
     const CHUNK = 1000;
     const jobs = [];
     for (let from = 0; from < count; from += CHUNK) {
       jobs.push(
-        supabase.from('predictions').select(PRED_COLS).eq('game_id', gameId)
+        supabase.from(src).select(PRED_COLS).eq('game_id', gameId)
           .order('id', { ascending: true })
           .range(from, Math.min(from + CHUNK - 1, count - 1))
       );
@@ -264,7 +280,7 @@ const loadAllPreds = async gameId => {
       if (r.error) throw r.error;
       if (r.data?.length) all = all.concat(r.data);
     }
-    if (all.length > 0) { _statsPredsCache[gameId] = all; writePredsLS(gameId, all, count); return all; }
+    if (all.length > 0) { _statsPredsCache[gameId] = all; writePredsLS(gameId, all, count, src); return all; }
   } catch (e) { console.warn('parallel predictions fetch failed, falling back:', e.message); }
   // fallback סדרתי
   let allFb=[],off=0;const seen=new Set();let mx=80;
