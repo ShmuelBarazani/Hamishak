@@ -514,7 +514,7 @@ function LayoutContent({ children }) {
 
         {/* ── Mobile bottom navigation bar ── */}
         <nav className="lm-bottom-nav">
-          {mainNav.slice(0,5).map(item => {
+          {mainNav.slice(0,6).map(item => {
             const active = isActive(item.url);
             return (
               <Link key={item.title} to={item.disabled ? '#' : item.url}
