@@ -178,13 +178,24 @@ export default function Simulator() {
       if (mySets.T25.has(n)) return 5; if (mySets.T23.has(n)) return 4;
       if (mySets.T21.has(n)) return 3; if (mySets.T19.has(n)) return 2; return 0; };
 
-    const realWinner = (h, a) => {
-      const v = koResults?.[`${h} - ${a}`]; if (v == null) return null;
-      const s = String(v); const m = s.match(/(\d+)\s*-\s*(\d+)/); if (!m) return null;
+    // 🔒 מפת תוצאות אמת — דו-כיוונית ומנורמלת (התוצאות הוזנו לעיתים בסדר לוח-המשחקים, לא בסדר הבראקט)
+    const koMap = {};
+    Object.entries(koResults || {}).forEach(([key, val]) => {
+      const s = String(val); const m = s.match(/(\d+)\s*-\s*(\d+)/); if (!m) return;
+      const parts = key.split(' - '); if (parts.length < 2) return;
+      const home = parts[0].trim(), away = parts.slice(1).join(' - ').trim();
       const hs = +m[1], as = +m[2];
-      if (hs > as) return h; if (as > hs) return a;
-      const adv = s.includes('|') ? s.split('|')[1].trim() : '';
-      return adv ? (normT(adv) === normT(h) ? h : a) : null;
+      let winner = null;
+      if (hs > as) winner = home; else if (as > hs) winner = away;
+      else { const adv = s.includes('|') ? s.split('|')[1].trim() : ''; if (adv) winner = normT(adv) === normT(home) ? home : away; }
+      if (!winner) return;
+      koMap[`${normT(home)}|${normT(away)}`] = normT(winner);
+      koMap[`${normT(away)}|${normT(home)}`] = normT(winner);
+    });
+    const realWinner = (h, a) => {
+      const w = koMap[`${normT(h)}|${normT(a)}`];
+      if (!w) return null;
+      return w === normT(h) ? h : (w === normT(a) ? a : null);
     };
 
     const matches = []; const memo = {};
