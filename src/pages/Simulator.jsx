@@ -98,22 +98,45 @@ async function resolvePredsSource(gameId) {
   }
 }
 const _memPreds = {};
-async function loadAllPredictions(gameId, onStage) {
+// אילו שאלות רלוונטיות לסימולציה: משבצות העולות (לניקוד+בונוס), וכל שאלה שעדיין פתוחה.
+// שאלות שכבר נסגרו בתוצאת אמת מתקזזות בשיטת ההפרשים — אין צורך בניחושים שלהן.
+const neededQids = questions => questions
+  .filter(q => q.table_id !== 'T1' && (STAGE_TIDS.includes(q.table_id) || isEmpty(q.actual_result)))
+  .map(q => q.id);
+
+async function loadSimPredictions(gameId, questions, onStage) {
   if (_memPreds[gameId]) { onStage?.('מטמון ✓'); return _memPreds[gameId]; }
-  const { src, count } = await resolvePredsSource(gameId);
+  const qids = neededQids(questions);
+  const qidSet = new Set(qids);
+
+  // 1) אם קיים המטמון המלא של מסך הסטטיסטיקות — משתמשים בו (אפס רשת) ומסננים בזיכרון
+  try {
+    const full = await idbGet(PREDS_KEY(gameId));
+    if (full && full.v === 1 && Date.now() - (full.ts || 0) <= PREDS_TTL_MS) {
+      const rows = decodePreds(full).filter(p => qidSet.has(p.question_id));
+      if (rows.length) { onStage?.('מטמון ✓'); _memPreds[gameId] = rows; return rows; }
+    }
+  } catch { /* — */ }
+
+  // 2) מטמון ייעודי של הסימולטור
+  const SIM_KEY = `tlt_simpreds_v1_${gameId}`;
+  const { src } = await resolvePredsSource(gameId);
+  const { count } = await supabase.from(src).select('question_id', { count: 'exact', head: true })
+    .eq('game_id', gameId).in('question_id', qids);
   if (!count) return [];
-  const validate = c => (c && c.v === 1 && c.src === src && c.count === count && Date.now() - (c.ts || 0) <= PREDS_TTL_MS) ? c : null;
-  // IndexedDB → localStorage → רשת
-  let cachedObj = validate(await idbGet(PREDS_KEY(gameId)));
-  if (!cachedObj) { try { const raw = localStorage.getItem(PREDS_KEY(gameId)); if (raw) cachedObj = validate(JSON.parse(raw)); } catch { /* — */ } }
-  if (cachedObj) {
-    const dec = decodePreds(cachedObj);
-    if (dec.length === count) { onStage?.('מטמון ✓'); _memPreds[gameId] = dec; return dec; }
-  }
-  onStage?.(`מוריד ${count.toLocaleString()} ניחושים (פעם ראשונה בלבד)...`);
+  try {
+    const c = await idbGet(SIM_KEY);
+    if (c && c.v === 1 && c.src === src && c.count === count && c.nq === qids.length && Date.now() - (c.ts || 0) <= PREDS_TTL_MS) {
+      const dec = decodePreds(c);
+      if (dec.length === count) { onStage?.('מטמון ✓'); _memPreds[gameId] = dec; return dec; }
+    }
+  } catch { /* — */ }
+
+  // 3) הורדה ממוקדת — רק השאלות הרלוונטיות (~רבע מהנפח המלא)
+  onStage?.(`מוריד ${count.toLocaleString()} ניחושים רלוונטיים (שאלות פתוחות בלבד)...`);
   const PAGE = 1000; const jobs = [];
   for (let from = 0; from < count; from += PAGE) {
-    jobs.push(supabase.from(src).select(PRED_COLS).eq('game_id', gameId)
+    jobs.push(supabase.from(src).select(PRED_COLS).eq('game_id', gameId).in('question_id', qids)
       .order('question_id', { ascending: true }).order('participant_name', { ascending: true })
       .range(from, Math.min(from + PAGE - 1, count - 1)));
   }
@@ -121,10 +144,8 @@ async function loadAllPredictions(gameId, onStage) {
   let all = [];
   for (const r of results) { if (r.error) throw r.error; if (r.data?.length) all = all.concat(r.data); }
   all.forEach((p, i) => { if (p.id == null) p.id = `n${i}`; });
-  const enc = encodePreds(all, count); enc.src = src;
-  const ok = await idbSet(PREDS_KEY(gameId), enc);
-  if (!ok) { try { localStorage.setItem(PREDS_KEY(gameId), JSON.stringify(enc)); } catch { /* — */ } }
-  ['v1','v2','v3'].forEach(v => { try { localStorage.removeItem(`tlt_preds_${v}_${gameId}`); } catch { /* — */ } });
+  const enc = encodePreds(all, count); enc.src = src; enc.nq = qids.length;
+  idbSet(SIM_KEY, enc);
   _memPreds[gameId] = all;
   return all;
 }
@@ -174,12 +195,13 @@ export default function Simulator() {
       setLoading(true); setLoadErr(''); setResult(null); setMe(''); setOverrides({}); baseAllRef.current = null;
       try {
         setLoadStage('טוען נתונים...');
-        const [qs, rk, ko, ps] = await Promise.all([
+        const [qs, rk, ko] = await Promise.all([
           loadAllQuestions(currentGame.id),
           supabase.from('rankings').select('participant_name,current_score').eq('game_id', currentGame.id).limit(100000).then(r => r.data || []),
           supabase.from('games').select('ko_results').eq('id', currentGame.id).single().then(r => r.data?.ko_results || {}).catch(() => ({})),
-          loadAllPredictions(currentGame.id, s => !cancelled && setLoadStage(s)),
         ]);
+        if (cancelled) return;
+        const ps = await loadSimPredictions(currentGame.id, qs, s => !cancelled && setLoadStage(s));
         if (cancelled) return;
         setQuestions(qs); setRankRows(rk); setKoResults(ko); setPreds(ps);
       } catch (e) {
@@ -344,6 +366,14 @@ export default function Simulator() {
     audit.sort((a, b) => b.d - a.d);
     const auditSum = audit.reduce((s, a) => s + a.d, 0);
     const bonusDelta = audit.filter(a => a.isBonus).reduce((s, a) => s + a.d, 0);
+    // 🎁 בונוס-שלב לכל רשימת עולות: הושג בתרחיש? (מהמנוע), וערכו
+    const STAGE_BONUS_DEF = { T19: 16, T21: 16, T23: 8, T25: 8 };
+    const stageBonus = {};
+    STAGE_TIDS.forEach(tid => {
+      const k = `${tid}_STAGE_BONUS`;
+      const simB = sBy[k]?.score || 0, baseB = bBy[k]?.score || 0;
+      stageBonus[tid] = { val: simB || baseB || STAGE_BONUS_DEF[tid] || 0, earned: simB > 0, isNew: simB > 0 && baseB === 0 };
+    });
     const auditByQ = {}; audit.forEach(a => { /* מפת נקודות לשאלות פתוחות */ });
     // נקודות לכל שאלה פתוחה (מהביקורת): לפי טקסט לא אמין — נשתמש במפה לפי qid
     const gainByQid = {};
@@ -356,7 +386,7 @@ export default function Simulator() {
     let engineDiffs = 0;
     table.forEach(r => { if (Math.abs(totalOf(baseAll[r.name]) - r.official) > 0.001) engineDiffs++; });
     const meRow = table.find(r => r.name === who) || null;
-    return { table, meRow, matches, champion, runnerUp, specialsList, withSpecials, engineDiffs, audit, auditSum, bonusDelta };
+    return { table, meRow, matches, champion, runnerUp, specialsList, withSpecials, engineDiffs, audit, auditSum, bonusDelta, stageBonus };
   };
 
   const run = (ovr = overrides, withSpecials = includeSpecials) => {
@@ -494,10 +524,10 @@ export default function Simulator() {
                 </div>
 
                 <Card style={S.card}>
-                  <CardContent style={{ padding: 16 }}>
+                  <CardContent style={{ padding: 16, maxHeight: isNarrow ? undefined : '74vh', overflowY: isNarrow ? undefined : 'auto' }}>
                     <h3 style={{ color: '#d8b4fe', fontSize: '0.95rem', fontWeight: 800, margin: '0 0 4px' }}>🌳 עץ התרחיש — לחץ על קבוצה כדי לשנות הכרעה</h3>
                     <p style={{ color: '#64748b', fontSize: '0.72rem', margin: '0 0 12px' }}>
-                      <span style={{ color: '#fbbf24' }}>🔒 צהוב = תוצאת אמת</span> • <span style={{ color: '#d8b4fe' }}>סגול = הבחירה שלך</span> • <span style={{ color: '#6ee7b7' }}>ירוק = אוטומטי (הטוב עבורך)</span> • התג הזהוב = כמה זה שווה לך
+                      <span style={{ color: '#fbbf24' }}>🔒 צהוב = תוצאת אמת</span> • <span style={{ color: '#6ee7b7' }}>ירוק = אוטומטי (הטוב עבורך)</span> • <span style={{ color: '#d8b4fe' }}>✎ סגול = הכרעה ששינית בלחיצה</span> • תג זהוב = כמה שווה לך
                     </p>
                     {[0,1,2,3,4].map(lvl => {
                       const ms = result.matches.filter(m => m.lvl === lvl).sort((a, b) => a.idx - b.idx);
@@ -507,11 +537,19 @@ export default function Simulator() {
                           <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 7 }}>
                             <span style={{ fontSize: '0.9rem' }}>{LEVEL_ICONS[lvl]}</span>
                             <span style={{ fontSize: '0.82rem', fontWeight: 800, color: '#67e8f9' }}>{LEVEL_NAMES[lvl]}</span>
+                            {(() => {
+                              const tid = NEXT_STAGE_OF_LEVEL[lvl];
+                              const sb = tid !== 'CHAMP' ? result.stageBonus?.[tid] : null;
+                              if (!sb || !sb.val) return null;
+                              return sb.earned
+                                ? <span style={{ fontSize: '0.66rem', fontWeight: 800, color: '#fde68a', background: 'rgba(251,191,36,0.12)', border: '1px solid rgba(251,191,36,0.4)', borderRadius: 999, padding: '1px 8px' }}>🎁 בונוס שלב +{sb.val} ✓</span>
+                                : <span style={{ fontSize: '0.66rem', color: '#64748b', border: '1px solid rgba(71,85,105,0.4)', borderRadius: 999, padding: '1px 8px' }}>בונוס שלב {sb.val} — דורש פגיעה בכל העולות</span>;
+                            })()}
                             <div style={{ flex: 1, height: 1, background: 'rgba(6,182,212,0.2)' }} />
                           </div>
-                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(205px,1fr))', gap: 7 }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(148px,1fr))', gap: 5 }}>
                             {ms.map(m => (
-                              <div key={m.key} style={{ background: 'rgba(0,0,0,0.28)', border: `1px solid ${m.src === 'real' ? 'rgba(251,191,36,0.4)' : m.src === 'override' ? 'rgba(168,85,247,0.55)' : 'rgba(71,85,105,0.35)'}`, borderRadius: 9, padding: 6 }}>
+                              <div key={m.key} style={{ background: 'rgba(0,0,0,0.28)', border: `1px solid ${m.src === 'real' ? 'rgba(251,191,36,0.4)' : m.src === 'override' ? 'rgba(168,85,247,0.55)' : 'rgba(71,85,105,0.35)'}`, borderRadius: 8, padding: 4 }}>
                                 <div style={{ display: 'flex', gap: 5 }}>
                                   {[m.home, m.away].map(team => {
                                     const won = normT(team) === normT(m.winner);
@@ -521,7 +559,7 @@ export default function Simulator() {
                                     return (
                                       <button key={team} onClick={() => clickWinner(m, team)} disabled={locked || simulating}
                                         style={{
-                                          flex: 1, borderRadius: 7, padding: '6px 4px', fontSize: '0.76rem', fontWeight: won ? 800 : 400,
+                                          flex: 1, borderRadius: 6, padding: '4px 3px', fontSize: '0.7rem', fontWeight: won ? 800 : 400,
                                           cursor: locked ? 'default' : 'pointer',
                                           background: won ? (locked ? 'rgba(251,191,36,0.12)' : (m.src === 'override' ? 'rgba(168,85,247,0.2)' : 'rgba(16,185,129,0.15)')) : 'transparent',
                                           border: `1.5px solid ${won ? cWin : 'rgba(71,85,105,0.4)'}`,
@@ -533,15 +571,16 @@ export default function Simulator() {
                                     );
                                   })}
                                 </div>
-                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 3 }}>
-                                  <span style={{ fontSize: '0.62rem', color: m.src === 'real' ? '#fbbf24' : m.src === 'override' ? '#c084fc' : '#34d399', fontWeight: 700 }}>
-                                    {m.src === 'real' ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}><Lock style={{ width: 9, height: 9 }} /> תוצאת אמת</span>
-                                      : m.src === 'override' ? 'הבחירה שלך' : 'אוטומטי (הטוב עבורך)'}
+                                {(m.src !== 'auto' || m.myGain > 0) && (
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 2, minHeight: 13 }}>
+                                  <span style={{ fontSize: '0.6rem', color: m.src === 'real' ? '#fbbf24' : '#c084fc', fontWeight: 700 }}>
+                                    {m.src === 'real' ? <Lock style={{ width: 9, height: 9 }} /> : m.src === 'override' ? '✎' : ''}
                                   </span>
                                   {m.myGain > 0 && (
-                                    <span style={{ fontSize: '0.64rem', fontWeight: 800, color: '#fde68a', background: 'rgba(251,191,36,0.12)', border: '1px solid rgba(251,191,36,0.35)', borderRadius: 999, padding: '1px 7px' }}>+{m.myGain} לך</span>
+                                    <span style={{ fontSize: '0.6rem', fontWeight: 800, color: '#fde68a', background: 'rgba(251,191,36,0.1)', borderRadius: 999, padding: '0 6px' }}>+{m.myGain}</span>
                                   )}
                                 </div>
+                                )}
                               </div>
                             ))}
                           </div>
