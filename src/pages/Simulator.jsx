@@ -38,7 +38,7 @@ const normT = s => String(s ?? '')
 
 /* ── 💾 מטמון הניחושים — אותו פורמט של מסך הסטטיסטיקות (משותף, ללא הורדה כפולה) ── */
 const PRED_COLS = 'id,question_id,participant_name,text_prediction,home_prediction,away_prediction,created_at';
-const PREDS_LS_KEY = gid => `tlt_preds_v2_${gid}`;
+const PREDS_LS_KEY = gid => `tlt_preds_v3_${gid}`;
 const PREDS_TTL_MS = 12 * 60 * 60 * 1000;
 // מקור הנתונים: latest_predictions (View — רק הניחוש האחרון לכל משתתף+שאלה, ~63% פחות תעבורה).
 // אם ה-View לא קיים עדיין — נסיגה אוטומטית לטבלה המלאה.
@@ -54,21 +54,32 @@ async function resolvePredsSource(gameId) {
     return { src: 'predictions', count: count || 0 };
   }
 }
-const decodePreds = c => c.r.map((row, i) => ({
-  id: `c${i}`, question_id: c.q[row[0]], participant_name: c.n[row[1]],
-  text_prediction: row[2], home_prediction: row[3], away_prediction: row[4],
-  created_at: row[5] ? new Date(row[5]).toISOString() : null,
-}));
+const decodePreds = c => c.r.map((row, i) => {
+  const val = row[2];
+  const m = typeof val === 'string' ? val.match(/^(\d+)-(\d+)$/) : null;
+  return {
+    id: `c${i}`, question_id: c.q[row[0]], participant_name: c.n[row[1]],
+    text_prediction: m ? null : (val ?? null),
+    home_prediction: m ? +m[1] : null,
+    away_prediction: m ? +m[2] : null,
+    created_at: null,
+  };
+});
 const encodePreds = (all, count) => {
   const q=[], qm={}, n=[], nm={};
   const r = all.map(p => {
     let qi = qm[p.question_id]; if (qi === undefined) { qi = q.length; qm[p.question_id] = qi; q.push(p.question_id); }
     let ni = nm[p.participant_name]; if (ni === undefined) { ni = n.length; nm[p.participant_name] = ni; n.push(p.participant_name); }
-    return [qi, ni, p.text_prediction ?? null, p.home_prediction ?? null, p.away_prediction ?? null, p.created_at ? new Date(p.created_at).getTime() : 0];
+    const val = (p.home_prediction != null && p.away_prediction != null)
+      ? `${p.home_prediction}-${p.away_prediction}` : (p.text_prediction ?? null);
+    return [qi, ni, val];
   });
   return { v: 1, ts: Date.now(), count, q, n, r };
 };
+
+const _simPredsMem = {};
 async function loadAllPredictions(gameId, onStage) {
+  if (_simPredsMem[gameId]) { onStage?.('מטמון ✓'); return _simPredsMem[gameId]; }
   const { src, count } = await resolvePredsSource(gameId);
   if (!count) return [];
   try {
@@ -77,7 +88,7 @@ async function loadAllPredictions(gameId, onStage) {
       const c = JSON.parse(raw);
       if (c?.v === 1 && c.src === src && c.count === count && Date.now() - (c.ts || 0) <= PREDS_TTL_MS) {
         const dec = decodePreds(c);
-        if (dec.length === count) { onStage?.('מטמון ✓'); return dec; }
+        if (dec.length === count) { onStage?.('מטמון ✓'); _simPredsMem[gameId] = dec; return dec; }
       }
     }
   } catch { /* טעינה מלאה */ }
@@ -93,8 +104,9 @@ async function loadAllPredictions(gameId, onStage) {
   try {
     const enc = encodePreds(all, count); enc.src = src;
     localStorage.setItem(PREDS_LS_KEY(gameId), JSON.stringify(enc));
-    localStorage.removeItem(`tlt_preds_v1_${gameId}`);
+    ['v1','v2'].forEach(v=>{ try{ localStorage.removeItem(`tlt_preds_${v}_${gameId}`);}catch{} });
   } catch { try { localStorage.removeItem(PREDS_LS_KEY(gameId)); } catch { /* — */ } }
+  _simPredsMem[gameId] = all;
   return all;
 }
 async function loadAllQuestions(gameId) {
