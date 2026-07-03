@@ -201,15 +201,37 @@ const alternateSlice = data => {
 };
 
 // ⚡ טעינה מקבילית — count ואז כל הצ'אנקים בבת אחת (פי ~20 מהיר יותר)
-const PRED_COLS = 'id,question_id,participant_name,text_prediction,home_prediction,away_prediction,created_at';
+const PRED_COLS = 'question_id,participant_name,text_prediction,home_prediction,away_prediction';
 // ⚡ Cache בזיכרון — המשחק סגור והנתונים קפואים; משיכה אחת לכל סשן במקום בכל כניסה למסך
 const _statsPredsCache = {};
 
 // 💾 מטמון מתמיד (localStorage) — חוסך את הורדת כל הניחושים בכל כניסה (Egress).
 //    אימות: שאילתת count בלבד (בייטים בודדים). אם המספר זהה והמטמון בן פחות מ-12 שעות — משתמשים בו.
 //    קידוד קומפקטי (מילון question_id/שמות) כדי להיכנס למכסת ה-localStorage.
-const PREDS_LS_KEY = gid => `tlt_preds_v3_${gid}`;
+// 🗄️ IndexedDB — מטמון יציב (ללא מגבלת ה-5MB של localStorage)
+const idbOpen = () => new Promise((res, rej) => {
+  const r = indexedDB.open('tlt_cache', 1);
+  r.onupgradeneeded = () => { try { r.result.createObjectStore('kv'); } catch { /* קיים */ } };
+  r.onsuccess = () => res(r.result);
+  r.onerror = () => rej(r.error);
+});
+const idbGet = async key => {
+  try { const db = await idbOpen(); return await new Promise(res => {
+    const t = db.transaction('kv','readonly').objectStore('kv').get(key);
+    t.onsuccess = () => res(t.result ?? null); t.onerror = () => res(null);
+  }); } catch { return null; }
+};
+const idbSet = async (key, val) => {
+  try { const db = await idbOpen(); await new Promise(res => {
+    const t = db.transaction('kv','readwrite');
+    t.objectStore('kv').put(val, key);
+    t.oncomplete = res; t.onerror = res;
+  }); } catch { /* — */ }
+};
+
+const PREDS_LS_KEY = gid => `tlt_preds_v4_${gid}`;
 const PREDS_TTL_MS = 12 * 60 * 60 * 1000;
+
 // מקור הנתונים: latest_predictions (View — רק הניחוש האחרון לכל משתתף+שאלה, ~63% פחות תעבורה).
 // אם ה-View לא קיים עדיין — נסיגה אוטומטית לטבלה המלאה.
 const resolvePredsSource = async (gameId) => {
@@ -247,23 +269,19 @@ const encodePreds = (all, count) => {
   return { v: 1, ts: Date.now(), count, q, n, r };
 };
 
-const readPredsLS = (gid, count, src) => {
-  try {
-    const raw = localStorage.getItem(PREDS_LS_KEY(gid));
-    if (!raw) return null;
-    const c = JSON.parse(raw);
-    if (c?.v !== 1 || c.count !== count || c.src !== src) return null;
-    if (Date.now() - (c.ts || 0) > PREDS_TTL_MS) return null;
-    return decodePreds(c);
-  } catch { return null; }
+const readPredsLS = async (gid, count, src) => {
+  const validate = c => (c && c.v === 1 && c.count === count && c.src === src && Date.now() - (c.ts || 0) <= PREDS_TTL_MS) ? c : null;
+  try { const c = validate(await idbGet(PREDS_LS_KEY(gid))); if (c) return decodePreds(c); } catch { /* — */ }
+  try { const raw = localStorage.getItem(PREDS_LS_KEY(gid)); if (raw) { const c = validate(JSON.parse(raw)); if (c) return decodePreds(c); } } catch { /* — */ }
+  return null;
 };
-const writePredsLS = (gid, all, count, src) => {
+const writePredsLS = async (gid, all, count, src) => {
   try {
     const enc = encodePreds(all, count); enc.src = src;
-    localStorage.setItem(PREDS_LS_KEY(gid), JSON.stringify(enc));
-    ['v1','v2'].forEach(v=>{ try{ localStorage.removeItem(`tlt_preds_${v}_${gid}`);}catch{} });
-  }
-  catch { try { localStorage.removeItem(PREDS_LS_KEY(gid)); } catch {} }
+    const ok = await idbSet(PREDS_LS_KEY(gid), enc);
+    if (!ok) { try { localStorage.setItem(PREDS_LS_KEY(gid), JSON.stringify(enc)); } catch { try { localStorage.removeItem(PREDS_LS_KEY(gid)); } catch {} } }
+    ['v1','v2','v3'].forEach(v => { try { localStorage.removeItem(`tlt_preds_${v}_${gid}`); } catch {} });
+  } catch { /* — */ }
 };
 
 const loadAllPreds = async gameId => {
@@ -272,7 +290,7 @@ const loadAllPreds = async gameId => {
     const { src, count } = await resolvePredsSource(gameId);
     if (!count) return [];
     // 💾 ניסיון מהמטמון המתמיד — אם תקף, אפס הורדה
-    const cached = readPredsLS(gameId, count, src);
+    const cached = await readPredsLS(gameId, count, src);
     if (cached && cached.length === count) { _statsPredsCache[gameId] = cached; return cached; }
     const CHUNK = 1000;
     const jobs = [];
@@ -289,7 +307,7 @@ const loadAllPreds = async gameId => {
       if (r.error) throw r.error;
       if (r.data?.length) all = all.concat(r.data);
     }
-    if (all.length > 0) { _statsPredsCache[gameId] = all; writePredsLS(gameId, all, count, src); return all; }
+    if (all.length > 0) { all.forEach((p, i) => { if (p.id == null) p.id = `n${i}`; }); _statsPredsCache[gameId] = all; writePredsLS(gameId, all, count, src); return all; }
   } catch (e) { console.warn('parallel predictions fetch failed, falling back:', e.message); }
   // fallback סדרתי
   let allFb=[],off=0;const seen=new Set();let mx=80;
