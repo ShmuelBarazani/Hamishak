@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import {
   Users, FileText, BarChart3, Database, Award, PieChart, Trophy,
-  LogOut, Shield, Edit, Upload, Lock, X, Sun, Moon, Pencil, Check,
+  LogOut, Shield, Edit, Upload, Lock, X, Sun, Moon, Pencil, Check,, Wand2
 } from "lucide-react";
 import { supabase } from "@/api/supabaseClient";
 import { Button } from "@/components/ui/button";
@@ -24,7 +24,7 @@ const ROUTE_ACCESS = {
   AdminImport: 'admin', ManageGameParticipants: 'admin',
   UserManagement: 'admin',  FormBuilder: 'admin',
   SystemOverview: 'admin',  CreateGame: 'admin',
-  YossiCup: 'public',
+  YossiCup: 'public',  Simulator: 'public',
 };
 
 function getPageName(pathname) {
@@ -35,7 +35,7 @@ function getPageName(pathname) {
     'admin-import':'AdminImport','manage-game':'ManageGameParticipants',
     'user-management':'UserManagement','form-builder':'FormBuilder',
     'system-overview':'SystemOverview','create-game':'CreateGame',
-    'yossi-cup':'YossiCup',
+    'yossi-cup':'YossiCup','simulator':'Simulator',
   };
   const lower = pathname.toLowerCase();
   for (const [k,v] of Object.entries(map)) if (lower.includes(k)) return v;
@@ -135,6 +135,7 @@ function LayoutContent({ children }) {
     { title:"צפייה בניחושים", short:"ניחושים", url:createPageUrl("ViewSubmissions") + g, icon:Users,    group:"main" },
     { title:"תוצאות אמת",     short:"תוצאות",  url:createPageUrl("AdminResults")    + g, icon:BarChart3,group:"main" },
     { title:"סטטיסטיקות",     short:"סטטיסטיקה",url:createPageUrl("Statistics")      + g, icon:PieChart, group:"main" },
+    { title:"🎮 סימולטור",     short:"סימולטור", url:createPageUrl("Simulator")       + g, icon:Wand2,    group:"main" },
   ];
   const userItems = [
     { title:"מילוי ניחושים",  short:"מילוי",   url:createPageUrl("PredictionForm")  + g, icon:FileText, group:"main" },
