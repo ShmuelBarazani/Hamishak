@@ -38,8 +38,22 @@ const normT = s => String(s ?? '')
 
 /* ── 💾 מטמון הניחושים — אותו פורמט של מסך הסטטיסטיקות (משותף, ללא הורדה כפולה) ── */
 const PRED_COLS = 'id,question_id,participant_name,text_prediction,home_prediction,away_prediction,created_at';
-const PREDS_LS_KEY = gid => `tlt_preds_v1_${gid}`;
+const PREDS_LS_KEY = gid => `tlt_preds_v2_${gid}`;
 const PREDS_TTL_MS = 12 * 60 * 60 * 1000;
+// מקור הנתונים: latest_predictions (View — רק הניחוש האחרון לכל משתתף+שאלה, ~63% פחות תעבורה).
+// אם ה-View לא קיים עדיין — נסיגה אוטומטית לטבלה המלאה.
+async function resolvePredsSource(gameId) {
+  try {
+    const { count, error } = await supabase.from('latest_predictions')
+      .select('id', { count: 'exact', head: true }).eq('game_id', gameId);
+    if (error || count == null) throw error || new Error('no view');
+    return { src: 'latest_predictions', count };
+  } catch {
+    const { count } = await supabase.from('predictions')
+      .select('id', { count: 'exact', head: true }).eq('game_id', gameId);
+    return { src: 'predictions', count: count || 0 };
+  }
+}
 const decodePreds = c => c.r.map((row, i) => ({
   id: `c${i}`, question_id: c.q[row[0]], participant_name: c.n[row[1]],
   text_prediction: row[2], home_prediction: row[3], away_prediction: row[4],
@@ -55,13 +69,13 @@ const encodePreds = (all, count) => {
   return { v: 1, ts: Date.now(), count, q, n, r };
 };
 async function loadAllPredictions(gameId, onStage) {
-  const { count } = await supabase.from('predictions').select('id', { count: 'exact', head: true }).eq('game_id', gameId);
+  const { src, count } = await resolvePredsSource(gameId);
   if (!count) return [];
   try {
     const raw = localStorage.getItem(PREDS_LS_KEY(gameId));
     if (raw) {
       const c = JSON.parse(raw);
-      if (c?.v === 1 && c.count === count && Date.now() - (c.ts || 0) <= PREDS_TTL_MS) {
+      if (c?.v === 1 && c.src === src && c.count === count && Date.now() - (c.ts || 0) <= PREDS_TTL_MS) {
         const dec = decodePreds(c);
         if (dec.length === count) { onStage?.('מטמון ✓'); return dec; }
       }
@@ -70,13 +84,17 @@ async function loadAllPredictions(gameId, onStage) {
   onStage?.(`מוריד ${count.toLocaleString()} ניחושים (פעם ראשונה בלבד — בהמשך מהמטמון)...`);
   const all = []; const PAGE = 1000;
   for (let from = 0; from < count; from += PAGE) {
-    const { data, error } = await supabase.from('predictions').select(PRED_COLS)
+    const { data, error } = await supabase.from(src).select(PRED_COLS)
       .eq('game_id', gameId).order('id', { ascending: true }).range(from, Math.min(from + PAGE - 1, count - 1));
     if (error) throw error;
     all.push(...(data || []));
     onStage?.(`מוריד ניחושים... ${Math.min(from + PAGE, count).toLocaleString()}/${count.toLocaleString()}`);
   }
-  try { localStorage.setItem(PREDS_LS_KEY(gameId), JSON.stringify(encodePreds(all, count))); } catch { /* מכסה מלאה */ }
+  try {
+    const enc = encodePreds(all, count); enc.src = src;
+    localStorage.setItem(PREDS_LS_KEY(gameId), JSON.stringify(enc));
+    localStorage.removeItem(`tlt_preds_v1_${gameId}`);
+  } catch { try { localStorage.removeItem(PREDS_LS_KEY(gameId)); } catch { /* — */ } }
   return all;
 }
 async function loadAllQuestions(gameId) {
@@ -110,6 +128,7 @@ export default function Simulator() {
   const [simulating, setSimulating] = useState(false);
   const [result, setResult]       = useState(null);
   const [specOpen, setSpecOpen]   = useState(false);
+  const [auditOpen, setAuditOpen] = useState(false);
   const baseAllRef = useRef(null); // מנוע["עכשיו"] — מחושב פעם אחת
 
   useEffect(() => {
@@ -261,6 +280,28 @@ export default function Simulator() {
 
     // פירוק הדלתא שלי: בראקט מול שאלות פתוחות (מנוע פר-משתתף — זול)
     let myBracketDelta = null;
+    // 🔍 פירוק ביקורת: התוספת שלי בתרחיש, שאלה-שאלה — ישירות מה-breakdown של המנוע הרשמי
+    const qMeta = {}; questions.forEach(q => { qMeta[q.id] = { text: q.question_text, tid: q.table_id }; });
+    const myMapAudit = {}; Object.entries(latestByPart[who] || {}).forEach(([qid, v]) => { myMapAudit[qid] = v.t; });
+    const sumBy = res => { const m = {}; ((res && res.breakdown) || []).forEach(b => { m[b.question_id] = (m[b.question_id] || 0) + (Number(b.score) || 0); }); return m; };
+    const myBaseRes = calculateTotalScore(questions, myMapAudit);
+    const mySimRes  = calculateTotalScore(simQ, myMapAudit);
+    const bBy = sumBy(myBaseRes), sBy = sumBy(mySimRes);
+    const audit = [];
+    new Set([...Object.keys(bBy), ...Object.keys(sBy)]).forEach(qid => {
+      const d = (sBy[qid] || 0) - (bBy[qid] || 0);
+      if (Math.abs(d) < 0.001) return;
+      const meta = qMeta[qid];
+      audit.push({
+        qid, d,
+        text: meta ? meta.text : `בונוס (${String(qid).replace(/_.*/, '')})`,
+        tid: meta ? meta.tid : String(qid).replace(/_.*/, ''),
+        answer: myMapAudit[qid] || '',
+        isBonus: !meta,
+      });
+    });
+    audit.sort((a, b) => b.d - a.d);
+    const auditSum = audit.reduce((s, a) => s + a.d, 0);
     if (withSpecials && specialsList.length) {
       const simNoSpec = questions.map(q => ({ ...q }));
       STAGE_TIDS.forEach(tid => {
@@ -279,7 +320,7 @@ export default function Simulator() {
     table.forEach(r => { if (Math.abs(totalOf(baseAll[r.name]) - r.official) > 0.001) engineDiffs++; });
 
     const meRow = table.find(r => r.name === who) || null;
-    return { table, meRow, matches, champion, runnerUp, specialsList, withSpecials, myBracketDelta, engineDiffs };
+    return { table, meRow, matches, champion, runnerUp, specialsList, withSpecials, myBracketDelta, engineDiffs, audit, auditSum };
   };
 
   const run = (ovr = overrides, withSpecials = includeSpecials) => {
@@ -478,6 +519,38 @@ export default function Simulator() {
                   )}
                 </CardContent>
               </Card>
+
+              {/* 🔍 פירוק ביקורת — מאיפה הגיעה כל נקודה בתוספת שלי */}
+              {result.meRow && result.audit && (
+                <Card style={{ ...S.card, marginBottom: 14, border: '1px solid rgba(251,191,36,0.35)' }}>
+                  <CardContent style={{ padding: 18 }}>
+                    <div onClick={() => setAuditOpen(o => !o)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}>
+                      <h3 style={{ color: '#fde68a', fontSize: '0.95rem', fontWeight: 800, margin: 0 }}>
+                        🔍 מאיפה הגיעה התוספת שלי — פירוק מלא ({result.audit.length} פריטים, סה"כ {result.auditSum >= 0 ? '+' : ''}{result.auditSum})
+                      </h3>
+                      <span style={{ color: '#64748b', fontSize: '0.8rem' }}>{auditOpen ? '▲ סגור' : '▼ פתח'}</span>
+                    </div>
+                    {auditOpen && (
+                      <>
+                        <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 400, overflowY: 'auto' }}>
+                          {result.audit.map((a, i) => (
+                            <div key={i} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, background: a.isBonus ? 'rgba(251,191,36,0.07)' : 'rgba(0,0,0,0.22)', border: '1px solid rgba(71,85,105,0.3)', borderRadius: 8, padding: '6px 10px' }}>
+                              <div style={{ minWidth: 0 }}>
+                                <span style={{ fontSize: '0.8rem', color: '#e2e8f0' }}>{a.isBonus ? '🎁 ' : ''}{a.text}</span>
+                                {a.answer && <span style={{ fontSize: '0.74rem', color: '#94a3b8', marginRight: 6 }}>· הניחוש: {a.answer}</span>}
+                              </div>
+                              <span style={{ flexShrink: 0, fontSize: '0.82rem', fontWeight: 800, color: a.d > 0 ? '#34d399' : '#f87171' }}>{a.d > 0 ? '+' : ''}{a.d}</span>
+                            </div>
+                          ))}
+                        </div>
+                        <p style={{ color: '#64748b', fontSize: '0.7rem', marginTop: 8 }}>
+                          הפירוק מגיע ישירות מהמנוע הרשמי (ScoreService). הסכום {result.auditSum >= 0 ? '+' : ''}{result.auditSum} = בדיוק התוספת שלך בטבלה{result.meRow ? ` (+${result.meRow.delta})` : ''}. אם שורה כלשהי נראית לך שגויה — זו הכתובת לבדיקה.
+                        </p>
+                      </>
+                    )}
+                  </CardContent>
+                </Card>
+              )}
 
               {/* 🏁 הדירוג המדומה */}
               <Card style={S.card}>
