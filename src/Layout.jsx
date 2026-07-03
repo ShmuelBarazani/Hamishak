@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import {
   Users, FileText, BarChart3, Database, Award, PieChart, Trophy,
-  LogOut, Shield, Edit, Upload, Lock, X, Sun, Moon, Pencil, Check,, Wand2
+  LogOut, Shield, Edit, Upload, Lock, X, Sun, Moon, Pencil, Check, Wand2
 } from "lucide-react";
 import { supabase } from "@/api/supabaseClient";
 import { Button } from "@/components/ui/button";
