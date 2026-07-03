@@ -15,10 +15,12 @@ import ImportData from './pages/ImportData';
 import CleanScoreTable from './pages/CleanScoreTable';
 import TeamComparison from './pages/TeamComparison';
 import YossiCup from './pages/YossiCup';
+import Simulator from './pages/Simulator';
 import __Layout from './Layout.jsx';
 export const PAGES = {
   LeaderboardNew,
   YossiCup,
+  Simulator,
   PredictionForm,
   ViewSubmissions,
   Statistics,
