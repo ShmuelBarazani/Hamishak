@@ -76,14 +76,14 @@ const WC_BRACKET_ORDER = [
 //    lvl: 1=שמינית, 2=רבע, 3=חצי, 4=גמר. הבלוק בעץ הבראקט נגזר אוטומטית מ-lvl+idx.
 //    (תאריכי השמינית משוערים בטווח 4-7/7 — מומלץ לאמת.)
 const WC_KO_ROUNDS = [
-  { lvl:1, idx:0, mon:7, day:4,  time:'23:00', stage:'שמינית הגמר' },
   { lvl:1, idx:1, mon:7, day:4,  time:'20:00', stage:'שמינית הגמר' },
+  { lvl:1, idx:0, mon:7, day:5,  time:'00:00', stage:'שמינית הגמר' },
   { lvl:1, idx:4, mon:7, day:5,  time:'23:00', stage:'שמינית הגמר' },
-  { lvl:1, idx:5, mon:7, day:5,  time:'03:00', stage:'שמינית הגמר' },
+  { lvl:1, idx:5, mon:7, day:6,  time:'03:00', stage:'שמינית הגמר' },
   { lvl:1, idx:2, mon:7, day:6,  time:'22:00', stage:'שמינית הגמר' },
-  { lvl:1, idx:3, mon:7, day:6,  time:'03:00', stage:'שמינית הגמר' },
-  { lvl:1, idx:6, mon:7, day:7,  time:'23:00', stage:'שמינית הגמר' },
-  { lvl:1, idx:7, mon:7, day:7,  time:'04:00', stage:'שמינית הגמר' },
+  { lvl:1, idx:3, mon:7, day:7,  time:'03:00', stage:'שמינית הגמר' },
+  { lvl:1, idx:6, mon:7, day:7,  time:'19:00', stage:'שמינית הגמר' },
+  { lvl:1, idx:7, mon:7, day:7,  time:'23:00', stage:'שמינית הגמר' },
   { lvl:2, idx:0, mon:7, day:9,  time:'23:00', stage:'רבע הגמר' },
   { lvl:2, idx:1, mon:7, day:10, time:'22:00', stage:'רבע הגמר' },
   { lvl:2, idx:2, mon:7, day:12, time:'00:00', stage:'רבע הגמר' },
@@ -117,7 +117,12 @@ const koBestDefaultStage = (stages, targetIdx) => {
 
 // קבוצות שהודחו — נגזר מתוצאות הנוק-אאוט שהוזנו (המפסידה בכל משחק)
 // סדר דטרמיניסטי להעדפת כיוון כשאותו משחק נשמר בשני כיוונים (הכיוון של סדר הבראקט מנצח)
-const KO_FLAT_IDX = (() => { const m = {}; WC_BRACKET_ORDER.flat().forEach((t, i) => { m[normalizeTeam(t)] = i; }); return m; })();
+// ⚠️ חישוב עצל — normalizeTeam מוגדר בהמשך הקובץ; חישוב מיידי בטעינת המודול מפיל את האפליקציה (TDZ)
+let _koFlatIdx = null;
+const koFlatIdx = () => {
+  if (!_koFlatIdx) { _koFlatIdx = {}; WC_BRACKET_ORDER.flat().forEach((t, i) => { _koFlatIdx[normalizeTeam(t)] = i; }); }
+  return _koFlatIdx;
+};
 // פירוק כל הרשומות + איחוד לפי זוג (בלי תלות בכיוון המפתח)
 const koParseEntries = (koResults) => {
   const byPair = {};
@@ -131,7 +136,7 @@ const koParseEntries = (koResults) => {
     const ex = byPair[canon];
     if (!ex) { byPair[canon] = rec; return; }
     // כפילות (שני כיוונים לאותו משחק): מעדיפים את הרשומה שכיוונה תואם את סדר הבראקט
-    const orient = r => (KO_FLAT_IDX[normalizeTeam(r.home)] ?? 999) <= (KO_FLAT_IDX[normalizeTeam(r.away)] ?? 999);
+    const orient = r => (koFlatIdx()[normalizeTeam(r.home)] ?? 999) <= (koFlatIdx()[normalizeTeam(r.away)] ?? 999);
     if (!orient(ex) && orient(rec)) byPair[canon] = rec;
   });
   return Object.values(byPair);
@@ -1787,7 +1792,7 @@ export default function Statistics() {
     const parts = key.split(' - ');
     let home = parts[0].trim(), away = parts.slice(1).join(' - ').trim();
     let hh = h, aa = a;
-    if ((KO_FLAT_IDX[normalizeTeam(home)] ?? 999) > (KO_FLAT_IDX[normalizeTeam(away)] ?? 999)) {
+    if ((koFlatIdx()[normalizeTeam(home)] ?? 999) > (koFlatIdx()[normalizeTeam(away)] ?? 999)) {
       [home, away] = [away, home]; [hh, aa] = [a, h];
     }
     const canonKey = `${home} - ${away}`;
