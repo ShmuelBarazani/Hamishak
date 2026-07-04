@@ -116,23 +116,43 @@ const koBestDefaultStage = (stages, targetIdx) => {
 };
 
 // קבוצות שהודחו — נגזר מתוצאות הנוק-אאוט שהוזנו (המפסידה בכל משחק)
+// סדר דטרמיניסטי להעדפת כיוון כשאותו משחק נשמר בשני כיוונים (הכיוון של סדר הבראקט מנצח)
+const KO_FLAT_IDX = (() => { const m = {}; WC_BRACKET_ORDER.flat().forEach((t, i) => { m[normalizeTeam(t)] = i; }); return m; })();
+// פירוק כל הרשומות + איחוד לפי זוג (בלי תלות בכיוון המפתח)
+const koParseEntries = (koResults) => {
+  const byPair = {};
+  Object.entries(koResults || {}).forEach(([key, val]) => {
+    const s = String(val);
+    const m = s.match(/(\d+)\s*-\s*(\d+)/); if (!m) return;
+    const parts = key.split(' - '); if (parts.length < 2) return;
+    const home = parts[0].trim(), away = parts.slice(1).join(' - ').trim();
+    const rec = { key, home, away, hs: +m[1], as: +m[2], adv: s.includes('|') ? s.split('|')[1].trim() : '' };
+    const canon = [normalizeTeam(home), normalizeTeam(away)].sort().join('~');
+    const ex = byPair[canon];
+    if (!ex) { byPair[canon] = rec; return; }
+    // כפילות (שני כיוונים לאותו משחק): מעדיפים את הרשומה שכיוונה תואם את סדר הבראקט
+    const orient = r => (KO_FLAT_IDX[normalizeTeam(r.home)] ?? 999) <= (KO_FLAT_IDX[normalizeTeam(r.away)] ?? 999);
+    if (!orient(ex) && orient(rec)) byPair[canon] = rec;
+  });
+  return Object.values(byPair);
+};
 const koEliminatedSet = (koResults) => {
   const el = new Set();
-  Object.entries(koResults||{}).forEach(([key,val])=>{
-    const s = String(val);
-    const m = s.match(/(\d+)\s*-\s*(\d+)/); if(!m) return;
-    const parts = key.split(' - '); if(parts.length<2) return;
-    const home = parts[0], away = parts.slice(1).join(' - ');
-    const hs=+m[1], as=+m[2];
-    if(hs>as) el.add(normalizeTeam(away));
-    else if(as>hs) el.add(normalizeTeam(home));
-    else {
-      // תיקו → המנצח נקבע לפי הקבוצה שנבחרה (אחרי "|"), המפסידה מודחת
-      const adv = s.includes('|') ? s.split('|')[1].trim() : '';
-      if(adv) el.add(normalizeTeam(normalizeTeam(adv)===normalizeTeam(home)?away:home));
-    }
+  koParseEntries(koResults).forEach(({ home, away, hs, as, adv }) => {
+    if (hs > as) el.add(normalizeTeam(away));
+    else if (as > hs) el.add(normalizeTeam(home));
+    else if (adv) el.add(normalizeTeam(normalizeTeam(adv) === normalizeTeam(home) ? away : home));
   });
   return el;
+};
+// חיפוש תוצאה לזוג — בשני הכיוונים; flipped=true אם נשמרה בכיוון ההפוך (יש להפוך את התוצאה לתצוגה)
+const koLookup = (koResults, home, away) => {
+  if (!home || !away) return { val: null, flipped: false };
+  const direct = koResults?.[`${home} - ${away}`];
+  if (direct != null) return { val: String(direct), flipped: false };
+  const rev = koResults?.[`${away} - ${home}`];
+  if (rev != null) return { val: String(rev), flipped: true };
+  return { val: null, flipped: false };
 };
 // הקבוצות שעדיין יכולות למלא צד מסוים (לפי הבלוק, פחות המודחות)
 const koAliveInBlock = (start, len, el) => {
@@ -1763,8 +1783,19 @@ export default function Statistics() {
     if(h===''||a===''||h==null||a==null||!currentGame||!isAdmin) return;
     const tie = (+h===+a);
     if(tie && !adv){ setKoMsg({key, type:'err', text:'תיקו — יש לבחור מי עלתה'}); return; }
-    const val = tie ? `${h}-${a}|${adv}` : `${h}-${a}`;
-    const next = { ...koResults, [key]:val };
+    // 🧭 נרמול כיוון: המפתח נשמר תמיד בכיוון סדר-הבראקט, והמפתח ההפוך נמחק (מניעת הדחה כפולה)
+    const parts = key.split(' - ');
+    let home = parts[0].trim(), away = parts.slice(1).join(' - ').trim();
+    let hh = h, aa = a;
+    if ((KO_FLAT_IDX[normalizeTeam(home)] ?? 999) > (KO_FLAT_IDX[normalizeTeam(away)] ?? 999)) {
+      [home, away] = [away, home]; [hh, aa] = [a, h];
+    }
+    const canonKey = `${home} - ${away}`;
+    const revKey = `${away} - ${home}`;
+    const val = tie ? `${hh}-${aa}|${adv}` : `${hh}-${aa}`;
+    const next = { ...koResults, [canonKey]: val };
+    delete next[revKey];
+    key = canonKey;
     setKoResults(next);                                   // עדכון מיידי בתצוגה
     setKoDraft(d=>{ const c={...d}; delete c[key]; return c; });
     setKoMsg({key, type:'saving'});
@@ -2508,10 +2539,12 @@ export default function Statistics() {
     };
     const resultOf = (home,away) => {
       if(!home||!away) return {sc:null,win:null};
-      const res=koResults[`${home} - ${away}`]||'';
-      const m=res?res.match(/(\d+)\s*-\s*(\d+)/):null;
-      const adv=res.includes('|')?res.split('|')[1].trim():'';
-      const win=m?(+m[1]>+m[2]?'h':(+m[1]<+m[2]?'a':(adv?(normalizeTeam(adv)===normalizeTeam(home)?'h':'a'):null))):null;
+      const { val, flipped } = koLookup(koResults, home, away);
+      const res = val || '';
+      let m = res ? res.match(/(\d+)\s*-\s*(\d+)/) : null;
+      if (m && flipped) m = [m[0], m[2], m[1]]; // היפוך התוצאה לכיוון התצוגה
+      const adv = res.includes('|') ? res.split('|')[1].trim() : '';
+      const win = m ? (+m[1]>+m[2]?'h':(+m[1]<+m[2]?'a':(adv?(normalizeTeam(adv)===normalizeTeam(home)?'h':'a'):null))) : null;
       return {sc:m,win};
     };
     const teamCell = (name,isWin,isLoser) => (
@@ -2679,8 +2712,10 @@ export default function Statistics() {
               const aTeams=q.awayTeams||(q.away_team?[q.away_team]:[]);
               const koResolved=q.isKnockout&&hTeams.length===1&&aTeams.length===1;
               const koKey=koResolved?`${hTeams[0]} - ${aTeams[0]}`:null;
-              const koRes=koKey?(koResults[koKey]||''):'';
-              const koSc=koRes?koRes.match(/(\d+)\s*-\s*(\d+)/):null;
+              const koLk=koResolved?koLookup(koResults,hTeams[0],aTeams[0]):{val:null,flipped:false};
+              const koRes=koLk.val||'';
+              let koSc=koRes?koRes.match(/(\d+)\s*-\s*(\d+)/):null;
+              if(koSc&&koLk.flipped) koSc=[koSc[0],koSc[2],koSc[1]]; // הפוך לתצוגה בכיוון הכרטיס
               const koAdv=koRes.includes('|')?koRes.split('|')[1].trim():'';
               const koTie=koSc&&(+koSc[1]===+koSc[2]);
               const koWin=koSc?(+koSc[1]>+koSc[2]?'home':(+koSc[1]<+koSc[2]?'away':(koAdv?(normalizeTeam(koAdv)===normalizeTeam(hTeams[0])?'home':'away'):null))):null;
