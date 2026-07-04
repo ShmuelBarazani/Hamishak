@@ -159,6 +159,38 @@ const koLookup = (koResults, home, away) => {
   if (rev != null) return { val: String(rev), flipped: true };
   return { val: null, flipped: false };
 };
+
+// 🌳 פותר עץ חסין: מנצחת-לכל-משחק (חיפוש דו-כיווני, עדיפות מובנית לכיוון הבראקט) —
+//    לא תלוי ב"סט מודחות" ולכן חסין לרשומות כפולות/סותרות.
+const koResolve = (koResults) => {
+  const wMemo = {}, pMemo = {};
+  const winner = (lvl, idx) => {
+    const k = `${lvl}:${idx}`; if (k in wMemo) return wMemo[k];
+    let h, a;
+    if (lvl === 0) { [h, a] = WC_BRACKET_ORDER[idx]; }
+    else { h = winner(lvl - 1, idx * 2); a = winner(lvl - 1, idx * 2 + 1); }
+    if (!h || !a) return (wMemo[k] = null);
+    const { val, flipped } = koLookup(koResults, h, a);
+    if (val == null) return (wMemo[k] = null);
+    const m = val.match(/(\d+)\s*-\s*(\d+)/); if (!m) return (wMemo[k] = null);
+    let hs = +m[1], as = +m[2]; if (flipped) { const t = hs; hs = as; as = t; }
+    if (hs > as) return (wMemo[k] = h);
+    if (as > hs) return (wMemo[k] = a);
+    const adv = val.includes('|') ? val.split('|')[1].trim() : '';
+    if (!adv) return (wMemo[k] = null);
+    const na = normalizeTeam(adv);
+    return (wMemo[k] = na === normalizeTeam(h) ? h : (na === normalizeTeam(a) ? a : null));
+  };
+  // מי עוד יכולה להגיע לצומת: המנצחת אם ידועה, אחרת איחוד האפשרויות במורד העץ
+  const possible = (lvl, idx) => {
+    const k = `${lvl}:${idx}`; if (k in pMemo) return pMemo[k];
+    const w = winner(lvl, idx);
+    if (w) return (pMemo[k] = [w]);
+    if (lvl === 0) return (pMemo[k] = [...WC_BRACKET_ORDER[idx]]);
+    return (pMemo[k] = [...possible(lvl - 1, idx * 2), ...possible(lvl - 1, idx * 2 + 1)]);
+  };
+  return { winner, possible };
+};
 // הקבוצות שעדיין יכולות למלא צד מסוים (לפי הבלוק, פחות המודחות)
 const koAliveInBlock = (start, len, el) => {
   const out=[];
@@ -1982,12 +2014,11 @@ export default function Statistics() {
           time:f.time, day:f.day, mon:f.mon
         });
       });
-      // שמינית → גמר — קבוצות אפשריות לפי הבראקט (מצטמצמות עם הזנת תוצאות)
+      // שמינית → גמר — קבוצות אפשריות לפי פותר העץ (מנצחת ידועה ⇒ קבוצה אחת)
+      const kResolver = koResolve(koResults);
       WC_KO_ROUNDS.forEach(r=>{
-        const [hStart,hLen]=koSlotBlock(r.lvl,r.idx,'home');
-        const [aStart,aLen]=koSlotBlock(r.lvl,r.idx,'away');
-        const homeTeams=koAliveInBlock(hStart,hLen,el);
-        const awayTeams=koAliveInBlock(aStart,aLen,el);
+        const homeTeams=kResolver.possible(r.lvl-1, r.idx*2);
+        const awayTeams=kResolver.possible(r.lvl-1, r.idx*2+1);
         const key=`${r.mon}-${r.day}`;
         if(!map[key]) map[key]=[];
         map[key].push({
@@ -2534,12 +2565,10 @@ export default function Statistics() {
     }
   };
   const renderBracket = () => {
-    const el = koEliminatedSet(koResults);
+    const bResolver = koResolve(koResults);
     const nodeTeams = (round, idx) => {
       if(round===0) return WC_BRACKET_ORDER[idx];
-      const [hs,hl]=koSlotBlock(round,idx,'home');
-      const [as,al]=koSlotBlock(round,idx,'away');
-      const h=koAliveInBlock(hs,hl,el), a=koAliveInBlock(as,al,el);
+      const h=bResolver.possible(round-1,idx*2), a=bResolver.possible(round-1,idx*2+1);
       return [h.length===1?h[0]:null, a.length===1?a[0]:null];
     };
     const resultOf = (home,away) => {
