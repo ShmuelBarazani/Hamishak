@@ -173,7 +173,7 @@ export default function Simulator() {
   const [rankRows, setRankRows]   = useState([]);
   const [koResults, setKoResults] = useState({});
   const [me, setMe]               = useState('');
-  const [includeSpecials, setIncludeSpecials] = useState(true);
+  const [specialsMode, setSpecialsMode] = useState('mine'); // 'mine' | 'popular' | 'off'
   const [overrides, setOverrides] = useState({});
   const [simulating, setSimulating] = useState(false);
   const [result, setResult]       = useState(null);
@@ -238,7 +238,7 @@ export default function Simulator() {
 
   const totalOf = r => (r && typeof r === 'object' && 'total' in r) ? (Number(r.total) || 0) : (Number(r) || 0);
 
-  const compute = (who, ovr, withSpecials) => {
+  const compute = (who, ovr, sMode) => {
     const myPred = latestByPart[who] || {};
 
     const mySets = {}; STAGE_TIDS.forEach(t => { mySets[t] = new Set(); });
@@ -307,6 +307,34 @@ export default function Simulator() {
     const r16       = WC_BRACKET_ORDER.map((_, i) => W(0, i)).filter(Boolean);
     const runnerUp  = finalists.find(t => normT(t) !== normT(champion || '')) || null;
 
+    // 🗳️ התשובה הפופולרית לכל שאלה פתוחה — לפי כל המשתתפים (ספירה מנורמלת)
+    const openQids = new Set(questions.filter(q =>
+      q.table_id !== 'T1' && !STAGE_TIDS.includes(q.table_id) && isEmpty(q.actual_result) &&
+      !(champQ && q.id === champQ.id) && !(runnerQ && q.id === runnerQ.id)
+    ).map(q => q.id));
+    const popCount = {};
+    engineRows.forEach(p => {
+      if (!openQids.has(p.question_id)) return;
+      const t = String(p.text_prediction ?? '').trim();
+      if (!t) return;
+      const nk = normT(t);
+      if (!popCount[p.question_id]) popCount[p.question_id] = {};
+      const bucket = popCount[p.question_id];
+      if (!bucket[nk]) bucket[nk] = { count: 0, reps: {} };
+      bucket[nk].count++;
+      bucket[nk].reps[t] = (bucket[nk].reps[t] || 0) + 1;
+    });
+    const popular = {};
+    Object.entries(popCount).forEach(([qid, bucket]) => {
+      let best = null;
+      Object.values(bucket).forEach(b => { if (!best || b.count > best.count) best = b; });
+      if (!best) return;
+      let rep = '', repC = -1;
+      Object.entries(best.reps).forEach(([t, c]) => { if (c > repC) { rep = t; repC = c; } });
+      const total = Object.values(bucket).reduce((s, b) => s + b.count, 0);
+      popular[qid] = { answer: rep, count: best.count, pct: Math.round((best.count / total) * 100) };
+    });
+
     const stageTeams = { T19: r16, T21: quarters, T23: semis, T25: finalists };
     const buildSim = (fillSpecials) => {
       const simQ = questions.map(q => ({ ...q }));
@@ -323,15 +351,17 @@ export default function Simulator() {
         if (q.table_id === 'T1' || STAGE_TIDS.includes(q.table_id)) return;
         if (!isEmpty(q.actual_result)) return;
         if ((champQ && q.id === champQ.id) || (runnerQ && q.id === runnerQ.id)) return;
-        const mine = myPred[q.id];
-        if (mine && String(mine).trim() !== '') {
-          specials.push({ id: q.id, text: q.question_text, answer: mine, pts: q.possible_points || 0 });
-          if (fillSpecials) q.actual_result = mine;
+        const mine = String(myPred[q.id] ?? '').trim();
+        const pop = popular[q.id] || null;
+        const fill = fillSpecials === 'mine' ? mine : fillSpecials === 'popular' ? (pop?.answer || '') : '';
+        if (mine || pop) {
+          specials.push({ id: q.id, text: q.question_text, mine: mine || '—', pop, used: fill || null, pts: q.possible_points || 0 });
+          if (fill) q.actual_result = fill;
         }
       });
       return { simQ, specials };
     };
-    const { simQ, specials: specialsList } = buildSim(withSpecials);
+    const { simQ, specials: specialsList } = buildSim(sMode);
 
     if (!baseAllRef.current) baseAllRef.current = calculateAllParticipantsScores(questions, engineRows);
     const baseAll = baseAllRef.current;
@@ -381,19 +411,19 @@ export default function Simulator() {
       const d = (sBy[k]?.score || 0) - (bBy[k]?.score || 0);
       if (Math.abs(d) > 0.001) gainByQid[k] = d;
     });
-    specialsList.forEach(sp => { sp.gain = withSpecials ? (gainByQid[sp.id] ?? 0) : null; });
+    specialsList.forEach(sp => { sp.gain = sMode !== 'off' ? (gainByQid[sp.id] ?? 0) : null; });
 
     let engineDiffs = 0;
     table.forEach(r => { if (Math.abs(totalOf(baseAll[r.name]) - r.official) > 0.001) engineDiffs++; });
     const meRow = table.find(r => r.name === who) || null;
-    return { table, meRow, matches, champion, runnerUp, specialsList, withSpecials, engineDiffs, audit, auditSum, bonusDelta, stageBonus };
+    return { table, meRow, matches, champion, runnerUp, specialsList, sMode, engineDiffs, audit, auditSum, bonusDelta, stageBonus };
   };
 
-  const run = (ovr = overrides, withSpecials = includeSpecials) => {
+  const run = (ovr = overrides, mode = specialsMode) => {
     if (!me) return;
     setSimulating(true);
     setTimeout(() => {
-      try { setResult(compute(me, ovr, withSpecials)); }
+      try { setResult(compute(me, ovr, mode)); }
       catch (e) { console.error(e); setResult({ error: 'הסימולציה נכשלה: ' + (e?.message || '') }); }
       setSimulating(false);
     }, 40);
@@ -401,10 +431,10 @@ export default function Simulator() {
   const clickWinner = (match, team) => {
     if (match.src === 'real' || simulating) return;
     const next = { ...overrides, [match.key]: team };
-    setOverrides(next); run(next, includeSpecials);
+    setOverrides(next); run(next, specialsMode);
   };
-  const resetOverrides = () => { setOverrides({}); run({}, includeSpecials); };
-  const toggleSpecials = () => { const v = !includeSpecials; setIncludeSpecials(v); if (result && !result.error) run(overrides, v); };
+  const resetOverrides = () => { setOverrides({}); run({}, specialsMode); };
+  const setMode = m => { setSpecialsMode(m); if (result && !result.error) run(overrides, m); };
 
   const S = {
     page: { direction: 'rtl', padding: '16px', maxWidth: 1280, margin: '0 auto' },
@@ -454,10 +484,17 @@ export default function Simulator() {
                 {simulating ? <Loader2 className="animate-spin" style={{ width: 18, height: 18 }} /> : <Wand2 style={{ width: 18, height: 18 }} />}
                 התרחיש המושלם שלי
               </button>
-              <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: '#cbd5e1', fontSize: '0.82rem', cursor: 'pointer' }}>
-                <input type="checkbox" checked={includeSpecials} onChange={toggleSpecials} />
-                השאלות הפתוחות נופלות לפי התשובות שלי
-              </label>
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ color: '#cbd5e1', fontSize: '0.8rem' }}>שאלות פתוחות:</span>
+                <div style={{ display: 'inline-flex', borderRadius: 8, overflow: 'hidden', border: '1px solid rgba(168,85,247,0.4)' }}>
+                  {[['mine','התשובות שלי'],['popular','🗳️ הפופולריות'],['off','ללא']].map(([m, lbl]) => (
+                    <button key={m} onClick={() => setMode(m)} disabled={simulating}
+                      style={{ background: specialsMode === m ? 'rgba(168,85,247,0.35)' : 'transparent', color: specialsMode === m ? '#e9d5ff' : '#94a3b8', border: 'none', padding: '6px 11px', fontSize: '0.78rem', fontWeight: specialsMode === m ? 800 : 500, cursor: 'pointer', fontFamily: 'inherit' }}>
+                      {lbl}
+                    </button>
+                  ))}
+                </div>
+              </div>
               {Object.keys(overrides).length > 0 && (
                 <button onClick={resetOverrides} style={{ background: 'transparent', border: '1px solid rgba(148,163,184,0.4)', color: '#cbd5e1', borderRadius: 8, padding: '6px 12px', fontSize: '0.8rem', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
                   <RotateCcw style={{ width: 13, height: 13 }} /> חזרה לתרחיש המושלם
@@ -600,7 +637,7 @@ export default function Simulator() {
                 <CardContent style={{ padding: 18 }}>
                   <div onClick={() => setSpecOpen(o => !o)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}>
                     <h3 style={{ color: '#6ee7b7', fontSize: '0.95rem', fontWeight: 800, margin: 0 }}>
-                      ✨ השאלות הפתוחות ({result.specialsList.length}) — {result.withSpecials ? 'נופלות לפי התשובות שלך' : 'לא נכללות בתרחיש'}
+                      ✨ השאלות הפתוחות ({result.specialsList.length}) — {result.sMode === 'mine' ? 'נופלות לפי התשובות שלך' : result.sMode === 'popular' ? 'נופלות לפי התשובה הפופולרית 🗳️' : 'לא נכללות בתרחיש'}
                     </h3>
                     <span style={{ color: '#64748b', fontSize: '0.8rem' }}>{specOpen ? '▲ סגור' : '▼ פתח'}</span>
                   </div>
@@ -610,10 +647,17 @@ export default function Simulator() {
                         <div key={sp.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.15)', borderRadius: 8, padding: '6px 10px' }}>
                           <div style={{ minWidth: 0 }}>
                             <div style={{ fontSize: '0.79rem', color: '#e2e8f0' }}>{sp.text}</div>
-                            <div style={{ fontSize: '0.74rem', color: '#94a3b8' }}>הניחוש: <b style={{ color: '#6ee7b7' }}>{sp.answer}</b></div>
+                            {result.sMode === 'popular' ? (
+                              <div style={{ fontSize: '0.74rem', color: '#94a3b8' }}>
+                                🗳️ הפופולרית: <b style={{ color: '#67e8f9' }}>{sp.pop ? `${sp.pop.answer} (${sp.pop.pct}%)` : '—'}</b>
+                                <span style={{ marginRight: 8 }}>· שלך: <b style={{ color: sp.pop && normT(sp.mine) === normT(sp.pop.answer) ? '#6ee7b7' : '#f87171' }}>{sp.mine}</b></span>
+                              </div>
+                            ) : (
+                              <div style={{ fontSize: '0.74rem', color: '#94a3b8' }}>הניחוש שלך: <b style={{ color: '#6ee7b7' }}>{sp.mine}</b>{sp.pop && <span style={{ marginRight: 8, color: '#64748b' }}>· הפופולרית: {sp.pop.answer} ({sp.pop.pct}%)</span>}</div>
+                            )}
                           </div>
-                          <span style={{ flexShrink: 0, fontSize: '0.8rem', fontWeight: 800, color: '#34d399', background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.3)', borderRadius: 999, padding: '2px 9px' }}>
-                            {sp.gain != null ? `+${sp.gain}` : `עד +${sp.pts}`}
+                          <span style={{ flexShrink: 0, fontSize: '0.8rem', fontWeight: 800, color: (sp.gain ?? 1) > 0 ? '#34d399' : '#94a3b8', background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.3)', borderRadius: 999, padding: '2px 9px' }}>
+                            {sp.gain != null ? (sp.gain > 0 ? `+${sp.gain}` : '0') : `עד +${sp.pts}`}
                           </span>
                         </div>
                       ))}
