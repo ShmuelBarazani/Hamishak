@@ -450,11 +450,11 @@ export default function Simulator() {
     return { table, meRow, matches, champion, runnerUp, specialsList, sMode, tMode, engineDiffs, audit, auditSum, bonusDelta, stageBonus };
   };
 
-  const run = (ovr = overrides, mode = specialsMode, tree = treeMode) => {
-    if (!me) return;
+  const run = (ovr = overrides, mode = specialsMode, tree = treeMode, who = me) => {
+    if (!who) return;
     setSimulating(true);
     setTimeout(() => {
-      try { setResult(compute(me, ovr, mode, tree)); }
+      try { setResult(compute(who, ovr, mode, tree)); }
       catch (e) { console.error(e); setResult({ error: 'הסימולציה נכשלה: ' + (e?.message || '') }); }
       setSimulating(false);
     }, 40);
@@ -487,7 +487,7 @@ export default function Simulator() {
           <span style={{ fontSize: '1.7rem' }}>🎮</span>
           <div>
             <h1 style={{ color: '#f8fafc', fontSize: '1.35rem', fontWeight: 800, margin: 0 }}>סימולטור "מה אם"</h1>
-            <p style={{ color: '#94a3b8', fontSize: '0.8rem', margin: 0 }}>בחר תרחיש — וראה את הדירוג זז. לחץ על קבוצה בעץ כדי לשנות הכרעה.</p>
+            <p style={{ color: '#94a3b8', fontSize: '0.8rem', margin: 0 }}>בחר משתתף — התרחיש נבנה מיד. לחץ על קבוצה בעץ כדי לשנות הכרעה.</p>
           </div>
         </div>
         <span style={{ background: 'rgba(168,85,247,0.15)', border: '1px solid #a855f7', color: '#d8b4fe', borderRadius: 999, padding: '5px 14px', fontSize: '0.78rem', fontWeight: 700 }}>
@@ -505,44 +505,56 @@ export default function Simulator() {
       ) : (
         <>
           <Card style={{ ...S.card, marginBottom: 14 }}>
-            <CardContent style={{ padding: 18, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12 }}>
-              <label style={{ color: '#cbd5e1', fontSize: '0.9rem', fontWeight: 700 }}>אני:</label>
-              <select value={me} onChange={e => { setMe(e.target.value); setResult(null); setOverrides({}); }}
-                style={{ background: '#0f172a', color: '#f1f5f9', border: '1px solid rgba(168,85,247,0.4)', borderRadius: 8, padding: '8px 12px', fontSize: '0.9rem', minWidth: 220 }}>
-                <option value="">בחר משתתף...</option>
-                {participantNames.map(n => <option key={n} value={n}>{n}</option>)}
-              </select>
-              <button style={{ ...S.btn, opacity: me && !simulating ? 1 : 0.5 }} disabled={!me || simulating} onClick={() => run()}>
-                {simulating ? <Loader2 className="animate-spin" style={{ width: 18, height: 18 }} /> : <Wand2 style={{ width: 18, height: 18 }} />}
-                התרחיש המושלם שלי
-              </button>
-              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                <span style={{ color: '#cbd5e1', fontSize: '0.8rem' }}>🌳 עץ הבראקט:</span>
-                <div style={{ display: 'inline-flex', borderRadius: 8, overflow: 'hidden', border: '1px solid rgba(6,182,212,0.4)' }}>
-                  {[['mine','הטוב עבורי'],['popular','🗳️ חוכמת ההמונים']].map(([m, lbl]) => (
-                    <button key={m} onClick={() => setTree(m)} disabled={simulating}
-                      style={{ background: treeMode === m ? 'rgba(6,182,212,0.3)' : 'transparent', color: treeMode === m ? '#a5f3fc' : '#94a3b8', border: 'none', padding: '6px 11px', fontSize: '0.78rem', fontWeight: treeMode === m ? 800 : 500, cursor: 'pointer', fontFamily: 'inherit' }}>
-                      {lbl}
+            <CardContent style={{ padding: '14px 18px' }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', gap: 18 }}>
+                <div>
+                  <div style={{ color: '#94a3b8', fontSize: '0.72rem', fontWeight: 700, marginBottom: 5 }}>👤 משתתף</div>
+                  <select value={me}
+                    onChange={e => { const v = e.target.value; setMe(v); setOverrides({}); setResult(null); if (v) run({}, specialsMode, treeMode, v); }}
+                    style={{ background: '#0f172a', color: '#f1f5f9', border: '1px solid rgba(148,163,184,0.35)', borderRadius: 9, padding: '8px 12px', fontSize: '0.88rem', minWidth: 210, height: 38 }}>
+                    <option value="">בחר משתתף...</option>
+                    {participantNames.map(n => <option key={n} value={n}>{n}</option>)}
+                  </select>
+                </div>
+
+                <div>
+                  <div style={{ color: '#94a3b8', fontSize: '0.72rem', fontWeight: 700, marginBottom: 5 }}>🌳 עץ הבראקט</div>
+                  <div style={{ display: 'inline-flex', borderRadius: 9, overflow: 'hidden', border: '1px solid rgba(6,182,212,0.35)', height: 38 }}>
+                    {[['mine','הטוב עבורי'],['popular','🗳️ חוכמת ההמונים']].map(([m, lbl]) => (
+                      <button key={m} onClick={() => setTree(m)} disabled={simulating}
+                        style={{ background: treeMode === m ? 'rgba(6,182,212,0.28)' : 'transparent', color: treeMode === m ? '#a5f3fc' : '#94a3b8', border: 'none', padding: '0 13px', fontSize: '0.8rem', fontWeight: treeMode === m ? 800 : 500, cursor: 'pointer', fontFamily: 'inherit' }}>
+                        {lbl}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <div style={{ color: '#94a3b8', fontSize: '0.72rem', fontWeight: 700, marginBottom: 5 }}>✨ שאלות פתוחות</div>
+                  <div style={{ display: 'inline-flex', borderRadius: 9, overflow: 'hidden', border: '1px solid rgba(168,85,247,0.35)', height: 38 }}>
+                    {[['mine','התשובות שלי'],['popular','🗳️ חוכמת ההמונים'],['off','ללא']].map(([m, lbl]) => (
+                      <button key={m} onClick={() => setMode(m)} disabled={simulating}
+                        style={{ background: specialsMode === m ? 'rgba(168,85,247,0.3)' : 'transparent', color: specialsMode === m ? '#e9d5ff' : '#94a3b8', border: 'none', padding: '0 13px', fontSize: '0.8rem', fontWeight: specialsMode === m ? 800 : 500, cursor: 'pointer', fontFamily: 'inherit' }}>
+                        {lbl}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, height: 38 }}>
+                  {simulating && (
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: '#a855f7', fontSize: '0.82rem', fontWeight: 700 }}>
+                      <Loader2 className="animate-spin" style={{ width: 16, height: 16 }} /> מחשב...
+                    </span>
+                  )}
+                  {!simulating && Object.keys(overrides).length > 0 && (
+                    <button onClick={resetOverrides} style={{ background: 'transparent', border: '1px solid rgba(148,163,184,0.4)', color: '#cbd5e1', borderRadius: 9, padding: '7px 12px', fontSize: '0.78rem', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                      <RotateCcw style={{ width: 13, height: 13 }} /> איפוס שינויים ידניים
                     </button>
-                  ))}
+                  )}
                 </div>
               </div>
-              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                <span style={{ color: '#cbd5e1', fontSize: '0.8rem' }}>✨ תרחיש שאלות פתוחות:</span>
-                <div style={{ display: 'inline-flex', borderRadius: 8, overflow: 'hidden', border: '1px solid rgba(168,85,247,0.4)' }}>
-                  {[['mine','התשובות שלי'],['popular','🗳️ חוכמת ההמונים'],['off','ללא']].map(([m, lbl]) => (
-                    <button key={m} onClick={() => setMode(m)} disabled={simulating}
-                      style={{ background: specialsMode === m ? 'rgba(168,85,247,0.35)' : 'transparent', color: specialsMode === m ? '#e9d5ff' : '#94a3b8', border: 'none', padding: '6px 11px', fontSize: '0.78rem', fontWeight: specialsMode === m ? 800 : 500, cursor: 'pointer', fontFamily: 'inherit' }}>
-                      {lbl}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              {Object.keys(overrides).length > 0 && (
-                <button onClick={resetOverrides} style={{ background: 'transparent', border: '1px solid rgba(148,163,184,0.4)', color: '#cbd5e1', borderRadius: 8, padding: '6px 12px', fontSize: '0.8rem', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                  <RotateCcw style={{ width: 13, height: 13 }} /> חזרה לתרחיש המושלם
-                </button>
-              )}
+              {!me && <p style={{ color: '#64748b', fontSize: '0.76rem', margin: '10px 0 0' }}>בחר משתתף — התרחיש נבנה אוטומטית לפי המצבים שנבחרו. לחיצה על קבוצה בעץ משנה הכרעה.</p>}
             </CardContent>
           </Card>
 
