@@ -108,8 +108,9 @@ async function loadSimPredictions(gameId, questions, onStage) {
   if (_memPreds[gameId]) { onStage?.('מטמון ✓'); return _memPreds[gameId]; }
   const qids = neededQids(questions);
   const qidSet = new Set(qids);
+  const SIM_KEY = `tlt_simpreds_v2_${gameId}`;
 
-  // 1) אם קיים המטמון המלא של מסך הסטטיסטיקות — משתמשים בו (אפס רשת) ומסננים בזיכרון
+  // 1) המטמון המלא של הסטטיסטיקות — תמיד superset; סינון בזיכרון, אפס רשת
   try {
     const full = await idbGet(PREDS_KEY(gameId));
     if (full && full.v === 1 && Date.now() - (full.ts || 0) <= PREDS_TTL_MS) {
@@ -118,22 +119,28 @@ async function loadSimPredictions(gameId, questions, onStage) {
     }
   } catch { /* — */ }
 
-  // 2) מטמון ייעודי של הסימולטור
-  const SIM_KEY = `tlt_simpreds_v1_${gameId}`;
-  const { src } = await resolvePredsSource(gameId);
-  const { count } = await supabase.from(src).select('question_id', { count: 'exact', head: true })
-    .eq('game_id', gameId).in('question_id', qids);
-  if (!count) return [];
+  // 2) המטמון הייעודי — תקף אם הוא מכיל את כל השאלות הנדרשות (superset).
+  //    סגירת שאלה בתוצאת אמת רק מקטינה את הצורך — מסננים בזיכרון, לא מורידים מחדש.
   try {
     const c = await idbGet(SIM_KEY);
-    if (c && c.v === 1 && c.src === src && c.count === count && c.nq === qids.length && Date.now() - (c.ts || 0) <= PREDS_TTL_MS) {
-      const dec = decodePreds(c);
-      if (dec.length === count) { onStage?.('מטמון ✓'); _memPreds[gameId] = dec; return dec; }
+    if (c && c.v === 1 && Array.isArray(c.qids) && Date.now() - (c.ts || 0) <= PREDS_TTL_MS) {
+      const covered = new Set(c.qids);
+      if (qids.every(q => covered.has(q))) {
+        const rows = decodePreds(c).filter(p => qidSet.has(p.question_id));
+        onStage?.('מטמון ✓'); _memPreds[gameId] = rows; return rows;
+      }
     }
   } catch { /* — */ }
 
-  // 3) הורדה ממוקדת — רק השאלות הרלוונטיות (~רבע מהנפח המלא)
-  onStage?.(`מוריד ${count.toLocaleString()} ניחושים רלוונטיים (שאלות פתוחות בלבד)...`);
+  // 3) הורדה ממוקדת — רק בפעם הראשונה (או כשנוספו שאלות חדשות / פג תוקף)
+  const { src, count } = await (async () => {
+    const r = await resolvePredsSource(gameId);
+    const { count } = await supabase.from(r.src).select('question_id', { count: 'exact', head: true })
+      .eq('game_id', gameId).in('question_id', qids);
+    return { src: r.src, count: count || 0 };
+  })();
+  if (!count) return [];
+  onStage?.(`מוריד ${count.toLocaleString()} ניחושים רלוונטיים (חד-פעמי)...`);
   const PAGE = 1000; const jobs = [];
   for (let from = 0; from < count; from += PAGE) {
     jobs.push(supabase.from(src).select(PRED_COLS).eq('game_id', gameId).in('question_id', qids)
@@ -144,7 +151,7 @@ async function loadSimPredictions(gameId, questions, onStage) {
   let all = [];
   for (const r of results) { if (r.error) throw r.error; if (r.data?.length) all = all.concat(r.data); }
   all.forEach((p, i) => { if (p.id == null) p.id = `n${i}`; });
-  const enc = encodePreds(all, count); enc.src = src; enc.nq = qids.length;
+  const enc = encodePreds(all, count); enc.src = src; enc.qids = qids;
   idbSet(SIM_KEY, enc);
   _memPreds[gameId] = all;
   return all;
@@ -174,6 +181,7 @@ export default function Simulator() {
   const [koResults, setKoResults] = useState({});
   const [me, setMe]               = useState('');
   const [specialsMode, setSpecialsMode] = useState('mine'); // 'mine' | 'popular' | 'off'
+  const [treeMode, setTreeMode] = useState('mine');           // 'mine' | 'popular'
   const [overrides, setOverrides] = useState({});
   const [simulating, setSimulating] = useState(false);
   const [result, setResult]       = useState(null);
@@ -238,7 +246,7 @@ export default function Simulator() {
 
   const totalOf = r => (r && typeof r === 'object' && 'total' in r) ? (Number(r.total) || 0) : (Number(r) || 0);
 
-  const compute = (who, ovr, sMode) => {
+  const compute = (who, ovr, sMode, tMode) => {
     const myPred = latestByPart[who] || {};
 
     const mySets = {}; STAGE_TIDS.forEach(t => { mySets[t] = new Set(); });
@@ -262,6 +270,22 @@ export default function Simulator() {
       const tid = NEXT_STAGE_OF_LEVEL[lvl]; const n = normT(team);
       if (tid === 'CHAMP') return (n && n === myChamp) ? (slotPts.CHAMP || 0) : 0;
       return mySets[tid]?.has(n) ? (slotPts[tid] || 0) : 0;
+    };
+
+    // 🗳️ חוכמת ההמונים בעץ: כמה משתתפים ניחשו שכל קבוצה תגיע לשלב הבא
+    const stagePop = { T19: {}, T21: {}, T23: {}, T25: {} }; const champPop = {};
+    if (tMode === 'popular') {
+      const stageQ = {}; questions.forEach(q => { if (STAGE_TIDS.includes(q.table_id)) stageQ[q.id] = q.table_id; });
+      engineRows.forEach(p => {
+        const t = String(p.text_prediction ?? '').trim(); if (!t) return;
+        const tid = stageQ[p.question_id];
+        if (tid) { const n = normT(t); stagePop[tid][n] = (stagePop[tid][n] || 0) + 1; }
+        else if (champQ && p.question_id === champQ.id) { const n = normT(t); champPop[n] = (champPop[n] || 0) + 1; }
+      });
+    }
+    const votesFor = (team, lvl) => {
+      const tid = NEXT_STAGE_OF_LEVEL[lvl]; const n = normT(team);
+      return tid === 'CHAMP' ? (champPop[n] || 0) : (stagePop[tid]?.[n] || 0);
     };
 
     // 🔒 תוצאות אמת — דו-כיווני ומנורמל
@@ -296,6 +320,13 @@ export default function Simulator() {
       let w, src;
       if (real) { w = real; src = 'real'; }
       else if (ovr[key] && (normT(ovr[key]) === normT(h) || normT(ovr[key]) === normT(a))) { w = normT(ovr[key]) === normT(h) ? h : a; src = 'override'; }
+      else if (tMode === 'popular') {
+        const vh = votesFor(h, lvl), va = votesFor(a, lvl);
+        w = va > vh ? a : (vh > va ? h : (prio(a) > prio(h) ? a : h));
+        src = 'auto';
+        matches.push({ key, lvl, idx, home: h, away: a, winner: w, src, myGain: gainOf(w, lvl), votes: [vh, va] });
+        return (memo[key] = w);
+      }
       else { w = prio(a) > prio(h) ? a : h; src = 'auto'; }
       matches.push({ key, lvl, idx, home: h, away: a, winner: w, src, myGain: gainOf(w, lvl) });
       return (memo[key] = w);
@@ -307,7 +338,7 @@ export default function Simulator() {
     const r16       = WC_BRACKET_ORDER.map((_, i) => W(0, i)).filter(Boolean);
     const runnerUp  = finalists.find(t => normT(t) !== normT(champion || '')) || null;
 
-    // 🗳️ התשובה הפופולרית לכל שאלה פתוחה — לפי כל המשתתפים (ספירה מנורמלת)
+    // 🗳️ חוכמת ההמונים: התשובה הנפוצה לכל שאלה פתוחה — לפי כל המשתתפים (ספירה מנורמלת)
     const openQids = new Set(questions.filter(q =>
       q.table_id !== 'T1' && !STAGE_TIDS.includes(q.table_id) && isEmpty(q.actual_result) &&
       !(champQ && q.id === champQ.id) && !(runnerQ && q.id === runnerQ.id)
@@ -416,14 +447,14 @@ export default function Simulator() {
     let engineDiffs = 0;
     table.forEach(r => { if (Math.abs(totalOf(baseAll[r.name]) - r.official) > 0.001) engineDiffs++; });
     const meRow = table.find(r => r.name === who) || null;
-    return { table, meRow, matches, champion, runnerUp, specialsList, sMode, engineDiffs, audit, auditSum, bonusDelta, stageBonus };
+    return { table, meRow, matches, champion, runnerUp, specialsList, sMode, tMode, engineDiffs, audit, auditSum, bonusDelta, stageBonus };
   };
 
-  const run = (ovr = overrides, mode = specialsMode) => {
+  const run = (ovr = overrides, mode = specialsMode, tree = treeMode) => {
     if (!me) return;
     setSimulating(true);
     setTimeout(() => {
-      try { setResult(compute(me, ovr, mode)); }
+      try { setResult(compute(me, ovr, mode, tree)); }
       catch (e) { console.error(e); setResult({ error: 'הסימולציה נכשלה: ' + (e?.message || '') }); }
       setSimulating(false);
     }, 40);
@@ -431,10 +462,11 @@ export default function Simulator() {
   const clickWinner = (match, team) => {
     if (match.src === 'real' || simulating) return;
     const next = { ...overrides, [match.key]: team };
-    setOverrides(next); run(next, specialsMode);
+    setOverrides(next); run(next);
   };
-  const resetOverrides = () => { setOverrides({}); run({}, specialsMode); };
-  const setMode = m => { setSpecialsMode(m); if (result && !result.error) run(overrides, m); };
+  const resetOverrides = () => { setOverrides({}); run({}); };
+  const setMode = m => { setSpecialsMode(m); if (result && !result.error) run(overrides, m, treeMode); };
+  const setTree = m => { setTreeMode(m); setOverrides({}); if (result && !result.error) run({}, specialsMode, m); };
 
   const S = {
     page: { direction: 'rtl', padding: '16px', maxWidth: 1280, margin: '0 auto' },
@@ -485,9 +517,20 @@ export default function Simulator() {
                 התרחיש המושלם שלי
               </button>
               <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                <span style={{ color: '#cbd5e1', fontSize: '0.8rem' }}>שאלות פתוחות:</span>
+                <span style={{ color: '#cbd5e1', fontSize: '0.8rem' }}>🌳 עץ הבראקט:</span>
+                <div style={{ display: 'inline-flex', borderRadius: 8, overflow: 'hidden', border: '1px solid rgba(6,182,212,0.4)' }}>
+                  {[['mine','הטוב עבורי'],['popular','🗳️ חוכמת ההמונים']].map(([m, lbl]) => (
+                    <button key={m} onClick={() => setTree(m)} disabled={simulating}
+                      style={{ background: treeMode === m ? 'rgba(6,182,212,0.3)' : 'transparent', color: treeMode === m ? '#a5f3fc' : '#94a3b8', border: 'none', padding: '6px 11px', fontSize: '0.78rem', fontWeight: treeMode === m ? 800 : 500, cursor: 'pointer', fontFamily: 'inherit' }}>
+                      {lbl}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ color: '#cbd5e1', fontSize: '0.8rem' }}>✨ תרחיש שאלות פתוחות:</span>
                 <div style={{ display: 'inline-flex', borderRadius: 8, overflow: 'hidden', border: '1px solid rgba(168,85,247,0.4)' }}>
-                  {[['mine','התשובות שלי'],['popular','🗳️ הפופולריות'],['off','ללא']].map(([m, lbl]) => (
+                  {[['mine','התשובות שלי'],['popular','🗳️ חוכמת ההמונים'],['off','ללא']].map(([m, lbl]) => (
                     <button key={m} onClick={() => setMode(m)} disabled={simulating}
                       style={{ background: specialsMode === m ? 'rgba(168,85,247,0.35)' : 'transparent', color: specialsMode === m ? '#e9d5ff' : '#94a3b8', border: 'none', padding: '6px 11px', fontSize: '0.78rem', fontWeight: specialsMode === m ? 800 : 500, cursor: 'pointer', fontFamily: 'inherit' }}>
                       {lbl}
@@ -564,7 +607,7 @@ export default function Simulator() {
                   <CardContent style={{ padding: 16, maxHeight: isNarrow ? undefined : '74vh', overflowY: isNarrow ? undefined : 'auto' }}>
                     <h3 style={{ color: '#d8b4fe', fontSize: '0.95rem', fontWeight: 800, margin: '0 0 4px' }}>🌳 עץ התרחיש — לחץ על קבוצה כדי לשנות הכרעה</h3>
                     <p style={{ color: '#64748b', fontSize: '0.72rem', margin: '0 0 12px' }}>
-                      <span style={{ color: '#fbbf24' }}>🔒 צהוב = תוצאת אמת</span> • <span style={{ color: '#6ee7b7' }}>ירוק = אוטומטי (הטוב עבורך)</span> • <span style={{ color: '#d8b4fe' }}>✎ סגול = הכרעה ששינית בלחיצה</span> • תג זהוב = כמה שווה לך
+                      <span style={{ color: '#fbbf24' }}>🔒 צהוב = תוצאת אמת</span> • <span style={{ color: '#6ee7b7' }}>ירוק = אוטומטי ({result.tMode === 'popular' ? 'לפי הרוב 🗳️' : 'הטוב עבורך'})</span> • <span style={{ color: '#d8b4fe' }}>✎ סגול = הכרעה ששינית</span> • תג זהוב = כמה שווה לך
                     </p>
                     {[0,1,2,3,4].map(lvl => {
                       const ms = result.matches.filter(m => m.lvl === lvl).sort((a, b) => a.idx - b.idx);
@@ -608,10 +651,10 @@ export default function Simulator() {
                                     );
                                   })}
                                 </div>
-                                {(m.src !== 'auto' || m.myGain > 0) && (
+                                {(m.src !== 'auto' || m.myGain > 0 || m.votes) && (
                                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 2, minHeight: 13 }}>
-                                  <span style={{ fontSize: '0.6rem', color: m.src === 'real' ? '#fbbf24' : '#c084fc', fontWeight: 700 }}>
-                                    {m.src === 'real' ? <Lock style={{ width: 9, height: 9 }} /> : m.src === 'override' ? '✎' : ''}
+                                  <span style={{ fontSize: '0.6rem', color: m.src === 'real' ? '#fbbf24' : m.src === 'override' ? '#c084fc' : '#67e8f9', fontWeight: 700 }}>
+                                    {m.src === 'real' ? <Lock style={{ width: 9, height: 9 }} /> : m.src === 'override' ? '✎' : (m.votes ? `🗳️ ${m.votes[0]}-${m.votes[1]}` : '')}
                                   </span>
                                   {m.myGain > 0 && (
                                     <span style={{ fontSize: '0.6rem', fontWeight: 800, color: '#fde68a', background: 'rgba(251,191,36,0.1)', borderRadius: 999, padding: '0 6px' }}>+{m.myGain}</span>
@@ -637,7 +680,7 @@ export default function Simulator() {
                 <CardContent style={{ padding: 18 }}>
                   <div onClick={() => setSpecOpen(o => !o)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}>
                     <h3 style={{ color: '#6ee7b7', fontSize: '0.95rem', fontWeight: 800, margin: 0 }}>
-                      ✨ השאלות הפתוחות ({result.specialsList.length}) — {result.sMode === 'mine' ? 'נופלות לפי התשובות שלך' : result.sMode === 'popular' ? 'נופלות לפי התשובה הפופולרית 🗳️' : 'לא נכללות בתרחיש'}
+                      ✨ השאלות הפתוחות ({result.specialsList.length}) — {result.sMode === 'mine' ? 'נופלות לפי התשובות שלך' : result.sMode === 'popular' ? 'נופלות לפי חוכמת ההמונים 🗳️' : 'לא נכללות בתרחיש'}
                     </h3>
                     <span style={{ color: '#64748b', fontSize: '0.8rem' }}>{specOpen ? '▲ סגור' : '▼ פתח'}</span>
                   </div>
@@ -649,11 +692,11 @@ export default function Simulator() {
                             <div style={{ fontSize: '0.79rem', color: '#e2e8f0' }}>{sp.text}</div>
                             {result.sMode === 'popular' ? (
                               <div style={{ fontSize: '0.74rem', color: '#94a3b8' }}>
-                                🗳️ הפופולרית: <b style={{ color: '#67e8f9' }}>{sp.pop ? `${sp.pop.answer} (${sp.pop.pct}%)` : '—'}</b>
+                                🗳️ חוכמת ההמונים: <b style={{ color: '#67e8f9' }}>{sp.pop ? `${sp.pop.answer} (${sp.pop.pct}%)` : '—'}</b>
                                 <span style={{ marginRight: 8 }}>· שלך: <b style={{ color: sp.pop && normT(sp.mine) === normT(sp.pop.answer) ? '#6ee7b7' : '#f87171' }}>{sp.mine}</b></span>
                               </div>
                             ) : (
-                              <div style={{ fontSize: '0.74rem', color: '#94a3b8' }}>הניחוש שלך: <b style={{ color: '#6ee7b7' }}>{sp.mine}</b>{sp.pop && <span style={{ marginRight: 8, color: '#64748b' }}>· הפופולרית: {sp.pop.answer} ({sp.pop.pct}%)</span>}</div>
+                              <div style={{ fontSize: '0.74rem', color: '#94a3b8' }}>הניחוש שלך: <b style={{ color: '#6ee7b7' }}>{sp.mine}</b>{sp.pop && <span style={{ marginRight: 8, color: '#64748b' }}>· חוכמת ההמונים: {sp.pop.answer} ({sp.pop.pct}%)</span>}</div>
                             )}
                           </div>
                           <span style={{ flexShrink: 0, fontSize: '0.8rem', fontWeight: 800, color: (sp.gain ?? 1) > 0 ? '#34d399' : '#94a3b8', background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.3)', borderRadius: 999, padding: '2px 9px' }}>
