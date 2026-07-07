@@ -86,16 +86,10 @@ const encodePreds = (all, count) => {
   return { v: 1, ts: Date.now(), count, q, n, r };
 };
 async function resolvePredsSource(gameId) {
-  try {
-    const { count, error } = await supabase.from('latest_predictions')
-      .select('question_id', { count: 'exact', head: true }).eq('game_id', gameId);
-    if (error || count == null) throw error || new Error('no view');
-    return { src: 'latest_predictions', count };
-  } catch {
-    const { count } = await supabase.from('predictions')
-      .select('id', { count: 'exact', head: true }).eq('game_id', gameId);
-    return { src: 'predictions', count: count || 0 };
-  }
+  // קריאה ישירה מהטבלה: ה-View מריץ DISTINCT מלא בכל עמוד — כבד וגורם timeout במכשירים איטיים.
+  const { count } = await supabase.from('predictions')
+    .select('id', { count: 'exact', head: true }).eq('game_id', gameId);
+  return { src: 'predictions', count: count || 0 };
 }
 const _memPreds = {};
 // אילו שאלות רלוונטיות לסימולציה: משבצות העולות (לניקוד+בונוס), וכל שאלה שעדיין פתוחה.
