@@ -289,19 +289,13 @@ const idbSet = async (key, val) => {
 const PREDS_LS_KEY = gid => `tlt_preds_v4_${gid}`;
 const PREDS_TTL_MS = 12 * 60 * 60 * 1000;
 
-// מקור הנתונים: latest_predictions (View — רק הניחוש האחרון לכל משתתף+שאלה, ~63% פחות תעבורה).
-// אם ה-View לא קיים עדיין — נסיגה אוטומטית לטבלה המלאה.
+// מקור הנתונים: טבלת predictions ישירות (אין היסטוריה — עדכון דורס; ה-View הוסר מהמסלול כי הכביד).
 const resolvePredsSource = async (gameId) => {
-  try {
-    const { count, error } = await supabase.from('latest_predictions')
-      .select('id', { count: 'exact', head: true }).eq('game_id', gameId);
-    if (error || count == null) throw error || new Error('no view');
-    return { src: 'latest_predictions', count };
-  } catch {
-    const { count } = await supabase.from('predictions')
-      .select('id', { count: 'exact', head: true }).eq('game_id', gameId);
-    return { src: 'predictions', count: count || 0 };
-  }
+  // קריאה ישירה מהטבלה: ה-View (latest_predictions) מריץ DISTINCT מלא בכל עמוד — כבד פי עשרות
+  // בדפדוף וגורם timeout במכשירים איטיים. אין היסטוריה בטבלה (הספירות זהות), אז הטבלה עדיפה.
+  const { count } = await supabase.from('predictions')
+    .select('id', { count: 'exact', head: true }).eq('game_id', gameId);
+  return { src: 'predictions', count: count || 0 };
 };
 const decodePreds = c => c.r.map((row, i) => {
   const val = row[2];
