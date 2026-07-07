@@ -812,7 +812,7 @@ export default function YossiCup() {
 
             {/* תיבות המשחקים */}
             {columns.map((col, ci) => {
-              const isFinal = col.label && col.label.includes('גמר');
+              const isFinal = col.label && col.label.trim() === 'גמר'; // רק הגמר עצמו — 'שמינית גמר'/'רבע גמר' מכילים את המילה אך אינם הגמר
               const left = totalW - colLeft(ci) - COL_W; // RTL: עמודה 0 בימין
               return col.matches.map((m, mi) => {
                 const champ = isFinal && m.won ? (m.won === 'a' ? m.a : m.b) : null;
