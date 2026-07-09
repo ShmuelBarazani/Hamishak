@@ -743,8 +743,14 @@ const GLOBAL_STYLES = `
     aside[style*="215px"],aside[style*="width: 215"],.vs-sidebar-desktop{display:none!important;}
   }
   @media(max-height:500px){
-    .lm-bottom-nav{display:none!important;}
-    .lm-page{padding-bottom:12px!important;}
+    /* 📱 טלפון ברוחב: סרגל הניווט הופך לפס-אייקונים אנכי בצד ימין */
+    .lm-bottom-nav{position:fixed!important;top:56px!important;bottom:0!important;right:0!important;left:auto!important;
+      width:62px!important;height:auto!important;display:flex!important;flex-direction:column!important;
+      align-items:stretch!important;justify-content:flex-start!important;gap:2px!important;
+      border-top:none!important;border-left:2px solid var(--tp-25)!important;
+      box-shadow:-6px 0 24px rgba(0,0,0,0.5)!important;padding:4px 0 4px!important;overflow-y:auto!important;}
+    .lm-bottom-nav a,.lm-bottom-nav button{flex:0 0 auto!important;padding:8px 2px!important;border-top:none!important;}
+    .lm-page{padding-bottom:12px!important;padding-right:66px!important;}
     .lm-topbar{height:56px!important;padding:0 12px!important;}
     html{font-size:15px!important;}
   }
