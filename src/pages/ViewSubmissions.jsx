@@ -194,9 +194,9 @@ export default function ViewSubmissions() {
   const [koResultsVS, setKoResultsVS] = useState({});
   // 📱 מסך צר: פריסה נערמת לשאלות המיוחדות כדי שהטקסט המלא ייראה
   // עד 1024px — כולל טלפון במצב רוחב, שבו תפריט-הצד גוזל מהרוחב והרשת נמעכת
-  const [isNarrowVS, setIsNarrowVS] = useState(() => { try { return window.innerWidth <= 1024; } catch { return false; } });
+  const [isNarrowVS, setIsNarrowVS] = useState(() => { try { return window.innerWidth <= 1024 || window.innerHeight <= 500; } catch { return false; } });
   useEffect(() => {
-    const onR = () => { try { setIsNarrowVS(window.innerWidth <= 1024); } catch {} };
+    const onR = () => { try { setIsNarrowVS(window.innerWidth <= 1024 || window.innerHeight <= 500); } catch {} };
     window.addEventListener('resize', onR);
     window.addEventListener('orientationchange', onR);
     return () => { window.removeEventListener('resize', onR); window.removeEventListener('orientationchange', onR); };
@@ -1032,7 +1032,7 @@ export default function ViewSubmissions() {
                 return (
                   <div key={main.id} style={{ display:'grid', gridTemplateColumns:'40px 1fr 140px 44px', gap:'5px', alignItems:'center', padding:'8px 8px', borderRadius:'6px' }} className="bg-slate-700/20 border border-slate-600/30">
                     <Badge variant="outline" className="border-cyan-400 text-cyan-200 justify-center text-xs h-6 w-full">{main.question_id}</Badge>
-                    <span className="text-right font-medium text-sm text-blue-100 truncate">{main.question_text}</span>
+                    <span className="text-right font-medium text-sm text-blue-100" style={{ display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical', overflow:'hidden', whiteSpace:'normal', lineHeight:1.35 }}>{main.question_text}</span>
                     <div className="contents">{renderReadOnlySelect(main, participantPredictions[main.id] || "")}</div>
                   </div>
                 );
@@ -1054,12 +1054,12 @@ export default function ViewSubmissions() {
               return (
                 <div key={main.id} style={{ display:'grid', gridTemplateColumns:'36px 1fr 110px 42px 36px 1fr 110px 42px 36px 1fr 110px 42px', gap:'5px', alignItems:'center', padding:'8px 8px', borderRadius:'6px' }} className="bg-slate-700/20 border border-slate-600/30">
                   <Badge variant="outline" className="border-cyan-400 text-cyan-200 justify-center text-xs h-6 w-full">{main.question_id}</Badge>
-                  <span className="text-right font-medium text-sm text-blue-100 truncate">{main.question_text}</span>
+                  <span className="text-right font-medium text-sm text-blue-100" style={{ display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical', overflow:'hidden', whiteSpace:'normal', lineHeight:1.35 }}>{main.question_text}</span>
                   <div className="contents">{isTeamQuestion ? renderTeamPrediction(main.id, participantPredictions[main.id] || "") : renderReadOnlySelect(main, participantPredictions[main.id] || "")}</div>
                   {sortedSubs.map(sub => (
                     <React.Fragment key={sub.id}>
                       <Badge variant="outline" className="border-cyan-400 text-cyan-200 justify-center text-xs h-6 w-full">{sub.question_id}</Badge>
-                      <span className="text-right font-medium text-sm text-blue-100 truncate">{sub.question_text}</span>
+                      <span className="text-right font-medium text-sm text-blue-100" style={{ display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical', overflow:'hidden', whiteSpace:'normal', lineHeight:1.35 }}>{sub.question_text}</span>
                       <div className="contents">{isTeamQuestion ? renderTeamPrediction(sub.id, getSubValue(sub)) : renderReadOnlySelect(sub, getSubValue(sub))}</div>
                     </React.Fragment>
                   ))}
@@ -1698,14 +1698,18 @@ export default function ViewSubmissions() {
                         })}
                       </div>
                     )}
-                    {listBtns.map(btn => {
-                      const active = openSections[btn.sectionKey];
-                      return (
-                        <button key={btn.key} onClick={() => toggleSection(btn.sectionKey)} title={btn.fullDescription} style={{ display:'block', width:'100%', textAlign:'right', padding:'7px 10px', marginBottom:4, borderRadius:'8px', fontSize:'0.78rem', fontWeight: active ? '700' : '400', color: active ? 'white' : info.color, background: active ? info.activeBg : `${info.color}12`, border:`1px solid ${active ? info.color : `${info.color}40`}`, cursor:'pointer', transition:'all 0.15s', boxShadow: active ? `0 0 10px ${info.color}55` : 'none', fontFamily:'Rubik, Heebo, sans-serif', lineHeight:'1.35' }}>
-                          {shortLabel(btn.description)}
-                        </button>
-                      );
-                    })}
+                    {listBtns.length > 0 && (
+                      <div style={{ display:'grid', gridTemplateColumns:'repeat(2,1fr)', gap:5 }}>
+                        {listBtns.map(btn => {
+                          const active = openSections[btn.sectionKey];
+                          return (
+                            <button key={btn.key} onClick={() => toggleSection(btn.sectionKey)} title={btn.fullDescription} style={{ textAlign:'center', padding:'8px 4px', borderRadius:8, fontSize:'0.72rem', fontWeight: active ? 700 : 500, color: active ? 'white' : info.color, background: active ? info.activeBg : `${info.color}12`, border:`1px solid ${active ? info.color : `${info.color}40`}`, cursor:'pointer', transition:'all 0.12s', boxShadow: active ? `0 0 8px ${info.color}55` : 'none', fontFamily:'Rubik, Heebo, sans-serif', lineHeight:1.25, whiteSpace:'normal', minHeight:38 }}>
+                              {shortLabel(btn.description)}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
