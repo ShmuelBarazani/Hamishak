@@ -192,6 +192,14 @@ export default function ViewSubmissions() {
   const [loadingPredictions, setLoadingPredictions] = useState(false);
   const [data, setData] = useState({ predictions: [], questions: [], teams: [], validationLists: [], locationPredsByTableQ: {}, locationActualsByTableQ: {} });
   const [koResultsVS, setKoResultsVS] = useState({});
+  // 📱 מסך צר: פריסה נערמת לשאלות המיוחדות כדי שהטקסט המלא ייראה
+  const [isNarrowVS, setIsNarrowVS] = useState(() => { try { return window.innerWidth <= 760; } catch { return false; } });
+  useEffect(() => {
+    const onR = () => { try { setIsNarrowVS(window.innerWidth <= 760); } catch {} };
+    window.addEventListener('resize', onR);
+    window.addEventListener('orientationchange', onR);
+    return () => { window.removeEventListener('resize', onR); window.removeEventListener('orientationchange', onR); };
+  }, []);
   const [selectedParticipant, setSelectedParticipant] = useState(null);
   const [openSections, setOpenSections] = useState({});
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false); // 🆕 תפריט נייד מתקפל
@@ -992,6 +1000,32 @@ export default function ViewSubmissions() {
                 if (sub.question_id === '1.1' && mainValue !== 'אחר') return '';
                 return subVal;
               };
+
+              // 📱 נייד: כרטיס נערם — השאלה במלואה למעלה, התשובה מתחת
+              const MobileQ = ({ q, val, team }) => (
+                <div style={{ padding: '8px 10px' }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 7, marginBottom: 6 }}>
+                    <Badge variant="outline" className="border-cyan-400 text-cyan-200 justify-center text-xs h-6 flex-shrink-0">{q.question_id}</Badge>
+                    <span className="text-right font-medium text-sm text-blue-100" style={{ whiteSpace: 'normal', lineHeight: 1.45 }}>{q.question_text}</span>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 44px', gap: 5, alignItems: 'center' }}>
+                    {team ? renderTeamPrediction(q.id, val) : renderReadOnlySelect(q, val)}
+                  </div>
+                </div>
+              );
+
+              if (isNarrowVS) {
+                return (
+                  <div key={main.id} className="bg-slate-700/20 border border-slate-600/30" style={{ borderRadius: 8 }}>
+                    <MobileQ q={main} val={participantPredictions[main.id] || ''} team={isTeamQuestion} />
+                    {sortedSubs.map(sub => (
+                      <div key={sub.id} style={{ borderTop: '1px solid rgba(100,116,139,0.2)' }}>
+                        <MobileQ q={sub} val={getSubValue(sub)} team={isTeamQuestion} />
+                      </div>
+                    ))}
+                  </div>
+                );
+              }
 
               if (sortedSubs.length === 0) {
                 return (
