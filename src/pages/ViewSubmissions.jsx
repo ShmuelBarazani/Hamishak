@@ -193,9 +193,10 @@ export default function ViewSubmissions() {
   const [data, setData] = useState({ predictions: [], questions: [], teams: [], validationLists: [], locationPredsByTableQ: {}, locationActualsByTableQ: {} });
   const [koResultsVS, setKoResultsVS] = useState({});
   // 📱 מסך צר: פריסה נערמת לשאלות המיוחדות כדי שהטקסט המלא ייראה
-  const [isNarrowVS, setIsNarrowVS] = useState(() => { try { return window.innerWidth <= 760; } catch { return false; } });
+  // עד 1024px — כולל טלפון במצב רוחב, שבו תפריט-הצד גוזל מהרוחב והרשת נמעכת
+  const [isNarrowVS, setIsNarrowVS] = useState(() => { try { return window.innerWidth <= 1024; } catch { return false; } });
   useEffect(() => {
-    const onR = () => { try { setIsNarrowVS(window.innerWidth <= 760); } catch {} };
+    const onR = () => { try { setIsNarrowVS(window.innerWidth <= 1024); } catch {} };
     window.addEventListener('resize', onR);
     window.addEventListener('orientationchange', onR);
     return () => { window.removeEventListener('resize', onR); window.removeEventListener('orientationchange', onR); };
