@@ -1670,7 +1670,7 @@ export default function ViewSubmissions() {
     const order = ['rounds','league','groups','playoff','special','qualifiers','other'];
     const sortedGroups = order.filter(t => grouped[t]);
     return (
-      <aside style={{ width:'250px', maxHeight:'calc(100vh - 90px)', overflowY:'auto', paddingBottom:'16px' }}>
+      <aside style={{ width:'200px', maxHeight:'calc(100vh - 90px)', overflowY:'auto', paddingBottom:'16px' }}>
         <div style={{ background:'rgba(13,18,30,0.92)', borderRadius:'14px', border:'1px solid rgba(6,182,212,0.15)', padding:'12px 10px', backdropFilter:'blur(10px)' }}>
           <div style={{ fontSize:'0.55rem', fontWeight:'800', letterSpacing:'0.18em', textTransform:'uppercase', color:'#334155', marginBottom:'10px', paddingRight:'2px' }}>בחירת שלב</div>
           {sortedGroups.map(type => {
