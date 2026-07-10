@@ -1340,7 +1340,7 @@ export default function ViewSubmissions() {
                 return (
                   <div key={main.id} style={{ display:'grid', gridTemplateColumns:'40px 1fr 140px 44px', gap:'5px', alignItems:'center', padding:'8px 8px', borderRadius:'6px', background:'rgba(15,23,42,0.4)', border:'1px solid rgba(6,182,212,0.1)' }}>
                     <Badge variant="outline" className="justify-center text-xs h-6 w-full" style={{ borderColor:'#06b6d4', color:'#06b6d4' }}>{main.question_id}</Badge>
-                    <span className="text-right font-medium text-sm truncate" style={{ color:'#f8fafc' }}>{main.question_text}</span>
+                    <span className="text-right font-medium text-sm" style={{ color:'#f8fafc', display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical', overflow:'hidden', whiteSpace:'normal', lineHeight:1.35 }}>{main.question_text}</span>
                     <div className="contents">{renderReadOnlySelect(main, mainOriginalValue)}</div>
                   </div>
                 );
@@ -1367,7 +1367,7 @@ export default function ViewSubmissions() {
               return (
                 <div key={main.id} style={{ display:'grid', gridTemplateColumns:'36px 1fr 110px 42px 36px 1fr 110px 42px 36px 1fr 110px 42px', gap:'5px', alignItems:'center', padding:'8px 8px', borderRadius:'6px', background:'rgba(15,23,42,0.4)', border:'1px solid rgba(6,182,212,0.1)' }}>
                   <Badge variant="outline" className="justify-center text-xs h-6 w-full" style={{ borderColor:'#06b6d4', color:'#06b6d4' }}>{main.question_id}</Badge>
-                  <span className="text-right font-medium text-sm truncate" style={{ color:'#f8fafc' }}>{main.question_text}</span>
+                  <span className="text-right font-medium text-sm" style={{ color:'#f8fafc', display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical', overflow:'hidden', whiteSpace:'normal', lineHeight:1.35 }}>{main.question_text}</span>
                   <div className="contents">{renderReadOnlySelect(main, mainOriginalValue)}</div>
                   {sortedSubs.map(sub => {
                     const subOriginalValue = editedPredictions[sub.id] !== undefined
@@ -1376,7 +1376,7 @@ export default function ViewSubmissions() {
                     return (
                       <React.Fragment key={sub.id}>
                         <Badge variant="outline" className="justify-center text-xs h-6 w-full" style={{ borderColor:'#06b6d4', color:'#06b6d4' }}>{sub.question_id}</Badge>
-                        <span className="text-right font-medium text-sm truncate" style={{ color:'#f8fafc' }}>{sub.question_text}</span>
+                        <span className="text-right font-medium text-sm" style={{ color:'#f8fafc', display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical', overflow:'hidden', whiteSpace:'normal', lineHeight:1.35 }}>{sub.question_text}</span>
                         <div className="contents">{renderReadOnlySelect(sub, subOriginalValue)}</div>
                       </React.Fragment>
                     );
@@ -1812,10 +1812,15 @@ export default function ViewSubmissions() {
       `}</style>
       <div className="vs-header sticky top-0 z-30 backdrop-blur-sm shadow-lg" style={{ background: 'rgba(15,23,42,0.95)', borderBottom: '1px solid rgba(6,182,212,0.2)' }}>
         <style>{`
-          @media (max-width: 767px) {
+          .vs-actions-toggle { display: none; }
+          @media (max-width: 767px), (max-height: 500px) {
             .vs-header { position: relative !important; top: auto !important; }
             .vs-admin-actions { display: none !important; }
             .vs-admin-actions.vs-actions-open { display: flex !important; }
+            .vs-actions-toggle { display: inline-flex !important; }
+            .vs-header h1 { font-size: 0.95rem !important; }
+            .vs-header .mb-2 { margin-bottom: 4px !important; }
+            .vs-header .py-2 { padding-top: 5px !important; padding-bottom: 5px !important; }
           }
         `}</style>
         <div className="px-3 md:px-6 py-2 md:py-2.5 w-full">
@@ -1826,7 +1831,7 @@ export default function ViewSubmissions() {
             </h1>
             {/* כפתור פעולות מנהל — נייד בלבד */}
             {isAdmin && (
-              <button onClick={() => setMobileActionsOpen(o => !o)} className="md:hidden" style={{ display:'inline-flex', alignItems:'center', gap:5, padding:'7px 12px', borderRadius:9, background:'rgba(6,182,212,0.12)', border:'1px solid rgba(6,182,212,0.35)', color:'#22d3ee', fontSize:'0.8rem', fontFamily:'Rubik,Heebo,sans-serif', cursor:'pointer', flexShrink:0 }}>
+              <button onClick={() => setMobileActionsOpen(o => !o)} className="vs-actions-toggle" style={{ alignItems:'center', gap:5, padding:'6px 11px', borderRadius:9, background:'rgba(6,182,212,0.12)', border:'1px solid rgba(6,182,212,0.35)', color:'#22d3ee', fontSize:'0.78rem', fontFamily:'Rubik,Heebo,sans-serif', cursor:'pointer', flexShrink:0 }}>
                 ⚙️ פעולות
               </button>
             )}
