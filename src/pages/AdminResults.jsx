@@ -1001,7 +1001,7 @@ export default function AdminResults() {
     const order = ['rounds','league','groups','playoff','special','qualifiers','other'];
     const sortedGroups = order.filter(t => grouped[t]);
     return (
-      <aside style={{ width: '250px', flexShrink: 0, position: 'sticky', top: '70px', alignSelf: 'flex-start', maxHeight: 'calc(100vh - 90px)', overflowY: 'auto', paddingBottom: '16px' }}>
+      <aside style={{ width: '200px', flexShrink: 0, position: 'sticky', top: '70px', alignSelf: 'flex-start', maxHeight: 'calc(100vh - 90px)', overflowY: 'auto', paddingBottom: '16px' }}>
         <div style={{ background: 'rgba(13,18,30,0.92)', borderRadius: '14px', border: '1px solid var(--tp-12)', padding: '12px 10px', backdropFilter: 'blur(10px)' }}>
           <div style={{ fontSize: '0.55rem', fontWeight: '800', letterSpacing: '0.18em', textTransform: 'uppercase', color: '#334155', marginBottom: '10px', paddingRight: '2px' }}>בחירת שלב</div>
           {sortedGroups.map(type => {
@@ -1030,12 +1030,16 @@ export default function AdminResults() {
                         })}
                       </div>
                     )}
-                    {listBtns.map(btn => {
-                      const active = openSections[btn.sectionKey];
-                      return (
-                        <button key={btn.key} onClick={() => toggleSection(btn.sectionKey)} style={{ display: 'block', width: '100%', textAlign: 'right', padding: '7px 10px', marginBottom: 4, borderRadius: '8px', fontSize: '0.78rem', fontWeight: active ? '700' : '400', color: active ? 'white' : info.color, background: active ? info.activeBg : `${info.color}12`, border: `1px solid ${active ? info.color : `${info.color}40`}`, cursor: 'pointer', transition: 'all 0.15s', boxShadow: active ? `0 0 10px ${info.color}55` : 'none', fontFamily: 'Rubik, Heebo, sans-serif', lineHeight: '1.35' }}>{shortLabel(btn.description)}</button>
-                      );
-                    })}
+                    {listBtns.length > 0 && (
+                      <div style={{ display:'grid', gridTemplateColumns:'repeat(2,1fr)', gap:5 }}>
+                        {listBtns.map(btn => {
+                          const active = openSections[btn.sectionKey];
+                          return (
+                            <button key={btn.key} onClick={() => toggleSection(btn.sectionKey)} title={btn.fullDescription || btn.description} style={{ textAlign:'center', padding:'8px 4px', borderRadius:8, fontSize:'0.72rem', fontWeight: active ? 700 : 500, color: active ? 'white' : info.color, background: active ? info.activeBg : `${info.color}12`, border:`1px solid ${active ? info.color : `${info.color}40`}`, cursor:'pointer', transition:'all 0.12s', boxShadow: active ? `0 0 8px ${info.color}55` : 'none', fontFamily:'Rubik, Heebo, sans-serif', lineHeight:1.25, whiteSpace:'normal', minHeight:38 }}>{shortLabel(btn.description)}</button>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
