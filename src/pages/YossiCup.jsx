@@ -228,27 +228,49 @@ export default function YossiCup() {
   };
 
   // ⚖️ שחזור ערכי שובר השוויון לסיבובים שהוכרעו לפני שהתחלנו להקפיא אותם.
-  //    ג/ו — סטטיים מטבעם. ד/ה — הפרשי הניצחון של סיבובי העבר שמורים וקפואים
-  //    בהיסטוריה (margin בכל תוצאה), ולכן ההליכה-אחורה משוחזרת במדויק כפי שהמנוע
-  //    ביצע אותה ברגע ההכרעה. ב — דורש את הניקוד הכולל באותו רגע, שלא צולם אז,
-  //    ולכן אינו ניתן לשחזור מדויק (מהיום הוא נשמר בשדה tie בעת ההכרעה).
-  const reconstructHistVals = (rule, histIdx, a, b) => {
+  //    ג/ו — סטטיים. ד/ה — הפרשי הניצחון קפואים בהיסטוריה ומשוחזרים במדויק.
+  //    ב — משוחזר כסכום ניקודי הסיבובים השמורים בהיסטוריה (הנתון שמוצג ליד כל
+  //    דו-קרב), כולל הסיבוב שהוכרע. שחזור זה מדויק כל עוד לא נצבר ניקוד מחוץ
+  //    לחלונות הסיבובים (למשל בּיי במקדים); לכן יש בדיקת עקביות — אם הסכום
+  //    המשוחזר סותר את ההכרעה הרשומה, לא מציגים מספרים (עדיף כלום ממספר שגוי).
+  const reconstructHistVals = (rule, histIdx, a, b, rec) => {
     if (rule === 'ג') return { label: 'ניקוד הכניסה לגביע (בעת הזריעה)', va: entryOf(a), vb: entryOf(b) };
     if (rule === 'ו') return { label: 'דירוג הזריעה (הנמוך עולה)', va: a, vb: b };
+    const hist = cupData?.history || [];
     if (rule === 'ד' || rule === 'ה') {
-      const hist = cupData?.history || [];
       const marginFromHist = (h, seed) => {
-        const rec = h.results.find(r => r.winner === seed || r.loser === seed);
-        if (!rec) return null; // בּיי / לא שיחק — מדולג, בדיוק כמו במנוע
-        return rec.winner === seed ? (rec.margin ?? 0) : -(rec.margin ?? 0);
+        const r = h.results.find(x => x.winner === seed || x.loser === seed);
+        if (!r) return null; // בּיי / לא שיחק — מדולג, בדיוק כמו במנוע
+        return r.winner === seed ? (r.margin ?? 0) : -(r.margin ?? 0);
       };
       for (let i = histIdx - 1; i >= 0; i--) {
         const ma = marginFromHist(hist[i], a), mb = marginFromHist(hist[i], b);
         if (ma === null || mb === null) continue;
         if (ma !== mb) return { label: `הפרש הניצחון ב${roundLabel(hist[i].round_size, !!hist[i].is_prelim)}`, va: ma, vb: mb };
       }
+      return null;
     }
-    return null; // כלל ב בסיבוב ישן — אין נתון מוקפא ואין שחזור מדויק
+    if (rule === 'ב') {
+      // סכום ניקודי הסיבובים 1..histIdx (כולל הסיבוב שהוכרע — ניקודו זהה לשניים)
+      const roundScoreFromHist = (h, seed) => {
+        const r = h.results.find(x => x.a === seed || x.b === seed);
+        if (!r) return null; // בּיי — הניקוד באותו חלון לא נרשם
+        return r.a === seed ? (r.sa ?? 0) : (r.sb ?? 0);
+      };
+      let sumA = 0, sumB = 0, gap = false;
+      for (let i = 0; i < histIdx; i++) {
+        const va = roundScoreFromHist(hist[i], a), vb = roundScoreFromHist(hist[i], b);
+        if (va === null || vb === null) { gap = true; } // חוסר נתון לאחד הצדדים
+        sumA += va ?? 0; sumB += vb ?? 0;
+      }
+      sumA += rec?.sa ?? 0; sumB += rec?.sb ?? 0;
+      // בדיקת עקביות: הסכום חייב להסכים עם המנצח הרשום. פער (בּיי) או סתירה → אין מספרים.
+      const winnerIsA = rec?.winner === a;
+      const consistent = !gap && sumA !== sumB && ((sumA > sumB) === winnerIsA);
+      if (consistent) return { label: 'ניקוד מצטבר מתחילת הגביע (סכום ניקודי הסיבובים)', va: sumA, vb: sumB };
+      return null;
+    }
+    return null;
   };
 
   // ── מנוע ההכרעה: מחזיר {winner, loser, margin, rule, vals} ──
@@ -662,7 +684,7 @@ export default function YossiCup() {
           a: nameOf(r.a), b: nameOf(r.b), seedA: r.a, seedB: r.b, match_no: r.match_no, global_no: r.global_no,
           sa: r.sa, sb: r.sb, won: r.winner === r.a ? 'a' : 'b',
           rule: r.rule || null, // ⚖️ שובר השוויון + ערכיו: מוקפא, או שחזור מדויק לסיבובים ישנים
-          tieVals: r.tie || (r.rule && r.rule !== 'א' ? reconstructHistVals(r.rule, histIdxT, r.a, r.b) : null),
+          tieVals: r.tie || (r.rule && r.rule !== 'א' ? reconstructHistVals(r.rule, histIdxT, r.a, r.b, r) : null),
         }));
         // 🆕 בשלב מקדים שהוכרע: מוסיפים את העולים האוטומטיים (בּיי) כשורות במקומם בעץ.
         //    בלעדיהם חסרות 14 עמדות בעמודה, ופריסת העץ של הסיבוב הבא מתעוותת (תיבות
@@ -974,7 +996,7 @@ export default function YossiCup() {
                   </div>
                 </div>
               ) : (
-                <p style={{ marginTop: '6px', fontSize: '0.72rem', color: '#94a3b8' }}>ההכרעה נעשתה לפי הניקוד המצטבר של שני המשתתפים באותו רגע. הסיבוב הזה הוכרע לפני שהמערכת החלה להקפיא את הערכים, והניקוד המצטבר ממשיך להשתנות מאז — לכן המספרים המקוריים אינם ניתנים לשחזור. מסיבוב זה ואילך הערכים נשמרים ברגע ההכרעה.</p>
+                <p style={{ marginTop: '6px', fontSize: '0.72rem', color: '#94a3b8' }}>המספרים המקוריים אינם ניתנים לשחזור אמין עבור הדו-קרב הזה (למשל כשלאחד הצדדים היה בּיי בסיבוב המקדים והניקוד שלו באותו חלון לא נרשם). מסיבוב זה ואילך הערכים נשמרים ברגע ההכרעה ויוצגו תמיד.</p>
               )}
               {tiePopup.live && <p style={{ marginTop: '8px', fontSize: '0.72rem', fontStyle: 'italic', color: '#fbbf24' }}>⏳ תצוגת ביניים — הסיבוב טרם הוכרע וההכרעה עשויה להשתנות עד "הכרע סיבוב".</p>}
             </div>
@@ -1266,7 +1288,7 @@ export default function YossiCup() {
                   // ⚖️ ערכי השובר: מהרשומה (הוקפאו ברגע ההכרעה); סיבובים ישנים — שחזור
                   //    מדויק מהנתונים הקפואים בהיסטוריה (ג/ד/ה/ו). כלל ב ישן אינו ניתן לשחזור.
                   const histIdx = (cupData.history || []).indexOf(histToShow);
-                  const vals = r.tie || (r.rule && r.rule !== 'א' ? reconstructHistVals(r.rule, histIdx, r.a, r.b) : null);
+                  const vals = r.tie || (r.rule && r.rule !== 'א' ? reconstructHistVals(r.rule, histIdx, r.a, r.b, r) : null);
                   return (
                     <MatchRow key={i} idx={i} matchNo={r.global_no || r.match_no}
                       a={{ seed: r.a, name: nameOf(r.a) }}
