@@ -83,6 +83,8 @@ export default function YossiCup() {
   const [myName, setMyName] = useState(''); // שם המשתתף לחיפוש והדגשה
   const [peekPair, setPeekPair] = useState(null); // {me, opp} למסך צף של ניחושי דו-קרב
   const [showPotential, setShowPotential] = useState(false); // הצגת יריבים פוטנציאליים בעץ
+  const [openTieKey, setOpenTieKey] = useState(null); // ⚖️ איזה הסבר שובר-שוויון פתוח (מפתח שורה)
+  const [showRules, setShowRules] = useState(false);  // 📖 הצגת רשימת כללי ההכרעה
 
   const loadRankings = useCallback(async () => {
     if (!currentGame) { setLoading(false); return; }
@@ -225,28 +227,34 @@ export default function YossiCup() {
     return rec.winner === seed ? (rec.margin ?? 0) : -(rec.margin ?? 0);
   };
 
-  // ── מנוע ההכרעה: מחזיר {winner, loser, margin, rule} ──
+  // ── מנוע ההכרעה: מחזיר {winner, loser, margin, rule, vals} ──
+  //    vals (תצוגה בלבד): {label, va, vb} — הערכים שעמדו מאחורי שובר השוויון,
+  //    ביחס לצדדים a/b. ההכרעה עצמה לא השתנתה במאום.
   const decidePair = (a, b) => {
     const ra = roundScoreOf(a) ?? 0, rb = roundScoreOf(b) ?? 0;
     // א. ניקוד הסיבוב
-    if (ra !== rb) { const w = ra > rb ? a : b; return { winner: w, loser: w === a ? b : a, margin: Math.abs(ra - rb), rule: 'א' }; }
+    if (ra !== rb) { const w = ra > rb ? a : b; return { winner: w, loser: w === a ? b : a, margin: Math.abs(ra - rb), rule: 'א', vals: null }; }
     // ב. ניקוד מתחילת סיבוב 1
     const ca = cupTotalOf(a), cb = cupTotalOf(b);
-    if (ca !== cb) { const w = ca > cb ? a : b; return { winner: w, loser: w === a ? b : a, margin: 0, rule: 'ב' }; }
+    if (ca !== cb) { const w = ca > cb ? a : b; return { winner: w, loser: w === a ? b : a, margin: 0, rule: 'ב', vals: { label: 'ניקוד מצטבר מתחילת הגביע', va: ca, vb: cb } }; }
     // ג. ניקוד התחלתי
     const ea = entryOf(a), eb = entryOf(b);
-    if (ea !== eb) { const w = ea > eb ? a : b; return { winner: w, loser: w === a ? b : a, margin: 0, rule: 'ג' }; }
+    if (ea !== eb) { const w = ea > eb ? a : b; return { winner: w, loser: w === a ? b : a, margin: 0, rule: 'ג', vals: { label: 'ניקוד הכניסה לגביע (בעת הזריעה)', va: ea, vb: eb } }; }
     // ד-ה. הפרשי ניצחון אחורה (מהסיבוב האחרון שהוכרע ועד סיבוב 1).
     //       סיבוב שבו לאחד מהם היה בּיי (margin=null) — מדולג לגמרי.
     const hist = cupData.history || [];
     for (let i = hist.length - 1; i >= 0; i--) {
       const ma = marginInRound(a, i), mb = marginInRound(b, i);
       if (ma === null || mb === null) continue; // בּיי לאחד הצדדים → דלג על הסיבוב הזה
-      if (ma !== mb) { const w = ma > mb ? a : b; return { winner: w, loser: w === a ? b : a, margin: 0, rule: i === hist.length - 1 ? 'ד' : 'ה' }; }
+      if (ma !== mb) {
+        const w = ma > mb ? a : b;
+        return { winner: w, loser: w === a ? b : a, margin: 0, rule: i === hist.length - 1 ? 'ד' : 'ה',
+                 vals: { label: `הפרש הניצחון ב${roundLabel(hist[i].round_size, !!hist[i].is_prelim)}`, va: ma, vb: mb } };
+      }
     }
     // ו. המדורג הגבוה (seed קטן)
     const w = a < b ? a : b;
-    return { winner: w, loser: w === a ? b : a, margin: 0, rule: 'ו' };
+    return { winner: w, loser: w === a ? b : a, margin: 0, rule: 'ו', vals: { label: 'דירוג הזריעה (הנמוך עולה)', va: a, vb: b } };
   };
 
   // ═══ פעולות ═══
@@ -316,6 +324,7 @@ export default function YossiCup() {
       const results = cupData.pairs.map(pair => {
         const d = decidePair(pair.a, pair.b);
         return { a: pair.a, b: pair.b, winner: d.winner, loser: d.loser, margin: d.margin, rule: d.rule,
+                 tie: d.rule !== 'א' && d.vals ? d.vals : null, // ⚖️ ערכי שובר השוויון — מוקפאים לרגע ההכרעה
                  match_no: pair.match_no, global_no: pair.global_no, sa: roundScoreOf(pair.a), sb: roundScoreOf(pair.b) };
       });
       const matchWinners = results.map(r => r.winner);
@@ -518,9 +527,10 @@ export default function YossiCup() {
   // ── שורת דו-קרב מינימליסטית ──
   //   המוביל בזיווג: ניקוד ירוק + כתר. המפגר: ניקוד אדום + עמעום קל.
   //   תיקו / טרם החל: אפור ניטרלי.
-  const MatchRow = ({ idx, a, b, sa, sb, won, matchNo, tie }) => {
+  const MatchRow = ({ idx, a, b, sa, sb, won, matchNo, tie, tieKey }) => {
     // won: 'a'|'b'|'tie'|null
-    // tie (אופציונלי): {rule, winnerName, live} — הסבר שובר-שוויון כשניקוד הסיבוב זהה.
+    // tie (אופציונלי): {rule, side:'a'|'b', vals:{label,va,vb}|null, live} — שובר שוויון.
+    //   התג ⚖️ מוצג צמוד למשתתף שהשובר פעל לטובתו; לחיצה פותחת הסבר עם המספרים.
     //   live=true → תצוגת ביניים (הסיבוב טרם הוכרע, ההכרעה עשויה להשתנות).
     const scoreColor = (side) => {
       if (won == null || won === 'tie') return 'text-slate-400'; // טרם הוכרע מוביל
@@ -528,6 +538,18 @@ export default function YossiCup() {
     };
     const meA = isMyName(a.name);
     const meB = isMyName(b.name);
+    const hasTie = tie && tie.rule && tie.rule !== 'א';
+    const tieOpen = hasTie && openTieKey === tieKey;
+    const tieColor = tie?.live ? '#fbbf24' : '#c4b5fd';
+    const fmtV = (v) => (tie?.rule === 'ו' ? `זרע ${v}` : `${v >= 0 ? '+' : ''}${v}`);
+    const TieBadge = () => (
+      <button onClick={(e) => { e.stopPropagation(); setOpenTieKey(tieOpen ? null : tieKey); }}
+        title="הוכרע בשובר שוויון — לחץ להסבר"
+        className="text-[9px] font-bold flex-shrink-0 rounded px-1 leading-4"
+        style={{ color: tieColor, background: tie.live ? 'rgba(251,191,36,0.14)' : 'rgba(168,85,247,0.16)', border: `1px solid ${tie.live ? 'rgba(251,191,36,0.4)' : 'rgba(168,85,247,0.4)'}`, cursor: 'pointer' }}>
+        ⚖️{tie.rule}
+      </button>
+    );
     return (
       <div className="flex flex-col rounded-md overflow-hidden" style={{ background: (meA || meB) ? 'rgba(56,189,248,0.12)' : 'rgba(255,255,255,0.02)', boxShadow: (meA || meB) ? 'inset 0 0 0 1px rgba(56,189,248,0.5)' : 'none' }}>
       <div className="flex items-center text-sm">
@@ -539,6 +561,7 @@ export default function YossiCup() {
           <span onClick={() => b?.name && setPeekPair({ me: a.name, opp: b.name })}
             className={`truncate cursor-pointer hover:underline ${meA ? 'text-cyan-300 font-bold' : 'text-slate-200'}`}
             title="הצג ניחושים מול היריב">{a.name}{meA ? ' ⭐' : ''}</span>
+          {hasTie && tie.side === 'a' && <TieBadge />}
           {sa != null && <span className={`mr-auto text-xs font-bold flex-shrink-0 ${scoreColor('a')}`}>{sa >= 0 ? '+' : ''}{sa}</span>}
           {won === 'a' && <Crown className="w-3 h-3 text-amber-400 flex-shrink-0" />}
         </div>
@@ -547,18 +570,25 @@ export default function YossiCup() {
         <div className={`flex-1 flex items-center gap-2 px-2.5 py-1.5 justify-end min-w-0 ${won === 'a' ? 'opacity-60' : ''}`}>
           {won === 'b' && <Crown className="w-3 h-3 text-amber-400 flex-shrink-0" />}
           {sb != null && <span className={`ml-auto text-xs font-bold flex-shrink-0 ${scoreColor('b')}`}>{sb >= 0 ? '+' : ''}{sb}</span>}
+          {hasTie && tie.side === 'b' && <TieBadge />}
           <span onClick={() => a?.name && setPeekPair({ me: b.name, opp: a.name })}
             className={`truncate cursor-pointer hover:underline ${meB ? 'text-cyan-300 font-bold' : 'text-slate-200'}`}
             title="הצג ניחושים מול היריב">{meB ? '⭐ ' : ''}{b.name}</span>
           <span className="text-[10px] text-slate-500 w-7 text-left flex-shrink-0 tabular-nums">{b.seed}</span>
         </div>
       </div>
-      {/* ⚖️ רצועת שובר שוויון — מוצגת רק כשניקוד הסיבוב זהה וההכרעה נפלה בכלל ב-ו */}
-      {tie && tie.rule && tie.rule !== 'א' && (
-        <div className="px-2.5 py-1 text-[10px] leading-snug"
-          style={{ background: tie.live ? 'rgba(251,191,36,0.08)' : 'rgba(168,85,247,0.10)', borderTop: '1px solid rgba(100,116,139,0.15)', color: tie.live ? '#fbbf24' : '#c4b5fd' }}>
-          ⚖️ שוויון בניקוד הסיבוב ({sa >= 0 ? '+' : ''}{sa}) — {tie.live ? 'לפי שובר השוויון עולה כרגע' : 'עלה בשובר שוויון'}: <b>{tie.winnerName}</b>
-          {' · '}כלל {tie.rule}: {RULE_DESC[tie.rule]}{tie.live ? ' (ביניים — הסיבוב טרם הוכרע)' : ''}
+      {/* ⚖️ הסבר שובר השוויון — נפתח בלחיצה על התג. בלי שם המנצח (התג כבר צמוד אליו),
+          עם המספרים שעמדו מאחורי ההכרעה (שני הצדדים בשמותיהם). */}
+      {tieOpen && (
+        <div className="px-2.5 py-1.5 text-[10px] leading-snug"
+          style={{ background: tie.live ? 'rgba(251,191,36,0.08)' : 'rgba(168,85,247,0.10)', borderTop: '1px solid rgba(100,116,139,0.15)', color: tieColor }}>
+          ⚖️ שוויון בניקוד הסיבוב ({sa >= 0 ? '+' : ''}{sa} לשניהם) — הוכרע בכלל <b>{tie.rule}</b>: {RULE_DESC[tie.rule]}
+          {tie.vals && (
+            <div className="mt-0.5" style={{ color: '#e2e8f0' }}>
+              {tie.vals.label}: <b>{a.name}</b> {fmtV(tie.vals.va)} · <b>{b.name}</b> {fmtV(tie.vals.vb)}
+            </div>
+          )}
+          {tie.live && <div className="mt-0.5 italic" style={{ color: '#fbbf24' }}>תצוגת ביניים — הסיבוב טרם הוכרע וההכרעה עשויה להשתנות.</div>}
         </div>
       )}
       </div>
@@ -625,7 +655,7 @@ export default function YossiCup() {
         const matches = decided.results.map(r => ({
           a: nameOf(r.a), b: nameOf(r.b), seedA: r.a, seedB: r.b, match_no: r.match_no, global_no: r.global_no,
           sa: r.sa, sb: r.sb, won: r.winner === r.a ? 'a' : 'b',
-          rule: r.rule || null, // ⚖️ הכלל שהכריע (א-ו) — לתג שובר השוויון בתיבת העץ
+          rule: r.rule || null, tieVals: r.tie || null, // ⚖️ שובר השוויון + ערכיו (לתג ולטולטיפ)
         }));
         // 🆕 בשלב מקדים שהוכרע: מוסיפים את העולים האוטומטיים (בּיי) כשורות במקומם בעץ.
         //    בלעדיהם חסרות 14 עמדות בעמודה, ופריסת העץ של הסיבוב הבא מתעוותת (תיבות
@@ -652,12 +682,12 @@ export default function YossiCup() {
           const sa = roundScoreOf(p.a), sb = roundScoreOf(p.b);
           const w = (sa != null && sb != null) ? (sa > sb ? 'a' : sb > sa ? 'b' : null) : null;
           // ⚖️ שוויון חי בעץ: מחשבים (לתצוגה בלבד) מי עולה כרגע לפי שוברי השוויון
-          let liveRule = null, liveTieWinner = null;
+          let liveRule = null, liveVals = null, liveTieSide = null;
           if (w == null && sa != null && sb != null && sa === sb && cupData.round_start_set) {
             const d = decidePair(p.a, p.b);
-            if (d.rule !== 'א') { liveRule = d.rule; liveTieWinner = nameOf(d.winner); }
+            if (d.rule !== 'א') { liveRule = d.rule; liveVals = d.vals; liveTieSide = d.winner === p.a ? 'a' : 'b'; }
           }
-          return { a: nameOf(p.a), b: nameOf(p.b), seedA: p.a, seedB: p.b, match_no: p.match_no, global_no: p.global_no, sa, sb, won: w, live: true, rule: liveRule, tieWinner: liveTieWinner };
+          return { a: nameOf(p.a), b: nameOf(p.b), seedA: p.a, seedB: p.b, match_no: p.match_no, global_no: p.global_no, sa, sb, won: w, live: true, rule: liveRule, tieVals: liveVals, tieSide: liveTieSide };
         });
         // אם זה המקדים — מוסיפים את הבּיי (עולים אוטומטית) במקומם, כתיבה עם צד אחד.
         if (st.isPrelim && cupData.current_round === 1) {
@@ -860,7 +890,9 @@ export default function YossiCup() {
                       {gno != null && (
                         <div className="text-[8px] text-slate-500 text-center" style={{ background: 'rgba(100,116,139,0.1)' }}
                           title={m.rule && m.rule !== 'א'
-                            ? `⚖️ שוויון בניקוד הסיבוב — ${m.live ? `לפי שובר השוויון עולה כרגע: ${m.tieWinner}` : `עלה בשובר שוויון: ${m.won === 'a' ? m.a : m.b}`} · כלל ${m.rule}: ${RULE_DESC[m.rule]}${m.live ? ' (ביניים)' : ''}`
+                            ? `⚖️ שוויון בניקוד הסיבוב — הוכרע בכלל ${m.rule}: ${RULE_DESC[m.rule]}`
+                              + (m.tieVals ? ` | ${m.tieVals.label}: ${m.a} ${m.rule === 'ו' ? 'זרע ' : ''}${m.tieVals.va} · ${m.b} ${m.rule === 'ו' ? 'זרע ' : ''}${m.tieVals.vb}` : '')
+                              + (m.live ? ' (ביניים — הסיבוב טרם הוכרע)' : '')
                             : undefined}>
                           משחק {gno}
                           {m.rule && m.rule !== 'א' && <span style={{ color: m.live ? '#fbbf24' : '#c4b5fd', fontWeight: 700 }}> · ⚖️ כלל {m.rule}</span>}
@@ -1127,7 +1159,7 @@ export default function YossiCup() {
           )}
 
           {/* מתג תצוגה: עץ ויזואלי / רשימה (עץ ראשון = ברירת מחדל) */}
-          <div className="flex gap-1.5 mb-3">
+          <div className="flex gap-1.5 mb-3 items-center flex-wrap">
             <button onClick={() => setViewMode('tree')}
               className="text-[11px] font-bold rounded-lg px-3 py-1.5 transition-colors flex items-center gap-1.5"
               style={{ color: viewMode === 'tree' ? '#0f172a' : '#94a3b8', background: viewMode === 'tree' ? '#38bdf8' : 'rgba(255,255,255,0.04)', border: `1px solid ${viewMode === 'tree' ? '#38bdf8' : 'rgba(148,163,184,0.3)'}` }}>
@@ -1138,7 +1170,30 @@ export default function YossiCup() {
               style={{ color: viewMode === 'list' ? '#0f172a' : '#94a3b8', background: viewMode === 'list' ? '#38bdf8' : 'rgba(255,255,255,0.04)', border: `1px solid ${viewMode === 'list' ? '#38bdf8' : 'rgba(148,163,184,0.3)'}` }}>
               <List className="w-3.5 h-3.5" /> רשימה
             </button>
+            {/* ⚖️ רשימת כללי ההכרעה — נפתח/נסגר */}
+            <button onClick={() => setShowRules(v => !v)}
+              className="text-[11px] font-bold rounded-lg px-3 py-1.5 transition-colors flex items-center gap-1.5 mr-auto"
+              style={{ color: showRules ? '#0f172a' : '#c4b5fd', background: showRules ? '#a78bfa' : 'rgba(168,85,247,0.08)', border: `1px solid ${showRules ? '#a78bfa' : 'rgba(168,85,247,0.4)'}` }}>
+              ⚖️ כללי ההכרעה
+            </button>
           </div>
+
+          {/* ⚖️ פאנל כללי ההכרעה */}
+          {showRules && (
+            <div className="mb-3 p-2.5 rounded-lg text-[11px] leading-relaxed"
+              style={{ background: 'rgba(168,85,247,0.06)', border: '1px solid rgba(168,85,247,0.3)', color: '#e2e8f0' }}>
+              <p className="font-bold mb-1" style={{ color: '#c4b5fd' }}>⚖️ איך מוכרע דו-קרב? לפי הסדר הבא:</p>
+              <ol className="pr-4" style={{ listStyle: 'none' }}>
+                <li><b style={{ color: '#c4b5fd' }}>א.</b> {RULE_DESC['א']} — הגבוה מנצח. בשוויון עוברים לשוברי השוויון:</li>
+                <li><b style={{ color: '#c4b5fd' }}>ב.</b> {RULE_DESC['ב']}</li>
+                <li><b style={{ color: '#c4b5fd' }}>ג.</b> {RULE_DESC['ג']}</li>
+                <li><b style={{ color: '#c4b5fd' }}>ד.</b> {RULE_DESC['ד']}</li>
+                <li><b style={{ color: '#c4b5fd' }}>ה.</b> {RULE_DESC['ה']} (הולכים אחורה סיבוב-סיבוב; סיבוב עם בּיי לאחד הצדדים מדולג)</li>
+                <li><b style={{ color: '#c4b5fd' }}>ו.</b> {RULE_DESC['ו']}</li>
+              </ol>
+              <p className="mt-1" style={{ color: '#94a3b8' }}>דו-קרב שהוכרע בשובר שוויון מסומן בתג <span style={{ color: '#c4b5fd', fontWeight: 700 }}>⚖️</span> ליד המשתתף שעלה — לחיצה על התג מציגה את ההסבר והמספרים.</p>
+            </div>
+          )}
 
           {/* ── תצוגת עץ ויזואלי ── */}
           {viewMode === 'tree' ? (
@@ -1156,14 +1211,22 @@ export default function YossiCup() {
                 <CardTitle className="text-base text-slate-300 flex items-center gap-2"><History className="w-4 h-4" /> {roundLabel(histToShow.round_size, histToShow.is_prelim)} — הוכרע (קריאה בלבד)</CardTitle>
               </CardHeader>
               <CardContent className="flex flex-col gap-1">
-                {histToShow.results.map((r, i) => (
-                  <MatchRow key={i} idx={i} matchNo={r.global_no || r.match_no}
-                    a={{ seed: r.a, name: nameOf(r.a) }}
-                    b={{ seed: r.b, name: nameOf(r.b) }}
-                    sa={r.sa} sb={r.sb}
-                    won={r.winner === r.a ? 'a' : 'b'}
-                    tie={r.rule && r.rule !== 'א' ? { rule: r.rule, winnerName: nameOf(r.winner) } : null} />
-                ))}
+                {histToShow.results.map((r, i) => {
+                  // ⚖️ ערכי השובר: מהרשומה (הוקפאו ברגע ההכרעה). סיבובים שהוכרעו לפני
+                  //    הוספת השמירה — fallback לכללים סטטיים בלבד (ג/ו); ב/ד/ה דינמיים ולא משוחזרים.
+                  let vals = r.tie || null;
+                  if (!vals && r.rule === 'ג') vals = { label: 'ניקוד הכניסה לגביע (בעת הזריעה)', va: entryOf(r.a), vb: entryOf(r.b) };
+                  if (!vals && r.rule === 'ו') vals = { label: 'דירוג הזריעה (הנמוך עולה)', va: r.a, vb: r.b };
+                  return (
+                    <MatchRow key={i} idx={i} matchNo={r.global_no || r.match_no}
+                      a={{ seed: r.a, name: nameOf(r.a) }}
+                      b={{ seed: r.b, name: nameOf(r.b) }}
+                      sa={r.sa} sb={r.sb}
+                      won={r.winner === r.a ? 'a' : 'b'}
+                      tieKey={`h-${histToShow.round_size}-${histToShow.is_prelim ? 1 : 0}-${i}`}
+                      tie={r.rule && r.rule !== 'א' ? { rule: r.rule, side: r.winner === r.a ? 'a' : 'b', vals } : null} />
+                  );
+                })}
                 <p className="text-[10px] text-slate-600 text-center mt-1">
                   הכרעה לפי כלל א (ניקוד הסיבוב). בשוויון — שוברי שוויון לפי הסדר:
                   {' '}ב. {RULE_DESC['ב']} · ג. {RULE_DESC['ג']} · ד. {RULE_DESC['ד']} · ה. {RULE_DESC['ה']} · ו. {RULE_DESC['ו']}.
@@ -1222,7 +1285,7 @@ export default function YossiCup() {
                     let liveTie = null;
                     if (leader === 'tie' && cupData.round_start_set) {
                       const d = decidePair(row.a, row.b);
-                      if (d.rule !== 'א') liveTie = { rule: d.rule, winnerName: nameOf(d.winner), live: true };
+                      if (d.rule !== 'א') liveTie = { rule: d.rule, side: d.winner === row.a ? 'a' : 'b', vals: d.vals, live: true };
                     }
                     return (
                       <MatchRow key={`m-${idx}`} idx={idx} matchNo={gno}
@@ -1230,6 +1293,7 @@ export default function YossiCup() {
                         b={{ seed: row.b, name: nameOf(row.b) }}
                         sa={sa} sb={sb}
                         won={leader === 'tie' ? null : leader}
+                        tieKey={`live-${gno}`}
                         tie={liveTie} />
                     );
                   });
