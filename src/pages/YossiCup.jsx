@@ -588,9 +588,13 @@ export default function YossiCup() {
     const TieBadge = () => (
       <button onClick={(e) => { e.stopPropagation(); setTiePopup({ rule: tie.rule, vals: tie.vals || null, aName: a.name, bName: b.name, sa, live: !!tie.live }); }}
         title="הוכרע בשובר שוויון — לחץ להסבר"
-        className="font-bold flex-shrink-0 rounded"
-        style={{ display: 'inline-flex', alignItems: 'center', gap: '1px', height: '13px', fontSize: '9px', lineHeight: '13px', padding: '0 3px', WebkitTextSizeAdjust: 'none', textSizeAdjust: 'none', color: tieColor, background: tie.live ? 'rgba(251,191,36,0.14)' : 'rgba(168,85,247,0.16)', border: `1px solid ${tie.live ? 'rgba(251,191,36,0.4)' : 'rgba(168,85,247,0.4)'}`, cursor: 'pointer' }}>
-        <Scale style={{ width: '9px', height: '9px', flexShrink: 0 }} />{tie.rule}
+        className="flex-shrink-0 rounded"
+        style={{ display: 'inline-flex', alignItems: 'center', gap: '1px', height: '14px', maxHeight: '14px', overflow: 'hidden', padding: '0 3px', color: tieColor, background: tie.live ? 'rgba(251,191,36,0.14)' : 'rgba(168,85,247,0.16)', border: `1px solid ${tie.live ? 'rgba(251,191,36,0.4)' : 'rgba(168,85,247,0.4)'}`, cursor: 'pointer' }}>
+        <Scale style={{ width: '9px', height: '9px', flexShrink: 0 }} />
+        {/* האות כ-SVG — חסינה ל-font boosting של כרום-אנדרואיד, בדיוק כמו האייקון */}
+        <svg width="8" height="12" viewBox="0 0 8 12" style={{ flexShrink: 0 }} aria-hidden="true">
+          <text x="4" y="9.5" textAnchor="middle" fontSize="9" fontWeight="700" fill="currentColor">{tie.rule}</text>
+        </svg>
       </button>
     );
     return (
@@ -785,9 +789,13 @@ export default function YossiCup() {
         {tie && (
           <button onClick={(e) => { e.stopPropagation(); tie.open(); }}
             title="הוכרע בשובר שוויון — לחץ להסבר"
-            className="font-bold flex-shrink-0 rounded"
-            style={{ display: 'inline-flex', alignItems: 'center', gap: '1px', height: '11px', fontSize: '8px', lineHeight: '11px', padding: '0 2px', WebkitTextSizeAdjust: 'none', textSizeAdjust: 'none', color: tie.live ? '#fbbf24' : '#c4b5fd', background: tie.live ? 'rgba(251,191,36,0.14)' : 'rgba(168,85,247,0.16)', border: `1px solid ${tie.live ? 'rgba(251,191,36,0.4)' : 'rgba(168,85,247,0.4)'}`, cursor: 'pointer' }}>
-            <Scale style={{ width: '8px', height: '8px', flexShrink: 0 }} />{tie.rule}
+            className="flex-shrink-0 rounded"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '1px', height: '12px', maxHeight: '12px', overflow: 'hidden', padding: '0 2px', color: tie.live ? '#fbbf24' : '#c4b5fd', background: tie.live ? 'rgba(251,191,36,0.14)' : 'rgba(168,85,247,0.16)', border: `1px solid ${tie.live ? 'rgba(251,191,36,0.4)' : 'rgba(168,85,247,0.4)'}`, cursor: 'pointer' }}>
+            <Scale style={{ width: '8px', height: '8px', flexShrink: 0 }} />
+            {/* האות כ-SVG — חסינה ל-font boosting, כמו האייקון */}
+            <svg width="7" height="11" viewBox="0 0 7 11" style={{ flexShrink: 0 }} aria-hidden="true">
+              <text x="3.5" y="8.5" textAnchor="middle" fontSize="8" fontWeight="700" fill="currentColor">{tie.rule}</text>
+            </svg>
           </button>
         )}
         {score != null && <span className={`mr-auto text-[10px] font-bold flex-shrink-0 ${scoreClass}`}>{score >= 0 ? '+' : ''}{score}</span>}
