@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Trophy, Loader2, Crown, Flag, Lock, Save, AlertTriangle, RefreshCw, Gavel, History, Play, Check, List, GitBranch, X } from "lucide-react";
+import { Trophy, Loader2, Crown, Flag, Lock, Save, AlertTriangle, RefreshCw, Gavel, History, Play, Check, List, GitBranch, X, Scale } from "lucide-react";
 import { supabase } from '@/api/supabaseClient';
 import * as db from '@/api/entities';
 import { calculateQuestionScore, isScoreFinal } from "@/components/scoring/ScoreService";
@@ -589,8 +589,8 @@ export default function YossiCup() {
       <button onClick={(e) => { e.stopPropagation(); setTiePopup({ rule: tie.rule, vals: tie.vals || null, aName: a.name, bName: b.name, sa, live: !!tie.live }); }}
         title="הוכרע בשובר שוויון — לחץ להסבר"
         className="font-bold flex-shrink-0 rounded"
-        style={{ fontSize: '8px', lineHeight: '11px', padding: '0 3px', color: tieColor, background: tie.live ? 'rgba(251,191,36,0.14)' : 'rgba(168,85,247,0.16)', border: `1px solid ${tie.live ? 'rgba(251,191,36,0.4)' : 'rgba(168,85,247,0.4)'}`, cursor: 'pointer' }}>
-        {'\u2696\uFE0E'}{tie.rule}
+        style={{ display: 'inline-flex', alignItems: 'center', gap: '1px', height: '13px', fontSize: '9px', lineHeight: '13px', padding: '0 3px', WebkitTextSizeAdjust: 'none', textSizeAdjust: 'none', color: tieColor, background: tie.live ? 'rgba(251,191,36,0.14)' : 'rgba(168,85,247,0.16)', border: `1px solid ${tie.live ? 'rgba(251,191,36,0.4)' : 'rgba(168,85,247,0.4)'}`, cursor: 'pointer' }}>
+        <Scale style={{ width: '9px', height: '9px', flexShrink: 0 }} />{tie.rule}
       </button>
     );
     return (
@@ -786,8 +786,8 @@ export default function YossiCup() {
           <button onClick={(e) => { e.stopPropagation(); tie.open(); }}
             title="הוכרע בשובר שוויון — לחץ להסבר"
             className="font-bold flex-shrink-0 rounded"
-            style={{ fontSize: '7px', lineHeight: '9px', padding: '0 2px', color: tie.live ? '#fbbf24' : '#c4b5fd', background: tie.live ? 'rgba(251,191,36,0.14)' : 'rgba(168,85,247,0.16)', border: `1px solid ${tie.live ? 'rgba(251,191,36,0.4)' : 'rgba(168,85,247,0.4)'}`, cursor: 'pointer' }}>
-            {'\u2696\uFE0E'}{tie.rule}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '1px', height: '11px', fontSize: '8px', lineHeight: '11px', padding: '0 2px', WebkitTextSizeAdjust: 'none', textSizeAdjust: 'none', color: tie.live ? '#fbbf24' : '#c4b5fd', background: tie.live ? 'rgba(251,191,36,0.14)' : 'rgba(168,85,247,0.16)', border: `1px solid ${tie.live ? 'rgba(251,191,36,0.4)' : 'rgba(168,85,247,0.4)'}`, cursor: 'pointer' }}>
+            <Scale style={{ width: '8px', height: '8px', flexShrink: 0 }} />{tie.rule}
           </button>
         )}
         {score != null && <span className={`mr-auto text-[10px] font-bold flex-shrink-0 ${scoreClass}`}>{score >= 0 ? '+' : ''}{score}</span>}
@@ -981,7 +981,7 @@ export default function YossiCup() {
         <div onClick={() => setTiePopup(null)} dir="rtl" style={{ position: 'fixed', inset: 0, zIndex: 100001, background: 'rgba(0,0,0,0.65)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px' }}>
           <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: '440px', background: '#0b1220', backgroundImage: 'linear-gradient(180deg,#141230,#0b1220)', border: `1px solid ${tiePopup.live ? 'rgba(251,191,36,0.55)' : 'rgba(168,85,247,0.55)'}`, borderRadius: '12px', boxShadow: '0 16px 48px rgba(0,0,0,0.85)', padding: '14px' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-              <div style={{ fontSize: '0.9rem', fontWeight: 700, color: tiePopup.live ? '#fbbf24' : '#c4b5fd' }}>⚖️ שובר שוויון — כלל {tiePopup.rule}</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.9rem', fontWeight: 700, color: tiePopup.live ? '#fbbf24' : '#c4b5fd' }}><Scale style={{ width: '15px', height: '15px' }} /> שובר שוויון — כלל {tiePopup.rule}</div>
               <button onClick={() => setTiePopup(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', display: 'flex' }}><X className="w-5 h-5" /></button>
             </div>
             <div style={{ fontSize: '0.8rem', color: '#e2e8f0', lineHeight: 1.6 }}>
@@ -1247,7 +1247,7 @@ export default function YossiCup() {
             <button onClick={() => setShowRules(v => !v)}
               className="text-[11px] font-bold rounded-lg px-3 py-1.5 transition-colors flex items-center gap-1.5 mr-auto"
               style={{ color: showRules ? '#0f172a' : '#c4b5fd', background: showRules ? '#a78bfa' : 'rgba(168,85,247,0.08)', border: `1px solid ${showRules ? '#a78bfa' : 'rgba(168,85,247,0.4)'}` }}>
-              ⚖️ כללי ההכרעה
+              <Scale className="w-3.5 h-3.5" /> כללי ההכרעה
             </button>
           </div>
 
@@ -1255,7 +1255,7 @@ export default function YossiCup() {
           {showRules && (
             <div className="mb-3 p-2.5 rounded-lg text-[11px] leading-relaxed"
               style={{ background: 'rgba(168,85,247,0.06)', border: '1px solid rgba(168,85,247,0.3)', color: '#e2e8f0' }}>
-              <p className="font-bold mb-1" style={{ color: '#c4b5fd' }}>⚖️ איך מוכרע דו-קרב? לפי הסדר הבא:</p>
+              <p className="font-bold mb-1 flex items-center gap-1.5" style={{ color: '#c4b5fd' }}><Scale className="w-3.5 h-3.5" /> איך מוכרע דו-קרב? לפי הסדר הבא:</p>
               <ol className="pr-4" style={{ listStyle: 'none' }}>
                 <li><b style={{ color: '#c4b5fd' }}>א.</b> {RULE_DESC['א']} — הגבוה מנצח. בשוויון עוברים לשוברי השוויון:</li>
                 <li><b style={{ color: '#c4b5fd' }}>ב.</b> {RULE_DESC['ב']}</li>
@@ -1264,7 +1264,7 @@ export default function YossiCup() {
                 <li><b style={{ color: '#c4b5fd' }}>ה.</b> {RULE_DESC['ה']} (הולכים אחורה סיבוב-סיבוב; סיבוב עם בּיי לאחד הצדדים מדולג)</li>
                 <li><b style={{ color: '#c4b5fd' }}>ו.</b> {RULE_DESC['ו']}</li>
               </ol>
-              <p className="mt-1" style={{ color: '#94a3b8' }}>דו-קרב שהוכרע בשובר שוויון מסומן בתג <span style={{ color: '#c4b5fd', fontWeight: 700 }}>⚖️</span> ליד המשתתף שעלה — לחיצה על התג מציגה את ההסבר והמספרים.</p>
+              <p className="mt-1" style={{ color: '#94a3b8' }}>דו-קרב שהוכרע בשובר שוויון מסומן בתג המאזניים הקטן ליד המשתתף שעלה — לחיצה על התג מציגה את ההסבר והמספרים.</p>
             </div>
           )}
 
