@@ -90,6 +90,8 @@ const WC_KO_ROUNDS = [
   { lvl:2, idx:3, mon:7, day:12, time:'04:00', stage:'רבע הגמר' },
   { lvl:3, idx:0, mon:7, day:14, time:'22:00', stage:'חצי הגמר' },
   { lvl:3, idx:1, mon:7, day:15, time:'22:00', stage:'חצי הגמר' },
+  // 🥉 קרב על המקום השלישי — מפסידות חצאי הגמר. 17:00 ET בשבת 18.7 = 00:00 בליל 18-19 שעון ישראל.
+  { third:true, lvl:4, idx:0, mon:7, day:18, time:'00:00 (ליל שבת)', stage:'קרב על המקום השלישי 🥉' },
   { lvl:4, idx:0, mon:7, day:19, time:'22:00', stage:'הגמר 🏆' },
 ];
 
@@ -189,7 +191,20 @@ const koResolve = (koResults) => {
     if (lvl === 0) return (pMemo[k] = [...WC_BRACKET_ORDER[idx]]);
     return (pMemo[k] = [...possible(lvl - 1, idx * 2), ...possible(lvl - 1, idx * 2 + 1)]);
   };
-  return { winner, possible };
+  // 🥉 מפסידת הצומת (לקרב על המקום השלישי): ידועה כשהמנצחת ושני הצדדים ידועים
+  const loserOf = (lvl, idx) => {
+    const w = winner(lvl, idx); if (!w) return null;
+    const h = winner(lvl - 1, idx * 2), a = winner(lvl - 1, idx * 2 + 1);
+    if (!h || !a) return null;
+    return normalizeTeam(w) === normalizeTeam(h) ? a : h;
+  };
+  const possibleLosers = (lvl, idx) => {
+    const l = loserOf(lvl, idx); if (l) return [l];
+    const w = winner(lvl, idx);
+    const cand = [...possible(lvl - 1, idx * 2), ...possible(lvl - 1, idx * 2 + 1)];
+    return w ? cand.filter(t => normalizeTeam(t) !== normalizeTeam(w)) : cand;
+  };
+  return { winner, possible, possibleLosers };
 };
 // הקבוצות שעדיין יכולות למלא צד מסוים (לפי הבלוק, פחות המודחות)
 const koAliveInBlock = (start, len, el) => {
@@ -2011,12 +2026,13 @@ export default function Statistics() {
       // שמינית → גמר — קבוצות אפשריות לפי פותר העץ (מנצחת ידועה ⇒ קבוצה אחת)
       const kResolver = koResolve(koResults);
       WC_KO_ROUNDS.forEach(r=>{
-        const homeTeams=kResolver.possible(r.lvl-1, r.idx*2);
-        const awayTeams=kResolver.possible(r.lvl-1, r.idx*2+1);
+        // 🥉 המקום השלישי: הצדדים הם מפסידות חצאי הגמר (צמתים 3,0 ו-3,1) — לא מנצחות
+        const homeTeams = r.third ? kResolver.possibleLosers(3, 0) : kResolver.possible(r.lvl-1, r.idx*2);
+        const awayTeams = r.third ? kResolver.possibleLosers(3, 1) : kResolver.possible(r.lvl-1, r.idx*2+1);
         const key=`${r.mon}-${r.day}`;
         if(!map[key]) map[key]=[];
         map[key].push({
-          q:{ id:`ko_${r.lvl}_${r.idx}`, isKnockout:true, isMulti:true, stage_name:r.stage,
+          q:{ id: r.third ? 'ko_third' : `ko_${r.lvl}_${r.idx}`, isKnockout:true, isMulti:true, stage_name:r.stage,
               homeTeams, awayTeams, home_team:homeTeams[0]||'', away_team:awayTeams[0]||'',
               actual_result:'', table_id:'KO' },
           time:r.time, day:r.day, mon:r.mon
