@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useGame } from '@/components/contexts/GameContext';
 import { supabase } from '@/api/supabaseClient';
@@ -178,6 +177,7 @@ export default function Simulator() {
   const [specialsMode, setSpecialsMode] = useState('mine'); // 'mine' | 'popular' | 'off'
   const [treeMode, setTreeMode] = useState('mine');           // 'mine' | 'popular'
   const [overrides, setOverrides] = useState({});
+  const [specOverrides, setSpecOverrides] = useState({}); // 🗳️✏️ התאמות ידניות לשאלות פתוחות במצב חוכמת ההמונים: {qid: תשובה}
   const [simulating, setSimulating] = useState(false);
   const [result, setResult]       = useState(null);
   const [specOpen, setSpecOpen]   = useState(false);
@@ -241,7 +241,7 @@ export default function Simulator() {
 
   const totalOf = r => (r && typeof r === 'object' && 'total' in r) ? (Number(r.total) || 0) : (Number(r) || 0);
 
-  const compute = (who, ovr, sMode, tMode) => {
+  const compute = (who, ovr, sMode, tMode, spOvr = specOverrides) => {
     const myPred = latestByPart[who] || {};
 
     const mySets = {}; STAGE_TIDS.forEach(t => { mySets[t] = new Set(); });
@@ -379,11 +379,19 @@ export default function Simulator() {
         if ((champQ && q.id === champQ.id) || (runnerQ && q.id === runnerQ.id)) return;
         const mine = String(myPred[q.id] ?? '').trim();
         const pop = popular[q.id] || null;
-        const fill = fillSpecials === 'mine' ? mine : fillSpecials === 'popular' ? (pop?.answer || '') : '';
-        if (mine || pop) {
-          specials.push({ id: q.id, text: q.question_text, mine: mine || '—', pop, used: fill || null, pts: q.possible_points || 0 });
-          if (fill) q.actual_result = fill;
+        let fill;
+        if (fillSpecials && typeof fillSpecials === 'object' && fillSpecials.trueQids) {
+          // 🎯 מצב "מספיק שאנצח": שאלות בסט = התשובה שלי; כל היתר לא מתגשמות לאף אחד
+          fill = fillSpecials.trueQids.has(q.id) ? mine : '⛔__לא_יתגשם__';
+        } else {
+          const manual = String(spOvr[q.id] ?? '').trim(); // ✏️ התאמה ידנית של המשתמש — גוברת על ההמונים
+          fill = fillSpecials === 'mine' ? mine : fillSpecials === 'popular' ? (manual || pop?.answer || '') : '';
         }
+        if (mine || pop) {
+          specials.push({ id: q.id, text: q.question_text, mine: mine || '—', pop, used: (fill && fill !== '⛔__לא_יתגשם__') ? fill : null, pts: q.possible_points || 0,
+                          vlist: q.validation_list || null, manual: String(spOvr[q.id] ?? '').trim() || null });
+        }
+        if (fill) q.actual_result = fill;
       });
       return { simQ, specials };
     };
@@ -445,21 +453,176 @@ export default function Simulator() {
     return { table, meRow, matches, champion, runnerUp, specialsList, sMode, tMode, engineDiffs, audit, auditSum, bonusDelta, stageBonus };
   };
 
-  const run = (ovr = overrides, mode = specialsMode, tree = treeMode, who = me) => {
+  const run = (ovr = overrides, mode = specialsMode, tree = treeMode, who = me, spOvr = specOverrides) => {
     if (!who) return;
     setSimulating(true);
     setTimeout(() => {
-      try { setResult(compute(who, ovr, mode, tree)); }
+      try { setResult(compute(who, ovr, mode, tree, spOvr)); }
       catch (e) { console.error(e); setResult({ error: 'הסימולציה נכשלה: ' + (e?.message || '') }); }
       setSimulating(false);
     }, 40);
   };
+  // 🗳️✏️ רשימות האימות מהמשחק (games.validation_lists — המקור הסמכותי)
+  const validationLists = useMemo(() => {
+    const m = {};
+    (currentGame?.validation_lists || []).forEach(l => { m[l.list_name] = l.options || []; });
+    return m;
+  }, [currentGame]);
+  const setSpecOverride = (qid, val) => {
+    if (simulating) return;
+    const next = { ...specOverrides };
+    if (val == null || val === '') delete next[qid]; else next[qid] = val;
+    setSpecOverrides(next);
+    run(overrides, specialsMode, treeMode, me, next);
+  };
+  const clearSpecOverrides = () => { if (simulating) return; setSpecOverrides({}); run(overrides, specialsMode, treeMode, me, {}); };
   const clickWinner = (match, team) => {
     if (match.src === 'real' || simulating) return;
     const next = { ...overrides, [match.key]: team };
     setOverrides(next); run(next);
   };
   const resetOverrides = () => { setOverrides({}); run({}); };
+  const [minWinBusy, setMinWinBusy] = useState(false);
+
+  // 🎯 "מספיק שאנצח": הסט המינימלי (חמדני, מאומת במנוע) של ניחושים שלי שחייבים להתגשם כדי לסיים ראשון,
+  //    כשכל היתר נגדי: שאלות מחוץ לסט לא מתגשמות לאף אחד, והעץ מוכרע לפי חוכמת ההמונים.
+  const analyzeMinWin = () => {
+    if (!me || simulating || minWinBusy) return;
+    setMinWinBusy(true);
+    setTimeout(() => {
+      try {
+        const myPred = latestByPart[me] || {};
+        const officialMap = {}; rankRows.forEach(r => { officialMap[r.participant_name] = Number(r.current_score) || 0; });
+        const rivals = participantNames.filter(n => n !== me);
+        const heBefore = (a, b) => a.localeCompare(b, 'he') < 0;
+
+        // — מבנה עזר: שאלות שלב + נקודות + אלופה —
+        const stageQ = {}; const slotPts = {};
+        questions.forEach(q => { if (STAGE_TIDS.includes(q.table_id)) { stageQ[q.id] = q.table_id; if (!slotPts[q.table_id] && q.possible_points) slotPts[q.table_id] = q.possible_points; } });
+        const champQ = questions.find(q => /זוכה|אלופ/.test(q.question_text || '') && !/סגנ/.test(q.question_text || '') && q.stage_type !== 'qualifiers');
+        const partStageSets = {}; const partChamp = {};
+        Object.entries(latestByPart).forEach(([name, m]) => {
+          const sets = { T19: new Set(), T21: new Set(), T23: new Set(), T25: new Set() };
+          Object.entries(m).forEach(([qid, t]) => {
+            const tid = stageQ[qid]; const v = String(t ?? '').trim();
+            if (tid && v) sets[tid].add(normT(v));
+            else if (champQ && qid === champQ.id && v) partChamp[name] = normT(v);
+          });
+          partStageSets[name] = sets;
+        });
+
+        // — תרחיש בסיס: עץ לפי הרוב, אפס שאלות מתגשמות —
+        const probe = compute(me, {}, { trueQids: new Set() }, 'popular');
+        const flatIdx = {}; WC_BRACKET_ORDER.flat().forEach((t, i) => { flatIdx[normT(t)] = i; });
+        // עומק בסיס של כל קבוצה בעץ-הרוב + זיהוי הכרעות אמת
+        const baseDepth = {}; const realAt = {};
+        probe.matches.forEach(mm => {
+          const n = normT(mm.winner);
+          baseDepth[n] = Math.max(baseDepth[n] || 0, mm.lvl + 1);
+          if (mm.src === 'real') realAt[`${mm.lvl}:${mm.idx}`] = normT(mm.winner);
+        });
+
+        // — מועמדים —
+        // (א) שאלות פתוחות שעניתי עליהן: Δ מדויק (מי שענה כמוני מרוויח גם)
+        const items = [];
+        (probe.specialsList || []).forEach(sp => {
+          const mine = String(myPred[sp.id] ?? '').trim(); if (!mine) return;
+          const delta = {}; let myD = 0;
+          Object.entries(latestByPart).forEach(([name, m]) => {
+            const v = String(m[sp.id] ?? '').trim();
+            if (v && normT(v) === normT(mine)) { delta[name] = sp.pts; if (name === me) myD = sp.pts; }
+          });
+          if (myD > 0) items.push({ kind: 'special', id: sp.id, label: sp.text, answer: mine, cost: 1, myGain: myD, delta, path: null });
+        });
+        // (ב) קבוצות מהרשימות שלי: "T מגיעה עד שלב X" (כולל אלופה) — Δ מצטבר משלב-הבסיס ומעלה
+        const STAGE_LVL = { T19: 1, T21: 2, T23: 3, T25: 4 };
+        const mySets = partStageSets[me] || { T19: new Set(), T21: new Set(), T23: new Set(), T25: new Set() };
+        const myChampN = partChamp[me] || '';
+        const teams = new Set([...mySets.T19, ...mySets.T21, ...mySets.T23, ...mySets.T25]); if (myChampN) teams.add(myChampN);
+        teams.forEach(tn => {
+          if (!(tn in flatIdx)) return;
+          const fi = flatIdx[tn];
+          // בדיקת חסימה בתוצאות אמת + בניית נתיב
+          const pathFor = targetLvl => {
+            const ovr = {};
+            for (let l = 0; l <= targetLvl - 1; l++) {
+              const node = Math.floor(fi / Math.pow(2, l + 1));
+              const key = `${l}:${node}`;
+              if (realAt[key] !== undefined) { if (realAt[key] !== tn) return null; }
+              else ovr[key] = WC_BRACKET_ORDER.flat()[fi];
+            }
+            return ovr;
+          };
+          const bd = baseDepth[tn] || 0;
+          const maxLvl = myChampN === tn ? 5 : Math.max(...[4,3,2,1].filter(l => mySets[['','T19','T21','T23','T25'][l]]?.has(tn)), 0);
+          for (let target = bd + 1; target <= Math.min(maxLvl, 5); target++) {
+            const treeTarget = Math.min(target, 5); // 5=אלופה (ניצחון בגמר=רמה 4)
+            const path = pathFor(treeTarget === 5 ? 5 : treeTarget); if (!path) break;
+            // עלות = כמה ניחושים שלי מתגשמים בקטע (bd..target); Δ = רווחי כולם בקטע
+            let cost = 0; const delta = {}; let myGain = 0;
+            for (let s = bd + 1; s <= target; s++) {
+              if (s <= 4) {
+                const tid = ['','T19','T21','T23','T25'][s]; const pts = slotPts[tid] || 0;
+                Object.entries(partStageSets).forEach(([name, sets]) => { if (sets[tid].has(tn)) { delta[name] = (delta[name] || 0) + pts; if (name === me) { myGain += pts; } } });
+                if (mySets[tid].has(tn)) cost += 1;
+              } else { // אלופה
+                const cPts = champQ?.possible_points || 0;
+                Object.entries(partChamp).forEach(([name, cn]) => { if (cn === tn) { delta[name] = (delta[name] || 0) + cPts; if (name === me) myGain += cPts; } });
+                if (myChampN === tn) cost += 1;
+              }
+            }
+            if (myGain > 0) items.push({ kind: 'team', id: `${tn}@${target}`, label: `${WC_BRACKET_ORDER.flat()[fi]} ${target === 5 ? 'אלופה 🏆' : 'מגיעה ל' + ['','שמינית','רבע','חצי','גמר'][target]}`, answer: '', cost, myGain, delta, path: pathFor(Math.min(target, 4) === target && target <= 4 ? target : 4), team: tn, target });
+          }
+        });
+
+        // — חמדני: מקסימום שיפור פער-מינימלי לעלות —
+        const myOff = officialMap[me] ?? 0;
+        const totals = {}; participantNames.forEach(n => { totals[n] = officialMap[n] ?? 0; });
+        const chosen = []; const chosenIds = new Set(); const usedNodes = {};
+        const winNow = () => rivals.every(r => totals[me] > totals[r] || (totals[me] === totals[r] && heBefore(me, r)));
+        let guard = 40;
+        while (!winNow() && guard-- > 0) {
+          const worstGap = () => Math.min(...rivals.map(r => totals[me] - totals[r] + (heBefore(me, r) ? 0.5 : 0)));
+          const g0 = worstGap();
+          let best = null, bestScore = -Infinity;
+          items.forEach(it => {
+            if (chosenIds.has(it.id)) return;
+            if (it.kind === 'team' && chosen.some(c => c.kind === 'team' && c.team === it.team)) { /* שדרוג אותה קבוצה מותר */ }
+            if (it.path) { for (const k in it.path) { if (usedNodes[k] && usedNodes[k] !== it.team) return; } } // התנגשות עץ
+            // סימולציית הוספה
+            const t2 = { ...totals };
+            Object.entries(it.delta).forEach(([n, d]) => { t2[n] += d; });
+            const g1 = Math.min(...rivals.map(r => t2[me] - t2[r] + (heBefore(me, r) ? 0.5 : 0)));
+            const score = (g1 - g0) / it.cost + (g1 > 0 ? 1000 : 0);
+            if (score > bestScore) { bestScore = score; best = it; }
+          });
+          if (!best || bestScore <= 0) break;
+          chosen.push(best); chosenIds.add(best.id);
+          Object.entries(best.delta).forEach(([n, d]) => { totals[n] += d; });
+          if (best.path) Object.keys(best.path).forEach(k => { usedNodes[k] = best.team; });
+        }
+
+        // — בנייה ואימות במנוע הרשמי —
+        const trueQids = new Set(chosen.filter(c => c.kind === 'special').map(c => c.id));
+        const ovr = {}; chosen.forEach(c => { if (c.path) Object.assign(ovr, c.path); });
+        const verified = compute(me, ovr, { trueQids }, 'popular');
+        const meRow = verified.meRow;
+        const runner = verified.table.find(r => r.name !== me);
+        verified.minWin = {
+          items: chosen.map(c => ({ label: c.kind === 'special' ? c.label : c.label, answer: c.answer, gain: c.myGain, cost: c.cost, kind: c.kind })),
+          totalCost: chosen.reduce((s, c) => s + c.cost, 0),
+          ok: meRow?.simPos === 1,
+          pos: meRow?.simPos ?? null,
+          margin: meRow && runner ? meRow.simScore - runner.simScore : null,
+        };
+        setSpecialsMode('mine'); // הבוררים לא משקפים מצב-סט — נשאיר תווית ברורה בפאנל
+        setOverrides(ovr);
+        setResult(verified);
+      } catch (e) { console.error(e); setResult({ error: 'ניתוח "מספיק שאנצח" נכשל: ' + (e?.message || '') }); }
+      setMinWinBusy(false);
+    }, 40);
+  };
+
   const setMode = m => { setSpecialsMode(m); if (result && !result.error) run(overrides, m, treeMode); };
   const setTree = m => { setTreeMode(m); setOverrides({}); if (result && !result.error) run({}, specialsMode, m); };
 
@@ -505,7 +668,7 @@ export default function Simulator() {
                 <div>
                   <div style={{ color: '#94a3b8', fontSize: '0.72rem', fontWeight: 700, marginBottom: 5 }}>👤 משתתף</div>
                   <select value={me}
-                    onChange={e => { const v = e.target.value; setMe(v); setOverrides({}); setResult(null); if (v) run({}, specialsMode, treeMode, v); }}
+                    onChange={e => { const v = e.target.value; setMe(v); setOverrides({}); setSpecOverrides({}); setResult(null); if (v) run({}, specialsMode, treeMode, v, {}); }}
                     style={{ background: '#0f172a', color: '#f1f5f9', border: '1px solid rgba(148,163,184,0.35)', borderRadius: 9, padding: '8px 12px', fontSize: '0.88rem', minWidth: 210, height: 38 }}>
                     <option value="">בחר משתתף...</option>
                     {participantNames.map(n => <option key={n} value={n}>{n}</option>)}
@@ -536,6 +699,14 @@ export default function Simulator() {
                   </div>
                 </div>
 
+                <div>
+                  <div style={{ color: '#94a3b8', fontSize: '0.72rem', fontWeight: 700, marginBottom: 5 }}>🎯 ניתוח</div>
+                  <button onClick={analyzeMinWin} disabled={!me || simulating || minWinBusy}
+                    style={{ height: 38, background: 'linear-gradient(135deg,#b45309,#f59e0b)', color: '#1c1917', border: 'none', borderRadius: 9, padding: '0 14px', fontSize: '0.82rem', fontWeight: 800, cursor: me ? 'pointer' : 'default', opacity: me && !simulating && !minWinBusy ? 1 : 0.5, fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    {minWinBusy ? <Loader2 className="animate-spin" style={{ width: 15, height: 15 }} /> : '🎯'} מספיק שאנצח
+                  </button>
+                </div>
+
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, height: 38 }}>
                   {simulating && (
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: '#a855f7', fontSize: '0.82rem', fontWeight: 700 }}>
@@ -559,6 +730,42 @@ export default function Simulator() {
 
           {result && !result.error && (
             <>
+              {result.minWin && (
+                <Card style={{ ...S.card, marginBottom: 14, border: `1.5px solid ${result.minWin.ok ? '#f59e0b' : '#ef4444'}`, boxShadow: result.minWin.ok ? '0 0 22px rgba(245,158,11,0.15)' : 'none' }}>
+                  <CardContent style={{ padding: 18 }}>
+                    {result.minWin.ok ? (
+                      <>
+                        <h3 style={{ color: '#fde68a', fontSize: '1.05rem', fontWeight: 800, margin: '0 0 4px' }}>
+                          🎯 מספיק לך {result.minWin.totalCost} ניחושים נכונים — ואתה במקום הראשון{result.minWin.margin != null ? ` (פער +${result.minWin.margin} על השני)` : ''} ✓
+                        </h3>
+                        <p style={{ color: '#94a3b8', fontSize: '0.74rem', margin: '0 0 10px' }}>
+                          בהנחות הקשוחות ביותר: כל שאר השאלות הפתוחות לא מתגשמות לאף אחד, והעץ מוכרע לפי חוכמת ההמונים. אומת במנוע הניקוד הרשמי. (חישוב חמדני — ייתכן סט קטן עוד יותר.)
+                        </p>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                          {result.minWin.items.map((it, i) => (
+                            <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, background: 'rgba(245,158,11,0.07)', border: '1px solid rgba(245,158,11,0.25)', borderRadius: 8, padding: '7px 10px' }}>
+                              <div style={{ minWidth: 0 }}>
+                                <span style={{ fontSize: '0.84rem', color: '#f8fafc', fontWeight: 600 }}>{it.kind === 'team' ? '⚽ ' : '✨ '}{it.label}</span>
+                                {it.answer && <span style={{ fontSize: '0.76rem', color: '#94a3b8', marginRight: 7 }}>· התשובה שלך: <b style={{ color: '#fde68a' }}>{it.answer}</b></span>}
+                              </div>
+                              <span style={{ flexShrink: 0, fontSize: '0.82rem', fontWeight: 800, color: '#fbbf24' }}>+{it.gain}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <h3 style={{ color: '#fca5a5', fontSize: '1rem', fontWeight: 800, margin: '0 0 4px' }}>
+                          🎯 בהנחות הקשוחות — לא נמצא סט שמנצח (הגעת למקום {result.minWin.pos ?? '?'})
+                        </h3>
+                        <p style={{ color: '#94a3b8', fontSize: '0.76rem', margin: 0 }}>
+                          גם אם כל הניחושים הרלוונטיים שלך יתגשמו, כשהשאר לא מתגשם לאף אחד והעץ לפי הרוב — זה לא מספיק לראשון. נסה את "התרחיש המושלם" (הכול לטובתך) כדי לראות את הגבול העליון שלך.
+                        </p>
+                      </>
+                    )}
+                  </CardContent>
+                </Card>
+              )}
               {result.meRow && (
                 <Card style={{ ...S.card, marginBottom: 14, border: '1px solid rgba(251,191,36,0.5)' }}>
                   <CardContent style={{ padding: 18 }}>
@@ -687,9 +894,17 @@ export default function Simulator() {
                 <CardContent style={{ padding: 18 }}>
                   <div onClick={() => setSpecOpen(o => !o)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}>
                     <h3 style={{ color: '#6ee7b7', fontSize: '0.95rem', fontWeight: 800, margin: 0 }}>
-                      ✨ השאלות הפתוחות ({result.specialsList.length}) — {result.sMode === 'mine' ? 'נופלות לפי התשובות שלך' : result.sMode === 'popular' ? 'נופלות לפי חוכמת ההמונים 🗳️' : 'לא נכללות בתרחיש'}
+                      ✨ השאלות הפתוחות ({result.specialsList.length}) — {(result.sMode && typeof result.sMode === 'object') ? 'תרחיש "מספיק שאנצח" — רק הנדרשות מתגשמות' : result.sMode === 'mine' ? 'נופלות לפי התשובות שלך' : result.sMode === 'popular' ? `נופלות לפי חוכמת ההמונים 🗳️${Object.keys(specOverrides).length ? ` · ✏️ ${Object.keys(specOverrides).length} התאמות שלך` : ''}` : 'לא נכללות בתרחיש'}
                     </h3>
-                    <span style={{ color: '#64748b', fontSize: '0.8rem' }}>{specOpen ? '▲ סגור' : '▼ פתח'}</span>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      {result.sMode === 'popular' && Object.keys(specOverrides).length > 0 && (
+                        <button onClick={e => { e.stopPropagation(); clearSpecOverrides(); }} disabled={simulating}
+                          style={{ background: 'rgba(251,191,36,0.1)', border: '1px solid rgba(251,191,36,0.4)', color: '#fbbf24', borderRadius: 999, fontSize: '0.72rem', fontWeight: 700, padding: '2px 10px', cursor: 'pointer' }}>
+                          ✏️ איפוס {Object.keys(specOverrides).length} התאמות
+                        </button>
+                      )}
+                      <span style={{ color: '#64748b', fontSize: '0.8rem' }}>{specOpen ? '▲ סגור' : '▼ פתח'}</span>
+                    </span>
                   </div>
                   {specOpen && (
                     <div style={{ marginTop: 10, display: 'grid', gridTemplateColumns: isNarrow ? '1fr' : '1fr 1fr', gap: 5, maxHeight: 360, overflowY: 'auto' }}>
@@ -698,9 +913,31 @@ export default function Simulator() {
                           <div style={{ minWidth: 0 }}>
                             <div style={{ fontSize: '0.79rem', color: '#e2e8f0' }}>{sp.text}</div>
                             {result.sMode === 'popular' ? (
-                              <div style={{ fontSize: '0.74rem', color: '#94a3b8' }}>
-                                🗳️ חוכמת ההמונים: <b style={{ color: '#67e8f9' }}>{sp.pop ? `${sp.pop.answer} (${sp.pop.pct}%)` : '—'}</b>
-                                <span style={{ marginRight: 8 }}>· שלך: <b style={{ color: sp.pop && normT(sp.mine) === normT(sp.pop.answer) ? '#6ee7b7' : '#f87171' }}>{sp.mine}</b></span>
+                              <div style={{ fontSize: '0.74rem', color: '#94a3b8', display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+                                <span>🗳️</span>
+                                {(() => {
+                                  // ✏️ בורר תשובה: ברירת המחדל = חוכמת ההמונים; אפשר לבחור כל ערך מרשימת האימות של השאלה
+                                  const opts = validationLists[sp.vlist] || [];
+                                  const popAns = sp.pop?.answer || '';
+                                  const current = sp.manual || popAns;
+                                  if (!opts.length && !popAns) return <b style={{ color: '#67e8f9' }}>—</b>;
+                                  const seen = new Set();
+                                  const items = [];
+                                  if (popAns) { items.push({ v: popAns, lbl: `${popAns} — חוכמת ההמונים (${sp.pop.pct}%)` }); seen.add(normT(popAns)); }
+                                  opts.forEach(o => { const t = String(o).trim(); if (t && !seen.has(normT(t))) { seen.add(normT(t)); items.push({ v: t, lbl: t }); } });
+                                  return (
+                                    <select value={current} disabled={simulating}
+                                      onChange={e => setSpecOverride(sp.id, normT(e.target.value) === normT(popAns) ? null : e.target.value)}
+                                      style={{ maxWidth: 190, background: sp.manual ? 'rgba(251,191,36,0.12)' : 'rgba(8,145,178,0.12)', color: sp.manual ? '#fbbf24' : '#67e8f9', border: `1px solid ${sp.manual ? 'rgba(251,191,36,0.5)' : 'rgba(8,145,178,0.4)'}`, borderRadius: 6, fontSize: '0.74rem', fontWeight: 700, padding: '2px 6px', cursor: 'pointer' }}>
+                                      {items.map(it => <option key={it.v} value={it.v}>{it.lbl}</option>)}
+                                    </select>
+                                  );
+                                })()}
+                                {sp.manual && (
+                                  <button onClick={() => setSpecOverride(sp.id, null)} disabled={simulating} title="חזרה לחוכמת ההמונים"
+                                    style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '0.72rem', padding: 0, textDecoration: 'underline' }}>איפוס</button>
+                                )}
+                                <span>· שלך: <b style={{ color: sp.pop && normT(sp.mine) === normT(sp.manual || sp.pop.answer) ? '#6ee7b7' : '#f87171' }}>{sp.mine}</b></span>
                               </div>
                             ) : (
                               <div style={{ fontSize: '0.74rem', color: '#94a3b8' }}>הניחוש שלך: <b style={{ color: '#6ee7b7' }}>{sp.mine}</b>{sp.pop && <span style={{ marginRight: 8, color: '#64748b' }}>· חוכמת ההמונים: {sp.pop.answer} ({sp.pop.pct}%)</span>}</div>
