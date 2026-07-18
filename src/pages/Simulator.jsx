@@ -390,15 +390,17 @@ export default function Simulator() {
         if (mine || pop) {
           specials.push({ id: q.id, text: q.question_text, mine: mine || '—', pop, used: (fill && fill !== '⛔__לא_יתגשם__') ? fill : null, pts: q.possible_points || 0,
                           vlist: q.validation_list || null, manual: String(spOvr[q.id] ?? '').trim() || null,
-                          qno: q.question_id ?? null, stage: q.stage_name || q.table_description || '' });
+                          qno: q.question_id ?? null, stage: q.stage_name || q.table_description || '',
+                          sord: Number.isFinite(Number(q.stage_order)) ? Number(q.stage_order) : (parseInt(String(q.table_id || '').replace('T',''), 10) || 9999) });
         }
         if (fill) q.actual_result = fill;
       });
       return { simQ, specials };
     };
     const { simQ, specials: specialsList } = buildSim(sMode);
-    // 🔢 סדר עולה לפי מספר השאלה (question_id התצוגתי); חסרות מספר — בסוף
+    // 🔢 סדר עולה: קודם לפי השלב (stage_order, ובהיעדרו — מספר הטבלה), ואז לפי מספר השאלה
     specialsList.sort((a, b) => {
+      if (a.sord !== b.sord) return a.sord - b.sord;
       const na = parseFloat(a.qno), nb = parseFloat(b.qno);
       return (Number.isFinite(na) ? na : 1e9) - (Number.isFinite(nb) ? nb : 1e9);
     });
@@ -914,40 +916,62 @@ export default function Simulator() {
                   </div>
                   {specOpen && (
                     <div style={{ marginTop: 10, display: 'grid', gridTemplateColumns: isNarrow ? '1fr' : '1fr 1fr', gap: 5, maxHeight: 360, overflowY: 'auto' }}>
-                      {result.specialsList.map(sp => (
-                        <div key={sp.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.15)', borderRadius: 8, padding: '6px 10px' }}>
+                      {result.specialsList.map((sp, spIdx) => (
+                        <React.Fragment key={sp.id}>
+                        {(spIdx === 0 || (result.specialsList[spIdx - 1].stage || '') !== (sp.stage || '')) && (
+                          <div style={{ gridColumn: '1 / -1', marginTop: spIdx === 0 ? 0 : 6, padding: '3px 10px', borderRadius: 7, background: 'rgba(34,211,238,0.08)', border: '1px solid rgba(34,211,238,0.25)', color: '#22d3ee', fontSize: '0.78rem', fontWeight: 800 }}>
+                            {sp.stage || 'שאלות נוספות'}
+                          </div>
+                        )}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.15)', borderRadius: 8, padding: '6px 10px' }}>
                           <div style={{ minWidth: 0 }}>
                             <div style={{ fontSize: '0.79rem', color: '#e2e8f0', display: 'flex', alignItems: 'baseline', gap: 6, flexWrap: 'wrap' }}>
                               {sp.qno != null && <span style={{ flexShrink: 0, fontSize: '0.7rem', fontWeight: 800, color: '#22d3ee', background: 'rgba(34,211,238,0.1)', border: '1px solid rgba(34,211,238,0.3)', borderRadius: 5, padding: '0 5px' }}>{sp.qno}</span>}
-                              {sp.stage && <span style={{ flexShrink: 0, fontSize: '0.68rem', color: '#94a3b8' }}>{sp.stage}</span>}
                               <span>{sp.text}</span>
                             </div>
                             {result.sMode === 'popular' ? (
                               <div style={{ fontSize: '0.74rem', color: '#94a3b8', display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
                                 <span>🗳️</span>
                                 {(() => {
-                                  // ✏️ בורר תשובה: ברירת המחדל = חוכמת ההמונים; אפשר לבחור כל ערך מרשימת האימות של השאלה
+                                  // ✏️ בורר תשובות: ברירת המחדל = חוכמת ההמונים. אפשר לסמן כמה תשובות מרשימת
+                                  //    האימות — הן מוזנות למנוע בפורמט '|||' (ריבוי תשובות רשמי של ScoreService).
                                   const opts = validationLists[sp.vlist] || [];
                                   const popAns = sp.pop?.answer || '';
-                                  const current = sp.manual || popAns;
+                                  const parts = sp.manual ? sp.manual.split('|||').map(s => s.trim()).filter(Boolean) : [];
                                   if (!opts.length && !popAns) return <b style={{ color: '#67e8f9' }}>—</b>;
-                                  const seen = new Set();
+                                  const chosen = new Set(parts.map(normT));
+                                  const addVal = v => { const t = String(v).trim(); if (!t || chosen.has(normT(t))) return; setSpecOverride(sp.id, [...parts, t].join('|||')); };
+                                  const removeVal = t => { const next = parts.filter(p => normT(p) !== normT(t)); setSpecOverride(sp.id, next.length ? next.join('|||') : null); };
+                                  const seen = new Set(chosen);
                                   const items = [];
-                                  if (popAns) { items.push({ v: popAns, lbl: `${popAns} — חוכמת ההמונים (${sp.pop.pct}%)` }); seen.add(normT(popAns)); }
+                                  if (popAns && !seen.has(normT(popAns))) { items.push({ v: popAns, lbl: `${popAns} — חוכמת ההמונים (${sp.pop.pct}%)` }); seen.add(normT(popAns)); }
                                   opts.forEach(o => { const t = String(o).trim(); if (t && !seen.has(normT(t))) { seen.add(normT(t)); items.push({ v: t, lbl: t }); } });
-                                  return (
-                                    <select value={current} disabled={simulating}
-                                      onChange={e => setSpecOverride(sp.id, normT(e.target.value) === normT(popAns) ? null : e.target.value)}
-                                      style={{ maxWidth: 190, background: sp.manual ? 'rgba(251,191,36,0.12)' : 'rgba(8,145,178,0.12)', color: sp.manual ? '#fbbf24' : '#67e8f9', border: `1px solid ${sp.manual ? 'rgba(251,191,36,0.5)' : 'rgba(8,145,178,0.4)'}`, borderRadius: 6, fontSize: '0.74rem', fontWeight: 700, padding: '2px 6px', cursor: 'pointer' }}>
+                                  return (<>
+                                    {parts.map(t => (
+                                      <span key={t} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'rgba(251,191,36,0.12)', color: '#fbbf24', border: '1px solid rgba(251,191,36,0.5)', borderRadius: 999, fontSize: '0.72rem', fontWeight: 700, padding: '1px 8px' }}>
+                                        {t}
+                                        <button onClick={() => removeVal(t)} disabled={simulating} title="הסר תשובה"
+                                          style={{ background: 'none', border: 'none', color: '#fbbf24', cursor: 'pointer', fontSize: '0.72rem', padding: 0, lineHeight: 1 }}>✕</button>
+                                      </span>
+                                    ))}
+                                    <select value="" disabled={simulating}
+                                      onChange={e => { const v = e.target.value; if (!v) return; if (!parts.length && normT(v) === normT(popAns)) { e.target.value = ''; return; } addVal(v); e.target.value = ''; }}
+                                      style={{ maxWidth: 190, background: parts.length ? 'rgba(251,191,36,0.08)' : 'rgba(8,145,178,0.12)', color: parts.length ? '#fbbf24' : '#67e8f9', border: `1px solid ${parts.length ? 'rgba(251,191,36,0.4)' : 'rgba(8,145,178,0.4)'}`, borderRadius: 6, fontSize: '0.74rem', fontWeight: 700, padding: '2px 6px', cursor: 'pointer' }}>
+                                      <option value="">{parts.length ? '＋ הוסף תשובה' : (popAns ? `${popAns} — חוכמת ההמונים (${sp.pop.pct}%)` : 'בחר תשובה...')}</option>
                                       {items.map(it => <option key={it.v} value={it.v}>{it.lbl}</option>)}
                                     </select>
-                                  );
+                                  </>);
                                 })()}
                                 {sp.manual && (
                                   <button onClick={() => setSpecOverride(sp.id, null)} disabled={simulating} title="חזרה לחוכמת ההמונים"
                                     style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '0.72rem', padding: 0, textDecoration: 'underline' }}>איפוס</button>
                                 )}
-                                <span>· שלך: <b style={{ color: sp.pop && normT(sp.mine) === normT(sp.manual || sp.pop.answer) ? '#6ee7b7' : '#f87171' }}>{sp.mine}</b></span>
+                                {(() => {
+                                  const popAns = sp.pop?.answer || '';
+                                  const eff = sp.manual ? sp.manual.split('|||').map(s => s.trim()).filter(Boolean) : (popAns ? [popAns] : []);
+                                  const hit = eff.some(t => normT(t) === normT(sp.mine));
+                                  return <span>· שלך: <b style={{ color: hit ? '#6ee7b7' : '#f87171' }}>{sp.mine}</b></span>;
+                                })()}
                               </div>
                             ) : (
                               <div style={{ fontSize: '0.74rem', color: '#94a3b8' }}>הניחוש שלך: <b style={{ color: '#6ee7b7' }}>{sp.mine}</b>{sp.pop && <span style={{ marginRight: 8, color: '#64748b' }}>· חוכמת ההמונים: {sp.pop.answer} ({sp.pop.pct}%)</span>}</div>
@@ -957,6 +981,7 @@ export default function Simulator() {
                             {sp.gain != null ? (sp.gain > 0 ? `+${sp.gain}` : '0') : `עד +${sp.pts}`}
                           </span>
                         </div>
+                        </React.Fragment>
                       ))}
                     </div>
                   )}
