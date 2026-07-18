@@ -389,13 +389,19 @@ export default function Simulator() {
         }
         if (mine || pop) {
           specials.push({ id: q.id, text: q.question_text, mine: mine || '—', pop, used: (fill && fill !== '⛔__לא_יתגשם__') ? fill : null, pts: q.possible_points || 0,
-                          vlist: q.validation_list || null, manual: String(spOvr[q.id] ?? '').trim() || null });
+                          vlist: q.validation_list || null, manual: String(spOvr[q.id] ?? '').trim() || null,
+                          qno: q.question_id ?? null, stage: q.stage_name || q.table_description || '' });
         }
         if (fill) q.actual_result = fill;
       });
       return { simQ, specials };
     };
     const { simQ, specials: specialsList } = buildSim(sMode);
+    // 🔢 סדר עולה לפי מספר השאלה (question_id התצוגתי); חסרות מספר — בסוף
+    specialsList.sort((a, b) => {
+      const na = parseFloat(a.qno), nb = parseFloat(b.qno);
+      return (Number.isFinite(na) ? na : 1e9) - (Number.isFinite(nb) ? nb : 1e9);
+    });
 
     if (!baseAllRef.current) baseAllRef.current = calculateAllParticipantsScores(questions, engineRows);
     const baseAll = baseAllRef.current;
@@ -911,7 +917,11 @@ export default function Simulator() {
                       {result.specialsList.map(sp => (
                         <div key={sp.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.15)', borderRadius: 8, padding: '6px 10px' }}>
                           <div style={{ minWidth: 0 }}>
-                            <div style={{ fontSize: '0.79rem', color: '#e2e8f0' }}>{sp.text}</div>
+                            <div style={{ fontSize: '0.79rem', color: '#e2e8f0', display: 'flex', alignItems: 'baseline', gap: 6, flexWrap: 'wrap' }}>
+                              {sp.qno != null && <span style={{ flexShrink: 0, fontSize: '0.7rem', fontWeight: 800, color: '#22d3ee', background: 'rgba(34,211,238,0.1)', border: '1px solid rgba(34,211,238,0.3)', borderRadius: 5, padding: '0 5px' }}>{sp.qno}</span>}
+                              {sp.stage && <span style={{ flexShrink: 0, fontSize: '0.68rem', color: '#94a3b8' }}>{sp.stage}</span>}
+                              <span>{sp.text}</span>
+                            </div>
                             {result.sMode === 'popular' ? (
                               <div style={{ fontSize: '0.74rem', color: '#94a3b8', display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
                                 <span>🗳️</span>
