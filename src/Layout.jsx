@@ -16,6 +16,16 @@ import { ThemeProvider, useTheme, THEMES } from '@/components/contexts/ThemeCont
 import UploadStatusIndicator from '@/components/layout/UploadStatusIndicator';
 import { useToast } from "@/components/ui/use-toast";
 
+// ═══════════════════════════════════════════════════════════════════════════
+// 🔒 קוד הגישה למערכת — לעריכה כאן בלבד:
+//    GATE_CODE — הקוד שהמשתתפים מזינים (או דרך קישור ?key=הקוד)
+//    GATE_VER  — שינוי הערך (v1→v2) מנתק מיידית את כל מי שכבר נכנס
+// ═══════════════════════════════════════════════════════════════════════════
+const GATE_CODE = 'TALTAL2026';
+const GATE_VER  = 'v1';
+const GATE_LS   = `tlt_gate_${GATE_VER}`;
+
+
 // ─── Route access ─────────────────────────────────────────────────────────────
 const ROUTE_ACCESS = {
   LeaderboardNew: 'public', ViewSubmissions: 'public',
@@ -579,8 +589,71 @@ function LayoutContent({ children }) {
 }
 
 // ─── Root export ──────────────────────────────────────────────────────────────
+
+// ─── 🔒 שער גישה קהילתי ───────────────────────────────────────────────────────
+//    עוצר הצצות מזדמנות: מי שאין לו את הקוד רואה רק מסך נעילה.
+//    הפצה נוחה: קישור עם ?key=הקוד נכנס ושומר אוטומטית (לוואטסאפ).
+//    שינוי הקוד: עדכנו את GATE_CODE ואת GATE_VER (שינוי VER מנתק את כולם).
+
+function AccessGate({ children }) {
+  const [ok, setOk] = React.useState(() => {
+    try {
+      const url = new URL(window.location.href);
+      const key = url.searchParams.get('key');
+      if (key && key === GATE_CODE) {
+        localStorage.setItem(GATE_LS, '1');
+        url.searchParams.delete('key');
+        window.history.replaceState({}, '', url.pathname + url.search + url.hash);
+        return true;
+      }
+      return localStorage.getItem(GATE_LS) === '1';
+    } catch { return false; }
+  });
+  const [val, setVal] = React.useState('');
+  const [err, setErr] = React.useState(false);
+
+  if (ok) return children;
+
+  const tryEnter = () => {
+    if (val.trim() === GATE_CODE) {
+      try { localStorage.setItem(GATE_LS, '1'); } catch {}
+      setOk(true);
+    } else { setErr(true); setTimeout(() => setErr(false), 1200); }
+  };
+
+  return (
+    <div dir="rtl" style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
+      background: 'linear-gradient(160deg,#070d1a,#0d1929 60%,#0a1422)', padding: 16 }}>
+      <div style={{ width: '100%', maxWidth: 360, textAlign: 'center', background: 'rgba(10,20,34,0.9)',
+        border: '1px solid rgba(6,182,212,0.25)', borderRadius: 18, padding: '34px 26px',
+        boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
+        <div style={{ fontSize: '2.4rem', marginBottom: 6 }}>🔒</div>
+        <div style={{ color: '#06b6d4', fontWeight: 900, fontSize: '1.5rem', marginBottom: 4 }}>תלתל</div>
+        <div style={{ color: '#94a3b8', fontSize: '0.9rem', marginBottom: 20 }}>המערכת פתוחה לחברי הקהילה בלבד</div>
+        <input
+          type="password" inputMode="text" autoFocus value={val}
+          onChange={e => setVal(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') tryEnter(); }}
+          placeholder="קוד גישה"
+          style={{ width: '100%', boxSizing: 'border-box', textAlign: 'center', fontSize: '1.05rem',
+            padding: '11px 12px', borderRadius: 10, outline: 'none', color: '#e2e8f0',
+            background: 'rgba(7,13,26,0.9)',
+            border: `1.5px solid ${err ? '#f87171' : 'rgba(6,182,212,0.4)'}`,
+            transition: 'border-color 0.2s' }} />
+        <button onClick={tryEnter}
+          style={{ width: '100%', marginTop: 12, padding: '11px 0', borderRadius: 10, border: 'none',
+            cursor: 'pointer', fontWeight: 800, fontSize: '1rem', color: '#04121f',
+            background: 'linear-gradient(90deg,#06b6d4,#22d3ee)' }}>כניסה</button>
+        {err && <div style={{ color: '#f87171', fontSize: '0.82rem', marginTop: 10 }}>קוד שגוי — נסו שוב</div>}
+        <div style={{ color: '#475569', fontSize: '0.76rem', marginTop: 18 }}>אין לכם קוד? פנו למנהל המשחק</div>
+      </div>
+    </div>
+  );
+}
+
 export default function Layout({ children, currentPageName }) {
   return (
+    <AccessGate>
     <ThemeProvider>
       <UploadStatusProvider>
         <GameProvider>
@@ -589,6 +662,7 @@ export default function Layout({ children, currentPageName }) {
         </GameProvider>
       </UploadStatusProvider>
     </ThemeProvider>
+    </AccessGate>
   );
 }
 
