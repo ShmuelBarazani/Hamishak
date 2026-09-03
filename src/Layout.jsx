@@ -22,7 +22,7 @@ import { useToast } from "@/components/ui/use-toast";
 //    GATE_VER  — שינוי הערך (v1→v2) מנתק מיידית את כל מי שכבר נכנס
 // ═══════════════════════════════════════════════════════════════════════════
 const GATE_CODE = 'TALTAL2026';
-const GATE_VER  = 'v1';
+const GATE_VER  = 'v2';
 const GATE_LS   = `tlt_gate_${GATE_VER}`;
 
 
